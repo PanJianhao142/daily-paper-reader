@@ -19,7 +19,16 @@ app.add_middleware(
 # 数据库与文件路径配置
 DB_FILE = os.path.join(os.path.dirname(__file__), "chat.db")
 DOCS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "docs")
-CLIENT = openai.OpenAI(api_key="3b5cac0de26145e9a8e5701bf8fbc197.fpqlPzgDbt0UkBJJ", base_url="https://open.bigmodel.cn/api/coding/paas/v4")
+LLM_API_KEY = os.getenv("LLM_API_KEY")
+if not LLM_API_KEY:
+    raise RuntimeError("缺少环境变量 LLM_API_KEY，请设置大模型的 API Key")
+
+# 从环境变量读取模型名称和可选的 Base URL
+LLM_MODEL = os.getenv("LLM_MODEL", "glm-4.6")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://open.bigmodel.cn/api/coding/paas/v4")
+
+# 使用 OpenAI 兼容客户端，建议选择支持 200k 上下文长度的模型
+CLIENT = openai.OpenAI(api_key=LLM_API_KEY, base_url=LLM_BASE_URL)
 
 def init_db():
     with sqlite3.connect(DB_FILE) as conn:
@@ -72,7 +81,12 @@ def chat(req: ChatRequest):
 
     # 4. 调用 LLM
     try:
-        resp = CLIENT.chat.completions.create(model="glm-4.6", messages=messages, stream=False)
+        resp = CLIENT.chat.completions.create(
+            model=LLM_MODEL,
+            messages=messages,
+            temperature=0.7,  # 模型温度设为 0.7
+            stream=False,
+        )
         ai_msg = resp.choices[0].message.content
     except Exception as e:
         ai_msg = f"Error: {str(e)}"
