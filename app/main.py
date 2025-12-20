@@ -2,11 +2,14 @@
 import sqlite3
 import os
 import json
-from fastapi import FastAPI, HTTPException
+import time
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 import openai
+import arxiv
 
 app = FastAPI()
 
@@ -48,11 +51,66 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tracked_papers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                arxiv_id TEXT UNIQUE,
+                title TEXT,
+                authors TEXT,
+                pdf_url TEXT,
+                published TEXT,
+                alias TEXT,
+                raw_meta TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions_keywords (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                keyword TEXT UNIQUE,
+                alias TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions_zotero (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                zotero_id TEXT,
+                api_key TEXT,
+                alias TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # 兼容旧表：尝试补充缺失的 alias 列
+        try:
+            conn.execute("ALTER TABLE subscriptions_keywords ADD COLUMN alias TEXT")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE tracked_papers ADD COLUMN alias TEXT")
+        except Exception:
+            pass
 init_db()
 
 class ChatRequest(BaseModel):
     paper_id: str
     question: str  # 前端会传 paper_content，但后端以本地 md/txt 为准读取
+
+
+class TrackPaperRequest(BaseModel):
+    arxiv_id: str
+    alias: str | None = None
+
+
+class KeywordRequest(BaseModel):
+    keyword: str
+    alias: str | None = None
+
+
+class ZoteroRequest(BaseModel):
+    zotero_id: str
+    api_key: str
+    alias: str
 
 @app.get("/api/history")
 def get_history(paper_id: str):
@@ -228,3 +286,245 @@ def chat_stream(req: ChatRequest):
                 )
 
     return StreamingResponse(generate(), media_type="text/plain")
+
+
+_last_arxiv_search_ts = 0.0
+
+
+@app.get("/api/arxiv_search")
+def arxiv_search(query: str = Query(..., min_length=1, description="论文标题、关键词或 arxiv 链接")):
+    """
+    使用 arxiv 包搜索论文：
+    - 3 秒内只能搜索一次（简单的全局限流，防止误触）
+    - 支持直接输入 arxiv 链接或论文标题/关键词
+    """
+    global _last_arxiv_search_ts
+
+    now_ts = time.time()
+    if now_ts - _last_arxiv_search_ts < 3.0:
+        raise HTTPException(status_code=429, detail="搜索过于频繁，请稍后再试")
+
+    raw = query.strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="query 不能为空")
+
+    client = arxiv.Client()
+
+    # 1. 如果是 arxiv 链接或 ID，优先按 ID 精确查询
+    arxiv_id = None
+    if "arxiv.org" in raw:
+        # 简单提取 /abs/<id> 或 /pdf/<id>.pdf 中的 id
+        parts = raw.split("/")
+        for p in parts:
+            if "." in p:
+                arxiv_id = p.replace(".pdf", "")
+                break
+    elif ":" not in raw and " " not in raw and len(raw) >= 9 and "." in raw:
+        # 粗略认为是 arxiv id，如 2512.12345 或 2512.12345v2
+        arxiv_id = raw
+
+    results = []
+
+    try:
+        if arxiv_id:
+            search = arxiv.Search(id_list=[arxiv_id])
+        else:
+            # 按标题 + 全字段混合搜索
+            query_str = f'ti:"{raw}" OR all:"{raw}"'
+            search = arxiv.Search(
+                query=query_str,
+                max_results=10,
+                sort_by=arxiv.SortCriterion.SubmittedDate,
+                sort_order=arxiv.SortOrder.Descending,
+            )
+
+        for idx, result in enumerate(client.results(search)):
+            if idx >= 10:
+                break
+            title = (result.title or "").strip()
+            authors = [a.name for a in result.authors] if result.authors else []
+            pdf_url = result.pdf_url
+            short_id = result.get_short_id()
+            published = ""
+            if isinstance(result.published, datetime):
+                published = result.published.date().isoformat()
+
+            results.append(
+                {
+                    "arxiv_id": short_id,
+                    "title": title,
+                    "authors": authors,
+                    "pdf_url": pdf_url,
+                    "summary": (result.summary or "").strip(),
+                    "published": published,
+                    "primary_category": getattr(result, "primary_category", ""),
+                }
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"arxiv 搜索失败: {e}")
+    finally:
+        _last_arxiv_search_ts = now_ts
+
+    return {"items": results}
+
+
+@app.post("/api/arxiv_track")
+def arxiv_track(req: TrackPaperRequest):
+    """
+    将选中的 arxiv 论文持久化到本地 tracked_papers。
+    如果 arxiv_id 已存在则忽略。
+    """
+    client = arxiv.Client()
+    try:
+        search = arxiv.Search(id_list=[req.arxiv_id])
+        result = next(client.results(search), None)
+        if result is None:
+            raise HTTPException(status_code=404, detail="未找到指定 arxiv 论文")
+
+        title = (result.title or "").strip()
+        authors = [a.name for a in result.authors] if result.authors else []
+        pdf_url = result.pdf_url
+        published = ""
+        if isinstance(result.published, datetime):
+            published = result.published.date().isoformat()
+
+        raw_meta = {
+            "title": title,
+            "authors": authors,
+            "pdf_url": pdf_url,
+            "summary": (result.summary or "").strip(),
+            "published": published,
+            "primary_category": getattr(result, "primary_category", ""),
+        }
+        alias = (req.alias or "").strip()
+
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO tracked_papers (arxiv_id, title, authors, pdf_url, published, alias, raw_meta)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    req.arxiv_id,
+                    title,
+                    json.dumps(authors, ensure_ascii=False),
+                    pdf_url,
+                    published,
+                    alias,
+                    json.dumps(raw_meta, ensure_ascii=False),
+                ),
+            )
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存选中论文失败: {e}")
+
+
+@app.get("/api/subscriptions")
+def get_subscriptions():
+    """
+    返回当前订阅信息：
+    - 关键词列表
+    - 需要跟踪引用的论文列表
+    - Zotero 账号列表
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        # 关键词
+        cursor = conn.execute(
+            "SELECT id, keyword, alias, created_at FROM subscriptions_keywords ORDER BY id ASC"
+        )
+        keywords = [
+            {"id": row[0], "keyword": row[1], "alias": row[2], "created_at": row[3]}
+            for row in cursor.fetchall()
+        ]
+
+        # 订阅论文
+        cursor = conn.execute(
+            "SELECT id, arxiv_id, title, authors, published, alias, created_at FROM tracked_papers ORDER BY created_at DESC"
+        )
+        papers = []
+        for row in cursor.fetchall():
+            try:
+                authors = json.loads(row[3]) if row[3] else []
+            except Exception:
+                authors = []
+            papers.append(
+                {
+                    "id": row[0],
+                    "arxiv_id": row[1],
+                    "title": row[2],
+                    "authors": authors,
+                    "published": row[4],
+                    "alias": row[5],
+                    "created_at": row[6],
+                }
+            )
+        # Zotero 账号（出于安全考虑，这里不返回 api_key）
+        cursor = conn.execute(
+            "SELECT id, zotero_id, alias, created_at FROM subscriptions_zotero ORDER BY id ASC"
+        )
+        zotero_accounts = [
+            {
+                "id": row[0],
+                "zotero_id": row[1],
+                "alias": row[2],
+                "created_at": row[3],
+            }
+            for row in cursor.fetchall()
+        ]
+
+    return {"keywords": keywords, "tracked_papers": papers, "zotero_accounts": zotero_accounts}
+
+
+@app.post("/api/subscriptions/keyword")
+def add_keyword(req: KeywordRequest):
+    kw = (req.keyword or "").strip()
+    alias = (req.alias or "").strip()
+    if not kw:
+        raise HTTPException(status_code=400, detail="关键词不能为空")
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO subscriptions_keywords (keyword, alias) VALUES (?, ?)",
+            (kw, alias),
+        )
+    return {"status": "ok"}
+
+
+@app.delete("/api/subscriptions/keyword/{kid}")
+def delete_keyword(kid: int):
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute("DELETE FROM subscriptions_keywords WHERE id=?", (kid,))
+    return {"status": "ok"}
+
+
+@app.delete("/api/arxiv_track/{tid}")
+def delete_tracked_paper(tid: int):
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute("DELETE FROM tracked_papers WHERE id=?", (tid,))
+    return {"status": "ok"}
+
+
+@app.post("/api/subscriptions/zotero")
+def add_zotero(req: ZoteroRequest):
+    zid = (req.zotero_id or "").strip()
+    key = (req.api_key or "").strip()
+    alias = (req.alias or "").strip()
+    if not zid or not key:
+        raise HTTPException(status_code=400, detail="Zotero ID 和 Key 不能为空")
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            """
+            INSERT INTO subscriptions_zotero (zotero_id, api_key, alias)
+            VALUES (?, ?, ?)
+            """,
+            (zid, key, alias),
+        )
+    return {"status": "ok"}
+
+
+@app.delete("/api/subscriptions/zotero/{zid}")
+def delete_zotero(zid: int):
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute("DELETE FROM subscriptions_zotero WHERE id=?", (zid,))
+    return {"status": "ok"}

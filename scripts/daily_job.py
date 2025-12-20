@@ -3,6 +3,7 @@ import datetime
 import os
 import re
 import time
+import sqlite3
 
 import arxiv
 import fitz  # PyMuPDF
@@ -12,6 +13,13 @@ import openai
 # 配置
 DOCS_DIR = os.path.expanduser("~/workplace/daily-paper-reader/docs")
 TODAY = datetime.date.today().strftime("%Y-%m-%d")
+
+# 与后端共用的数据库文件路径（如果存在，则可从中读取订阅关键词）
+DB_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)),
+    "app",
+    "chat.db",
+)
 
 # 大模型配置（与 app/main.py 保持一致）
 LLM_API_KEY = os.getenv("LLM_API_KEY")
@@ -24,15 +32,30 @@ if LLM_API_KEY:
 
 def get_keywords() -> list[str]:
     """
-    从环境变量中获取关键词列表，逗号分隔。
-    如果未配置，则使用一个默认示例，方便本地调试。
-    例如：
-      ARXIV_KEYWORDS="symbolic regression,组合优化,大模型"
+    优先从数据库 subscriptions_keywords 中读取订阅关键词；
+    如果数据库或表不存在，或者列表为空，则回退到环境变量 ARXIV_KEYWORDS；
+    如果仍然为空，则使用一个默认示例，方便本地调试。
     """
+    # 1. 先尝试从数据库读取订阅关键词
+    try:
+        if os.path.exists(DB_FILE):
+            with sqlite3.connect(DB_FILE) as conn:
+                cursor = conn.execute(
+                    "SELECT keyword FROM subscriptions_keywords ORDER BY id ASC"
+                )
+                rows = cursor.fetchall()
+                keywords = [r[0].strip() for r in rows if r[0] and r[0].strip()]
+                if keywords:
+                    return keywords
+    except Exception as e:
+        print(f"[WARN] 从数据库读取订阅关键词失败，将回退到环境变量：{e}")
+
+    # 2. 回退到环境变量
     raw = os.getenv("ARXIV_KEYWORDS", "")
     if raw.strip():
         return [k.strip() for k in raw.split(",") if k.strip()]
-    # 默认值：示例关键词，可按需在 .env 中覆盖
+
+    # 3. 最后使用一个默认示例
     return ["Symbolic Regression"]
 
 

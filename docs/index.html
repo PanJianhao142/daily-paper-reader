@@ -143,6 +143,159 @@
         display: none;
       }
     }
+
+    /* 左下角订阅管理按钮 */
+    #arxiv-tools {
+      position: fixed;
+      left: 16px;
+      bottom: 20px;
+      z-index: 998;
+      display: flex;
+      gap: 8px;
+    }
+    .arxiv-tool-btn {
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+      color: #333;
+    }
+    .arxiv-tool-btn:hover {
+      background: #f2f2f2;
+    }
+
+    /* Arxiv 搜索全屏浮层 */
+    #arxiv-search-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.35);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    #arxiv-search-panel {
+      width: min(720px, 90vw);
+      max-height: 85vh;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      overflow-y: auto;  /* 只显示垂直滚动条 */
+      overflow-x: hidden;  /* 隐藏横向滚动条 */
+    }
+    #arxiv-search-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    #arxiv-search-input {
+      width: 100%;
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    #arxiv-search-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 8px;
+      margin-bottom: 8px;
+    }
+    #arxiv-search-results {
+      flex: 0 1 auto;  /* 允许收缩 */
+      min-height: 0;
+      max-height: 30vh;  /* 使用vh单位 */
+      overflow-y: auto;
+      border-top: 1px solid #eee;
+      margin-top: 8px;
+      padding-top: 8px;
+    }
+    #arxiv-subscriptions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-shrink: 0;  /* 防止被压缩 */
+    }
+    #arxiv-top-row {
+      display: flex;
+      gap: 6px;  /* 减小gap避免宽度溢出 */
+    }
+    .arxiv-pane {
+      padding: 8px;
+      border-radius: 6px;
+      box-sizing: border-box;
+    }
+    #arxiv-keywords-pane {
+      flex: 1 1 0;           /* 使用flex-grow确保平分 */
+      min-width: 0;          /* 防止内容撑开 */
+      box-sizing: border-box;
+      background: #e8f5e9;   /* 淡绿色 */
+    }
+    #arxiv-zotero-pane {
+      flex: 1 1 0;           /* 使用flex-grow确保平分 */
+      min-width: 0;          /* 防止内容撑开 */
+      box-sizing: border-box;
+      background: #e3f2fd;   /* 淡蓝色 */
+    }
+    #arxiv-search-section {
+      margin-top: 8px;
+      background: #fce4ec; /* 淡粉色 */
+    }
+    .arxiv-result-item {
+      padding: 6px 8px;
+      margin: 0 -8px;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      border-radius: 4px;
+    }
+    .arxiv-result-item:hover {
+      background-color: #fdd5e3;
+    }
+    .arxiv-result-item.selected {
+      background-color: #f8bbd0;
+      border-left: 3px solid #ec407a;
+      padding-left: 5px;
+    }
+    .arxiv-tracked-item {
+      padding: 6px 8px;
+      margin: 0 -8px;
+      border-bottom: 1px solid #f0f0f0;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      border-radius: 4px;
+    }
+    .arxiv-result-meta {
+      flex: 1;
+    }
+    .arxiv-result-title {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 2px;
+    }
+    .arxiv-result-authors,
+    .arxiv-result-published {
+      font-size: 12px;
+      color: #666;
+    }
+    #arxiv-search-message {
+      font-size: 12px;
+      color: #999;
+      margin-top: 4px;
+    }
   </style>
 </head>
 <body>
@@ -436,6 +589,470 @@
             }
           };
 
+          // Arxiv 搜索 UI：创建左下角按钮和浮层
+          const ensureArxivSearchUI = () => {
+            if (!document.getElementById('arxiv-tools')) {
+              const tools = document.createElement('div');
+              tools.id = 'arxiv-tools';
+              tools.innerHTML = `
+                <button class="arxiv-tool-btn" id="arxiv-search-open-btn">订阅管理</button>
+              `;
+              document.body.appendChild(tools);
+            }
+
+            if (!document.getElementById('arxiv-search-overlay')) {
+              const overlay = document.createElement('div');
+              overlay.id = 'arxiv-search-overlay';
+              overlay.innerHTML = `
+                <div id="arxiv-search-panel">
+                  <div id="arxiv-search-panel-header">
+                    <div style="font-weight:600;">订阅管理（关键词 + 论文）</div>
+                    <button id="arxiv-search-close-btn" class="arxiv-tool-btn" style="padding:2px 6px;">关闭</button>
+                  </div>
+                  <div id="arxiv-subscriptions">
+                    <div id="arxiv-top-row">
+                      <div id="arxiv-keywords-pane" class="arxiv-pane">
+                        <div style="font-weight:500; margin-bottom:4px;">订阅关键词（用于 daily_job 抓取）</div>
+                        <div id="arxiv-keywords-list" style="font-size:12px; height:120px; overflow-y:auto; border:1px solid #eee; padding:6px; border-radius:4px; background:#fff; margin-bottom:4px;"></div>
+                        <div style="display:flex; gap:4px; margin-bottom:4px; align-items:center; max-width:100%;">
+                          <input id="arxiv-keyword-input" type="text"
+                            placeholder="新增关键词，如 llm"
+                            style="flex:3 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
+                          />
+                          <input id="arxiv-keyword-alias-input" type="text"
+                            placeholder="备注（可选）"
+                            style="flex:2 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
+                          />
+                          <button id="arxiv-keyword-add-btn" class="arxiv-tool-btn"
+                            style="flex:1 1 0; min-width:0; white-space:nowrap; padding:6px 4px; font-size:12px;">新增</button>
+                        </div>
+                      </div>
+
+                      <div id="arxiv-zotero-pane" class="arxiv-pane">
+                        <div style="font-weight:500; margin-bottom:4px;">Zotero 集成</div>
+                        <div id="zotero-list" style="font-size:12px; height:88px; overflow-y:auto; border:1px solid #eee; padding:6px; border-radius:4px; background:#fff; margin-bottom:4px;"></div>
+                        <!-- 第一行：用户ID 和 API Key (1:3) -->
+                        <div style="display:flex; gap:4px; margin-bottom:4px; max-width:100%;">
+                          <input id="zotero-id-input" type="text"
+                            placeholder="用户ID"
+                            style="flex:1 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
+                          />
+                          <input id="zotero-key-input" type="text"
+                            placeholder="API Key"
+                            style="flex:3 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
+                          />
+                        </div>
+                        <!-- 第二行：缩写、测试按钮、新增按钮 -->
+                        <div style="display:flex; gap:4px; margin-bottom:4px; max-width:100%;">
+                          <input id="zotero-alias-input" type="text"
+                            placeholder="备注（可选）"
+                            style="flex:1 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
+                          />
+                          <button id="zotero-test-btn" class="arxiv-tool-btn" style="flex:0 0 auto; padding:6px 8px; font-size:12px; white-space:nowrap;">测试</button>
+                          <button id="zotero-add-btn" class="arxiv-tool-btn" style="flex:0 0 auto; padding:6px 8px; font-size:12px; white-space:nowrap;">新增</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div id="arxiv-search-section" class="arxiv-pane">
+                    <div style="font-weight:500; margin-bottom:4px;">订阅引用跟踪的论文</div>
+                    <div id="arxiv-tracked-list" style="font-size:12px; max-height:120px; overflow-y:auto; overflow-x:hidden; border:1px solid #eee; padding:6px; border-radius:4px; background:#fff; margin-bottom:8px;"></div>
+
+                    <div style="font-weight:500; margin-bottom:4px;">通过 Arxiv 搜索新增需跟踪的论文</div>
+                    <div style="display:flex; gap:4px; margin-bottom:4px; max-width:100%;">
+                      <input id="arxiv-search-input" type="text"
+                        placeholder="arxiv 链接或论文标题/关键词"
+                        style="flex:4 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
+                      />
+                      <input id="arxiv-track-alias-input" type="text"
+                        placeholder="备注（可选）"
+                        style="flex:2 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
+                      />
+                      <button id="arxiv-search-btn" class="arxiv-tool-btn" style="flex:1 1 0; min-width:0; padding:6px 4px; font-size:12px; white-space:nowrap;">搜索</button>
+                      <button id="arxiv-track-btn" class="arxiv-tool-btn" style="flex:1 1 0; min-width:0; padding:6px 4px; font-size:12px; white-space:nowrap;">加入后台</button>
+                    </div>
+                    <div id="arxiv-search-message"></div>
+                    <div id="arxiv-search-results"></div>
+                  </div>
+                </div>
+              `;
+              document.body.appendChild(overlay);
+            }
+
+            // 绑定事件（幂等）
+            const openBtn = document.getElementById('arxiv-search-open-btn');
+            const overlay = document.getElementById('arxiv-search-overlay');
+            const closeBtn = document.getElementById('arxiv-search-close-btn');
+            const input = document.getElementById('arxiv-search-input');
+            const searchBtn = document.getElementById('arxiv-search-btn');
+            const trackBtn = document.getElementById('arxiv-track-btn');
+            const msgEl = document.getElementById('arxiv-search-message');
+            const resultsEl = document.getElementById('arxiv-search-results');
+            const keywordsListEl = document.getElementById('arxiv-keywords-list');
+            const trackedListEl = document.getElementById('arxiv-tracked-list');
+            const keywordInput = document.getElementById('arxiv-keyword-input');
+            const keywordAddBtn = document.getElementById('arxiv-keyword-add-btn');
+            const keywordAliasInput = document.getElementById('arxiv-keyword-alias-input');
+            const zoteroListEl = document.getElementById('zotero-list');
+            const zoteroIdInput = document.getElementById('zotero-id-input');
+            const zoteroKeyInput = document.getElementById('zotero-key-input');
+            const zoteroAliasInput = document.getElementById('zotero-alias-input');
+            const zoteroAddBtn = document.getElementById('zotero-add-btn');
+            const trackAliasInput = document.getElementById('arxiv-track-alias-input');
+
+            let lastSearchTs = 0;
+
+            const renderKeywords = (items) => {
+              if (!keywordsListEl) return;
+              if (!items || !items.length) {
+                keywordsListEl.innerHTML = '<div style="color:#999;">暂无关键词订阅，可在下方新增。</div>';
+                return;
+              }
+              keywordsListEl.innerHTML = '';
+              items.forEach((item) => {
+                const row = document.createElement('div');
+                row.style.display = 'flex';
+                row.style.alignItems = 'center';
+                row.style.justifyContent = 'space-between';
+                row.style.marginBottom = '2px';
+                const alias = item.alias || '';
+                row.innerHTML = `
+                  <span>${alias ? '[' + escapeHtml(alias) + '] ' : ''}${escapeHtml(item.keyword || '')}</span>
+                  <button data-id="${item.id}" class="arxiv-keyword-del" style="border:none;background:none;color:#c00;font-size:11px;cursor:pointer;">删除</button>
+                `;
+                keywordsListEl.appendChild(row);
+              });
+              keywordsListEl.querySelectorAll('.arxiv-keyword-del').forEach((btn) => {
+                btn.addEventListener('click', async (e) => {
+                  const id = btn.getAttribute('data-id');
+                  if (!id) return;
+                  try {
+                    await fetch(`/api/subscriptions/keyword/${id}`, { method: 'DELETE' });
+                    loadSubscriptions();
+                  } catch (err) {
+                    console.error(err);
+                  }
+                });
+              });
+            };
+
+            const renderTracked = (items) => {
+              if (!trackedListEl) return;
+              if (!items || !items.length) {
+                trackedListEl.innerHTML = '<div style="color:#999;">暂无订阅论文，可通过下方搜索添加。</div>';
+                return;
+              }
+              trackedListEl.innerHTML = '';
+              items.forEach((item) => {
+                const row = document.createElement('div');
+                row.className = 'arxiv-tracked-item';
+                const allAuthors = item.authors || [];
+                const displayAuthors = allAuthors.slice(0, 5).join(', ') + (allAuthors.length > 5 ? ', ...' : '');
+                const alias = item.alias || '';
+                row.innerHTML = `
+                  <div style="flex:1; min-width:0;">
+                    <div style="font-size:14px; font-weight:500; margin-bottom:2px;">${alias ? '[' + escapeHtml(alias) + '] ' : ''}${escapeHtml(item.title || '')}</div>
+                    <div style="font-size:12px;color:#666;">${displayAuthors ? escapeHtml(displayAuthors) : ''}</div>
+                    <div style="font-size:12px;color:#666;">
+                      ${item.published ? '发表于：' + escapeHtml(item.published) : ''}
+                      ${item.arxiv_id ? (item.published ? ' ｜ ' : '') + 'arXiv: ' + escapeHtml(item.arxiv_id) : ''}
+                    </div>
+                  </div>
+                  <button data-id="${item.id}" class="arxiv-tracked-del" style="flex-shrink:0;border:none;background:none;color:#c00;font-size:11px;cursor:pointer;padding:2px 4px;">取消订阅</button>
+                `;
+                trackedListEl.appendChild(row);
+              });
+              trackedListEl.querySelectorAll('.arxiv-tracked-del').forEach((btn) => {
+                btn.addEventListener('click', async () => {
+                  const id = btn.getAttribute('data-id');
+                  if (!id) return;
+                  try {
+                    await fetch(`/api/arxiv_track/${id}`, { method: 'DELETE' });
+                    loadSubscriptions();
+                  } catch (err) {
+                    console.error(err);
+                  }
+                });
+              });
+            };
+
+            const loadSubscriptions = async () => {
+              try {
+                const res = await fetch('/api/subscriptions');
+                if (!res.ok) return;
+                const data = await res.json();
+                renderKeywords(data.keywords || []);
+                renderTracked(data.tracked_papers || []);
+                renderZotero(data.zotero_accounts || []);
+              } catch (e) {
+                console.error(e);
+              }
+            };
+
+            const openOverlay = () => {
+              overlay.style.display = 'flex';
+              msgEl.textContent = '提示：3 秒内只能搜索一次';
+              resultsEl.innerHTML = '';
+              loadSubscriptions();
+              setTimeout(() => input.focus(), 50);
+            };
+
+            const closeOverlay = () => {
+              overlay.style.display = 'none';
+            };
+
+            const renderResults = (items) => {
+              if (!items || !items.length) {
+                resultsEl.innerHTML = '<div style="font-size:12px; color:#999;">未找到相关结果，请尝试修改关键词。</div>';
+                return;
+              }
+              resultsEl.innerHTML = '';
+              items.forEach((item, idx) => {
+                const row = document.createElement('div');
+                row.className = 'arxiv-result-item';
+                if (idx === 0) row.classList.add('selected');
+                const allAuthors = item.authors || [];
+                const displayAuthors = allAuthors.slice(0, 5).join(', ') + (allAuthors.length > 5 ? ', ...' : '');
+                row.innerHTML = `
+                  <input type="radio" name="arxiv-choice" value="${item.arxiv_id}" ${idx === 0 ? 'checked' : ''} style="pointer-events:none;" />
+                  <div class="arxiv-result-meta">
+                    <div class="arxiv-result-title">${escapeHtml(item.title || '')}</div>
+                    <div class="arxiv-result-authors">${displayAuthors ? escapeHtml(displayAuthors) : ''}</div>
+                    <div class="arxiv-result-published">
+                      ${item.published ? '发表于：' + escapeHtml(item.published) : ''}
+                      ${item.arxiv_id ? (item.published ? ' ｜ ' : '') + 'arXiv: ' + escapeHtml(item.arxiv_id) : ''}
+                    </div>
+                  </div>
+                `;
+                // 点击整行选中
+                row.addEventListener('click', () => {
+                  // 移除所有selected样式
+                  resultsEl.querySelectorAll('.arxiv-result-item').forEach(r => r.classList.remove('selected'));
+                  // 添加当前selected样式
+                  row.classList.add('selected');
+                  // 选中对应的radio
+                  const radio = row.querySelector('input[type="radio"]');
+                  if (radio) radio.checked = true;
+                });
+                resultsEl.appendChild(row);
+              });
+            };
+
+            const doSearch = async () => {
+              const now = Date.now();
+              if (now - lastSearchTs < 3000) {
+                msgEl.textContent = '搜索过于频繁，请稍后再试（3 秒内只能搜索一次）';
+                return;
+              }
+              const q = (input.value || '').trim();
+              if (!q) {
+                msgEl.textContent = '请输入关键词或 arxiv 链接';
+                return;
+              }
+              lastSearchTs = now;
+              msgEl.textContent = '搜索中...';
+              resultsEl.innerHTML = '';
+
+              try {
+                const res = await fetch(`/api/arxiv_search?query=${encodeURIComponent(q)}`);
+                if (!res.ok) {
+                  const data = await res.json().catch(() => ({}));
+                  msgEl.textContent = data.detail || '搜索失败';
+                  return;
+                }
+                const data = await res.json();
+                renderResults(data.items || []);
+                msgEl.textContent = '搜索完成，可选择一篇论文并点击「加入后台」';
+              } catch (e) {
+                console.error(e);
+                msgEl.textContent = '搜索失败，请稍后重试';
+              }
+            };
+
+            const addKeyword = async () => {
+              const kw = (keywordInput.value || '').trim();
+              const alias = (keywordAliasInput.value || '').trim();
+              if (!kw) {
+                msgEl.textContent = '新增关键词不能为空';
+                return;
+              }
+              try {
+                const res = await fetch('/api/subscriptions/keyword', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({ keyword: kw, alias }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                  msgEl.textContent = data.detail || '新增关键词失败';
+                } else {
+                  keywordInput.value = '';
+                  keywordAliasInput.value = '';
+                  msgEl.textContent = '关键词已新增。';
+                  loadSubscriptions();
+                }
+              } catch (e) {
+                console.error(e);
+                msgEl.textContent = '新增关键词失败，请稍后重试';
+              }
+            };
+
+            const renderZotero = (items) => {
+              if (!zoteroListEl) return;
+              if (!items || !items.length) {
+                zoteroListEl.innerHTML = '<div style="color:#999;">暂无 Zotero 集成，可在下方新增。</div>';
+                return;
+              }
+              zoteroListEl.innerHTML = '';
+              items.forEach((item) => {
+                const row = document.createElement('div');
+                row.style.display = 'flex';
+                row.style.alignItems = 'center';
+                row.style.justifyContent = 'space-between';
+                row.style.marginBottom = '2px';
+                row.innerHTML = `
+                  <span style="font-size:12px;"><span style="font-weight:500;">${escapeHtml(item.alias || '(未命名)')}</span> ｜ ID: ${escapeHtml(item.zotero_id || '')}</span>
+                  <button data-id="${item.id}" class="zotero-del-btn" style="border:none;background:none;color:#c00;font-size:11px;cursor:pointer;">删除</button>
+                `;
+                zoteroListEl.appendChild(row);
+              });
+              zoteroListEl.querySelectorAll('.zotero-del-btn').forEach((btn) => {
+                btn.addEventListener('click', async () => {
+                  const id = btn.getAttribute('data-id');
+                  if (!id) return;
+                  try {
+                    await fetch(`/api/subscriptions/zotero/${id}`, { method: 'DELETE' });
+                    loadSubscriptions();
+                  } catch (err) {
+                    console.error(err);
+                  }
+                });
+              });
+            };
+
+            const addZotero = async () => {
+              const zid = (zoteroIdInput.value || '').trim();
+              const key = (zoteroKeyInput.value || '').trim();
+              const alias = (zoteroAliasInput.value || '').trim();
+              if (!zid || !key) {
+                msgEl.textContent = 'Zotero ID 和 Key 不能为空';
+                return;
+              }
+              try {
+                const res = await fetch('/api/subscriptions/zotero', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({ zotero_id: zid, api_key: key, alias }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                  msgEl.textContent = data.detail || '新增 Zotero 失败';
+                } else {
+                  msgEl.textContent = 'Zotero 已新增。';
+                  zoteroIdInput.value = '';
+                  zoteroKeyInput.value = '';
+                  zoteroAliasInput.value = '';
+                  loadSubscriptions();
+                }
+              } catch (e) {
+                console.error(e);
+                msgEl.textContent = '新增 Zotero 失败，请稍后重试';
+              }
+            };
+
+            const doTrack = async () => {
+              const checked = document.querySelector('input[name="arxiv-choice"]:checked');
+              if (!checked) {
+                msgEl.textContent = '请先在结果中选中一篇论文';
+                return;
+              }
+              const arxivId = checked.value;
+              const alias = (trackAliasInput && trackAliasInput.value || '').trim();
+              msgEl.textContent = '正在加入后台...';
+              try {
+                const res = await fetch('/api/arxiv_track', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({ arxiv_id: arxivId, alias }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                  msgEl.textContent = data.detail || '加入后台失败';
+                } else {
+                  msgEl.textContent = '已加入后台（如果之前已存在则会忽略）。';
+                  // 成功后刷新订阅论文列表
+                  loadSubscriptions();
+                  if (trackAliasInput) trackAliasInput.value = '';
+                }
+              } catch (e) {
+                console.error(e);
+                msgEl.textContent = '加入后台失败，请稍后重试';
+              }
+            };
+
+            if (openBtn && !openBtn._bound) {
+              openBtn._bound = true;
+              openBtn.addEventListener('click', openOverlay);
+            }
+            if (closeBtn && !closeBtn._bound) {
+              closeBtn._bound = true;
+              closeBtn.addEventListener('click', closeOverlay);
+            }
+            // 点击灰色遮罩区域也关闭窗口（按下时立即关闭，点击内部面板不关闭）
+            if (overlay && !overlay._boundClick) {
+              overlay._boundClick = true;
+              overlay.addEventListener('mousedown', (e) => {
+                if (e.target === overlay) {
+                  closeOverlay();
+                }
+              });
+            }
+            if (searchBtn && !searchBtn._bound) {
+              searchBtn._bound = true;
+              searchBtn.addEventListener('click', doSearch);
+            }
+            if (trackBtn && !trackBtn._bound) {
+              trackBtn._bound = true;
+              trackBtn.addEventListener('click', doTrack);
+            }
+            if (input && !input._bound) {
+              input._bound = true;
+              input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                  e.preventDefault();
+                  doSearch();
+                }
+              });
+            }
+            if (keywordAddBtn && !keywordAddBtn._bound) {
+              keywordAddBtn._bound = true;
+              keywordAddBtn.addEventListener('click', addKeyword);
+            }
+            if (keywordAliasInput && !keywordAliasInput._bound) {
+              keywordAliasInput._bound = true;
+              keywordAliasInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                  e.preventDefault();
+                  addKeyword();
+                }
+              });
+            }
+            if (zoteroAddBtn && !zoteroAddBtn._bound) {
+              zoteroAddBtn._bound = true;
+              zoteroAddBtn.addEventListener('click', addZotero);
+            }
+            if (zoteroAliasInput && !zoteroAliasInput._bound) {
+              zoteroAliasInput._bound = true;
+              zoteroAliasInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                  e.preventDefault();
+                  addZotero();
+                }
+              });
+            }
+          };
+
           // 4. 发送消息 (API)
           const sendMessage = async () => {
             const input = document.getElementById('user-input');
@@ -713,6 +1330,9 @@
                   console.error('Zotero meta update failed:', e);
                 }
             }, 1); // 延迟 800ms 执行，等待 DOM 渲染完毕
+
+            // F. 确保 Arxiv 搜索 UI 存在
+            ensureArxivSearchUI();
           });
         }
       ]
