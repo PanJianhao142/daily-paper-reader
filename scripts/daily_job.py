@@ -359,31 +359,64 @@ def process_single_paper(paper: dict, source: str | None = None, keywords: list[
     except Exception as e:
         print(f"[ERROR] 生成自动总结时出错（{md_file_name}）：{e}")
 
-    # 4. 更新 _sidebar.md (把新文章插到最前面)
+    # 4. 更新 _sidebar.md
+    #    目标结构按“Day 文件夹”分组，例如：
+    #    * Daily Papers
+    #      * 2025-12-19
+    #        * [Paper Title](202512/19/xxx-xxx)
     sidebar_path = os.path.join(DOCS_DIR, "_sidebar.md")
     # Docsify 中的路由 ID 与 paper_id 对应（包含年月日子目录）
-    new_entry = f"  * [{date} - {paper_title}]({paper_id})\n"
+    day_heading = f"  * {date}\n"
+    paper_entry = f"    * [{paper_title}]({paper_id})\n"
 
-    lines = []
+    lines: list[str] = []
     if os.path.exists(sidebar_path):
         with open(sidebar_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-    # 找到 "Daily Papers" 这一行，插在它后面
-    insert_idx = -1
+    # 确保存在 "* Daily Papers" 分组
+    daily_idx = -1
     for i, line in enumerate(lines):
-        if "Daily Papers" in line:
-            insert_idx = i + 1
+        if line.strip().startswith("* Daily Papers"):
+            daily_idx = i
             break
 
-    if insert_idx != -1:
-        lines.insert(insert_idx, new_entry)
-        with open(sidebar_path, "w", encoding="utf-8") as f:
-            f.writelines(lines)
+    # 如果原来没有 Daily Papers 区块，则初始化一个简单的结构
+    if daily_idx == -1:
+        # 尽量保留已有的“首页”入口；如果没有，就补一个
+        has_home = any("[首页]" in line for line in lines)
+        if not has_home:
+            lines.append("* [首页](/)\n")
+        lines.append("* Daily Papers\n")
+        daily_idx = len(lines) - 1
+
+    # 查找是否已经有当前日期的小节
+    day_idx = -1
+    for i in range(daily_idx + 1, len(lines)):
+        line = lines[i]
+        # 遇到下一个顶级分组（不以两个空格开头的 *）就结束本分组搜索
+        if line.startswith("* "):
+            break
+        if line == day_heading:
+            day_idx = i
+            break
+
+    if day_idx == -1:
+        # 当前日期还没有小节：在 Daily Papers 之后插入“当天小节 + 第一篇论文”
+        insert_idx = daily_idx + 1
+        lines.insert(insert_idx, day_heading)
+        lines.insert(insert_idx + 1, paper_entry)
     else:
-        # 如果没找到，就追加
-        with open(sidebar_path, "a", encoding="utf-8") as f:
-            f.write("\n* Daily Papers\n" + new_entry)
+        # 已有当天小节：把新论文插入到该日期下的最前面
+        insert_idx = day_idx + 1
+        # 跳过该日期下已有的论文条目（四个空格缩进）
+        while insert_idx < len(lines) and lines[insert_idx].startswith("    * "):
+            insert_idx += 1
+        # 新条目插在 day_heading 后面，使最新论文在最上方
+        lines.insert(day_idx + 1, paper_entry)
+
+    with open(sidebar_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
 
     print(f"[OK] 生成 {md_file_path}, {txt_file_path}")
 

@@ -5,6 +5,10 @@ window.$docsify = {
   // 文档内容与侧边栏都存放在 docs/ 下
   basePath: 'docs/', // 所有 Markdown 路由以 docs/ 为前缀
   loadSidebar: '_sidebar.md', // 在 basePath 下加载 _sidebar.md
+  // 始终使用根目录的 _sidebar.md，避免每个子目录都要放一份
+  alias: {
+    '/.*/_sidebar.md': '/_sidebar.md',
+  },
   subMaxLevel: 2,
 
   // --- 核心：注册自定义插件 ---
@@ -197,7 +201,141 @@ window.$docsify = {
         document.head.appendChild(meta);
       };
 
-      // 2. 渲染评论区的 HTML 结构
+      // 3. 侧边栏按“日期”折叠的辅助函数
+      const setupCollapsibleSidebarByDay = () => {
+        const nav = document.querySelector('.sidebar-nav');
+        if (!nav) return;
+
+        const STORAGE_KEY = 'dpr_sidebar_day_state_v1';
+        let state = {};
+        try {
+          const raw = window.localStorage
+            ? window.localStorage.getItem(STORAGE_KEY)
+            : null;
+          if (raw) {
+            state = JSON.parse(raw) || {};
+          }
+        } catch {
+          state = {};
+        }
+        // 先扫描一遍，找出所有日期和最新一天
+        const items = nav.querySelectorAll('li');
+        const dayItems = [];
+        let latestDay = '';
+
+        items.forEach((li) => {
+          if (li.dataset.dayToggleApplied === '1') return;
+
+          const childUl = li.querySelector(':scope > ul');
+          const directLink = li.querySelector(':scope > a');
+          if (!childUl || directLink) return;
+
+          // 取第一个文本节点作为标签文本
+          const first = li.firstChild;
+          if (!first || first.nodeType !== Node.TEXT_NODE) return;
+          const rawText = (first.textContent || '').trim();
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(rawText)) return;
+
+          dayItems.push({ li, text: rawText, first });
+          if (!latestDay || rawText > latestDay) {
+            latestDay = rawText;
+          }
+        });
+
+        if (!dayItems.length) return;
+
+        // 判断是否出现了“更新后的新一天”
+        const prevLatest =
+          typeof state.__latestDay === 'string' ? state.__latestDay : null;
+        const isNewDay =
+          latestDay &&
+          (!prevLatest || (typeof prevLatest === 'string' && latestDay > prevLatest));
+
+        // 如果出现了新的一天：清空历史状态，只保留最新一天的信息
+        if (isNewDay) {
+          state = { __latestDay: latestDay };
+        } else if (!prevLatest && latestDay) {
+          // 第一次使用，没有历史记录但也不算“新一天触发重置”的场景：记录当前最新日期
+          state.__latestDay = latestDay;
+        }
+
+        const hasAnyState =
+          !isNewDay && Object.keys(state).some((k) => k !== '__latestDay');
+
+        const ensureStateSaved = () => {
+          try {
+            if (window.localStorage) {
+              window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            }
+          } catch {
+            // ignore
+          }
+        };
+
+        // 第二遍：真正安装折叠行为
+        dayItems.forEach(({ li, text: rawText, first }) => {
+          if (li.dataset.dayToggleApplied === '1') return;
+
+          // 创建可点击的容器（包含日期文字和小箭头）
+          const wrapper = document.createElement('div');
+          wrapper.className = 'sidebar-day-toggle';
+
+          const labelSpan = document.createElement('span');
+          labelSpan.className = 'sidebar-day-toggle-label';
+          labelSpan.textContent = rawText;
+
+          const arrowSpan = document.createElement('span');
+          arrowSpan.className = 'sidebar-day-toggle-arrow';
+          arrowSpan.textContent = '▾';
+
+          wrapper.appendChild(labelSpan);
+          wrapper.appendChild(arrowSpan);
+
+          // 用 wrapper 替换原始文本节点
+          li.replaceChild(wrapper, first);
+
+          // 决定默认展开 / 收起：
+          // - 如果本次是“出现了新的一天”：清空历史，只展开最新一天；
+          // - 否则若已有用户偏好（state），按偏好来；
+          // - 否则（首次使用且没有历史）：仅“最新一天”展开，其余收起。
+          let collapsed;
+          if (isNewDay) {
+            collapsed = rawText === latestDay ? false : true;
+          } else if (hasAnyState) {
+            const saved = state[rawText];
+            if (saved === 'open') {
+              collapsed = false;
+            } else if (saved === 'closed') {
+              collapsed = true;
+            } else {
+              // 新出现的日期：默认跟最新一天策略走
+              collapsed = rawText === latestDay ? false : true;
+            }
+          } else {
+            collapsed = rawText === latestDay ? false : true;
+          }
+
+          if (collapsed) {
+            li.classList.add('sidebar-day-collapsed');
+            arrowSpan.textContent = '▸';
+          } else {
+            li.classList.remove('sidebar-day-collapsed');
+            arrowSpan.textContent = '▾';
+          }
+
+          wrapper.addEventListener('click', () => {
+            const collapsed = li.classList.toggle('sidebar-day-collapsed');
+            arrowSpan.textContent = collapsed ? '▸' : '▾';
+            state[rawText] = collapsed ? 'closed' : 'open';
+            state.__latestDay = latestDay;
+            ensureStateSaved();
+          });
+
+          li.dataset.dayToggleApplied = '1';
+        });
+      };
+
+      // 4. 渲染评论区的 HTML 结构
       const renderChatUI = () => {
         return `
           <div id="paper-chat-container">
@@ -213,7 +351,7 @@ window.$docsify = {
         `;
       };
 
-      // 3. 获取历史记录 (API)
+      // 5. 获取历史记录 (API)
       const loadHistory = async (paperId) => {
         try {
           const res = await fetch(
@@ -307,7 +445,7 @@ window.$docsify = {
         }
       };
 
-      // 4. 发送消息 (API)
+      // 6. 发送消息 (API)
       const sendMessage = async () => {
         const input = document.getElementById('user-input');
         const btn = document.getElementById('send-btn');
@@ -527,7 +665,12 @@ window.$docsify = {
         }
 
         // ----------------------------------------------------
-        // E. Zotero 元数据注入逻辑 (带延时和唤醒)
+        // E. 侧边栏按日期折叠
+        // ----------------------------------------------------
+        setupCollapsibleSidebarByDay();
+
+        // ----------------------------------------------------
+        // F. Zotero 元数据注入逻辑 (带延时和唤醒)
         // ----------------------------------------------------
         setTimeout(() => {
           try {
