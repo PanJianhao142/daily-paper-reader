@@ -761,47 +761,27 @@ window.$docsify = {
         }, 1); // 延迟执行，等待 DOM 渲染完毕
       });
       // ----------------------------------------------------
-      // H. 响应式侧边栏：窗口宽度小于指定阈值时自动收起
+      // H. 响应式侧边栏：窄屏首次加载时模拟点击按钮自动折叠一次
       // ----------------------------------------------------
-      const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1024; // 窗口宽度小于1024px时自动收起侧边栏
-      let isManualToggle = false; // 标记是否为用户手动切换
+      const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1024;
 
-      const handleSidebarAutoCollapse = () => {
-        if (isManualToggle) return; // 如果用户手动切换过，不自动调整
-        
-        const windowWidth = window.innerWidth;
+      const autoCollapseOnInitForNarrowScreen = () => {
+        const windowWidth =
+          window.innerWidth || document.documentElement.clientWidth || 0;
+        if (windowWidth >= SIDEBAR_AUTO_COLLAPSE_WIDTH) return;
+
         const body = document.body;
-        
-        if (windowWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH) {
-          // 窗口较小，自动收起侧边栏
-          if (!body.classList.contains('close')) {
-            body.classList.add('close');
-          }
-        } else {
-          // 窗口较大，自动展开侧边栏
-          if (body.classList.contains('close')) {
-            body.classList.remove('close');
-          }
-        }
+        // 已经是关闭状态就不再触发，避免反向展开
+        if (body.classList && body.classList.contains('close')) return;
+
+        const toggleBtn = document.querySelector('.sidebar-toggle');
+        if (!toggleBtn) return;
+
+        // 使用原生 click，让 Docsify 自己处理 close / transform 等细节
+        toggleBtn.click();
       };
 
-      // 监听窗口大小变化
-      window.addEventListener('resize', handleSidebarAutoCollapse);
-
-      // 初始化时检查一次
-      handleSidebarAutoCollapse();
-
-      // 监听侧边栏切换按钮的点击（用户手动切换时标记，避免自动调整干扰）
-      document.addEventListener('click', (e) => {
-        const toggleBtn = e.target.closest('.sidebar-toggle');
-        if (toggleBtn) {
-          isManualToggle = true;
-          // 3秒后重置标记，允许自动调整恢复
-          setTimeout(() => {
-            isManualToggle = false;
-            handleSidebarAutoCollapse();
-          }, 3000);
-        }
-      });    },
+      // 初始化时执行一次
+      autoCollapseOnInitForNarrowScreen();    },
   ],
 };
