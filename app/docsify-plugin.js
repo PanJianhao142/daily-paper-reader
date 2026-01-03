@@ -441,7 +441,35 @@ window.$docsify = {
         renderMathInEl,
       };
 
-      // 3. 侧边栏按“日期”折叠的辅助函数
+      // 3. 小屏下：点击侧边栏条目后自动收起侧边栏（全屏列表 → 正文）
+      const setupMobileSidebarAutoCloseOnItemClick = () => {
+        const nav = document.querySelector('.sidebar-nav');
+        if (!nav) return;
+        if (nav.dataset.mobileAutoCloseBound === '1') return;
+        nav.dataset.mobileAutoCloseBound = '1';
+
+        nav.addEventListener('click', (event) => {
+          const link = event.target.closest('a');
+          if (!link) return;
+
+          const href = link.getAttribute('href') || '';
+          // 只处理 Docsify 内部路由（#/ 开头），避免影响外链
+          if (!href.includes('#/')) return;
+
+          const width =
+            window.innerWidth || document.documentElement.clientWidth || 0;
+          if (width > 768) return;
+
+          // 让 Docsify 先完成路由跳转，再收起侧边栏
+          setTimeout(() => {
+            const body = document.body;
+            if (!body) return;
+            body.classList.remove('close'); // 移除表示“展开”的 close 类，隐藏侧边栏
+          }, 0);
+        });
+      };
+
+      // 4. 侧边栏按“日期”折叠的辅助函数
       const setupCollapsibleSidebarByDay = () => {
         const nav = document.querySelector('.sidebar-nav');
         if (!nav) return;
@@ -739,12 +767,17 @@ window.$docsify = {
         }
 
         // ----------------------------------------------------
-        // E. 侧边栏按日期折叠
+        // E. 小屏点击侧边栏条目后自动收起
+        // ----------------------------------------------------
+        setupMobileSidebarAutoCloseOnItemClick();
+
+        // ----------------------------------------------------
+        // F. 侧边栏按日期折叠
         // ----------------------------------------------------
         setupCollapsibleSidebarByDay();
 
         // ----------------------------------------------------
-        // F. 侧边栏已阅读论文状态高亮
+        // G. 侧边栏已阅读论文状态高亮
         // ----------------------------------------------------
         if (!isHomePage && paperId) {
           markSidebarReadState(paperId);
@@ -754,14 +787,14 @@ window.$docsify = {
         }
 
         // ----------------------------------------------------
-        // G. Zotero 元数据注入逻辑 (带延时和唤醒)
+        // H. Zotero 元数据注入逻辑 (带延时和唤醒)
         // ----------------------------------------------------
         setTimeout(() => {
           updateZoteroMetaFromPage(paperId, vm.route.file);
         }, 1); // 延迟执行，等待 DOM 渲染完毕
       });
       // ----------------------------------------------------
-      // H. 响应式侧边栏：窄屏首次加载时模拟点击按钮自动折叠一次
+      // I. 响应式侧边栏：窄屏首次加载时模拟点击按钮自动折叠一次
       // ----------------------------------------------------
       const SIDEBAR_AUTO_COLLAPSE_WIDTH = 1024;
 

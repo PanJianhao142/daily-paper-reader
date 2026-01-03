@@ -826,8 +826,16 @@ window.PrivateDiscussionChat = (function () {
     if (chatSidebarBtn && !chatSidebarBtn._bound) {
       chatSidebarBtn._bound = true;
       chatSidebarBtn.addEventListener('click', () => {
+        // 优先复用 Docsify 自带的 sidebar-toggle 行为
         const toggle = document.querySelector('.sidebar-toggle');
-        if (toggle) toggle.click();
+        if (toggle) {
+          toggle.click();
+          return;
+        }
+        // 兜底：直接切换 body.close，用于控制侧边栏展开/收起
+        // const body = document.body;
+        // if (!body) return;
+        // body.classList.toggle('close');
       });
     }
 
