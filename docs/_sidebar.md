@@ -1,6 +1,13 @@
 * [首页](/)
 * Daily Papers
   * 2025-12-31
+    * [Triangulation as an Acceptance Rule for Multilingual Mechanistic Interpretability](202512/31/2512.24842v1-triangulation-as-an-acceptance-rule-for-multilingual-mechanistic-interpretability)
+    * [Generation of NIR and Visible Structured Light Beams with a Mechanical Long-Period Fiber Grating](202512/31/2512.24846v1-generation-of-nir-and-visible-structured-light-beams-with-a-mechanical-long-period-fiber-grating)
+    * [Advances in Agentic AI: Back to the Future](202512/31/2512.24856v1-advances-in-agentic-ai-back-to-the-future)
+    * [OFL-SAM2: Prompt SAM2 with Online Few-shot Learner for Efficient Medical Image Segmentation](202512/31/2512.24861v1-ofl-sam2-prompt-sam2-with-online-few-shot-learner-for-efficient-medical-image-segmentation)
+    * [Variational phase-field modeling of fracture and fatigue in shape memory alloys](202512/31/2512.24871v1-variational-phase-field-modeling-of-fracture-and-fatigue-in-shape-memory-alloys)
+    * [Metallic solid-state hydrogen storage crystals achieved through chemical precompression under ambient conditions](202512/31/2512.24876v1-metallic-solid-state-hydrogen-storage-crystals-achieved-through-chemical-precompression-under-ambient-conditions)
+    * [Resolving the Origins and Pathways of Ionizing Radiation Escape with UV Integral Field Spectroscopy](202512/31/2512.24895v1-resolving-the-origins-and-pathways-of-ionizing-radiation-escape-with-uv-integral-field-spectroscopy)
     * [Self-Supervised Amortized Neural Operators for Optimal Control: Scaling Laws and Applications](202512/31/2512.24897v1-self-supervised-amortized-neural-operators-for-optimal-control-scaling-laws-and-applications)
     * [Spectral Graph Neural Networks for Cognitive Task Classification in fMRI Connectomes](202512/31/2512.24901v1-spectral-graph-neural-networks-for-cognitive-task-classification-in-fmri-connectomes)
     * [A Liouville-Weierstrass correspondence for Spacelike and Timelike Minimal Surfaces in $\mathbb{L}^3$](202512/31/2512.24908v1-a-liouville-weierstrass-correspondence-for-spacelike-and-timelike-minimal-surfaces-in-mathbbl3)

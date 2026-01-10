@@ -162,7 +162,7 @@ def get_keywords() -> list[str]:
                 if kw:
                     config_keywords.append(kw)
             elif isinstance(item, dict):
-                # 兼容对象形式：{ keyword: "...", alias: "..." }
+                # 兼容对象形式：{ keyword: "...", tag: "..." }
                 kw = (item.get("keyword") or "").strip()
                 if kw:
                     config_keywords.append(kw)

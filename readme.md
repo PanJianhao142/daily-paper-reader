@@ -35,7 +35,17 @@
 
 
 
+
+写技术的时候把原因和考虑写上：
+https://huggingface.co/Qwen/Qwen3-Reranker-0.6B  这里面有benchmark，比较了BGE-reranker-v2-m3 Jina-multilingual-reranker-v2-base gte-multilingual-reranker-base
+
+https://huggingface.co/Qwen/Qwen3-Embedding-0.6B embedding也用qwen3，0.6b体量下打败了BGE-M3 multilingual-e5-large-instruct
+
+
 #TODO
+[] 自动sync 不需要手动点sync同步上游代码
+[] 关键词模糊检索，先让大模型生成模糊关键词，再去匹配
+[] 云聊天记录，公共加密云数据库
 [] 会议的纳入
 [] 夜间模式
 [] 期刊的纳入

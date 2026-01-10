@@ -53,7 +53,7 @@ window.SubscriptionsManager = (function () {
                   style="flex:3 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
                 />
                 <input id="arxiv-keyword-alias-input" type="text"
-                  placeholder="备注（必填）"
+                  placeholder="标签（必填）"
                   required
                   style="flex:2 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
                 />
@@ -78,7 +78,7 @@ window.SubscriptionsManager = (function () {
                   style="flex:3 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
                 />
                 <input id="zotero-alias-input" type="text"
-                  placeholder="备注（必填）"
+                  placeholder="标签（必填）"
                   required
                   style="flex:1 1 0; min-width:0; padding:6px; border-radius:4px; border:1px solid #ccc; font-size:12px;"
                 />
@@ -386,7 +386,7 @@ window.SubscriptionsManager = (function () {
         const actionDiv = document.createElement('div');
         actionDiv.className = 'arxiv-result-action-area';
         actionDiv.innerHTML = `
-          <input type="text" class="arxiv-track-alias-input" placeholder="备注" required />
+          <input type="text" class="arxiv-track-alias-input" placeholder="标签" required />
           <button class="arxiv-track-btn arxiv-tool-btn">加入后台</button>
         `;
         row.appendChild(actionDiv);
@@ -408,7 +408,7 @@ window.SubscriptionsManager = (function () {
         const actionDiv = document.createElement('div');
         actionDiv.className = 'arxiv-result-action-area';
         actionDiv.innerHTML = `
-          <input type="text" class="arxiv-track-alias-input" placeholder="备注" required />
+          <input type="text" class="arxiv-track-alias-input" placeholder="标签" required />
           <button class="arxiv-track-btn arxiv-tool-btn">加入后台</button>
         `;
         row.appendChild(actionDiv);
@@ -484,9 +484,9 @@ window.SubscriptionsManager = (function () {
     const trackAliasInput = selectedRow
       ? selectedRow.querySelector('.arxiv-track-alias-input')
       : null;
-    const alias = ((trackAliasInput && trackAliasInput.value) || '').trim();
-    if (!alias) {
-      msgEl.textContent = '备注为必填项';
+    const tag = ((trackAliasInput && trackAliasInput.value) || '').trim();
+    if (!tag) {
+      msgEl.textContent = '标签为必填项';
       msgEl.style.color = '#c00';
       return;
     }
@@ -512,7 +512,7 @@ window.SubscriptionsManager = (function () {
 
       const base = {
         arxiv_id: arxivId,
-        alias,
+        tag,
       };
       if (selectedMeta) {
         base.title = selectedMeta.title || '';
@@ -540,16 +540,42 @@ window.SubscriptionsManager = (function () {
       );
       if (reChecked) {
         const selRow = reChecked.closest('.arxiv-result-item');
-        const aliasInput = selRow
+        const tagInput = selRow
           ? selRow.querySelector('.arxiv-track-alias-input')
           : null;
-        if (aliasInput) aliasInput.value = '';
+        if (tagInput) tagInput.value = '';
       }
     } catch (e) {
       console.error(e);
       msgEl.textContent = '加入后台失败，请稍后重试';
       msgEl.style.color = '#c00';
     }
+  };
+
+  const normalizeSubscriptions = (config) => {
+    const next = config || {};
+    if (!next.subscriptions) return next;
+    const subs = next.subscriptions;
+    const normalizeList = (list) =>
+      list.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          return item;
+        }
+        if (!('alias' in item) && !('tag' in item)) {
+          return item;
+        }
+        const tag = item.tag || item.alias || '';
+        const copy = Object.assign({}, item);
+        if (tag) copy.tag = tag;
+        if ('alias' in copy) delete copy.alias;
+        return copy;
+      });
+
+    if (Array.isArray(subs.keywords)) subs.keywords = normalizeList(subs.keywords);
+    if (Array.isArray(subs.llm_queries)) subs.llm_queries = normalizeList(subs.llm_queries);
+    if (Array.isArray(subs.tracked_papers)) subs.tracked_papers = normalizeList(subs.tracked_papers);
+    next.subscriptions = subs;
+    return next;
   };
 
   const renderFromDraft = () => {
@@ -564,12 +590,12 @@ window.SubscriptionsManager = (function () {
       window.SubscriptionsKeywords.render(
         keywords.map((item, idx) => {
           if (typeof item === 'string') {
-            return { id: idx, keyword: item, alias: '' };
+            return { id: idx, keyword: item, tag: '' };
           }
           return {
             id: idx,
             keyword: item.keyword || '',
-            alias: item.alias || '',
+            tag: item.tag || item.alias || '',
           };
         }),
       );
@@ -580,7 +606,7 @@ window.SubscriptionsManager = (function () {
         trackedPapers.map((item, idx) => ({
           id: idx,
           arxiv_id: item.arxiv_id || '',
-          alias: item.alias || '',
+          tag: item.tag || item.alias || '',
           title: item.title || '',
           authors: item.authors || [],
           published: item.published || '',
@@ -593,7 +619,7 @@ window.SubscriptionsManager = (function () {
         llmQueries.map((item, idx) => ({
           id: idx,
           zotero_id: item.query || '',
-          alias: item.alias || '',
+          tag: item.tag || item.alias || '',
         })),
       );
     }
@@ -607,7 +633,7 @@ window.SubscriptionsManager = (function () {
       }
       const { config } = await window.SubscriptionsGithubToken.loadConfig();
       // 将远端配置作为本地草稿的基准
-      draftConfig = config || {};
+      draftConfig = normalizeSubscriptions(config || {});
       renderFromDraft();
 
       // 每次成功从远端加载后，将“未保存变更”标记清零

@@ -1,5 +1,5 @@
 // 智能订阅管理模块（原 Zotero）
-// 负责：渲染智能订阅列表（query + 备注）、增加/删除订阅
+// 负责：渲染智能订阅列表（query + 标签）、增加/删除订阅
 
 window.SubscriptionsZotero = (function () {
   let zoteroListEl = null;
@@ -33,12 +33,12 @@ window.SubscriptionsZotero = (function () {
       row.style.alignItems = 'center';
       row.style.justifyContent = 'space-between';
       row.style.marginBottom = '2px';
-      const alias = item.alias || '';
+      const tag = item.tag || item.alias || '';
       row.innerHTML = `
         <span>${
-          alias
+          tag
             ? '<span class="tag-label tag-blue">' +
-              escapeHtml(alias) +
+              escapeHtml(tag) +
               '</span>'
             : ''
         }${escapeHtml(item.zotero_id || '')}</span>
@@ -90,7 +90,7 @@ window.SubscriptionsZotero = (function () {
     if (!zoteroIdInput || !zoteroAliasInput) return;
 
     const query = (zoteroIdInput.value || '').trim();
-    const alias = (zoteroAliasInput.value || '').trim();
+    const tag = (zoteroAliasInput.value || '').trim();
     if (!query) {
       if (msgEl) {
         msgEl.textContent = '查询语句不能为空';
@@ -98,9 +98,9 @@ window.SubscriptionsZotero = (function () {
       }
       return;
     }
-    if (!alias) {
+    if (!tag) {
       if (msgEl) {
-        msgEl.textContent = '备注为必填项';
+        msgEl.textContent = '标签为必填项';
         msgEl.style.color = '#c00';
       }
       return;
@@ -121,7 +121,7 @@ window.SubscriptionsZotero = (function () {
           : [];
         list.push({
           query,
-          alias,
+          tag,
         });
         subs.llm_queries = list;
         next.subscriptions = subs;

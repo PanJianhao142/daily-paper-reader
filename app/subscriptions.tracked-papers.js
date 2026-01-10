@@ -31,13 +31,13 @@ window.SubscriptionsTrackedPapers = (function () {
       const displayAuthors =
         allAuthors.slice(0, 5).join(', ') +
         (allAuthors.length > 5 ? ', ...' : '');
-      const alias = item.alias || '';
+      const tag = item.tag || item.alias || '';
       row.innerHTML = `
         <div style="flex:1; min-width:0;">
           <div style="font-size:14px; font-weight:500; margin-bottom:2px;">${
-            alias
+            tag
               ? '<span class="tag-label tag-pink">' +
-                escapeHtml(alias) +
+                escapeHtml(tag) +
                 '</span>'
               : ''
           }${escapeHtml(item.title || '')}</div>

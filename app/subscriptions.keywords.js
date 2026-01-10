@@ -89,12 +89,12 @@ window.SubscriptionsKeywords = (function () {
       row.style.alignItems = 'center';
       row.style.justifyContent = 'space-between';
       row.style.marginBottom = '2px';
-      const alias = item.alias || '';
+      const tag = item.tag || item.alias || '';
       row.innerHTML = `
         <span>${
-          alias
+          tag
             ? '<span class="tag-label tag-green">' +
-              escapeHtml(alias) +
+              escapeHtml(tag) +
               '</span>'
             : ''
         }${escapeHtml(item.keyword || '')}</span>
@@ -149,7 +149,7 @@ window.SubscriptionsKeywords = (function () {
   const addKeyword = async () => {
     if (!keywordInput || !keywordAliasInput) return;
     const keyword = (keywordInput.value || '').trim();
-    const alias = (keywordAliasInput.value || '').trim();
+    const tag = (keywordAliasInput.value || '').trim();
     if (!keyword) {
       if (msgEl) {
         msgEl.textContent = '关键词不能为空';
@@ -174,9 +174,9 @@ window.SubscriptionsKeywords = (function () {
       keyword.includes('||') ||
       keyword.includes('&&') ||
       keyword.toLowerCase().includes('author:');
-    if (!alias) {
+    if (!tag) {
       if (msgEl) {
-        msgEl.textContent = '备注为必填项';
+        msgEl.textContent = '标签为必填项';
         msgEl.style.color = '#c00';
       }
       return;
@@ -194,7 +194,7 @@ window.SubscriptionsKeywords = (function () {
         if (!next.subscriptions) next.subscriptions = {};
         const subs = next.subscriptions;
         const list = Array.isArray(subs.keywords) ? subs.keywords.slice() : [];
-        list.push({ keyword, alias });
+        list.push({ keyword, tag });
         subs.keywords = list;
         next.subscriptions = subs;
         return next;

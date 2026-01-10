@@ -1,0 +1,220 @@
+#!/usr/bin/env python
+# 基于 RRF (Reciprocal Rank Fusion) 融合 BM25 + Embedding 的召回结果：
+# 1. 读取 BM25 与 Embedding 的筛选 JSON；
+# 2. 对每个查询按排名做 RRF 融合并去重；
+# 3. 截断 Top N，并为这些论文打上 tag；
+# 4. 输出融合后的 JSON，供下一步 reranker 使用。
+
+import argparse
+import json
+import os
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Tuple
+
+
+SCRIPT_DIR = os.path.dirname(__file__)
+ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+FILTERED_DIR = os.path.join(ROOT_DIR, "archive", "filtered")
+
+
+def load_json(path: str) -> Dict[str, Any]:
+  if not os.path.exists(path):
+    raise FileNotFoundError(f"找不到文件：{path}")
+  with open(path, "r", encoding="utf-8") as f:
+    return json.load(f)
+
+
+def save_json(data: Dict[str, Any], path: str) -> None:
+  os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+  with open(path, "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+  print(f"[INFO] 已写入融合结果：{path}")
+
+
+def make_query_key(q: Dict[str, Any]) -> Tuple[str, str, str, str]:
+  return (
+    str(q.get("type") or ""),
+    str(q.get("tag") or ""),
+    str(q.get("paper_tag") or ""),
+    str(q.get("query_text") or ""),
+  )
+
+
+def normalize_rank_list(sim_scores: Any) -> List[Tuple[str, int]]:
+  """从 sim_scores 中提取 (paper_id, rank) 列表。"""
+  if not isinstance(sim_scores, dict) or not sim_scores:
+    return []
+
+  items: List[Tuple[str, float | None, int | None]] = []
+  for pid, meta in sim_scores.items():
+    if isinstance(meta, dict):
+      score = meta.get("score")
+      rank = meta.get("rank")
+    else:
+      score = None
+      rank = None
+    items.append((str(pid), float(score) if score is not None else None, int(rank) if rank is not None else None))
+
+  has_rank = all(r is not None for _, _, r in items)
+  if has_rank:
+    items_sorted = sorted(items, key=lambda x: x[2])
+  else:
+    items_sorted = sorted(items, key=lambda x: (x[1] is None, -(x[1] or 0.0)))
+
+  rank_list: List[Tuple[str, int]] = []
+  for idx, (pid, _score, _rank) in enumerate(items_sorted, start=1):
+    rank_list.append((pid, idx))
+  return rank_list
+
+
+def rrf_fuse(
+  bm25_ranks: List[Tuple[str, int]],
+  emb_ranks: List[Tuple[str, int]],
+  rrf_k: int,
+) -> Dict[str, float]:
+  score_map: Dict[str, float] = {}
+
+  for pid, rank in bm25_ranks:
+    score_map[pid] = score_map.get(pid, 0.0) + 1.0 / (rrf_k + rank)
+  for pid, rank in emb_ranks:
+    score_map[pid] = score_map.get(pid, 0.0) + 1.0 / (rrf_k + rank)
+
+  return score_map
+
+
+def build_paper_map(papers_list: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+  id_to_paper: Dict[str, Dict[str, Any]] = {}
+  for p in papers_list:
+    pid = str(p.get("id") or "").strip()
+    if not pid:
+      continue
+    if pid not in id_to_paper:
+      copied = dict(p)
+      copied["tags"] = set(p.get("tags") or [])
+      id_to_paper[pid] = copied
+    else:
+      id_to_paper[pid]["tags"].update(p.get("tags") or [])
+  return id_to_paper
+
+
+def main() -> None:
+  parser = argparse.ArgumentParser(
+    description="步骤 2.3：使用 RRF 融合 BM25 + Embedding 的召回结果并打 tag。",
+  )
+
+  today_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+  parser.add_argument(
+    "--bm25-input",
+    type=str,
+    default=os.path.join(FILTERED_DIR, f"arxiv_papers_{today_str}.bm25.json"),
+    help="BM25 召回结果 JSON（默认 archive/filtered/arxiv_papers_YYYYMMDD.bm25.json）。",
+  )
+  parser.add_argument(
+    "--embedding-input",
+    type=str,
+    default=os.path.join(FILTERED_DIR, f"arxiv_papers_{today_str}.embedding.json"),
+    help="Embedding 召回结果 JSON（默认 archive/filtered/arxiv_papers_YYYYMMDD.embedding.json）。",
+  )
+  parser.add_argument(
+    "--output",
+    type=str,
+    default=os.path.join(FILTERED_DIR, f"arxiv_papers_{today_str}.json"),
+    help="融合后的输出 JSON（默认 archive/filtered/arxiv_papers_YYYYMMDD.json）。",
+  )
+  parser.add_argument(
+    "--top-n",
+    type=int,
+    default=200,
+    help="RRF 融合后保留的 Top N（默认 200）。",
+  )
+  parser.add_argument(
+    "--rrf-k",
+    type=int,
+    default=60,
+    help="RRF 的 k 参数（默认 60）。",
+  )
+
+  args = parser.parse_args()
+
+  bm25_path = args.bm25_input
+  if not os.path.isabs(bm25_path):
+    bm25_path = os.path.abspath(os.path.join(ROOT_DIR, bm25_path))
+
+  emb_path = args.embedding_input
+  if not os.path.isabs(emb_path):
+    emb_path = os.path.abspath(os.path.join(ROOT_DIR, emb_path))
+
+  out_path = args.output
+  if not os.path.isabs(out_path):
+    out_path = os.path.abspath(os.path.join(ROOT_DIR, out_path))
+
+  bm25_data = load_json(bm25_path)
+  emb_data = load_json(emb_path)
+
+  bm25_queries = bm25_data.get("queries") or []
+  emb_queries = emb_data.get("queries") or []
+
+  bm25_map = {make_query_key(q): q for q in bm25_queries}
+  emb_map = {make_query_key(q): q for q in emb_queries}
+
+  all_keys = list({*bm25_map.keys(), *emb_map.keys()})
+
+  id_to_paper = build_paper_map(bm25_data.get("papers") or [])
+  id_to_paper.update(build_paper_map(emb_data.get("papers") or []))
+
+  fused_queries: List[Dict[str, Any]] = []
+
+  for key in all_keys:
+    bm25_q = bm25_map.get(key) or {}
+    emb_q = emb_map.get(key) or {}
+
+    q_type, q_tag, q_paper_tag, q_text = key
+    if not q_text:
+      continue
+
+    bm25_ranks = normalize_rank_list(bm25_q.get("sim_scores"))
+    emb_ranks = normalize_rank_list(emb_q.get("sim_scores"))
+
+    score_map = rrf_fuse(bm25_ranks, emb_ranks, args.rrf_k)
+    if not score_map:
+      continue
+
+    sorted_items = sorted(score_map.items(), key=lambda x: x[1], reverse=True)
+    top_items = sorted_items[: args.top_n]
+
+    sim_scores: Dict[str, Dict[str, float | int]] = {}
+    for rank_idx, (pid, score) in enumerate(top_items, start=1):
+      sim_scores[pid] = {"score": float(score), "rank": rank_idx}
+    if q_paper_tag and pid in id_to_paper:
+      id_to_paper[pid]["tags"].add(q_paper_tag)
+
+    fused_queries.append(
+      {
+        "type": q_type,
+        "tag": q_tag,
+        "paper_tag": q_paper_tag,
+        "query_text": q_text,
+        "sim_scores": sim_scores,
+      }
+    )
+
+  tagged_papers = []
+  for p in id_to_paper.values():
+    tags = p.get("tags") or set()
+    if isinstance(tags, set):
+      p["tags"] = sorted(tags)
+    if p.get("tags"):
+      tagged_papers.append(p)
+
+  payload = {
+    "top_k": args.top_n,
+    "generated_at": datetime.now(timezone.utc).isoformat(),
+    "papers": tagged_papers,
+    "queries": fused_queries,
+  }
+
+  save_json(payload, out_path)
+
+
+if __name__ == "__main__":
+  main()
