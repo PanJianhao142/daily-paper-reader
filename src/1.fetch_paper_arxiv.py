@@ -4,7 +4,7 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
-# 项目根目录（当前脚本位于 scripts/ 下）
+# 项目根目录（当前脚本位于 src/ 下）
 SCRIPT_DIR = os.path.dirname(__file__)
 ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 CONFIG_FILE = os.path.join(ROOT_DIR, "config.yaml")

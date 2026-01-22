@@ -54,56 +54,44 @@ jobs:
           import re
           lines = open("requirements.txt", "r", encoding="utf-8").read().splitlines()
           lines = [l for l in lines if l.strip() and not re.match(r"^sqlite3\\b", l)]
-          open("/tmp/req.txt", "w", encoding="utf-8").write("\\n".join(lines))
+          open("/tmp/req.txt", "w", encoding="utf-8").write("\n".join(lines))
           PY
           python -m pip install --upgrade pip
           python -m pip install -r /tmp/req.txt
 
-      - name: Step 0 (optional) enrich config
-        if: ${{ github.event.inputs.run_enrich == 'true' }}
+      - name: Run pipeline
         run: |
-          python scripts/0.enrich_config_queries.py
+          RUN_ENRICH="${{ github.event.inputs.run_enrich }}"
+          ARGS=""
+          if [ "$RUN_ENRICH" = "true" ]; then
+            ARGS="--run-enrich"
+          fi
+          python src/main.py $ARGS --embedding-device cpu --embedding-batch-size 8
 
-      - name: Step 1 fetch arxiv
+      - name: Cleanup non-recommend archives
         run: |
-          python scripts/1.fetch_paper_arxiv.py
-
-      - name: Step 2.1 BM25
-        run: |
-          python scripts/2.1.retrieval_papers_bm25.py
-
-      - name: Step 2.2 Embedding
-        run: |
-          python scripts/2.2.retrieval_papers_embedding.py --device cpu --batch-size 8
-
-      - name: Step 2.3 RRF
-        run: |
-          python scripts/2.3.retrieval_papers_rrf.py
-
-      - name: Step 3 Rerank
-        run: |
-          python scripts/3.rank_papers.py
-
-      - name: Step 4 LLM refine
-        run: |
-          python scripts/4.llm_refine_papers.py
-
-      - name: Step 5 Select
-        run: |
-          echo "::group::Step 5 - select papers"
-          python scripts/5.select_papers.py
-          echo "::endgroup::"
-
-      - name: Step 6 Generate Docs
-        run: |
-          echo "::group::Step 6 - generate docs"
-          python scripts/6.generate_docs.py
-          echo "::endgroup::"
+          find archive -mindepth 2 -maxdepth 2 -type d \( -name raw -o -name filtered -o -name rank \) -exec rm -rf {} +
 
       - name: Commit results
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add archive config.yaml
-          git diff --cached --quiet || git commit -m "chore: daily pipeline"
+
+          shopt -s nullglob
+          paths=(docs)
+          if [ -f archive/arxiv_seen.json ]; then
+            paths+=(archive/arxiv_seen.json)
+          fi
+          if [ -f archive/crawl_state.json ]; then
+            paths+=(archive/crawl_state.json)
+          fi
+          if [ -f archive/carryover.json ]; then
+            paths+=(archive/carryover.json)
+          fi
+          for d in archive/*/recommend; do
+            paths+=("$d")
+          done
+
+          git add "${paths[@]}"
+          git diff --cached --quiet || git commit -m "[chore] daily pipeline"
           git push

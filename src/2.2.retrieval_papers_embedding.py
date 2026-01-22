@@ -18,7 +18,7 @@ import numpy as np
 from filter import EmbeddingCoarseFilter, encode_queries
 
 
-# 当前脚本位于 scripts/ 下，config.yaml 在上一级目录
+# 当前脚本位于 src/ 下，config.yaml 在上一级目录
 SCRIPT_DIR = os.path.dirname(__file__)
 CONFIG_FILE = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "config.yaml"))
 ROOT_DIR = os.path.dirname(CONFIG_FILE)
