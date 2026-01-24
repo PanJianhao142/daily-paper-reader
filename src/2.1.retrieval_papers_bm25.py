@@ -513,12 +513,12 @@ def main() -> None:
     process_single_file(input_path, output_path)
   else:
     if not os.path.isdir(RAW_DIR):
-      log(f"[ERROR] 原始目录不存在：{RAW_DIR}")
+      log(f"[INFO] 原始目录不存在：{RAW_DIR}（今天没有新论文，将跳过 BM25 检索）")
       return
 
     raw_files = sorted(f for f in os.listdir(RAW_DIR) if f.lower().endswith(".json"))
     if not raw_files:
-      log(f"[ERROR] 在 {RAW_DIR} 下未找到任何 .json 原始文件。")
+      log(f"[INFO] 在 {RAW_DIR} 下未找到任何 .json 原始文件。（今天没有新论文，将跳过 BM25 检索）")
       return
 
     log(f"[INFO] 批量模式：将在 {RAW_DIR} 下处理 {len(raw_files)} 个 JSON 文件。")

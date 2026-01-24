@@ -294,6 +294,11 @@ def process_file(
     filter_model: str,
     max_output_tokens: int,
 ) -> None:
+    # 检查输入文件是否存在，如果不存在说明今天没有新论文，优雅退出
+    if not os.path.exists(input_path):
+        log(f"[INFO] 输入文件不存在：{input_path}（今天没有新论文，将跳过 LLM refine）")
+        return
+
     data = load_json(input_path)
     papers = data.get("papers") or []
     queries = data.get("queries") or []

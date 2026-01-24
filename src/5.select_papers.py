@@ -685,12 +685,18 @@ def main() -> None:
     if not modes:
         raise ValueError("modes must include at least one of: standard, extend, spark")
 
-    data = load_json(input_path)
-    papers = data.get("papers") or []
-    llm_ranked = data.get("llm_ranked") or []
+    # 检查输入文件是否存在，如果不存在则只使用 carryover
+    if not os.path.exists(input_path):
+        log(f"[INFO] 输入文件不存在：{input_path}（今天没有新论文，将只使用 carryover）")
+        papers = []
+        llm_ranked = []
+    else:
+        data = load_json(input_path)
+        papers = data.get("papers") or []
+        llm_ranked = data.get("llm_ranked") or []
+
     if not papers or not llm_ranked:
-        log("[WARN] missing papers or llm_ranked, skip.")
-        return
+        log("[INFO] 今天没有新论文，将只使用 carryover 生成推荐。")
 
     tag_count, tag_list = load_config_tag_count()
     log(f"[INFO] config tags={tag_count} | {tag_list}")
