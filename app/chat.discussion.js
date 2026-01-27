@@ -5,6 +5,12 @@ window.PrivateDiscussionChat = (function () {
   const CHAT_STORE_NAME = 'paper_chats';
   const CHAT_MODEL_PREF_KEY = 'dpr_chat_model_preference_v1';
 
+  // 最近提问记录（仅本机 localStorage，从现在开始记录，不回溯历史聊天内容）
+  const QUESTION_RECENT_KEY = 'dpr_chat_recent_questions_v1';
+  const QUESTION_PINNED_KEY = 'dpr_chat_pinned_questions_v1';
+  const MAX_RECENT_QUESTIONS = 10; // 展示与保存都只保留最近 10 个（用户诉求）
+  const MAX_PINNED_QUESTIONS = 50; // 防止无限增长
+
   // 读取用户偏好的 Chat 模型名称（跨页面生效）
   const loadPreferredModelName = () => {
     try {
@@ -171,8 +177,10 @@ window.PrivateDiscussionChat = (function () {
         </div>
         <div class="input-area">
           <textarea id="user-input" rows="3" placeholder="针对这篇论文提问，仅自己可见..."></textarea>
+          <button id="chat-questions-toggle-btn" class="chat-questions-toggle-btn" type="button" title="最近提问">🕘</button>
           <button id="send-btn">发送</button>
         </div>
+        <div id="chat-questions-panel" class="chat-questions-panel" style="display:none"></div>
         <div class="chat-footer">
           <div class="chat-footer-controls">
             <button id="chat-sidebar-toggle-btn" class="chat-footer-icon-btn" type="button">☰</button>
@@ -183,6 +191,293 @@ window.PrivateDiscussionChat = (function () {
         </div>
       </div>
     `;
+  };
+
+  const safeLoadList = (key) => {
+    try {
+      if (!window.localStorage) return [];
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const safeSaveList = (key, list) => {
+    try {
+      if (!window.localStorage) return;
+      window.localStorage.setItem(key, JSON.stringify(list || []));
+    } catch {
+      // ignore
+    }
+  };
+
+  const normalizeQuestion = (text) => {
+    const s = String(text || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!s) return '';
+    // 防止异常超长内容把 UI 撑爆
+    if (s.length > 500) return s.slice(0, 500);
+    return s;
+  };
+
+  const getPinnedQuestions = () => safeLoadList(QUESTION_PINNED_KEY);
+  const setPinnedQuestions = (list) =>
+    safeSaveList(QUESTION_PINNED_KEY, (list || []).slice(0, MAX_PINNED_QUESTIONS));
+
+  const getRecentQuestions = () => safeLoadList(QUESTION_RECENT_KEY);
+  const setRecentQuestions = (list) =>
+    safeSaveList(QUESTION_RECENT_KEY, (list || []).slice(0, MAX_RECENT_QUESTIONS));
+
+  const recordRecentQuestion = (question) => {
+    const q = normalizeQuestion(question);
+    if (!q) return;
+
+    const pinned = getPinnedQuestions();
+    // 已钉住的就不再重复进入 recent（避免重复）
+    if (pinned.includes(q)) return;
+
+    const recent = getRecentQuestions().filter((x) => x !== q);
+    recent.unshift(q);
+    setRecentQuestions(recent);
+  };
+
+  const togglePinQuestion = (question) => {
+    const q = normalizeQuestion(question);
+    if (!q) return;
+    const pinned = getPinnedQuestions();
+    const idx = pinned.indexOf(q);
+    if (idx >= 0) {
+      pinned.splice(idx, 1);
+      setPinnedQuestions(pinned);
+      return;
+    }
+
+    pinned.unshift(q);
+    setPinnedQuestions(pinned);
+    // 钉住后从 recent 移除（保证“置顶 + recent 仍展示 10 个其它问题”）
+    const recent = getRecentQuestions().filter((x) => x !== q);
+    setRecentQuestions(recent);
+  };
+
+  const getChatRoot = () => {
+    const el = document.getElementById('paper-chat-container');
+    return el || null;
+  };
+
+  const getQuestionsPanel = (root) => {
+    const r = root || getChatRoot();
+    if (!r) return null;
+    return r.querySelector('#chat-questions-panel');
+  };
+
+  const closeQuestionsPanel = (root) => {
+    const panel = getQuestionsPanel(root);
+    if (!panel) return;
+    panel.style.display = 'none';
+  };
+
+  const isQuestionsPanelOpen = (root) => {
+    const panel = getQuestionsPanel(root);
+    if (!panel) return false;
+    return panel.style.display !== 'none';
+  };
+
+  const renderQuestionsPanel = (root) => {
+    const panel = getQuestionsPanel(root);
+    if (!panel) return;
+    panel.innerHTML = '';
+
+    const pinned = getPinnedQuestions();
+    const recent = getRecentQuestions().filter((q) => !pinned.includes(q));
+
+    const header = document.createElement('div');
+    header.className = 'chat-q-header';
+
+    const title = document.createElement('div');
+    title.className = 'chat-q-title';
+    title.textContent = '最近提问';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.id = 'chat-q-close';
+    closeBtn.className = 'chat-q-close';
+    closeBtn.type = 'button';
+    closeBtn.setAttribute('aria-label', '关闭');
+    closeBtn.textContent = '✕';
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+    panel.appendChild(header);
+
+    const buildSection = (label, items, pinnedFlag) => {
+      const sec = document.createElement('div');
+      sec.className = 'chat-q-section';
+
+      const secTitle = document.createElement('div');
+      secTitle.className = 'chat-q-section-title';
+      secTitle.textContent = label;
+      sec.appendChild(secTitle);
+
+      const list = document.createElement('div');
+      list.className = 'chat-q-list';
+
+      if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'chat-q-empty';
+        empty.textContent = pinnedFlag
+          ? '暂无钉住的问题'
+          : '暂无最近问题（从现在开始记录）';
+        list.appendChild(empty);
+      } else {
+        items.forEach((q) => {
+          const item = document.createElement('div');
+          item.className = `chat-q-item${pinnedFlag ? ' is-pinned' : ''}`;
+          item.dataset.q = q;
+
+          const useBtn = document.createElement('button');
+          useBtn.className = 'chat-q-use';
+          useBtn.type = 'button';
+          useBtn.title = '填入输入框';
+          useBtn.textContent = q;
+
+          const pinBtn = document.createElement('button');
+          pinBtn.className = 'chat-q-pin';
+          pinBtn.type = 'button';
+          pinBtn.title = pinnedFlag ? '取消钉住' : '钉住';
+          pinBtn.textContent = pinnedFlag ? '📌' : '📍';
+
+          item.appendChild(useBtn);
+          item.appendChild(pinBtn);
+          list.appendChild(item);
+        });
+      }
+
+      sec.appendChild(list);
+      panel.appendChild(sec);
+    };
+
+    buildSection('📌 已钉住', pinned, true);
+    buildSection('🕘 最近 10 条', recent.slice(0, MAX_RECENT_QUESTIONS), false);
+  };
+
+  const openQuestionsPanel = (root) => {
+    const panel = getQuestionsPanel(root);
+    if (!panel) return;
+    renderQuestionsPanel(root);
+    panel.style.display = 'block';
+  };
+
+  const toggleQuestionsPanel = (root) => {
+    if (isQuestionsPanelOpen(root)) closeQuestionsPanel(root);
+    else openQuestionsPanel(root);
+  };
+
+  let questionsGlobalBound = false;
+  const bindQuestionsPanelEventsOnce = () => {
+    const root = getChatRoot();
+    if (!root) return;
+
+    const btn = root.querySelector('#chat-questions-toggle-btn');
+    if (btn && !btn._boundQToggle) {
+      btn._boundQToggle = true;
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleQuestionsPanel(root);
+      });
+    }
+
+    // 面板内部事件委托
+    if (!root._boundQPanelClick) {
+      root._boundQPanelClick = true;
+      root.addEventListener('click', (e) => {
+        const panel = getQuestionsPanel(root);
+        if (!panel || panel.style.display === 'none') return;
+
+        const closeBtn =
+          e.target && e.target.closest ? e.target.closest('#chat-q-close') : null;
+        if (closeBtn) {
+          e.preventDefault();
+          closeQuestionsPanel(root);
+          return;
+        }
+
+        const pinBtn =
+          e.target && e.target.closest ? e.target.closest('.chat-q-pin') : null;
+        if (pinBtn) {
+          const item =
+            e.target && e.target.closest ? e.target.closest('.chat-q-item') : null;
+          const q = item ? item.dataset.q : '';
+          togglePinQuestion(q);
+          renderQuestionsPanel(root);
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+
+        const useBtn =
+          e.target && e.target.closest ? e.target.closest('.chat-q-use') : null;
+        if (useBtn) {
+          const item =
+            e.target && e.target.closest ? e.target.closest('.chat-q-item') : null;
+          const q = item ? item.dataset.q : '';
+          const input = root.querySelector('#user-input');
+          if (input && q) {
+            input.value = q;
+            input.focus();
+          }
+          // 选择某一项后自动关闭面板
+          closeQuestionsPanel(root);
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      });
+    }
+
+    if (questionsGlobalBound) return;
+    questionsGlobalBound = true;
+
+    // 面板外关闭：用 pointerdown（鼠标左键按下就关闭；触摸也会关闭）
+    document.addEventListener(
+      'pointerdown',
+      (e) => {
+        // 可能存在重复渲染导致的多个 chat 容器，这里对“所有打开的面板”做统一处理
+        const panels = Array.from(
+          document.querySelectorAll('#paper-chat-container .chat-questions-panel'),
+        );
+        const openPanels = panels.filter((p) => p && p.style.display !== 'none');
+        if (!openPanels.length) return;
+
+        // 仅鼠标左键触发（右键/中键不处理）
+        if (e && e.pointerType === 'mouse' && typeof e.button === 'number') {
+          if (e.button !== 0) return;
+        }
+
+        const insideChat =
+          e.target && e.target.closest
+            ? e.target.closest('#paper-chat-container')
+            : null;
+        if (!insideChat) {
+          openPanels.forEach((p) => {
+            try {
+              p.style.display = 'none';
+            } catch {
+              // ignore
+            }
+          });
+        }
+      },
+      true,
+    );
+
+    // ESC 关闭
+    document.addEventListener('keydown', (e) => {
+      if (e && e.key === 'Escape') closeQuestionsPanel(null);
+    });
   };
 
   const renderHistory = async (paperId) => {
@@ -347,6 +642,13 @@ window.PrivateDiscussionChat = (function () {
     }
 
     if (!question) return;
+
+    // 从现在开始记录“最近提问”（只记录用户输入；不回溯旧聊天）
+    recordRecentQuestion(question);
+    // 如果面板开着，顺手刷新一下列表（体验更顺滑）
+    if (isQuestionsPanelOpen(null)) {
+      renderQuestionsPanel(null);
+    }
 
     input.disabled = true;
     btn.disabled = true;
@@ -741,6 +1043,9 @@ window.PrivateDiscussionChat = (function () {
     const container = document.createElement('div');
     container.innerHTML = renderChatUI();
     mainContent.appendChild(container);
+
+    // 最近提问按钮/面板
+    bindQuestionsPanelEventsOnce();
 
     const sendBtnEl = document.getElementById('send-btn');
     const inputEl = document.getElementById('user-input');
