@@ -656,12 +656,38 @@ window.PrivateDiscussionChat = (function () {
 
     const historyDiv = document.getElementById('chat-history');
     const nowStr = new Date().toLocaleString();
-    historyDiv.innerHTML += `
-        <div class="msg-item">
-            <div><span class="msg-role user">👤 你</span><span class="msg-time">${nowStr}</span></div>
-            <div class="msg-content">${question}</div>
-        </div>
-    `;
+    // 立刻用“气泡样式”渲染用户消息（避免等刷新后才套上 msg-content-user）
+    try {
+      const userItem = document.createElement('div');
+      userItem.className = 'msg-item';
+
+      const header = document.createElement('div');
+      const role = document.createElement('span');
+      role.className = 'msg-role user';
+      role.textContent = '👤 你';
+      const time = document.createElement('span');
+      time.className = 'msg-time';
+      time.textContent = nowStr;
+      header.appendChild(role);
+      header.appendChild(time);
+
+      const content = document.createElement('div');
+      content.className = 'msg-content msg-content-user';
+      content.textContent = question;
+
+      userItem.appendChild(header);
+      userItem.appendChild(content);
+      historyDiv.appendChild(userItem);
+    } catch {
+      // 回退：至少不要把用户输入当作 HTML 注入
+      const userItem = document.createElement('div');
+      userItem.className = 'msg-item';
+      const content = document.createElement('div');
+      content.className = 'msg-content msg-content-user';
+      content.textContent = question;
+      userItem.appendChild(content);
+      historyDiv.appendChild(userItem);
+    }
     historyDiv.scrollTop = historyDiv.scrollHeight;
 
     const aiItem = document.createElement('div');
@@ -678,7 +704,7 @@ window.PrivateDiscussionChat = (function () {
           </div>
           <div class="thinking-content" style="white-space:pre-wrap; margin-top:4px;"></div>
         </div>
-        <div class="msg-content"></div>
+        <div class="msg-content msg-content-ai"></div>
     `;
     historyDiv.appendChild(aiItem);
 
