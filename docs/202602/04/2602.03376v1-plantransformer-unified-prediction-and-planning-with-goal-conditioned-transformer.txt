@@ -1,0 +1,324 @@
+Title: PlanTRansformer: Unified Prediction and Planning with Goal-conditioned Transformer
+
+URL Source: https://arxiv.org/pdf/2602.03376v1
+
+Published Time: Wed, 04 Feb 2026 02:12:08 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# PlanTRansformer: Unified Prediction and Planning with Goal-conditioned Transformer 
+
+Constantin Selzer 1 and Fabian B. Flohr 1
+
+Abstract — Trajectory prediction and planning are fundamental yet disconnected components in autonomous driving. Prediction models forecast surrounding agent motion under unknown in-tentions, producing multimodal distributions, while planning as-sumes known ego objectives and generates deterministic trajecto-ries. This mismatch creates a critical bottleneck: prediction lacks supervision for agent intentions, while planning requires this in-formation. Existing prediction models, despite strong benchmark-ing performance, often remain disconnected from planning con-straints such as collision avoidance and dynamic feasibility. We introduce Plan TRansformer (PTR), a unified Gaussian Mixture Transformer framework integrating goal-conditioned prediction, dynamic feasibility, interaction awareness, and lane-level topol-ogy reasoning. A teacher-student training strategy progressively masks surrounding agent commands during training to align with inference conditions where agent intentions are unavailable. PTR achieves 4.3%/3.5% improvement in marginal/joint mAP compared to the baseline Motion Transformer (MTR) [1] and 15.5% planning error reduction at 5s horizon compared to Game-Former [2]. The architecture-agnostic design enables application to diverse Transformer-based prediction models. Project Website: https://github.com/SelzerConst/PlanTRansformer 
+
+I. I NTRODUCTION 
+
+Trajectory prediction and planning are critical yet distinct components in autonomous driving pipelines. Prediction mod-els forecast surrounding agent motion to enable informed decision-making, while planning generates safe, feasible ego-trajectories given high-level navigation objectives. Despite operating on similar input representations, these tasks differ fundamentally in their formulations, optimization objectives, and available supervision. Prediction assumes unknown agent intentions, necessitat-ing multimodal trajectory distributions to capture behavioral uncertainty [1], [3]. This formulation enables learning from large-scale observational datasets such as Waymo Open Mo-tion Dataset [4], nuScenes [5], and Argoverse [6], where anno-tations require only trajectory sequences without explicit intent labels. In contrast, planning formulates trajectory generation as single-mode optimization under the assumption of known ego-vehicle intentions. Current planning benchmarks such as NuPlan [7] provide ego focused trajectory data; however, the intentions of surrounding agents remain unlabeled during offline collection. This asymmetry highlights two comple-mentary challenges: prediction has abundant but sparsely-annotated trajectory data (no intent labels required), while  
+
+> 1
+
+Department of Electrical Engineering and Information Technology, Intel-ligent Vehicles Lab (IVL), Munich University of Applied Science, Lothstraße 34, 80335 Munich, German Constantin.Selzer@hm.edu 
+
+Fig. 1: PTR extends prediction models with planning con-strains and goal conditioning through command guidance to bridge the prediction-planning asymmetry. Left: Surrounding agents with unknown intentions produce ambiguous multi-modal predictions. Right: Ego vehicle with explicit navigation context generates deterministic, goal-aligned trajectories. planning faces both data scarcity and missing intent super-vision for surrounding agents across limited prediction hori-zons constrained by occlusion. DeepUrban [8] demonstrates the value of occlusion-free perspectives for enabling longer trajectory horizons, yet explicit intent annotation remains a fundamental challenge across all datasets. This task formulation mismatch and data scarcity have resulted in a gap between prediction and planning capabilities. Most prediction models, despite achieving high accuracy on motion forecasting benchmarks, remain disconnected from planning-specific constraints such as dynamic feasibility, colli-sion avoidance, and route consistency. The core challenge lies in bridging these two domains: incorporating planning con-straints into prediction models while maintaining compatibility with existing datasets and benchmarks. Figure 1 illustrates this prediction-planning asymmetry: surrounding agents with un-known intentions produce ambiguous multimodal predictions, whereas ego-vehicles with explicit navigation context generate deterministic, goal-aligned trajectories. To address this gap, we propose Plan TRansformer (PTR), which extends prediction models to incorporate planning objectives and constraints through three key mechanisms: (i) differentiable dynamic feasibility and collision avoidance constraints that enforce safety during trajectory generation, (ii) goal-conditioned reasoning via high-level commands that align predictions with navigation intent, and (iii) reachable lane information being a planning element underutilized in 
+
+> arXiv:2602.03376v1 [cs.RO] 3 Feb 2026
+
+prediction models that constrains predictions to feasible routes. Building on MTR [1], PTR integrates these components while enforcing topological consistency with high-definition maps. Since the proposed modifications are coupled with the general Transformer architecture rather than MTR-specific design choices, our framework can be readily applied to other Transformer-based prediction models. Our contributions are threefold. First, we systematically combine motion forecasting with planning constraints through differentiable losses, enabling joint optimization of prediction and planning objectives for safer and more feasible trajec-tories. Second, we propose goal-conditioning via reachable lanes and routing information, together with a teacher–student training strategy that progressively masks surrounding-agent commands to match inference conditions where agent in-tentions are unavailable. Third, we provide comprehensive experimental validation on the Waymo Open Motion Dataset, including detailed ablation studies that validate each compo-nent and show consistent improvements across both prediction and planning metrics. II. R ELATED WORK 
+
+In the following, we review recent methods for trajectory prediction and planning. 
+
+Data-driven Trajectory Prediction: Significant advances have been made in domain-specific trajectory prediction mod-els. A foundational model in this area is SceneTransformer [3], which jointly predicts agent behaviors while capturing in-teractions between agents. By employing a masking strat-egy inspired by language modeling and leveraging attention mechanisms, it integrates features across agents and time, achieving strong performance in motion prediction tasks. Fur-ther MTR [1] models trajectory prediction through joint opti-mization of global intention localization and local movement refinement using learnable motion query pairs for specific motion modes, improving training stability and multimodal prediction accuracy. Its agent-centered feature representation treats all agents as potential ”center agents,” aligning features for agents with similar future movements and circumventing transformation challenges of ego-centric methods [20]. Several extensions to MTR have been proposed. LLM-Augmented MTR [9] incorporates LLMs (Large Language Models) to enhance global traffic context understanding, leveraging Trans-portation Context Maps and text prompts to boost predic-tion accuracy through a cost-efficient deployment strategy. ControlMTR [10] further extends MTR by generating scene-compliant intention points and converting control commands into physics-based trajectories, which enhances road bound-ary adherence and improves prediction precision. Another approach, TNT [11], focuses on using intention points as potential goals for trajectory prediction. This method ar-gues that leveraging such goals allows for more accurate and interpretable predictions, particularly in scenarios with multiple potential future outcomes. Additionally, MTP2 [12] emphasizes the importance of evaluating multimodal predic-tions through ablation studies, identifying three modes as the optimal number for achieving a balance between accuracy and computational efficiency. Finally, VisionTrap [13] enriches trajectory prediction by integrating visual input from surround-view cameras along with traditional agent tracks. This allows the model to utilize additional cues such as human gestures, road conditions, and vehicle turn signals. Moreover, textual descriptions from a VLM (Vision-Language Model) and LLM provide further guidance during training, improving the overall prediction process. 
+
+Data-driven Trajectory Planning: One first approach to go from prediction to planning was PDM [14], which extends the foundations of IDM [15] by integrating an advanced ego-forecasting component. This enhancement introduces several improvements, notably the incorporation of the GC-PGP [16], which advances the use of data-driven prediction models for trajectory planning. Another noteworthy model, Hoplan [17], employs a unique approach by rasterizing both current and historical trajectories of all agents onto a map, thus creating a heatmap prediction. This heatmap is then utilized by a post-solver motion planner to refine the driving trajectory for the autonomous vehicle. In the realm of hierarchical modeling, sophisticated techniques are employed to predict and plan trajectories. GameFormer [2] introduces a hierarchical Trans-former structure that specifically enhances interaction predic-tions and concentrates on the trajectory of the ego vehicle by utilizing the results from previous decoding layers. Similarly, ScePT [18] takes a policy planning-based approach to produce trajectories that are consistent with the scene. It achieves this by segmenting the scene into interactive groups and making conditional predictions based on the dynamics within these groups. MP3 [19] presents an end-to-end approach to mapless driving by processing raw sensor data and high-level commands (e.g., ”turn left in 50m”). It predicts intermediate representations, including an online map and the states of dynamic agents, which are utilized by a neural motion planner to make interpretable decisions under uncertainty. Notably, MP3 employs distinct MLPs in its planning module, each tailored to execute specific high-level commands, enabling precise and context-appropriate trajectory generation. III. P LAN TR ANSFORMER 
+
+PTR extends MTR to the planning domain by integrating goal-conditioned trajectory generation with real-world driv-ing constraints. The framework employs a transformer-based encoder-decoder structure to model complex scenarios and predict diverse, rule-compliant trajectories. Figure 2 illustrates the overall architecture, while Figure 3 details the decoder processing of command embeddings and route features. PTR comprises three key components: Section III-A a scene encoding module capturing agent history, map features, and interactions; Section III-B a future decoding module utilizing route-based intention points and high-level commands for trajectory generation; and Section III-C a learning process optimizing for trajectory accuracy and planning-specific re-quirements. The following sections detail each component. Input Representation 
+
+Agent History Ah
+
+Map Geometry M
+
+Route Lanes Lr
+
+Polyline Encoder 
+
+FA
+
+Feature Encoding 
+
+Polyline Encoder 
+
+FM
+
+Polyline Encoder 
+
+FL
+
+. . . 
+
+. . . 
+
+. . . 
+
+Scene Context Encoder 
+
+Local-
+
+Attention 
+
+FAM L F ′
+
+> AM L
+
+. . . 
+
+. . . 
+
+. . . 
+
+Motion Decoder 
+
+Command Intention Points 
+
+. . . 
+
+Transformer Motion Decoder 
+
+. . . 
+
+> Command Intention Query
+
+Multimodal Prediction 
+
+Predicted Scene 
+
+Fig. 2: The PTR framework processes three input modalities (agent history, map polylines, reachable lanes) through polyline encoders to obtain features FA, FM , FL. A transformer-based scene context encoder with local attention fuses these via FAM L 
+
+and decomposes into refined representations F ′
+
+> A
+
+, F ′ 
+
+> M
+
+, F ′
+
+> L
+
+. Command-specific intention points initialize the motion decoder’s query features, refined through transformer layers with scene features to produce multimodal predictions via GMM.   
+
+> . . . Command Intention Points
+> Initialization
+> Command Embeding
+> Dynamic ytStatic
+> Motion Query Pair
+> Sine + MLP Sine + MLP
+> Ct
+> Query Content Feature
+> Self-Attention
+> Multi Head Attention
+> Add & Norm
+
+## +
+
+> Cross-Attention
+> Multi Head Attention
+> ...
+> ...
+> ...
+> Add & Norm
+> Context Feature
+
+## ++Positional Encoding 
+
+> Feed Forward
+> Add & Norm
+> Multimodal Prediction
+> GMM Prediction
+> Ct+1
+> Dynamic yt+1
+
+Fig. 3: The decoder of the PTR framework integrates command-guided query initialization with reachable lane fea-tures. Static and dynamic motion queries are initialized from high-level commands and refined iteratively through self-attention and cross-attention mechanisms with scene context and lane features, producing multimodal trajectory predictions via GMM. 
+
+A. Scene Encoding 1) Input Representation: The PTR framework processes three primary input modalities (Figure 2, Input Representa-tion): agent historical trajectories, vectorized map polylines, and reachable lanes. Following vectorized representation prin-ciples, all inputs are organized as polylines and normalized to agent-centric coordinates. Agent histories are represented as 
+
+Ah ∈ RNc×Na×Th×ds , where Nc denotes center agents, Na
+
+is total agents, Th is the historical window, and ds is the state dimensionality encompassing position, velocity, angle, and heading. Map polylines are encoded as M ∈ RNc×Nm×Np×dp ,with Nm map elements per center agent, Np waypoints per element, and dp waypoint dimensionality including position, orientation, and polyline type. Reachable lanes are represented as Lr ∈ RNc×Nl×N lp×dl , where Nl is the number of feasible destination lanes and dl captures lane attributes including position and orientation. This explicit inclusion of reachable lanes extends the MTR framework by providing navigation constraints. When navigation commands are provided, reach-able lanes are filtered geometrically to further constrain the prediction space. All inputs are zero-padded for consistency. 
+
+2) Feature Encoding: Agent historical states are processed through temporal MLPs with max-pooling aggregation, yield-ing FA ∈ RNc×Na×D that captures long-term dependencies (Figure 2, Feature Encoding). Map polylines and reachable lanes follow a PointNet-like architecture: waypoint features are independently processed by MLPs and aggregated via max-pooling to obtain FM ∈ RNc×Nm×D and FL ∈ RNc×Nl×D ,where D denotes the projected feature dimensionality. This polyline encoding strategy efficiently summarizes each geo-metric element as a single token feature. 
+
+3) Scene Context Encoder: Agent, map, and lane features are concatenated to form the fused representation FAM L ∈
+
+RNc×(Na+Nm+Nl)×D (Figure 2, Scene Context Encoder). A transformer-based encoder with local self-attention processes this concatenated feature, leveraging positional encodings 
+
+PAM L ∈ RNc×(Na+Nm+Nl)×2 from polyline centers and agent positions. The local attention mechanism maintains scene locality by restricting attention to k-nearest neighboring polylines for each query, important for modeling road map relationships while remaining memory-efficient. This locality-preserving design maintains spatial coherence essential for navigation behaviors. Iterative attention refinement across encoder layers produces constraint-aware scene features F ′
+
+> AM L
+
+, decomposed into re-fined agent features F ′
+
+> A
+
+, map features F ′ 
+
+> M
+
+, and lane features 
+
+F ′ 
+
+> L
+
+for decoder processing. 
+
+B. Future Decoding 
+
+The trajectory decoder employs a transformer-based archi-tecture with learnable motion query pairs to generate multi-modal trajectories from scene and agent-specific features. We adopt MTR’s decoder with two key modifications: high-level command guidance and reachable lane constraints. 
+
+1) High-Level Command Guidance and Query Initializa-tion: High-level commands (HLCs) categorize agent inten-tions into six semantic types: left turn, straight, right turn, stationary, unknown, and vulnerable road user (VRU). Com-mands are determined via rule-based heuristics from agent geometry and dynamics (displacement, heading, velocity), serving as auxiliary supervision during training and dynam-ically assigned at inference from planned waypoints. For ego agents, commands guide maneuver planning; non-ego agents default to unknown. Each command type initializes queries via learned embeddings ec ∈ RD , conditioning the query content features C0 ∈ RK×D (Figure 3, Initialization). This command-conditioned initialization incorporates seman-tic priors into query initialization, improving convergence and biasing the decoder toward intention-aligned trajectories. For command-specific clustering, vehicle commands cluster ground-truth (GT) endpoints conditioned on their distribu-tions, while unknown commands and VRUs use global MTR clustering to maintain coverage for unpredictable motions. VRUs require independent processing due to unconstrained motion characteristics: pedestrians move omnidirectionally, while cyclists exhibit mixed road compliance. 
+
+2) Reachable Lane Features and Context Feature: Reach-able lanes encoded as F ′ 
+
+> L
+
+∈ RNc×Nl×D during scene encoding provide explicit navigation constraints. These refined lane features are projected into the decoder’s embedding space and integrated via cross-attention alongside agent features F ′
+
+> A
+
+and map features F ′ 
+
+> M
+
+(see Figure 3), enabling the decoder to respect route feasibility and lane topology. The decoder simul-taneously aggregates agent features, lane features, and map features through dedicated attention modules, progressively refining predictions based on scene-compliant navigation pos-sibilities. Explicit modeling and refinement of reachable lane features enable route-compliant trajectory generation. 
+
+3) Iterative Refinement and Multimodal Output: Motion query pairs with static intention and dynamic searching queries propagate through self-attention (Figure 3, green dashed box) and aggregate features via cross-attention (Figure 3, orange dashed box) with scene context. The decoder combines: (i) scene context with agents and maps, (ii) command-guided query features, and (iii) reachable lanes. Cross-attention mod-ules aggregate these with agent and map representations, processed through feed-forward networks with residual con-nections (Add & Norm layers). Across iterations, the decoder produces multimodal trajectory distributions via Gaussian Mixture Model heads (Figure 3, top right). The final trajectory prediction for agent i is 
+
+ˆYi ∈ RTf ×2,
+
+where Tf denotes the prediction horizon, ensuring predictions remain statistically consistent with observed motion while adhering to semantic intent and navigational feasibility. 
+
+C. Learning Process 
+
+Our framework is trained end-to-end with a multi-objective loss balancing trajectory accuracy, multimodality, and safety. Following MTR, we adopt hard-assignment strategy that se-lects the motion query pair closest to the GT endpoint, which serves as the positive Gaussian component for optimization. 
+
+1) Base Trajectory Losses: We incorporate three foundation losses from prior work. The dense prediction loss Ldense is an ℓ1 regression loss optimizing auxiliary future trajectory predictions for capturing multi-agent interactions. The Gaus-sian regression loss LGMM applies negative log-likelihood over predicted Gaussian components, maximizing the likelihood of ground-truth positions and the probability of selected positive modes. The classification loss Lcls enforces cross-entropy on predicted trajectory mode probabilities. These base losses are applied uniformly across all decoder layers. 
+
+2) Collision Loss: The collision loss encourages socially-aware and safe trajectories by penalizing spatial proximity be-tween agent pairs. It uses axis-wise smooth penalty functions with softplus gating, aggregated across all prediction modes and time steps to account for safety margins: 
+
+Lcol = 1
+
+BM 
+
+X
+
+> b,m,t
+
+ρx · ρy · wt · ⊮(valid ). (1) where B is the batch size, M is the number of modes, ρx and 
+
+ρy are the axis-wise distance penalties, wt is a time-decaying weight prioritizing near-term safety, and ⊮(valid ) indicates valid agent pairs. 
+
+3) Dynamics Loss: The dynamics loss enforces kinematic feasibility by penalizing the L2 deviation between direct spa-tial predictions and positions simulated via integrated control outputs (yaw and speed): 
+
+Ldynamic = 1
+
+BM T valid 
+
+X
+
+> b,m,t
+
+⊮(t ∈ valid ) psim  
+
+> t
+
+− ppred 
+
+> t
+> 22
+
+. (2) where psim  
+
+> t
+
+is the position derived from integrating the kine-matic model, and ppred  
+
+> t
+
+is the model’s direct prediction. This ensures trajectories respect physical motion constraints. 4) Overall Loss and Training Strategy: The total loss combines weighted components of all trajectory, collision, and dynamics losses: 
+
+LTotal = X
+
+> i
+
+λiLi, (3) where λi are loss weights. We employ a curriculum learning strategy that initially optimizes base trajectory losses to ensure stable GT imitation, then progressively activates collision and dynamics losses in a post-warmup phase to enforce safety and physical realism without compromising training stability. IV. E XPERIMENTS 
+
+A. Experimental Setup 
+
+We evaluate our framework on the Waymo Open Motion Dataset (WOMD) for prediction and planning tasks. All base-line models are retrained using default configurations with a fixed seed, as reproducing exact original results was not feasible. 
+
+1) Implementation Details: The encoder comprises 6 trans-former layers with road maps represented as polylines (up to 20 points, ∼10m in WOMD). We select Nm = 768 nearest map polylines and Nl = 192 nearest reachable lanes around each agent. Local self-attention operates on 16 nearest neigh-bors with hidden dimension D = 256 . The decoder stacks 6 layers with L = 128 dynamically selected map polylines for motion refinement. We employ 64 motion query pairs with command-specific intention points from k-means clus-tering partitioned by command type (left/right turn, straight, stationary) and globally for unknown and VRU categories. Non-maximum suppression selects the top 6 predictions from 64 trajectories using 2.5m endpoint distance threshold. 
+
+2) Training Details: We train PTR end-to-end using AdamW with learning rate = 0.0001, batch size 20, and weight decay = 0.01. Training spans 35 epochs on 4 H100 GPUs with learning rate decay (factor 0.5) every 2 epochs from epoch 20 to 30, plus 5 finetuning epochs. Loss weights: λGMM, cls =1.0, λ dense, col, dynamic = 0.5, determined via hyperparameter tuning. Collision and dynamics losses activate post-warmup (epoch 10) for training stability. We employ a teacher-student strategy where commands for predicted agents start with 90% ground-truth availability and are progressively masked to 10% ”unknown” over the final 5 epochs, simulating inference conditions where surrounding agent intentions are unavailable. 
+
+3) Prediction Task: The WOMD dataset supports marginal and joint prediction subtasks. Marginal prediction targets independent future trajectories for single agents, while joint prediction considers pairs of interacting agents. Each scenario provides 1 second of history and 8 seconds of predicted trajectories. Standard metrics namely minADE, minFDE, miss rate, overlap rate, and mAP [4] are used to assess trajectory accuracy and safety. 
+
+4) Planning Task: Planning evaluation is conducted on interactive WOMD scenarios [2], [23] using standard met-rics [23]: ADE and FDE measure prediction accuracy over the full horizon and at 5s; planning error, miss rate, and collision score assess planned trajectories exclusively. Planning error measures displacement deviations at horizons 1s, 3s, and 5s; miss rate measures spatial alignment with ground-truth trajec-tories via threshold-bounded regions; collision score quantifies safety by measuring collisions between planned and predicted trajectories. Predicted agents are the 10 closest to ego. 
+
+B. Main Results 1) Marginal and Joint Prediction: We evaluate both marginal and joint prediction performance on the top-6 pre-dictions without assuming command knowledge, setting all high-level commands to ”Unknown”. For marginal prediction (Table I) PTR demonstrates consistent improvements over MTR across all agent types: 4.3% improvement in mAP, 1.5% reduction in minADE (0.6023 vs. 0.6115), and 1.0% reduction in minFDE (1.2325 vs. 1.2445), validating the effectiveness of goal-conditioned prediction in marginal evaluated scenar-ios. For joint prediction (Table II), top-6 joint predictions are selected from 36 possible agent-pair combinations us-ing confidence scores computed as the product of marginal probabilities. PTR achieves 3.5% improvement in mAP and 1.0% reduction in minADE (0.9470 vs. 0.9561) over MTR. Interestingly, minFDE increases slightly to 2.1956 from 2.1615 in the joint setting, which we attribute to the complexity of multi-agent interaction modeling and discuss further in Sec-tion V. Figure 4 provides qualitative examples demonstrating prediction quality across single-agent and interactive scenarios. TABLE I: Performance on the marginal validation set of WOMD accessed across vehicle (V), pedestrian (P), cyclist (C) and their average (AVG).                                          
+
+> method type mAP ↑minADE ↓minFDE ↓MR ↓
+> V0.4357 0.7666 1.5444 0.1570 MTR [1] P0.4092 0.3549 0.7453 0.0793 C0.3590 0.7131 1.4438 0.1853 AVG 0.4013 0.6115 1.2445 0.1405 V0.4376 0.7601 1.5698 0.1553 Ours P0.4243 0.3525 0.7335 0.0734 C0.3936 0.6943 1.3942 0.1809 AVG 0.4185 0.6023 1.2325 0.1365
+
+TABLE II: Performance on the joint validation set of WOMD accessed across vehicle (V), pedestrian (P), cyclist (C) and their average (AVG).                                        
+
+> method type mAP ↑minADE ↓minFDE ↓MR ↓
+> V0.2951 1.0126 2.2925 0.3911 MTR [1] P0.2185 0.7505 1.6578 0.4098 C0.1156 1.1053 2.5342 0.5500 AVG 0.2097 0.9561 2.1615 0.4503 V0.3081 0.9562 2.2990 0.3881 Ours P0.2222 0.7460 1.6388 0.4024 C0.1209 1.1388 2.6491 0.5554 AVG 0.2170 0.9470 2.1956 0.4486
+
+2) Open-Loop Planning Evaluation: We evaluate PTR on the open-loop planning benchmark introduced by DIPP [23] based on WOMD, following established protocols. Surround-ing vehicle high-level commands are set to ”Unknown” while MTR     
+
+> Ours
+> (a) Cautious cyclist (b) Command guidance (c) Dense traffic (d) Lane allignment (e) Cautious merge
+
+Fig. 4: Qualitative top-3 prediction comparison of MTR (top) and PTR (bottom) across five scenarios. Scenario visualization shows agents of interest (pink boxes), other agents (blue boxes), prediction (blue lines), ground-truth (white dashed lines), lane centerline (gray dotted lines), lane separator (gray dashed lines), and road boarder (black solid lines). a) Vehicle (1) exhibits more confident left-turn predictions centered on lane markings in PTR; cyclist (2) has less GT alignment due to the near-miss interaction. b) PTR increases left-turn confidence for vehicle (1) through high-level command guidance, while vehicle (2) maintains multimodal predictions exploring alternative routes. c) PTR shows improved centerline adherence and GT alignment for vehicle (2); vehicles (1) and (3) generate more conservative trajectories due to collision constraints, deviating from GT endpoints for vehicle (1) while vehicle (3) deviates less. d) Vehicle (1) achieves better centerline alignment in PTR, improving map consistency but reducing GT fidelity in non-compliant driving behavior. e) PTR produces conservative trajectories for vehicle (1), while vehicle (2) continues nominal behavior without significant collision-avoidance influences. the ego vehicle receives command guidance. Table III presents the results. PTR achieves substantial improvements across safety and accuracy metrics: collision rate of 2.16%, miss rate of 8.50%, and planning error improvements of 5.9% (0.117m), 4.5% (0.835s), and 15.5% (2.340s) at 1s, 3s, and 5s horizons, respectively, compared to the retrained GameFormer. Most notably, ADE and FDE improvements of 28.7% (0.669) and 22.0% (1.624) demonstrate substantial gains in prediction accuracy. These results validate that goal-conditioned guidance significantly improves both safety and planning fidelity in interactive scenarios. Figure 5 provides qualitative examples illustrating the effectiveness of command-driven trajectory generation in complex dynamic environments. 
+
+C. Ablation Study 
+
+We evaluate component contributions using 20% uniformly sampled frames (approximately 97k scenes) from WOMD training data, preserving original distribution. All models use marginal prediction metrics on WOMD validation set. 
+
+1) Component Integration Analysis: As shown in Table IV, high-level commands alone provide notable improvements in mAP, demonstrating that semantic guidance directly benefits mode-ranking quality. However, without complementary con-straints, positional accuracy remains suboptimal, indicating that command guidance must be paired with consistency mechanisms. Adding Dynamics Loss substantially improves trajectory plausibility, reducing minADE and Miss Rate while maintaining mAP gains. Collision Loss further reduces overlap rate while sacrificing displacement metrics slightly, reflecting the conservative nature of collision avoidance. Incorporating Reachable Lanes recovers displacement performance while preserving safety improvements, indicating that route con-straints effectively reconcile safety and accuracy objectives. The full model achieves the improved mAP in Table IV, demonstrating the synergistic effect of all components, though with minor trade-offs compared to intermediate configurations. 
+
+2) Goal-Conditioning Integration Strategy: We compare three command integration strategies: (1) One-Hot Concate-nation appends command vectors to agent features; (2) MLP Fusion processes command embeddings through dimension-expanding MLPs; (3) Decoder Query Preset (proposed) ini-tializes decoder queries with command embeddings. The one-hot approach achieves strong displacement metrics but lower mAP, indicating early fusion guides trajectory end-points without effectively constraining prediction confidence. MLP fusion further degrades performance through feature dimension bottlenecking ( 2D → D projection), which negates command semantics. The proposed preset approach directly initializes query content features, providing explicit guidance during trajectory generation. This decoupling improves mAP by +1.26% relative to one-hot while incurring minADE and minFDE increases (+0.006m and +0.134m respectively), re-flecting a favorable trade-off between endpoint accuracy and mode-ranking quality. TABLE III: Open-loop planning evaluation on WOMD, showing performance on ego and 10 closest predicted agents                                                                       
+
+> Method Collision Rate ↓Miss Rate ↓PE @1s ↓PE @3s ↓PE @5s ↓ADE ↓FDE ↓
+> Vanilla IL 4.25 15.61 0.216 1.273 3.175 ––DIM [25] 4.96 17.68 0.483 1.869 3.683 ––MultiPath++ [24] 2.86 8.61 0.146 0.948 2.719 ––MTR-e2e [1] 2.32 8.88 0.141 0.888 2.698 ––DIPP [23] 2.33 8.44 0.135 0.902 2.803 0.925 2.059 GameFormer [2] 1.98 7.53 0.129 0.836 2.451 0.853 1.919 GameFormer (retrained) 2.71 12.18 0.124 0.873 2.702 0.861 1.982 Ours 2.16 8.50 0.117 0.835 2.340 0.669 1.624
+
+Game Former 
+
+Ours 
+
+(a) Feasible path (b) Dense traffic (c) Intention Allignment (d) Modified commands 
+
+Fig. 5: Qualitative top-1 planning comparison of GameFormer (top) and PTR (bottom) across three scenarios, demonstrating planning capabilities and high-level command influence (last pair). Scenario visualization shows ego (red box), agents of interest (pink boxes), other agents (blue boxes), prediction (blue lines), plan (red line), ground-truth (white dashed lines), lane centerline (gray dotted lines), lane separator (gray dashed lines), and road boarder (black solid lines). a) Ego (1) generates a similar trajectory as GameFormer, while surrounding vehicle (2) maintains a more feasible path. b) In a dense interactive scenario with nearby vehicles (2, 3, 4), ego (1) produces more conservative GT aligned planning trajectory in PTR compared to GameFormer. c) PTR’s ego (1) planning aligns with the left-turn high-level command, while GameFormer’s trajectory appears misaligned with the scenario intent. d) Same scenario as c) both images generated by PTR with modified commands (top: right turn; bottom: straight), demonstrating PTR’s command-conditioned planning responsiveness to navigation guidance. TABLE IV: Ablation study on proposed modules, showing how each component contributes to performance improvement                                                  
+
+> Method High-Level Command Dynamics Loss Collision-Loss Reachable Lanes minADE ↓minFDE ↓Miss Rate
+> ↓
+> Overlap Rate ↓
+> mAP ↑
+> MTR ××××0.6695 1.3776 0.1653 0.0434 0.3469
+> ✓×××0.6727 1.3744 0.1676 0.0444 0.3529
+> ✓✓××0.6680s 1.3732 0.1645 0.0441 0.3536 Ours ✓✓✓×0.6787 1.4040 0.1677 0.0431 0.3550
+> ✓✓✓✓0.6681 1.3770 0.1656 0.0433 0.3543
+
+TABLE V: Ablation Study on High-Level Command Incorpo-ration into Transformer Decoder                     
+
+> Variation minADE ↓minFDE ↓Miss Rate ↓mAP ↑
+> One-Hot 0.6666 1.3610 0.1649 0.3485 MLP 0.6706 1.3635 0.1661 0.3447 Preset 0.6727 1.3744 0.1676 0.3529
+
+V. D ISCUSSION 
+
+The results demonstrate complementary strengths and trade-offs among the proposed components. High-level commands enable semantically-guided prediction without explicit com-mand supervision at inference. Reachable lanes constrain pre-dictions to valid routes, improving feasibility. Dynamics loss ensures kinematic consistency. However, notable limitations exist. Collision loss improves safety-awareness but priori-tizes collision avoidance, leading to conservative predictions and increased minFDE in joint scenarios despite mAP im-provements. Collision constraints encourage deviations from ground-truth endpoints to avoid interactions (Figure 4, a), and the planning module may amplify this conservatism by gener-ating unnecessarily evasive maneuvers. In dense multi-agent scenarios (Figure 5, b), PTR generates more conservative, ground-truth aligned trajectories compared to GameFormer, highlighting the safety-fidelity trade-off: collision avoidance improves safety metrics at the cost of trajectory realism. Route compliance constraints can fail when agents exhibit rule-noncompliant behavior such as illegal lane changes or u-turns, missing plausible future trajectories in real-world scenarios. Command-conditioning improves semantic align-ment (Figure 5, c) and demonstrates strong responsiveness to guidance (Figure 5, d); however, this benefit diminishes under command uncertainty or agent non-compliance. Bal-ancing safety constraints with behavioral realism remains an open challenge. This difficulty stems from an ’imitation-safety gap’ where aggressive human maneuvers conflict with our absolute priority on safety. Increased displacement metrics reflect a deliberate choice to favor collision avoidance over pure imitation. Future research into context-aware weighting could enable the model to adaptively modulate caution by reducing speeds and increasing safety buffers based on traffic complexity. This approach ensures that safety remains the primary objective in every scenario. VI. C ONCLUSION 
+
+We present PTR, a unified framework addressing the prediction-planning gap in autonomous driving. By integrat-ing goal-conditioned prediction, dynamic feasibility, collision avoidance, and lane-level topology within a Transformer, PTR jointly optimizes prediction and planning. A teacher-student strategy progressively masks agent commands, align-ing training with inference conditions. On the Waymo Open Motion Dataset, PTR achieves 4.3%/3.5% improvements in marginal/joint mAP over MTR and 15.5% planning error reduction at 5 seconds versus GameFormer. The architecture-agnostic design supports application to diverse Transformer-based models. Future work includes enriching the command taxonomy with finer-grained actions (merging, yielding, lane maintenance) and learning context-conditioned behavioral re-finements for complex scenarios. Additionally, integration and further validation on the nuPlan benchmark [7] to further validate its generalization across diverse urban environments and closed-loop scenarios and on a real vehicle are planned, which is being developed within the Project STADT:up. ACKNOWLEDGMENT This work is a result of the joint research project STADT:up (19A22006N). The project is supported by the German Federal Ministry for Economic Affairs and Climate Action (BMWK), based on a decision of the German Bundestag. The author is solely responsible for the content of this publication. REFERENCES [1] S. Shi, L. Jiang, D. Dai, and B. Schiele, ”Motion Transformer with Global Intention Localization and Local Movement Refinement”, in Adv. in NeurIPS, 2022. [2] Z. Huang, H. Liu, and C. Lv, ”GameFormer: Game-theoretic Modeling and Learning of Transformer-based Interactive Prediction and Planning for Autonomous Driving”, in Proc. IEEE ICCV, 2023. [3] J. Ngiam, V. Vasudevan, B. Caine, Z. Zhang, H.-T. L. Chiang, J. Ling, R. Roelofs, A. Bewley, C. Liu, A. Venugopal, et al., ”Scene Transformer: A Unified Architecture for Predicting Future Trajectories of Multiple Agents”, in Proc. ICLR, 2022. [4] S. Ettinger, S. Cheng, and B. Caine et al., “Large Scale Interactive Motion Forecasting for Autonomous Driving: The WAYMO OPEN MOTION DATASET.”, in Proc. IEEE ICCV, pp. 9710–9719, 2021. [5] Holger Caesar, Varun Bankiti, Alex H Lang, Sourabh Vora, Venice Erin Liong, Qiang Xu, Anush Krishnan, Yu Pan, Giancarlo Baldan, and Oscar Beijbom, “nuScenes: A multimodal dataset for autonomous driving.”, in Proc. IEEE CVPR, pp. 11 621–11 631, 2020. [6] B. Wilson, W. Qi, T. Agarwal et al., “Argoverse 2: Next Generation Datasets for Self-Driving Perception and Forecasting.”, in Adv. in NeurIPS, 2023. [7] H. Caesar, J. Kabzn, K. S. Tan, W. K. Fong, E. Wolff, A. Lang, L. Fletcher, O. Beijbom, and S. Omari, “NuPlan: A closed-loop ML-based planning benchmark for autonomous vehicles.”, in Proc. IEEE CVPR Workshops, 2021. [8] C. Selzer and F. Flohr, ”DeepUrban: Interaction-aware Trajectory Pre-diction and Planning for Automated Driving by Aerial Imagery”, in Proc. of the IEEE ITSC, 2024. [9] X. Zheng, L. Wu, Z. Yan, Y. Tang, H. Zhao, C. Zhong, B. Chen, and J. Gong, ”Large Language Models Powered Context-aware Motion Prediction”, in IEEE IROS, 2024. [10] J. Sun, C. Yuan, S. Sun, S. Wang, Y. Han, S. Ma, Z. Huang, A. Wong, K. P. Tee, and M. H. Ang, ”ControlMTR: Control-Guided Motion Transformer with Scene-Compliant Intention Points for Feasible Motion Prediction”, in Proc. of the IEEE ITSC, 2024. [11] H. Zhao, J. Gao, T. Lan, C. Sun, B. Sapp, B. Varadarajan, Y. Shen, Y. Shen, Y. Chai, C. Schmid, C. Li, and D. Anguelov, “TNT: Target-driveN Trajectory Prediction.”, in CoRL, 2020. [12] H. Cui, V. Radosavljevic, F.-C. Chou, T.-H. Lin, T. Nguyen, T.-K. Huang, J. G. Schneider, and N. Djuric, “Multimodal Trajectory Predic-tions for Autonomous Driving using Deep Convolutional Networks.”, in Proc. ICRA, pp. 2090–2096, 2018. [13] S. Moon, H. Woo, H. Park, H. Jung, R. Mahjourian, H.-G. Chi, H. Lim, S. Kim, and J. Kim, ”VisionTrap: Vision-Augmented Trajectory Prediction Guided by Textual Descriptions”, in Proc. of the ECCV, 2024. [14] D. Dauner, M. Hallgarten, A. Geiger, and K. Chitta, ”Parting with Misconceptions about Learning-based Vehicle Motion Planning”, in CoRL, pp. 1268-1281, 2023. [15] M. Treiber, A. Hennecke, and D. Helbing. ”Congested traffic states in empirical observations and microscopic simulations.”, in Physical review E, 2000. [16] M. Hallgarten, M. Stoll, and A. Zell, “From Prediction to Planning With Goal Conditioned Lane Graph Traversals.”, in Proc. of the IEEE ITSC, 2023. [17] Y. Hu, K. Li, P. Liang, J. Qian, Z. Yang, H. Zhang, W. Shao, Z. Ding, W. Xu, and Q. Liu, ”Imitation with Spatial-Temporal Heatmap: 2nd Place Solution for NuPlan Challenge”, in Computing Research Repository”, in Proc. IEEE CVPR Workshops, 2023. [18] Y. Chen, B. Ivanovic and M. Pavone, ”ScePT: Scene-consistent, Policy-based Trajectory Predictions for Planning”, in Proc. IEEE CVPR, pp. 17103–17112, 2022. [19] S. Casas, A. Sadat, and R. Urtasun, “MP3: A Unified Model to Map, Perceive, Predict and Plan.”, in Proc. IEEE CVPR, pp. 14398–14407, 2021. [20] D. A. Su, B. Douillard, R. Al-Rfou, C. Park, and B. Sapp, “Narrowing the coordinate-frame gap in behavior prediction models: Distillation for efficient and accurate scene-centric motion forecasting.”, in Proc. ICRA, pp. 653–659, 2022. [21] B. Jiang, S. Chen, Q. Xu, B. Liao, J. Chen, H. Zhou, Q. Zhang, W. Liu, C. Huang, and X. Wang, “VAD: Vectorized Scene Representation for Efficient Autonomous Driving.”, in Proc. IEEE ICCV, pp. 8306–8316, 2023. [22] R. Guti´ errez, E. L´ opez-Guill´ en, L. M. Bergasa, R. Barea, ´ O. P´ erez, C. G´ omez-Hu´ elamo, F. Arango, J. del Egido, and J. L´ opez-Fern´ andez, “A Waypoint Tracking Controller for Autonomous Road Vehicles Using ROS Framework.”, in Sensors, vol. 20, no. 14, p. 4062, 2020. [23] Z. Huang, H. Liu, J. Wu, and L. Chen ”Differentiable integrated motion prediction and planning with learnable cost function for autonomous driving.”, in TNNL, 2023. [24] B. Varadarajan, A. Hefny, A. Srivastava, K. S. Refaat, N. Nayakanti, A. Cornman, K. Chen, B. Douillard, C. P. Lam, D. Anguelov, and B. Sapp, “MultiPath++: Efficient Information Fusion and Trajectory Aggregation for Behavior Prediction.”, in Proc. ICRA, 2021. [25] N. Rhinehart, R. McAllister, and S. Levine, ”Deep imitative models for flexible inference, planning, andcontrol.”, in Proc. ICLR, 2019.

@@ -1,0 +1,386 @@
+Title: Moving On, Even When You're Broken: Fail-Active Trajectory Generation via Diffusion Policies Conditioned on Embodiment and Task
+
+URL Source: https://arxiv.org/pdf/2602.02895v1
+
+Published Time: Wed, 04 Feb 2026 01:20:48 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Moving On, Even When You’re Broken: Fail-Active Trajectory Generation via Diffusion Policies Conditioned on Embodiment and Task 
+
+Gilberto G. Briscoe-Martinez ∗,1, Yaashia Gautam 2, Rahul Shetty 1, Anuj Pasricha 1,Marco M. Nicotra 2, and Alessandro Roncone 1
+
+Abstract — Robot failure is detrimental and disruptive, often requiring human intervention to recover. Maintaining safe operation under impairment to achieve task completion, i.e. fail-active operation, is our target. Focusing on actuation failures , we introduce DEFT, a diffusion-based trajectory generator condi-tioned on the robot’s current embodiment and task constraints. DEFT generalizes across failure types, supports constrained and unconstrained motions, and enables task completion under arbitrary failure. We evaluated DEFT in both simulation and real-world scenarios using a 7-DoF robotic arm. In simu-lation over thousands of joint-failure cases across multiple tasks, DEFT outperformed the baseline by up to 2 times. On failures unseen during training, it continued to outperform the baseline, indicating robust generalization in simulation. Further, we performed real-world evaluations on two multi-step tasks, drawer manipulation and whiteboard erasing. These experiments demonstrated DEFT succeeding on tasks where classical methods failed. Our results show that DEFT achieves fail-active manipulation across arbitrary failure configurations and real-world deployments. 
+
+I. I NTRODUCTION 
+
+The Mars rover Opportunity’s robotic arm first stalled on November 25, 2005; its shoulder joint then experienced intermittent motor stalls for years, managed with voltage workarounds and revised stow procedures. Similarly, Cu-riosity’s drill paused sampling for roughly eighteen months until a hand-designed drilling method restored coring [1], [2]. Cases like these underscore that failures in continuously operating systems are inevitable [3]. Prevailing safety stan-dards mandate fail-freeze behavior, requiring robots to halt when faults are detected [4], [5], [6]. The result is prolonged downtime and reduced autonomy. We target fail-active be-havior, a stronger reliability goal in which robots maintain functionality, full or reduced, under fault conditions [7]. Fail-active behavior is how humans operate—we continue walking on a sprained ankle, writing with a non-dominant hand, going to work when we’ve had our hearts broken. Achieving fail-active behavior is technically challenging. Faults reshape what the robot can physically do: actuation failures (e.g., joint range and velocity restrictions) shrink the feasible workspace and degrade manipulability, electrical faults (e.g., brownouts) reduce control authority, sensor drift 
+
+> ∗
+
+Corresponding author. GBM is supported by NASA Space Technology Graduate Research Opportunity Grant 80NSSC22K1211. 
+
+> 1
+
+Department of Computer Science, University of Colorado Boulder, CO, USA. 
+
+> 2
+
+Department of Electrical and Computer Engineering, University of Colorado Boulder, CO, USA. Emails: {firstname.lastname }@colorado.edu 1)Pull  
+
+> Dr aw er
+> Open
+> 3) Pick and
+> Place to
+> Dr aw er
+> 2) Push to Gr aspable
+> State
+> Range
+> Reduced
+> Locked
+> Nor m al
+> Nor m al
+> Nor m al
+> Nor m al
+> Range
+> Reduced
+> qm ax
+> Em bodim ent
+> M LP
+> qm in qm ax qm in
+> DEFT
+> Constr ained
+> Unconstr ained
+> Em bodim ent
+> Encoding, ?
+> Constr aint
+> Encoding, ?
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> ..
+
+Fig. 1: DEFT takes as input a structured embodiment encoding representing joint-level failures and a constraint encoding then synthesizes a feasible robot trajectory via a diffusion model. After experiencing a failure, a given task will likely need to be completed in a different manner. In this figure, the pick-and-place segment is no longer feasible, given the failure condition, and the robot must now push the object to a graspable state to complete the task. 
+
+can distort state estimates, and end-effector wear (eg. lowered friction) degrades contact mechanics. In summary, failure turns previously feasible plans unactionable. In this work, we focus on actuation failures as they directly alter how the robot moves. These failures alter kinematic feasibility and can cause end-effector motion to become non-holonomic, so the same control input no longer yields the same end–effector motion [8]. In addition, since degradation can evolve over time [9] and the failure state is not known a priori, the space of failure modes is effectively unbounded. Moreover, each joint can fail independently in multiple ways, and this complexity scales combinatorially with the robot’s degrees of freedom, making reliable perfor-mance across failures hard to engineer. As failure-induced constraints redefine the robot’s workspace, manipulability, and feasible interactions with the world, we posit that each failure mode can be interpreted as a new embodiment. Through this lens, different embodiments are unable to perform the same tasks using the same behav-iors. As no same set of behaviors can span all embodiments, multiple motion primitives are needed to expand the feasible action space and reachable task-space [10]. For example, in Fig. 1, reduced ranges on two joints and one locked joint 
+
+> arXiv:2602.02895v1 [cs.RO] 2 Feb 2026
+
+prevents the robot from grasping the object. However, first pushing the object into a graspable pose and then picking-and-placing it inside the drawer, makes the task feasible. Synthesizing effective motion primitives for arbitrary fail-ure conditions is challenging due to the complex relationship between robot embodiment constraints and feasible task-space behaviors. Existing approaches fall short in three key gaps: they 1) do not generalize to arbitrary failure configurations [10], [11]; 2) are not capable of completing multiple manipulation primitives [12]; and 3) do not address multi-joint failures [13], [14]. To the best of the authors’ knowledge, there are no works capable of all three con-cerns simultaneously. Under the interpretation of failure as embodiment shift, these concerns have not been achieved since there are potentially infinite embodiments to generalize across and each embodiment has its own distribution of actions capable of achieving a set task. Diffusion models are a potentially suitable solution as they learn a generative model over complex, multimodal data, and can generate actions that span those modes at inference. To this end, we present DEFT : a Diffusion-based 
+
+Embodiment-aware Fail-active Task-conditioned trajectory generation framework, capable of maintaining robot manip-ulation functionality under failure conditions. Our contri-butions are: (i) an embodiment vector encoding per-joint actuation failures for online adaptation to previously unseen failure-induced embodiments and (ii) a constraint encoding 
+
+selecting between constrained and unconstrained motions to enable the use of multiple motion primitives. Furthermore, we utilize start–goal inpainting and output clamping to enforce embodiment failure conditions [15]. This allows 
+
+DEFT to: 1) generalize to arbitrary failure configurations; 2) complete multiple manipulation primitives; and 3) handle multi-joint failures. We benchmark DEFT against conven-tional and learning based motion-planning approaches and demonstrate significant improvements in trajectory genera-tion under arbitrary failures (up to 84% success), adherence to task constraints (up to 78% success), and generalization to previously unseen failures (up to 99% success). II. R ELATED WORK 
+
+a) Failure-Aware Robot Control: Robots operating over long durations in uncertain environments must be able to continue functioning even when experiencing physical degradation. Joint-level failures, such as locking, reduced range of motion, or diminished velocity, introduce complex, nonlinear constraints that disrupt standard motion planning approach. Classical methods attempt to address these chal-lenges through explicit algorithmic adaptation: self-motion manifold planning [11], fail-safe reachability analysis [16], and redundancy exploitation via inverse kinematics [17]. In assuming a subset of possible failures, these approaches offer guarantees on post-failure ability but they are unable to extend to arbitrary failure conditions. Other works adapt control laws to handle specific joint failures [18], [19], [20], but are often limited in generality, scale poorly with the combinatorial space of failure types, and rely heavily on manual modeling. While effective in narrow domains, these handcrafted solutions cannot address the full complexity of real-world fail-active behavior, where failures must be handled, and task strategies adapted, on the fly. Learning-based strategies address the limitations of tra-ditional methods by training control policies that adapt to embodiment changes through experience. In reinforcement learning, damage-aware behaviors have been achieved us-ing adversarial training [21], partial observability [12], and stochastic joint masking [14]. Other methods apply curricu-lum learning [22] or quality diversity search [23], [24] to develop behavioral repertoires for failure recovery. These techniques have shown success in recovering locomotion or point-to-point reaching under known embodiments, but often require task-specific training loops, explicit policy switching, or runtime optimization. In contrast, our approach trains a generative diffusion model over full trajectories, enabling flexible, zero-shot adaptation to joint degradation and task shifts without policy switching or fine-tuning. 
+
+b) Diffusion Models for Trajectory Generation: Diffu-sion models offer key advantages for trajectory generation in fail-active robotic systems, especially when embodiment changes unpredictably. Compared to imitation or reinforce-ment learning, diffusion models (1) capture complex, mul-timodal action distributions essential for recovery behaviors [25], (2) provide stable training, outperforming alternatives like energy-based models [26], and (3) enable conditional generation on structured inputs such as goals or embodiment states [27]. These features allow robots to adapt to joint failures without explicit retraining. Empirically, diffusion models excel in robotic tasks like navigation, manipulation, and object rearrangement [28], outperforming reinforcement learning and behavior cloning in long-horizon, contact-rich tasks [29]. Advances in diffu-sion transformers, like adaptive normalization and efficient tokenization, further enhance their suitability for continuous control [29]. Crucially, diffusion supports online adaptation via trajectory reconditioning, enabling flexible fail-active responses without policy switching [26], making them ideal for handling joint failures that reshape the motion space. III. M ETHODS 
+
+Our goal is fail-active manipulation: generate functional, feasible trajectories under joint-level failures. We pose this as conditional trajectory generation given the failure-induced embodiment and the task constraint. Each failure specifies a new embodiment of the robot, and each constraint (e.g., 
+
+unconstrained vs. constrained motion) induces a distinct trajectory distribution. Given the start and goal joint configurations the policy π infers a future sequence of joint states over a fixed number of steps T . Unlike prior work that assumes a fixed set of failure configurations to control over, our method adapts online. It learns both the control behavior and the allowable motions from the current failure condition and the task constraint. Our formulation enables zero shot trajectory generation across diverse embodiments and task conditions. For example, when a shoulder joint becomes `       
+
+> Qs
+> Qg
+> Em bodim ent
+> M LP
+> a) Em bodim ent
+> Encoding, ?
+> xK
+> b) Constr aint Encoding, ?
+> Clam p to Joint
+> Lim its c) Conditioning Vector
+> ?
+> Robot s w i t h ar bi t r ar y Locked ,Reduced Ra nge , an d Nor ma l Joints
+> Constr ained
+> Unconstr ained
+> qm in qm ax qm in qm ax
+> ..
+
+# ...  ... Fig. 2: Overview of DEFT. a) joint-level embodiment constraints are encoded into a structured representation capturing failure constrained joint position and velocity limits. This embodiment encoding is processed by a multilayer perceptron (MLP) and used to condition the diffusion model. b) Task-specific constraints (e.g. unconstrained or constrained) are represented as one-hot vectors and concatenated with the embodiment encoding to constrained the generative process. Given these conditioning signals and start-goal joint configurations, the model generates feasible joint-space trajectories adapted explicitly to both the robot’s degraded embodiment and task requirements. At each step of the denoising process the predicted joint values are clamped to the failure-induced robot joint limits. 
+
+unusable, the robot can switch from lifting to pushing an object without task specific retraining or policy switching. 
+
+A. DEFT 
+
+Inspired by recent advances in diffusion policies [25], we develop DEFT for an N -degrees of freedom robot to synthesize joint-space trajectories. Formally, the policy is defined as: 
+
+π(Qs,g |ξ, τ ) → { q1: T , ˙q1: T } (1) The policy is conditioned on a vector ξ ∈ R4N that encodes joint-level embodiment constraints imposed by the failure condition, and on a task constraint represented by a one-hot encoded vector τ , as shown in Fig. 2. Given a ground-truth trajectory x and a diffusion time step, we first add Gaussian noise N (0, I) to obtain a corrupted trajectory. We then inpaint the start and goal joint positions, 
+
+Qs,g = [( qs, ˙qs), (qg , ˙qg )] , q ∈ RN , so endpoints remain exact. We proceed by clamping the entire noisy trajectory to the joint angle and velocity limits specified by the failure embedding ξ = [ eq , e ˙q ] ∈ R4N , ensuring feasibility under the current embodiment. Next, we form a conditioning vector, ζ = [ξ, τ ]⊤, by encoding the failure embedding with a small MLP and concatenating the resulting features to the task constraint token. The denoiser (UNet) receives the clamped, inpainted trajectory together with the time step and conditioning vector, and predicts a denoised trajectory 
+
+ˆx, denoising for K = 25 steps. Finally, we hard-enforce constraint adherence by clamping the prediction to the same limits and re-inpaint the endpoints, returning the denoised, feasible trajectory. 
+
+B. Conditioning Approaches 1) Embodiment Conditioning: To inform the model of the robot’s failure constrained embodiment, we use an 
+
+Algorithm 1: DEFT 
+
+Input: Denoising Steps K; Failure embedding ξ;Primitive encoding τ
+
+Output: Denoised trajectory ˆx 
+
+> 1
+
+Sample noisy trajectory ˜x ∼ N (0, I); 
+
+> 2
+
+foreach k ∈ K do  
+
+> 3
+
+Inpaint start and goal: ˜xt[start /goal] ← Qs,g ; 
+
+> 4
+
+Clamp ˜xt to limits specified by ξ; 
+
+> 5
+
+Fuse encodings: ζ ← MLP ξ (ξ) ∥ τ ; 
+
+> 6
+
+Predict denoised trajectory: ˆx ← UNet(˜ xt, t, ζ ); 
+
+> 7
+
+Clamp output ˆx to limits in ξ; 
+
+> 8
+
+Inpaint start and goal: ˆx[start /goal] ← Qs,g ; 
+
+> 9
+
+return ˆx
+
+embodiment encoding vector ξ to condition the diffusion model. We model joint-level failures as per-joint con-straints on the robot’s actuation capabilities. Each failure embodiment is represented as ξ = [ eq , e ˙q ] ∈ R4N , with 
+
+eq,j = [ qmin  
+
+> j
+
+, q max  
+
+> j
+
+]⊤ and e ˙q,j = [ ˙ qmin  
+
+> j
+
+, ˙qmax  
+
+> j
+
+]⊤ for all j ∈{1, . . . , N } such that 0 ∈ e ˙q,j 1. Failures reshape the robot’s feasible configuration space and task-space reachability and exist in a continuous space, allowing ξ to capture a wide spectrum of degradation severities, as shown in Fig. 2. Let 
+
+{qt}Tt=1 denote a trajectory over T steps, where qt ∈ RN
+
+is the joint configuration at time t, and ˙qt its velocity. A configuration qt satisfies the feasibility set Ct(qt, ξ ) if: 
+
+Ct(qt, ξ ) = n
+
+qt ∈ RN qt,j ∈ eq,j , ˙qt,j ∈ e ˙q,j 
+
+∀j ∈ { 1, . . . , N }
+
+o
+
+. (2)     
+
+> 10must be in e˙q,j to ensure a stable equilibrium point exists [30].
+
+A trajectory is feasible if q1: T ∈ TTt=1 Ct(qt, ξ ), i.e. the joint trajectory for the time horizon T should be within joint limits. We condition on failures structurally: the model learns to generate motion plans that obey the constraints.To inte-grate embodiment information into the generative process, we pass ξ through an MLP to produce an embedding that modulates the diffusion model via FiLM. To ensure that the trajectory connects the desired start and goal states we apply start–goal inpainting, fixing (qs, qg ) in the input trajectory. This anchors the trajectory; without it, the stochastic denoiser may miss hard endpoint constraints. In addition, we clamp outputs during both training and inference: conditioning guides the model toward feasibility but does not guarantee it, so clamping enforces satisfaction of the joint constraints. 
+
+2) Constraint Conditioning: We further condition the model on discrete task constraints using a one-hot encoding vector, τ . Let τ ∈ { 0, 1}K be a one-hot vector with exactly one nonzero entry, such that 
+
+> K
+
+X
+
+> k=1
+
+τk = 1 and τk ∈ { 0, 1} ∀ k. 
+
+We concatenate τ with ξ to form the conditioning vector 
+
+ζ = [ ξ, τ ]⊤, which is injected via FiLM. These constraints are not explicitly enforced during infer-ence but must be learned implicitly through the conditioning signal. The constraint encoding also informs the model of task-imposed end effector constraints, which it otherwise would not know while operating in joint space. 
+
+C. Data Generation Approaches 
+
+Algorithm 2: Trajectory Generation with Failure Conditioning (Constrained & Unconstrained)                                                                
+
+> Input: Start-goal pairs Qs,g , nominal joint limits Q,˙Q,primitive encoding τ
+> Output: Valid trajectories with associated failure-conditioned limits
+> 1foreach (qs,qg)∈Q(s, g )do
+> 2if τ=constrained then
+> 3p1: T←INTERPOLATE EEP ATH (qs,qg);
+> 4q1: T←SOLVE IKP ATH (p1: T);
+> 5else
+> 6if τ=unconstrained then
+> 7q1: T←RRTC ONNECT (qs,qg);
+> 8if ISVALID (q1: T, τ )then
+> 9(q,˙q)←MIN JERK OPTIMIZE (q1: T);
+> 10 Jf←SAMPLE FAILURE JOINTS () ;
+> 11 f←SAMPLE FAILURE TYPE () ;
+> 12 ξ←APPLY FAILURES (Jf, f, q,˙q,Q,˙Q);
+> 13 STORE TRAJECTORY (q,˙q, ξ, τ );
+
+We generate a dataset of failure-conditioned joint-space trajectories for two distinct task constraints: constrained 
+
+and unconstrained . Each trajectory q1: T ∈ RT ×N
+
+consists of T joint configurations sampled at fixed intervals of ∆t seconds. These trajectories are used to train and evaluate our diffusion-based planning framework. 
+
+a) Start and Goal Sampling: For unconstrained, start and goal configurations (qs, qg) are sampled over nominal joint limits and filtered for feasibility using self-collision checks and workspace bounds. For constrained, we instead filter for joint configurations that have planar end-effector poses (ps, p g) at a fixed z-height. 
+
+b) Trajectory Construction: As shown in Algorithm 2, Unconstrained trajectories are computed using an RRT-Connect joint-space planner with goal biasing. Constrained trajectories are generated by interpolating end-effector poses along a straight Cartesian path, then solving for each joint configuration using an optimization-based IK solver with pose consistency constraints. All trajectories are smoothed in time using minimum-jerk optimization to produce zero-velocity endpoints and continuous velocity profiles ( ˙ qt).
+
+c) Failure Condition Sampling: To simulate embodi-ment degradation, we sample a structured failure vector ξ
+
+per trajectory. We first select the number of affected joints according to an exponential decay distribution, assuming single joint failure to be more likely, as compared to multiple joint failures. We then sample one of three failure types: joint angle range reduction, velocity limit reduction, or combina-tion. Modified joint limits are computed from the trajectory’s observed values with added uniform noise margins. In par-ticular, for angle range reduction, the joint’s feasible position and velocity range are tightened to encompass the observed extrema with an added random buffer ϵ.
+
+d) Task Validity Filtering: For both constraints, only trajectories that obey the constraint-specific requirements are retained. For constrained motions, validity is determined by: 1) total change in end-effector alignment, 2) manipulability above a certain threshold, and 3) path efficiency measured as the length between the two points as compared to the arc length of the generated path. For unconstrained, we verify feasibility using manipulability and goal reachability checks. IV. E XPERIMENTAL EVALUATION 
+
+We evaluate DEFT in two settings: (i) a simulation anal-ysis and (ii) a real-world comparison . We ask if a single policy can remain fail-active under embodiment degradation. As shown in Section IV-A.2, DEFT consistently outperforms classical baselines on task success rate while under arbitrary, multi-joint failures and failures not seen during training. The real-world study further examines if these gains translate to end-to-end execution under induced multi-joint failures and primitive switches in real-world scenarios. Together, the results show that DEFT is a single policy that generalizes to arbitrary failure configurations , completes multiple manipu-lation primitives , and handles multi-joint failures .
+
+A. Simulation Analysis 
+
+We test three hypotheses to probe DEFT’s generalization to arbitrary joint failures ( H1 and H2 ) and to test whether DEFT produces both unconstrained and constrained motions (H3 ).: 
+
+H.1 Does DEFT obey embodiment constraints of arbitrary actuation failures more often than classical planners? Unconstr ained     
+
+> Tr ajector y Unconstr ained in Or ientation
+> Tr ajector y Unconstr ained
+> in Position
+> Constr ained
+> Or ientation Fixed Dur ing Tr ajector y
+> Tr ajector y M ust M ove in
+> Str aight Line Fig. 3: Graphic description of the constraint definitions used in Section IV-A. The unconstrained primitive corresponds to a feasible trajectory between two points and includes unconstrained manipulation where the object is rigidly secured to the end-effector. The constrained corresponds to planar, approximately straight-line motion with minimal end-effector orientation change.
+
+H.2 Does DEFT generalize to out-of-distribution (OOD) failures? 
+
+H.3 Does DEFT adhere to constraint conditions more than approaches specialized to a single class of constraints? 
+
+1) Evaluation Preliminaries: Below, we define the task constraints geometrically, specify the dataset and baselines, and describe the in-domain (ID)–out-of-domain (OOD) par-titioning in joint-limit space. Finally, we define the statistical procedures used to aggregate outcomes. 
+
+a) Evaluation Setup: We use the motion planning method from Section III-C as our baseline, with RRT for 
+
+unconstrained motions and differential IK with opti-mization for constrained motions. These baselines do not handle both primitives. In contrast, DEFT generates both within a unified model. We evaluate on a fixed-base 7-dof Franka Emika Panda arm. The study covers 4.7k failure conditions; of which 2.9k includes joint angle constraints (reduced and locked) and the rest are joint velocity constraints. For each condi-tion, we randomly select 1–7 joints to be locked, range-limited, or velocity-restricted. Of these conditions, 22% are in-domain (ID) and 78% are out-of-domain (OOD). We classify ID/OOD using Mahalanobis (global) and k-NN (local) distances in joint space, labeling cases beyond the 95th percentile of either metric as OOD. Each unique failure condition is tested 100 times, each with 100 start-goal pairs for a total of 4.7M trajectories evaluated. Approximately 5% of failure conditions render constrained motion infeasible and were excluded. 
+
+b) Constraint Definitions: Constraints correspond to task-relevant motion primitives. Unconstrained motion (Fig. 3, top) corresponds to a feasible trajectory between two points and includes manipulation primitives where the object is rigidly secured to the end-effector. The objective is to move from qs ∈ RN to qg ∈ RN with no additional geometric constraints beyond feasibility under failures.           
+
+> TUnconstrained =
+> n
+> qt∀t∈ { 1, . . . , T }q1=qs,qT=qg,
+> qt∈ C t(q, ξ )
+> o
+> .
+> (3)
+
+Constrained motion (Fig. 3, bottom) corresponds to planar, approximately straight-line motion with minimal end-effector orientation change. This provides a spatial constraint for mo-tion primitives such as pushing, pulling, or surface tracing. Let pt ∈ R3 be the end-effector position, Rt ∈ SO (3) its orientation, and Rs the initial orientation. Let P ⊂ R3 be the designated plane. A trajectory satisfies constrained if, for all t, it obeys: (1) pt ∈ P , (2) ∆pt = proj P (pt) ≤ ϵp,(3) ∆R t = ∥Rt − Rs∥F ≤ ϵR, and (4) qt ∈ C t(ξ). The valid trajectory set is:               
+
+> TConstrained =
+> n
+> qt∀t∈ { 1, . . . , T }pt∈ P ∧
+> ∆pt≤ϵp,∆R t≤ϵR∧qt∈ C t(q, ξ )
+> o
+> .
+> (4)
+
+c) Evaluation Metrics: We applied statistical methods to test whether DEFT outperforms baseline approaches. Because success rates are bounded between 0 and 1 and often vary in spread, we used nonparametric methods that do not assume normally distributed data. To compare DEFT with the baseline under each failure condition, we estimated the difference in success rates using bootstrapping; if the 95% confidence interval does not include zero, DEFT is considered better. To compare performance across groups of conditions (e.g., in-distribution vs. out-of-distribution, task constraint, or failure type), we used the Mann–Whitney U test, which is robust to unequal variances and outliers. To reduce the risk of false positives when making many com-parisons, we applied false discovery rate (FDR) correction. Finally, to assess the overall effect of planner choice, we used a χ2 test to ask whether using DEFT significantly changes the odds of satisfying constraints across all tasks. 
+
+2) Results: In this section, we demonstrate that DEFT sig-nificantly outperforms traditional planning baselines across various failure conditions. DEFT achieves a 37.66 percentage point improvement in constraint satisfaction compared to classical methods. We also show that DEFT generalizes well to unseen failure conditions, maintaining near-parity performance across in-distribution and out-of-distribution failure conditions. Finally, DEFT excels at handling both constrained and unconstrained motion tasks, with substantial gains in success rates across diverse constraints. 
+
+a) H.1 Analysis: To evaluate whether DEFT produces trajectories that satisfy failure constraints at a higher rate than traditional planning baselines, we compare overall con-straint satisfaction. DEFT achieves a success rate of 74.51%, while the baseline achieves only 36.85%. This represents an absolute improvement of 37.66 percentage points. A bootstrap analysis confirms the reliability of this difference (p < 10 −10 ), yielding a 95% confidence interval of [37.21%, 38.10%] on the improvement in success rate. The specific performance rates for both angle and velocity failures can be seen in Table I. Because the improvement holds across heterogeneous failure types and a wide range of sampled magnitudes, it indicates that DEFT generalizes to arbitrary joint-level degradations by conditioning directly on the fail-ure embedding. In practice, given a new failure specification, DEFT translates it into feasible motion plans at substantially higher rates than the baseline.                       
+
+> Hypothesis Summary Test Condition Baseline DEFT H.1 Does DEFT handle Angle Failure 48.2% 84.3 %arbitrary joint failures? Velocity Failure 32.5% 70.8 %
+> H.2 How well does DEFT In Domain 78.33%
+> handle unseen failures? Out of Domain 73.61% H.3 How well does DEFT Constrained 30.93% 46.42 %create multiple primitives? Unconstrained 42.4% 99.58%
+> TABLE I: Success rate of the Baseline methods and the DEFT method.
+
+b) H.2 Analysis: To test whether DEFT generalizes to unseen embodiment failure conditions, we tested success rates across in-distribution (ID) versus out-of-distribution (OOD) embodiment failure conditions, classified using Ma-halanobis distance and k-NN distances in joint space. DEFT maintained a high constraint satisfaction rate as shown in Table I. The small difference between ID and OOD perfor-mance indicates robustness to distributional shift. Near-parity between ID and OOD success indicates DEFT extrapolates over joint space rather than memorizing seen cases. Conse-quently, previously unseen failure configurations, regardless of which joint is affected or the magnitude of degradation, are translated into geometrically feasible, constraint-satisfying trajectories, evidencing DEFT’s ability to handle arbitrary failure conditions. 
+
+c) H.3 Analysis: To assess whether DEFT more reli-ably satisfies task motion constraints, we evaluate perfor-mance separately for unconstrained (where the end effector can move freely, such as pick-and-place) and 
+
+constrained (where the end effector must remain level and move in a straight line, such as surface tracing, pushing, and pulling) motions. The constraint satisfaction rate for both the categories as compared to the baselines (Table I) shows that DEFT performs better for both primitives. In the unconstrained setting, DEFT achieves a constraint satisfaction rate of 99.58%, compared to 42.40% for the RRT baseline, an absolute improvement of 57.18 percentage points. A Mann–Whitney U test on the unconstrained 
+
+primitive difference between baseline and DEFT confirms that DEFT is statistically significant in 95.24% of tested con-ditions after FDR correction, with a median bootstrap 95% confidence interval on the improvement in success rate of [34.62%, 79.85%]. For the constrained motions, DEFT achieves 46.42% satisfaction compared to the baseline’s 30.93%. A chi-squared test confirms that primitive constraint satisfaction is significantly associated with planner choice for both unconstrained and constrained primitives (χ2 test , p < 10 −10 ) , providing strong empirical support for 
+
+H.3 . It is important to note that the overall low success rate arises from the combined constraints of the primitive and the failure condition. For this evaluation, when excluding condi-tions, we checked only whether the randomly sampled start and goal satisfied the constrained constraints. However, this check does not guarantee that any feasible action exists, which likely contributes to the sub-50% success rate. These findings indicate that DEFT is not specialized to a single manipulation mode: it reliably synthesizes feasible trajectories for both unconstrained and constrained 
+
+motions under the policy. 
+
+Ablation note. In simulation, conditioning yields similar constraint-obedience to an unconditioned diffusion ablation (within ≈1–2 percentage points overall), while delivering large gains in real-world task success (Section IV-B). 
+
+B. Real World 
+
+Having established in simulation that DEFT general-izes to unseen failures and and reliably instantiates both 
+
+unconstrained and constrained motions, we now test whether these gains translate to end-to-end task success on hardware. The next subsection evaluates DEFT, the hybrid RRT–Differential-IK optimization approach used in data generation (Section III-C), and an ablation of DEFT without the conditioning input, DEFT-NoConditioning, on two long-horizon, multi-primitive tasks (drawer and erasing).                                     
+
+> TABLE II: Applied joint limits (rad) for real-world configurations.
+> Bold indicates a locked joint; italics indicate reduced limits.
+> Joint Drawer Erasing Lower Upper Lower Upper
+> J1-0.81 0.17 0.033 1.028
+> J20.10 1.50 -1.763 1.763
+> J3-0.90 0.60 -2.897 2.897
+> J4-2.60 -1.30 -2.59 -2.59
+> J5-0.10 1.70 -0.073 0.957
+> J60.90 2.50 1.865 2.958
+> J7-0.85 1.60 -2.897 2.897
+
+1) Task Description: We evaluate our system on two long-horizon, multi-step manipulation tasks that integrate both unconstrained and constrained actions, and that require transitions between unconstrained free-space motion and constrained contact-rich interaction. 
+
+a) Drawer Task: (Fig. 4, Top Right) The drawer task consists of five sequential phases: (1) pulling the drawer open from its closed state, (2) pushing the object to a graspable position, (3) grasping an object from the workspace, (4) plac-ing the object inside the drawer, and (5) pushing the drawer closed. The task combines unconstrained manipulation (pick-ing and placing) with constrained manipulation (pushing and pulling), while alternating between unconstrained free-space motion and the constrained kinematics of the drawer. This structure creates distinct primitive requirements and embodiment sensitivities, making it effective for evaluating how conditioning and inpainting influence robustness. We assign scores of 1.0 for completing the task and 0.0 for not completing the task as all observed errors led to complete task failure. We evaluated 10 runs per approach. Dr opped Er aser  Er aser Not Picked Incom plete W ipe 
+
+> ?
+> Dr opped No Plan Ignor e Pr im itive
+> 1) Pick
+> Er aser
+> 2) W ipe
+> Boar d
+> 1)Pull
+> Dr aw er
+> Open
+> 3) Pick and
+> Place to Dr aw er
+> 2) Push to
+> Gr aspable State
+> Dr aw er Task Er asing
+> Task
+
+Fig. 4: Left (Erasing): The robot grasps an eraser from the table and performs back-and-forth sweeps on the whiteboard to remove text. Right (Drawer): The robot opens the drawer, pushes an object to a graspable pose, grasps it, places it inside, and then closes the drawer. Observed failure modes included, for erasing, incomplete wipes or drops when constraint-consistent motion was not obeyed (excess or insufficient normal force) and missed picks when, without inpainting, the policy failed to reach the prescribed start and goal poses; and for the drawer, failure to open when the constraint motion was ignored, inability to find a feasible plan under task constraints, and drops when, without inpainting, the target positions were not respected. 
+
+b) Erasing Task: The erasing task requires the robot to first grasp an eraser from the table, then sweep it back and forth across a whiteboard to remove pre-written text. Here, unconstrained manipulation (picking) leads into constrained, contact-rich surface motion (erasing), requiring sustained alignment with the constrained geometry of the board. This task emphasizes embodiment-dependent failure recovery in a setting where continuous constraint satisfaction and primitive-specific control are necessary, providing acomplementary evaluation to the drawer task. We partially score each trial up to 1.0 point: (i) +0.25 for picking the eraser, (ii) +0.50 for removing the target text, and (iii) +0.25 for retaining the eraser. We evaluated 10 runs per approach. 
+
+2) Failure Condition Description: For reproducibility, we list the joint limits enforced on the physical robot in Table II. In the drawer task, all seven joints operate under reduced ranges. Collectively, these reductions shrink both reachable and orientation workspaces, diminish null-space freedom, and lower manipulability. In the erasing task, the elbow J4 is locked at −2.4 rad, removing one degree of freedom; J1, J5,and J6 are reduced, further constraining end effector rotation and positioning. 
+
+3) Results: In the following section, we present real-world task results that further validate the findings from our simulations. DEFT consistently outperforms traditional baselines, achieving perfect task completion in both the Drawer and Erasing tasks. These results underscore the robustness of DEFT in handling joint-limit failures, showing how embodiment and primitive conditioning enable stable, feasible motion plans where optimization-based methods fail. 
+
+TABLE III: Real-world task results over 10 runs.                      
+
+> Model Task Mean Std.
+> DEFT Drawer 1.00 0.00 DEFT Erasing 1.00 0.00 Optimization Drawer 0.00 0.00 Optimization Erasing 0.35 0.32 DEFT-NoConditioning Drawer 0.60 0.49 DEFT-NoConditioning Erasing 0.93 0.12
+
+a) Drawer Task: DEFT achieved perfect task comple-tion on the drawer task (Table III). The Optimization baseline produced no executable plans. DEFT-NoConditioning suc-ceeded in 6/10 runs. Qualitatively, Optimization repeatedly failed to find feasible trajectories in the constrained drawer setting. The unconditioned ablation failed for two reasons: 1) the lack of embodiment conditioning and 2) missing start– goal inpainting. These missing components caused surface-constraint violations and jerky motion leading to the robot dropping the object and being unable to open the drawer. DEFT alternated cleanly between unconstrained pick-and-place and constrained push and pulls without violating joint or contact limits. 
+
+b) Erasing Task: DEFT again achieved perfect com-pletion (Table III). The Optimization baseline had a success rate of 35% and exhibited unstable surface interaction with poor contact maintenance. DEFT-NoConditioning had asuccess rate of 93% but would disobey the contact constraints causing the robot to lose control of the eraser, consistent with missing embodiment conditioning and inpainting. Under a severe configuration (elbow locked at J4 = −2.4 rad with reduced wrist and base limits), DEFT maintained smooth, constraint-consistent sweeps while preserving grasp. These outcomes support our central hypothesis: embod-iment and task conditioning, coupled with inpainting and clamping, yield a policy that remains fail-active under em-bodiment degradation. Practically, they show that DEFT re-covers performance in settings where traditional optimization either cannot plan or produces unstable motions, and where an unconditioned generative policy is brittle. Together with the simulation results, the real-world trials substantiate that a single conditioned diffusion policy sustains task success across multiple primitives and joint-limit failures. V. C ONCLUSION & F UTURE WORK 
+
+The practical bottleneck to long-horizon autonomy is surviving hardware faults without stopping. Building fail-active robots is necessary to maintain functionality under faults without constant human intervention. To that end, we presented DEFT , a Diffusion-based Embodiment-aware Fail-active Task-conditioned trajectory generation framework that enables robots to adapt to joint failures while preserving task performance. Without explicit replanning or policy switch-ing, DEFT generalizes across multiple failure types and motion primitives. Experiments show DEFT maintains high success rates under multiple joint failures, especially in out-of-distribution scenarios. In real-world trials, DEFT executes reliably under previously unseen multi-joint failures, deliv-ering high task success with strict joint limit compliance. Future work will focus on real-time failure detection, cross-embodiment transfer to enable fail-active strategies learned on one robot architecture to generalize to different robot platforms, and expanding manipulation skills like pivoting or throwing. By reframing how robots respond to actuation failures, DEFT contributes to the development of reliable autonomous systems capable of continuous operation under adverse conditions. REFERENCES 
+
+[1] NASA Science, First drilled sample on mars since 2016 ,NASA Science: Mars, May 23, 2018. [2] NASA/JPL, Shoulder motor balks on opportunity rover’s robotic arm , Jet Propulsion Laboratory News, Apr. 23, 2008. [3] P. Barosz, G. Gołda, and A. Kampa, “Efficiency analysis of manufacturing line with industrial robots and human operators,” Applied Sciences , vol. 10, no. 8, 2020. [4] International Organization for Standardization, Robots and robotic devices — safety requirements for industrial robots — part 1: Robots , Geneva, Switzerland, Jul. 2011. [5] International Organization for Standardization, Safety of machinery — safety-related parts of control systems — part 1: General principles for design , Geneva, Switzerland, Dec. 2015. [6] International Electrotechnical Commission, Safety of ma-chinery — electrical equipment of machines — part 1: General requirements , Geneva, Switzerland, Oct. 2016. [7] “Reliability,” in Aerospace Actuators 1 . John Wiley & Sons, Ltd, 2016, ch. 2, pp. 33–61, ISBN : 9781119307662. [8] A. M. Bloch, P. S. Krishnaprasad, and R. M. Murray, 
+
+Nonholonomic Mechanics and Control . Springer, 2016. [9] F. Barbieri, J. W. Hines, M. Sharp, and M. Venturini, “Sensor-based degradation prediction and prognostics for remaining useful life estimation: Validation on experimental data of electric motors,” International Journal of Prognostics and Health Management , vol. 6, no. 3, 2015. [10] G. Briscoe-Martinez, A. Pasricha, A. Abderezaei, S. Cha-ganti, S. C. Vajrala, S. K. Popuri, and A. Roncone, “Ex-ploring how non-prehensile manipulation expands capability in robots experiencing multi-joint failure,” in IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , 2024. [11] B. Xie and A. A. Maciejewski, “Maximizing the probability of task completion for redundant robots experiencing locked joint failures,” IEEE Transactions on Robotics , vol. 38, no. 1, pp. 616–625, 2021. [12] T.-H. Pham, G. Aikins, T. Truong, and K.-D. Nguyen, “Adaptive compensation for robotic joint failures using partially observable reinforcement learning,” Algorithms ,vol. 17, no. 436, pp. 1–16, 2024. [13] Z. Mu, L. Han, W. Xu, B. Li, and B. Liang, “Kinematic analysis and fault-tolerant trajectory planning of space ma-nipulator under a single joint failure,” Robot. Biomim. ,vol. 3, no. 16, pp. 1–12, 2016. [14] M. Kim, U. Shin, and J.-Y. Kim, “Learning quadrupedal locomotion with impaired joints using random joint mask-ing,” in IEEE International Conference on Robotics and Automation (ICRA) , 2024. [15] A. Lugmayr, M. Danelljan, A. Romero, F. Yu, R. Timofte, and L. Van Gool, “Repaint: Inpainting using denoising dif-fusion probabilistic models,” in 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022, pp. 11 451–11 461. [16] O. Porges, D. Leidner, and M. A. Roa, “Planning fail-safe trajectories for space robotic arms,” Frontiers in Robotics and AI , vol. 8, 2021. [17] V. Rayankula and P. M. Pathak, “Fault tolerant control and reconfiguration of mobile manipulator,” Journal of Intelli-gent & Robotic Systems , vol. 101, no. 2, p. 34, 2021. [18] Y. Yang, W. Li, B. Song, Y. Zou, and Y. Pan, “Enhanced fault tolerant kinematic control of redundant robots with linear-variational-inequality based zeroing neural network,” PA, vol. 133, USA: Pergamon Press, Inc., Jul. 2024. [19] Y. Wang, X. Ding, Z. Tang, C. Hu, Q. Wei, and K. Xu, “A novel analytical inverse kinematics method for ssrms-type space manipulators based on the poe formula and the paden-kahan subproblem,” International Journal of Aerospace En-gineering , vol. 2021, no. 1, p. 6 690 696, 2021. [20] S. G. Khan, “Adaptive chaos control of a humanoid robot arm: A fault-tolerant scheme,” Mechanical Sciences , vol. 14, no. 1, pp. 209–222, 2023. [21] F. Yang, C. Yang, D. Guo, H. Liu, and F. Sun, “Fault-aware robust control via adversarial reinforcement learning,” in 2021 IEEE 11th Annual International Conference on CYBER Technology in Automation, Control, and Intelligent Systems (CYBER) , IEEE, 2021, pp. 109–115. [22] W. Okamoto, H. Kera, and K. Kawamoto, “Reinforcement learning with adaptive curriculum dynamics randomization for fault-tolerant robot control,” 2021. [23] A. Cully, J. Clune, D. Tarapore, and J.-B. Mouret, “Robots that can adapt like animals,” Nature , vol. 521, no. 7553, pp. 503–507, 2015. [24] M. Allard, S. C. Smith, K. Chatzilygeroudis, B. Lim, and A. Cully, “Online damage recovery for physical robots with hierarchical quality-diversity,” 2, vol. 3, New York, NY, USA: Association for Computing Machinery, Jun. 2023. [25] C. Chi, Z. Xu, S. Feng, E. Cousineau, Y. Du, B. Burchfiel, R. Tedrake, and S. Song, “Diffusion policy: Visuomotor policy learning via action diffusion,” The International Journal of Robotics Research , p. 02 783 649 241 273 668, 2023. [26] J. Zhong and et al., “Edmp: Ensemble-of-costs-guided dif-fusion for motion planning,” in IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , 2023. [27] Y. Yang and et al., “Dimsam: Diffusion models as samplers for task and motion planning under partial observability,” in 
+
+Robotics: Science and Systems (RSS) , 2023. [28] A. Sridhar, D. Shah, C. Glossop, and S. Levine, NoMaD: Goal Masked Diffusion Policies for Navigation and Explo-ration , arXiv:2310.07896 [cs], Oct. 2023. [29] S. Dasari, O. Mees, S. Zhao, M. K. Srirama, and S. Levine, The Ingredients for Robotic Diffusion Transformers ,arXiv:2410.10088 [cs], Oct. 2024. [30] P. Blanchard, R. L. Devaney, G. R. Hall, and B. Persaud, 
+
+Differential equations , eng, 4. ed., international ed. Indepen-dence, KY: Brooks/Cole, Cengage Learning, 2011.

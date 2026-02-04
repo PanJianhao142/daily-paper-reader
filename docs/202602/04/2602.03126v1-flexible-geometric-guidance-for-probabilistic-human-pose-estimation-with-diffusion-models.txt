@@ -1,0 +1,413 @@
+Title: Flexible Geometric Guidance for Probabilistic Human Pose Estimation with Diffusion Models
+
+URL Source: https://arxiv.org/pdf/2602.03126v1
+
+Published Time: Wed, 04 Feb 2026 01:48:11 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+2025 19th International Conference on Automatic Face and Gesture Recognition (FG) 
+
+# Flexible Geometric Guidance for Probabilistic Human Pose Estimation with Diffusion Models 
+
+## Francis Snelgar 1,2, Ming Xu 1, Stephen Gould 1, Liang Zheng 1, Akshay Asthana 2 
+
+> 1
+
+School of Computing, Australian National University, Canberra, Australia  
+
+> 2
+
+Seeing Machines, Canberra, Australia 
+
+Abstract — 3D human pose estimation from 2D images is a challenging problem due to depth ambiguity and occlusion. Because of these challenges the task is underdetermined, where there exists multiple—possibly infinite—poses that are plausible given the image. Despite this, many prior works assume the existence of a deterministic mapping and estimate a single pose given an image. Furthermore, methods based on machine learning require a large amount of paired 2D-3D data to train and suffer from generalization issues to unseen scenarios. To address both of these issues, we propose a framework for pose estimation using diffusion models, which enables sampling from a probability distribution over plausible poses which are consistent with a 2D image. Our approach falls under the guidance framework for conditional generation, and guides samples from an unconditional diffusion model, trained only on 3D data, using the gradients of the heatmaps from a 2D keypoint detector. We evaluate our method on the Human 3.6M dataset under best-of-m multiple hypothesis evaluation, showing state-of-the-art performance among methods which do not require paired 2D-3D data for training. We additionally evaluate the generalization ability using the MPI-INF-3DHP and 3DPW datasets and demonstrate competitive performance. Finally, we demonstrate the flexibility of our framework by using it for novel tasks including pose generation and pose completion, without the need to train bespoke conditional models. We make code available at https://github.com/ fsnelgar/diffusion_pose .
+
+I. I NTRODUCTION 
+
+Estimating the 3D pose of a human from one or more images is a widely studied problem in computer vision with a broad range of applications including human-computer interaction, robotics and augmented reality. We highlight two key challenges in this line of work. First, estimating 3D pose using 2D images is an inherently ambiguous prediction task, caused by issues such as occlusion and monocular depth resolution. In short, the mapping from 2D images to 3D pose is underdetermined. Second, pose estimation methods based on machine learning require extensive amounts of paired 2D-3D data to learn a suitable mapping. Collecting such a dataset can require considerable annotation effort. A promising approach to address the first challenge—one that we adopt in this paper—is to estimate a probability distribution over plausible poses, i.e ., those consistent with the image data, instead of a single best pose. Given such a distribution we can then sample plausible poses and evaluate them against some downstream task. Indeed, under this 
+
+> This work was supported by Australian Research Council (ARC) Linkage grant LP21020093. Evaluation
+> Training
+> 🔒
+
+Fig. 1: Overview of our pose estimation method. Using the 2D detections (modeled as Gaussians) from a keypoint detector fϕ, we guide the reverse process of an unconditional diffusion model pθ to sample 3D poses from a conditional distribution using geometric guidance. Only 3D poses are required for training. framework an explicit representation of the distribution is not necessary so long as we can draw samples. Several recent works [7], [21], [22], [17], [46], [20] pur-sue this direction, leveraging conditional generative models. However, a limitation of these works is that they require paired datasets of conditioning signal (i.e ., images) and ground truth 3D poses for training. In contrast, we guide an unconditional human pose diffusion model using a condition-ing signal which can be trained separately. The benefit of this approach is twofold. First, we can be flexible with our choice of 2D conditioning signal, e.g ., different keypoint detectors or partial observation of keypoints, without retraining anew conditional generative model. Second, we introduce the idea of controllable diversity , where we can modify the uncertainty ellipses in our 2D conditioning to vary both the magnitude and direction of diversity for conditional pose generation. The basis of our method relies on the guidance frame-work , first introduced by Dhariwal and Nicol [8] for class-conditional image generation. Classifier guidance has an in-tuitive Bayesian interpretation, where an unconditional pose diffusion model acts as a prior distribution over plausible human poses, while the 2D conditioning signal allows for sampling from the posterior distribution of poses conditioned on the 2D input. In our work, 2D conditioning input is derived from the output of joint keypoint detectors applied 979-8-3315-5341-8/25/$31.00 ©2025 IEEE 
+
+> arXiv:2602.03126v1 [cs.CV] 3 Feb 2026
+
+to monocular RGB images. Our contributions are as follows. First, we propose a conditional pose generation framework based on diffusion models and conditional guidance. A core capability of our approach, which improves on prior works, is decoupling the training of the 3D pose generation and 2D conditioning blocks. Second, we show how to use our framework for novel conditioning inputs such as masked joints for pose completion. Finally, we describe how to explicitly control the diversity of generated poses, all without retraining bespoke conditional diffusion models. II. R ELATED WORK 
+
+In this section we present a brief overview of recent works using diffusion models. We then summarize works in the field of human pose estimation as well as recent works using probabilistic methods to address the problem. 
+
+Diffusion models are a recent family of generative models originally proposed by Sohl-Dickstein et al . [36]. They were popularized by Ho et al . [16] who showed state-of-the-art results for image generation and Rombach et al . [32] and Saharia et al . [33] showed they could successfully generate images from text conditioning. More recent works successfully applied diffusion models to domains such as human motion [49], [41], point clouds [47], and 3D novel view synthesis [45]. 
+
+2D-3D pose estimation from images is an extensively studied task. A common approach is to assume 2D keypoint detections are available for all joints, reducing the 3D pose estimation task to a “lifting” problem [25], [31], [46], [48], [12], [7]. Martinez et al . [25] propose a competitive baseline method using a simple MLP network which was improved on by Zhao et al . [48] with the use of a graph based network. Pavllo et al . [31] incorporate temporal information into the problem, further improving performance. Gong et al . [12] uses a diffusion model conditioned on 2D keypoint detections. They produce a deterministic pose estimate by taking the mean of sampled 3D poses. Unlike this family of pose estimation works, our method focuses on generating a distribution of plausible 3D poses instead of a single deterministic sample. 
+
+Correspondence free pose estimation. While learning based methods have made significant progress in 2D-to-3D lifting, they require large amounts of paired 2D-3D data to train, and can suffer from cross-domain generalization issues [13]. Correspondence free methods require only 3D data during training, however to date their performance has lagged behind 2D-3D methods. Bogo et al . [3] use the SMPL shape model [23] to fit a mesh to detected 2D keypoints. Mueller et al . [28] extended the work to better handle interpenetration and self contact in SMPLify-XMC. Gu [14] proposed a hierarchical optimization method in dynamic scenes for tracking multiple subjects. Other methods [6], [37] use a neural network to learn a parameter update rule in a gradient descent framework. Only 3D data is required to train the update rule, and for inference the update rule is used to minimize the keypoint reprojection error. 
+
+Probabilistic pose estimation. Because of the ambiguity in human pose estimation introduced in part by occlusion and inaccuracies in the 2D detectors, probabilistic pose estimation has long been studied. Early works, e.g . [35], used stochastic sampling coupled with shape models to propagate uncertainty from the image space to the shape space and use kinematic constraints to guarantee plausible poses. Sharma 
+
+et al . [34] use a variational autoencoder conditioned on 2D detections and train a second network used to rank the hypotheses. Wehrbein et al . [46] use a normalizing flow network conditioned on multivariate Gaussian parameters fitted to detector heatmaps to map the detector distribution to the 3D pose distribution. Diffusion models have also been applied in recent works [17], [7], [5] with the denoising model directly conditioned on detector results. These recent probabilistic works train a conditional generative model, requiring paired 2D-3D data, and are likely to over-fit to the specifics of the 2D detector used, leading to poor gen-eralisation to new detectors. Our method has the advantage of not requiring any 2D detector or image data for training and can be explicitly guided by the characteristics of the 2D condition at evaluation time. Jiang et al . [20] also train an unconditional diffusion model to learn the prior distribution of human poses. A key difference is that ours has a strong probabilistic inter-pretation through adherence to the underlying principles of DDPMs and classifier guidance by explicitly sampling from an approximation to the conditional density, whereas ZeDO use an optimization framework with a diffusion model to fix implausibility in seed poses. In particular, ZeDO is initialized with cluster centers from a nearest neighbours preprocessing step, whereas ours is initialized from a zero-mean identity-covariance Gaussian following standard DDPM theory. Fur-thermore, we do not constrain the joints to the rays defined by the camera center and 2D keypoints, instead allowing the observation likelihood to be weighted against the prior, and indeed in the case of pose completion, to be missing altogether. Contemporary work by Ji et al . [19] is also similar to our method, however uses a truncated diffusion schedule initialized with the 2D keypoints at the ground truth depth of the pelvis joint where as our method is initialized from 
+
+N (0 , I) and estimates from RootNet [27]. 
+
+Geometric guidance in diffusion models. Gradient based guidance for diffusion models was proposed by Dhariwal and Nichol [8] for classifier guided image generation, where it was used in addition to a trained conditional model. Wang 
+
+et al . [44] propose a technique for camera pose estimation using a gradient guidance term to enforce epipolar geometry constraints in an iterative manner similar to Jiang et al . [20]. Foo et al . [10] apply guidance in their human mesh estima-tion work to enforce consistency between the predicted mesh and the 3D human pose. Similar to our gradient estimation method they also use the prediction of the denoised sample for their method. Different to our method, these geometric guidance works only apply the guidance term to part of the process and is used to complement a conditional model. III. B ACKGROUND 
+
+A. Unconditional Generation using DDPMs 
+
+Denoising diffusion probabilistic models (DDPM) [16], [36] are a form of generative models that learn to generate samples from distribution x0 ∼ p (x) by iteratively denois-ing samples taken from a simple base measure, commonly 
+
+xT ∼ N (0 , I), over steps t ∈ { T, . . . , 1}. The so-called forward process of diffusion models is a Markov chain, where Gaussian noise is gradually added at each step as 
+
+q (xt | xt−1) = N
+
+
+
+xt; p1 − βtxt−1, β tI
+
+
+
+, (1) where β1, . . . , β T is a schedule controlling the amount of noise added and αt = 1 − βt, ¯αt = Qti=1 αi. As ¯αt → 0,
+
+qt → N (0 , I). A property of the forward process is that xt
+
+can be sampled from x0 at any step t,
+
+q (xt | x0) = N  xt; √¯αtx0, (1 − ¯αt)I . (2) The reverse process aims to recover x0 ∼ p(x) from random noise xT ∼ N (0 , I). Diffusion models are trained to approximate the reverse process with a neural network pθ
+
+with learnable weights θ. Typically pθ is trained to estimate the noise ϵ in xt using the simplified objective [16], 
+
+Lsimple (θ) = Et,x 0,ϵ 
+
+
+
+∥ϵ − ϵθ (√¯αtx0 + √1 − ¯αϵ, t )∥2
+
+
+
+. (3) In our method, we train an unconditional pose generator using DDPMs and sample poses conditioned on 2D detec-tions using the principled guidance framework [8], which we will describe in Section III-B. 
+
+Connections with score matching. Dhariwal et al . [8], [38] observe the connection of diffusion models param-eterized using this noise prediction formulation to score matching methods [42], [39]. Concretely, 
+
+∇xt log pθ (xt) = − 1
+
+√1 − ¯αt
+
+ϵθ (xt). (4) The interpretation is interesting: each reverse process step taken by the learned model is actually taking a step in the direction of steepest ascent of the learned data density pθ . In essence, the neural network is pushing a (potentially noisy) sample xt into a region of high likelihood. 
+
+B. Conditional Sampling using DDIM 
+
+Dhariwal et al . [8] describe how to adapt score matching formulations to include a guidance term based on condition-ing input. Concretely, we wish to sample from conditional distribution pθ (x | c), where c is some conditioning input. Following the score matching interpretation for DDPMs, we would like to take gradient steps to maximize the conditional log-likelihood. Concretely, we would like the conditional score function ∇xt log pθ (xt | c), which after applying Bayes’ rule gives 
+
+∇xt log pθ (xt | c) = ∇xt log pθ (xt)+ ∇xt log p (c | xt) , (5) noting that p(c) does not depend on xt. This tells us that sam-pling from a conditional distribution can be achieved if we can define a suitable observation likelihood for c. Dhariwal 
+
+et al . [8] train a noisy classifier for class conditional image sampling. However, for pose estimation, it is straightforward to directly condition on 2D joint detections. In practice, we find it important to scale the gradient of the observation log-likelihood by a constant factor γ. This can be interpreted as tempering (resp. sharpening) the likelihood function p(c | x) when γ ≤ 1 (resp. γ > 1). IV. G EOMETRIC GUIDANCE FOR POSE ESTIMATION 
+
+We now describe our specific formulation for DDPM and guidance for the 3D pose estimation from images task. We aim to estimate human 3D pose as a set of J joints in 3D denoted by x ∈ RJ×3, from a w-by-h image, I ∈ Rw×h.Importantly, we do not require paired training data (x, I ). As standard for this task, the 3D pose x is defined in the camera coordinate frame using the root relative pose definition. The root relative pose is obtained by subtracting the hip joint in the camera coordinate frame for all joints j ∈ { 1, . . . , J }.We train an unconditional model pθ using the DDPM for-mulation introduced in Section III-A using the root relative pose representation from a dataset of only 3D poses. This gives us the ability to sample plausible human poses. For guidance, we assume that we additionally have access to the output of a detector giving the estimated 2D location of the j-th joint in pixel coordinates parameterized by a Gaussian with mean c(j) and covariance Σ(j). We will show later how these parameters can be estimated from a detection heatmap. Since detections are in 2D we need to project the 3D pose into the image plane using the camera intrinsic parameters [15]. Mathematically, we have the likelihood of a 3D joint location given the image as 
+
+p(x(j) | I) = N (π(x(j)); c(j), Σ(j)), (6) where π is the 3D-to-2D projection operator and N (z; μ, Σ) 
+
+is the likelihood of a multivariate Gaussian random variable with mean μ and covariance matrix Σ.We present an overview of the complete pipeline used for the pose estimation task in Alg. 1, and discuss each component in detail in the following sections. 
+
+Algorithm 1 Pose Estimation Pipeline 
+
+Require: pθ , T , c = {c(j)}Jj=1 , Σ = {Σ(j)}Jj=1 
+
+xT ∼ N (0 , I)
+
+for t from T down to 1 do 
+
+ϵθ ← pθ (xt)ˆx0 ← 1√ ¯αt (xt − √1 − ¯αtϵθ )ˆx′ 
+
+> 0
+
+← ˆx0 + γ∇ˆx0 log p(c | ˆx0, Σ) 
+
+ϵ ∼ N (0 , I)
+
+xt−1 ← √¯αt ˆx′ 
+
+> 0
+
++ (1 − ¯αt)ϵ
+
+end for 
+
+A. Observation Likelihood for Conditioning 
+
+We require a model for the observation likelihood p(c | x)
+
+for conditional sampling. This is given by our 2D detector. Specifically, for a joint j where a detection is available, 
+
+p(c(j) | x(j) 
+
+> t
+
+) = N (c(j); π(x(j) 
+
+> t
+
+), Σ(j)). (7) Importantly, we do not require all joints to have an obser-vation, and define the set of joints with valid conditioning as I ⊆ { 1, . . . , J }. Assuming that all p(c(j) | x(j) 
+
+> t
+
+) are independent, the observation likelihood is then 
+
+p(c | xt) = Y
+
+> j∈I
+
+p(c(j) | x(j) 
+
+> t
+
+), (8) and the gradient of the observation log-likelihood is 
+
+∇x(j)
+
+> t
+
+log p(c | xt) = 
+
+(∇x(j)
+
+> t
+
+log p(c(j) | x(j) 
+
+> t
+
+), j ∈ I 
+
+0, otherwise. (9) When results from multiple detector implementations are used, or results from different cameras there are multiple sources of observation. In this case we assume independence and simply sum the gradient contributions over the individual observation terms. 
+
+Estimating parameters from heatmap. When heatmap based detectors are used, the parameters of (7) can be estimated directly from the heatmap by solving a least squares problem. Concretely, given a normalized 1 heatmap 
+
+H(j) ∈ Rw×h 
+
+> +
+
+we find c(j) and Σ(j) for each joint j as 
+
+argmin 
+
+> c, Σ
+> w
+
+X
+
+> u=1
+> h
+
+X
+
+> v=1
+
+log H(j) 
+
+> uv
+
+− log N (yuv ; c, Σ) 22
+
+, (10) where yuv is the 2D coordinate corresponding to the (u, v )-th coordinate in heatmap and N is the density function of a 2D multivariate Gaussian with mean c and covariance Σ.When heatmaps are not available we use the 2D keypoint coordinates as c(j) and empirically choose a fixed value for 
+
+Σ(j) that approximately matches values heatmap detectors are trained with [4]. 
+
+Controlling diversity. To control the diversity of the 3D poses we modify covariances of the 2D detections using 
+
+Σ(j) from (7). By modifying the eigenvalues of Σ(j) we can control the scale of diversity , and by modifying the eigenvectors of Σ(j) we can control the axes of diversity .We present analysis for both in Section V-F. 
+
+B. Gradient Estimation 
+
+We found it beneficial in practice to set a small value for 
+
+γ (γ = 2 × 10 −4 in our experiments) during the denoising process, effectively reducing the strength of the guidance relative to the pose prior. This choice is especially important in the early stages of the reverse process, since pose xt
+
+is close to random initialization and does not match the observed 2D keypoints. As a result, (5) is dominated by the conditioning term. We observed that aggressive guidance terms early in the reverse process often caused instability during denoising, leading to generation of implausible poses. Furthermore, we found it beneficial to apply the posterior gradient update (5) to the estimated denoised sample ˆx0
+
+> 1By normalized we mean that the elements of the heatmap sum to one.
+
+instead of the noisy sample xt similar to [2]. Recall from (2) that we can estimate the denoised sample ˆx0 from the predicted noise ϵθ using the relation 
+
+ˆx0 = 1
+
+√¯αt
+
+(xt − √1 − ¯αtϵθ ). (11) One denoising step in our method is expressed as 
+
+xt−1 ∼ q(xt−1 | ˆx′
+
+> 0
+
+), (12) where 
+
+ˆx′ 
+
+> 0
+
+= ˆ x0 + γ∇ˆx0 log p(c | ˆx0, Σ) . (13) Both heuristics are employed to improve the stability of the dynamics of the denoising process. V. E XPERIMENTS 
+
+A. Datasets 
+
+Human 3.6M. Human 3.6M [18] is a large scale dataset of 3.6 million images for 3D human pose estimation. It provides pose annotations from a motion capture system for four different camera views of eleven different actors performing various tasks. The dataset is split with subjects 1,5,6,7,8 for training and subjects 9 and 11 for evaluation. We follow previous works [17], [46] and evaluate on every 64 th frame. 
+
+MPI-INF-3DHP. The MPI-INF-3DHP [26] evaluation dataset features six actors with a greater variation in poses than H3.6M and includes indoor, indoor green screen and outdoor scenes. Ground truth annotations are provided from a markerless motion capture system including ‘true’ annota-tions and ‘universal’ annotations compatible with the H3.6M skeleton, which has a fixed skeleton size. 
+
+3DPW. The 3D Poses in the Wild [43] evaluation dataset is a challenging dataset of diverse in-the-wild outdoor scenes captured from both static and moving cameras. It contains 60 video sequences with accurate per frame camera calibrations and 3D pose annotations obtained from video and IMU sensors. 
+
+B. Metrics 
+
+We use the standard evaluation metrics used in 3D pose estimation literature for fair comparison against previous works. 
+
+MPJPE. Mean Per Joint Position Error is the mean per joint Euclidean distance between measurement and ground truth after root joint alignment. 
+
+PA-MPJPE. Procrustes Aligned Mean Per Joint Position Error is the mean per joint Euclidean distance between measurement and ground truth after procrustes alignment. 
+
+PCK. Percentage of Correct Keypoints is defined as the percentage of keypoints with Euclidean distance less than a threshold to the ground truth. We use the standard threshold of 150mm [26]. 
+
+AUC. Area Under the Curve is the average of the PCK metric evaluated at a range of thresholds from 0mm to 150mm [26]. C. Implementation 
+
+Diffusion model. For the denoising network we adapt the simple baseline from Martinez et al . [25]. The network consists of blocks of linear, batch normalization, and ReLU layers repeated twice with a residual connection around each block. We use two blocks for a total of eight linear layers, and all layers have dimension 1024. The diffusion timestep is embedded using sinusoidal encoding then projected to the hidden dimension using a feed forward network. The timestep is injected into the network in every layer. The network is trained on the training set of Human 3.6M for 100,000 steps using the Adam optimizer with learning rate of 10 −4. We also use exponential moving average of weights with decay rate of 0.995. The training objective is the simplified loss using a cosine β schedule [30] with 1000 steps and offset of 8 × 10 −3.
+
+2D conditioning information. For Human 3.6M we use detection results from a Stacked Hourglass [29] network pretrained on MPII [1] and fine tuned on Human 3.6M provided by Ci et al . [7]. For MPI-INF-3DHP and 3DPW datasets we follow previous works [20], [21] and use ground truth 2D keypoints. 
+
+Camera parameters. For 2D conditioning tasks we use the camera intrinsic parameters supplied with the datasets. 
+
+Root joint depth. To convert the root relative pose representation into an absolute pose representation required for evaluating the observation likelihood we use the publicly available detection results from RootNet [27] for estimating the depth of the root joint. 
+
+D. Multi-Hypothesis Pose Estimation 
+
+In this section we present results for multi hypothesis 3D pose estimation using our conditional guidance framework introduced in Section IV. We evaluate multi hypothesis per-formance by drawing M samples and reporting the minimum MPJPE between all samples and the ground truth following previous works [7], [21], [22], [46], [17], [20]. We include methods based on conditional generation which are trained using paired 2D-3D data, as well as several recent correspon-dence free methods for comparison. However, note that the most relevant method for comparison is the contemporary work from Jiang et al . [20], which is both probabilistic and correspondence free, similar to our method. 
+
+Results on Human 3.6M. We evaluate on subjects 9 and 11 of the Human 3.6M dataset and present results in Table I. With M=50, our method is comparable to conditional generation models which are trained using large amounts of paired 2D-3D data. Notably, we improve on the existing state-of-the-art correspondence free probabilistic method by Jiang et al . [20]. 
+
+Results on MPI-INF-3DHP. We evaulate the cross do-main generalization of our method on the MPI-INF-3DHP dataset. The pose prior model is trained on the Human 3.6M dataset and evaluated on MPI-INF-3DHP without additional fine tuning. We report results for M=50 in Table II. Our method performs well in the cross domain setting and is TABLE I: Pose estimation performance on the Human 3.6M dataset. Paired 2D-3D indicates that the method requires 2D-3D correspondences for training while 3D Only indicates only 3D data is required. For probabilistic methods M
+
+indicates the number of hypotheses used. Keypoint detections from 2D keypoint detectors such as HRNet [32] or Stacked Hourglass Network [29] are used.                                                                  
+
+> Data Method MMPJPE ↓PA-MPJPE ↓
+> Paired 2D-3D  Martinez et al . [25] 62.9 47.7 Gong et al . [12] 549.7 31.6 Li et al . [22] 10 73.9 44.3 Li et al . [21] 552.7 42.6 Sharma et al . [34] 200 46.8 37.3 Wehrbein et al . [46] 200 44.3 32.4 Holmquist et al . [17] 200 43.3 32.0 Ci et al . [7] 200 35.6 30.5 3D Only Gu [14] 77.2 -Fan et al . [9] 61.5 48.2 Bogo et al . [3] 82.3 -Song et al . [37] -56.4 Jiang et al . [20] 165.7 49.0 Jiang et al . [20] 50 51.4 42.1 Ours 178.6 58.2 Ours 50 46.3 37.3 Ours 200 42.3 34.4
+
+TABLE II: MPI-INF-3DHP results. Results marked with * are taken from [20]. CD indicates if the evaluation is cross domain, i.e ., methods were not fine tuned on the 3DHP dataset.                                         
+
+> Data Method CD MMPJPE ↓PCK ↑AUC ↑
+> Paired 2D-3D  Martinez et al . [25]* 84.3 85.0 52.0 Ci et al . [7] ✓200 -86.9 -Gholami et al . [11] ✓77.2 88.4 54.2 Gong et al . [13] ✓73.0 88.6 57.3 3D Only  Jiang et al . [20] ✓50 69.9 90.2 58.8 Ours ✓50 73.2 89.1 56.2
+
+comparable with current state-of-the-art correspondence free methods. 
+
+Results on 3DPW. The 3DPW dataset is a particularly challenging in-the-wild dataset with diverse poses from out-door scenes. We follow the same cross-domain evaluation protocol and use the pose prior model trained on Human 3.6M without fine tuning for evaluation. Results are pre-sented in Table III. While performance of our method with 
+
+M=1 lags recent work, when increased to M=50 we improve on current state-of-the-art, highlighting the increased diver-sity (but plausible) poses generated by our method. 
+
+Analysis of number of hypotheses. Because the monoc-ular pose estimation task is underdetermined, we aim to estimate a probabilistic distribution of poses. While the performance of our method lags current state-of-the-art for a single deterministic hypothesis, we present the effect of increasing the number of hypotheses in Figure 2 and com-Fig. 2: MPJPE as a function of number of samples for Human 3.6M and 3DPW datasets. Results for ZeDO [20] were reproduced from the official repository. TABLE III: Results on the 3DPW dataset. Results marked with * are taken from [20] and results marked with †
+
+were produced using code from the official repository. CD indicates if the evaluation is cross domain, i.e ., methods were not fine tuned on the 3DPW dataset.                                           
+
+> Data Method CD MMPJPE ↓PA-MPJPE ↓
+> Paired 2D-3D  Ma et al . [24] 67.5 41.3 Gong et al . [13]* ✓94.1 58.5 Gholami et al . [11] ✓81.2 46.5 3D Only  Song et al . [37] -55.9 Fan et al . [9] 98.6 68.0 Jiang et al . [20] ✓169.7 40.3 Jiang et al . [20] †✓50 54.8 30.6 Ours ✓179.9 50.1 Ours ✓50 48.5 30.4
+
+pare the trade off between single hypothesis and multiple hypothesis performance for our method and Jiang et al . [20] on the Human 3.6M and 3DPW datasets. The trend across both datasets is for our methods performance to lag behind for small number of hypotheses, but continues to improve as the number increases while Jiang et al . method [20] begins to plateau. Also note that it is trivial for our method to increase the number of hypotheses, whereas Jiang et al . [20] requires k-means clustering for a given value of M, with each hypothesis initialized from a different cluster centroid. 
+
+E. Flexible Generation 
+
+We additionally demonstrate the flexibility of our method by applying it to different tasks using the same pretrained model. 
+
+Effectiveness on unconditional 3D pose generation. 
+
+Without guidance our denoising network acts as a pose generator, drawing samples from Gaussian noise. We show several qualitative examples in Figure 3. The samples are visually plausible and exhibit diversity between samples, 
+
+Fig. 3: Qualitative examples of diverse 3D human poses generated by our method without guidance. 
+
+Fig. 4: Qualitative examples of pose completion results. Observation likelihood is not defined for red joints and the model must ‘inpaint’ these joints. Grayscale images illustrated for context. indicating our model has successfully learned the distribution of plausible human poses. 
+
+Effectiveness on pose completion. In pose estimation tasks it is common for keypoints to be occluded in the image and it is necessary for methods to be able to estimate poses given incomplete detection results. We evaluate the quality of our learned pose prior by applying it to a pose completion task. This task simulates occlusion by removing the condition for different subsets of joints and evaluates the ability of methods to recover plausible poses when conditioned on incomplete detection results. We remove the observation likelihood for missing joints, requiring the pose prior to inpaint plausible completions. For joints that are not missing, we use the observation likelihoods previously described. We show selected examples of pose completion results in Figure 4. Note that while the masked joints may not exactly match the image, they are consistent with the rest Fig. 5: Qualitative examples of the effect of scaling co-variance matrices Σ(j). Each column has the same latent variable; the scaling factor decreases down the column. of the joints, and as a complete pose the results are plausible. We observe in particular that the range of movement in the arms is particularly diverse, which aligns with natural human motion. 
+
+F. Controllable Diversity 
+
+A significant advantage of our method is that through the use of different likelihoods, it is possible to tailor the level of diversity as required by the application. In the following section we evaluate the diversity of the generated poses, and the impact of different observation likelihood functions on the diversity. 
+
+Diversity magnitude. The Gaussian likelihood function is parameterized by covariance matrices Σ(j). By scaling these matrices by a constant factor s, it is possible to control the 
+
+magnitude of diversity. We demonstrate this capability by evaluating the impact on the multi hypothesis pose estimation task using the Human-3.6M dataset. We present qualitative examples for different values of s · Σ(j) in Figure 5. For small values of s, generated poses are more uniform and are consistent with the condition, with diversity increasing for larger values of s, making it possible to trade off diversity and plausibility as the application requires. To verify this observation we measure the mean per joint standard deviation of M samples, and present the results in Figure 6. There is a clear trend showing more variation with larger values of s, with performance saturating as the method approaches unconditional generation. 
+
+Diversity axes. While modifying the scale of the co-variance matrices Σ(j) changes the magnitude of diversity, we also demonstrate that our method allows control of the 
+
+axes of diversity through rotating and stretching of Σ(j). We observe that this occurs naturally in heatmap based detectors when occlusion is present, with the heatmaps becoming large and rotated. This is captured by the Gaussian parameteri-zation of the observation likelihood. We present qualitative examples of different covariances in Figure 7 of cases where 0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75 2.00 
+
+> s
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+> Joint Std Dev (mm)
+
+Fig. 6: Effect of applying a scaling factor s to Σ on pose diversity. The mean per joint standard deviation for 200 samples is reported for different values of s.this occurs. Visually the heatmaps capture the uncertainty in the true pose in the image plane, and the projection of the occluded joint from the drawn samples is distributed along the major axis of the heatmap, mirroring the uncertainty from the detector. Note that the projections in the second row appear multi modal, which may indicate that not all poses that are consistent with the observation likelihood agree with the learned distribution of the pose prior. VI. F URTHER ANALYSIS 
+
+In this section we present an ablation study on the com-ponents of our pose estimation system. 
+
+Reverse Process Gradients: We analyze the impact of the alternate update formulation introduced in Section IV-B using the 3DPW dataset. Results are presented in Table IV. Our proposed method substantially improves performance which we attribute to two reasons. First, ∇p(c | xt) is noisy with large magnitude early in the reverse process when xt is close to random noise, which can push samples out of the learned distribution causing implausible samples. Second, as t → 0, ¯αt → 1, and the classifier guidance update √1 − ¯αt∇ log p(c | xt) → 0, providing minimal guidance to the reverse process. In contrast, our gradient update γ∇ log p(c | ˆx0) has a constant scaling factor γ,and provides stable and consistent dynamics throughout the reverse process. 
+
+Root Joint: As the generative pose prior operates in root-relative coordinates, we use RootNet [27] to predict the 3D root joint position. We assume error in these predictions and for probabilistic estimation we sample around these predictions. Concretely, given a RootNet model f ϕ , we sample root joint positions xroot ∼ N (fϕ(I), Σ) with a small fixed variance Σ. We present the impact of root joint positions in Table IV. Sampling around RootNet predictions slightly improves performance, while using the ground truth 3D position further improves performance. 
+
+2D Keypoint Detector: In Section V we follow Jiang et al . [20] and use Stacked Hourglass [29] keypoints for Human Fig. 7: Qualitative examples for high 2D detector uncertainty. Overlays of the detector heatmap and 2D projection of sampled poses are shown on the left. Only the joint with high uncertainty is shown for clarity. Panels to the right contain corresponding 3D pose results. Notice the heavy occlusions present in these images, which highlights the inherent ambiguity of the task.          
+
+> Grad Update Root Joint Sampling GT Root Joint MPJPE ↓
+> 112.8
+> ✓53.1
+> ✓✓48.5
+> ✓✓43.6
+
+TABLE IV: Ablation analysis for different configurations of our method. Results are for multiple hypothesis pose estimation on the 3DPW dataset using 50 samples. Grad Update indicates the use of the gradient update introduced in Section IV-B, Root Joint Sampling indicates sampling around the detected root joint position, GT Root Joint indicates the use of the ground truth root joint position. 3.6M dataset and ground truth keypoints for MPI-INF-3DHP and 3DPW datasets. We present additional results in Table V using HRNet [40] for completeness. These datasets are more diverse than Human 3.6M with outdoor and in-the-wild scenes featuring multiple subjects, and without fine tuning, keypoint detection accuracy lags behind. VII. C ONCLUSION 
+
+In this work, we present a novel and flexible geometric guidance framework for probabilistic human pose estimation based on principled guidance theory. Our framework decou-ples 3D pose generation and 2D detection, alleviating the need for training sets of paired 2D-3D data. We show state-of-the-art correspondence free performance for probabilistic human pose estimation on the Human 3.6M dataset, and competitive performance on the MPI-INF-3DHP and 3DPW datasets. We demonstrate the flexibility of our method by showing that our human pose prior can be used for un-conditional generation and propose extending the guidance                   
+
+> MPJPE ↓
+> Method GT H36M 3DHP 3DPW Jiang et al . [20] ✓35.7 †69.9 ⋆54.8 ⋆
+> 51.4 ⋆115.9 †105.4 †
+> Ours ✓36.8 73.2 48.5 46.3 115.2 92.3
+
+TABLE V: Multiple hypothesis pose estimation using ground truth and detected keypoints for all datasets with 50 samples. GT indicates if ground truth keypoints were used. Results marked with ⋆ are taken from [20], those marked with †
+
+were produced using the official repository. framework for pose completion tasks, all without the need to train bespoke conditional models. 
+
+Limitations and future works. A limitation of our method is that DDPMs require repeated sampling during the reverse process, which may not be practical for real time applications. To address this, investigating faster sampling methods such as DDIM [39] would be a promising direc-tion. The best-of-m method used for evaluating probabilistic models is a current limitation for in-the-wild evaluation as it requires ground truth annotations, which should be addressed in future works. Our geometric guidance uses a simple Gaussian model for the observation likelihood, and does not take advantage of cues such as temporal consistency. An interesting direction for future work could be to extend our method to utilize more expressive observation likeli-hoods and furthermore, incorporate temporal information from videos. VIII. E THICAL IMPACT STATEMENT 
+
+Risks: As our method deals with human pose estimation, the use of subjects biometric data, and their consent to this use must be considered. We use both videos of subjects and their 3D poses in the training and evaluation of our method, which introduces the possibility of private biometric data being captured or memorized in the models we train. Additionally the statistical distribution of the training data should be considered, as it introduces the risk of our method being unfairly biased against particular demographic or hu-man behaviors. 
+
+Strategies: All three datasets we use in our experiments (H3.6M [18], 3DHP [26] and 3DPW [43]) are datasets captured specifically for the purposes of scientific research using actors who have consented to their data being captured for this purpose. To mitigate bias in methods using the data, the datasets are constructed with using a number of different actors (H36M: 11, 3DHP: 8, 3DPW: 7) of both genders (H36M: 5/6, 3DHP: 4/4), and performing a wide range of different tasks (H36M: 15, 3DHP: 8) and ‘in-the-wild’ sequences (3DPW). Additionally, our method never combines both video and biometric modalities into a single model, with the keypoint detector only trained with video data, while the pose diffusion model is only trained with 3D pose data. 
+
+Benefit Risk Analysis: While there is always a risk of machine learning models memorizing biometric data, we mitigate this risk through the use of public datasets of actors who have given their consent. Additionally our method effectively eliminates the chances of multiple modalities of data being memorized in the single model due to the decoupled nature of our method. The authors of the datasets attempt to minimize potential bias in the data, however the variation of subjects and behaviors is relatively small and models trained using these datasets are likely to suffer from bias of some form. As our method is to be used for academic purposes only, and not in any safety critical capacity, the potential side effects of potential bias is limited to poor generalization and therefore is minor. REFERENCES [1] M. Andriluka, L. Pishchulin, P. Gehler, and B. Schiele. 2d human pose estimation: New benchmark and state of the art analysis. In 
+
+IEEE Conf. Comput. Vis. Pattern Recog. , June 2014. [2] A. Bansal, H.-M. Chu, A. Schwarzschild, S. Sengupta, M. Goldblum, J. Geiping, and T. Goldstein. Universal Guidance for Diffusion Models. In IEEE Conf. Comput. Vis. Pattern Recog. Worksh. , pages 843–852, June 2023. [3] F. Bogo, A. Kanazawa, C. Lassner, P. Gehler, J. Romero, and M. J. Black. Keep it SMPL: Automatic estimation of 3D human pose and shape from a single image. In Eur. Conf. Comput. Vis. , Lecture Notes in Computer Science. Springer International Publishing, Oct. 2016. [4] Y. Chen, Z. Wang, Y. Peng, Z. Zhang, G. Yu, and J. Sun. Cascaded Pyramid Network for Multi-Person Pose Estimation. In IEEE Conf. Comput. Vis. Pattern Recog. , 2019. [5] J. Choi, D. Shim, and H. J. Kim. Diffupose: Monocular 3d human pose estimation via denoising diffusion probabilistic model. IEEE Int. Conf. on Intelligent Robots and Systems , 2023. [6] V. Choutas, F. Bogo, J. Shen, and J. Valentin. Learning to fit morphable models. In Eur. Conf. Comput. Vis. , volume 6 of Lecture Notes in Computer Science, 13666 , pages 160–179, Cham, Oct. 2022. Springer. [7] H. Ci, M. Wu, W. Zhu, X. Ma, H. Dong, F. Zhong, and Y. Wang. Gfpose: Learning 3d human pose prior with gradient fields. IEEE Conf. Comput. Vis. Pattern Recog. , pages 4800–4810, 2023. [8] P. Dhariwal and A. Nichol. Diffusion models beat gans on image synthesis. Adv. Neural Inform. Process. Syst. , 34:8780–8794, 2021. [9] T. Fan, K. V. Alwala, D. Xiang, W. Xu, T. Murphey, and M. Mukadam. Revitalizing optimization for 3d human pose and shape estimation: A sparse constrained formulation. Int. Conf. Comput. Vis. , 2021. [10] L. G. Foo, J. Gong, H. Rahmani, and J. Liu. Distribution-aligned diffusion for human mesh recovery. Int. Conf. Comput. Vis. , 2023. [11] M. Gholami, B. Wandt, H. Rhodin, R. Ward, and Z. J. Wang. Adaptpose: Cross-dataset adaptation for 3d human pose estimation by learnable motion generation. In IEEE Conf. Comput. Vis. Pattern Recog. , pages 13075–13085, June 2022. [12] J. Gong, L. G. Foo, Z. Fan, Q. Ke, H. Rahmani, and J. Liu. Diffpose: Toward more reliable 3d pose estimation. In IEEE Conf. Comput. Vis. Pattern Recog. , June 2023. [13] K. Gong, J. Zhang, and J. Feng. Poseaug: A differentiable pose augmentation framework for 3d human pose estimation. In IEEE Conf. Comput. Vis. Pattern Recog. , 2021. [14] R. Gu. Towards Multi-Person 3D Pose Estimation in Natural Videos .PhD thesis, University of Washington, 2020. [15] R. I. Hartley and A. Zisserman. Multiple View Geometry in Computer Vision . Cambridge University Press, ISBN: 0521540518, second edition, 2004. [16] J. Ho, A. Jain, and P. Abbeel. Denoising diffusion probabilistic models. In H. Larochelle, M. Ranzato, R. Hadsell, M. Balcan, and H. Lin, editors, Adv. Neural Inform. Process. Syst. , volume 33, pages 6840– 6851. Curran Associates, Inc., 2020. [17] K. Holmquist and B. Wandt. Diffpose: Multi-hypothesis human pose estimation using diffusion models. In Int. Conf. Comput. Vis. , 2023. [18] C. Ionescu, D. Papava, V. Olaru, and C. Sminchisescu. Human3.6m: Large scale datasets and predictive methods for 3d human sensing in natural environments. IEEE Trans. Pattern Anal. Mach. Intell. ,36(7):1325–1339, jul 2014. [19] H. Ji and H. Li. 3D Human Pose Analysis via Diffusion Synthesis. Arxiv preprint, January 2024. [20] Z. Jiang, Z. Zhou, L. Li, W. Chai, C.-Y. Yang, and J.-N. Hwang. Back to optimization: Diffusion-based zero-shot 3d human pose estimation. In IEEE Winter Conf. on Applications of Comput. Vis. , 2024. [21] C. Li and G. H. Lee. Generating multiple hypotheses for 3d human pose estimation with mixture density network. In IEEE Conf. Comput. Vis. Pattern Recog. , pages 9887–9895, 2019. [22] C. Li and G. H. Lee. Weakly supervised generative network for multiple 3d human pose hypotheses. CoRR , abs/2008.05770, 2020. [23] M. Loper, N. Mahmood, J. Romero, G. Pons-Moll, and M. J. Black. SMPL: A skinned multi-person linear model. ACM Trans. Graphics (Proc. SIGGRAPH Asia) , 34(6):248:1–248:16, Oct. 2015. [24] X. Ma, J. Su, C. Wang, W. Zhu, and Y. Wang. 3d human mesh estimation from virtual markers. In IEEE Conf. Comput. Vis. Pattern Recog. , pages 534–543, June 2023. [25] J. Martinez, R. Hossain, J. Romero, and J. J. Little. A simple yet effective baseline for 3d human pose estimation. In Int. Conf. Comput. Vis. , 2017. [26] D. Mehta, H. Rhodin, D. Casas, P. Fua, O. Sotnychenko, W. Xu, and C. Theobalt. Monocular 3d human pose estimation in the wild using improved cnn supervision. In Int. Conf. on 3D Vis. , 2017. [27] G. Moon, J. Chang, and K. M. Lee. Camera distance-aware top-down approach for 3d multi-person pose estimation from a single rgb image. In Int. Conf. Comput. Vis. , 2019. [28] L. M¨ uller, A. A. A. Osman, S. Tang, C.-H. P. Huang, and M. J. Black. On self-contact and human pose. In IEEE Conf. Comput. Vis. Pattern Recog. , June 2021. [29] A. Newell, K. Yang, and J. Deng. Stacked hourglass networks for human pose estimation. In Eur. Conf. Comput. Vis. , pages 483–499. Springer, 2016. [30] A. Nichol and P. Dhariwal. Improved denoising diffusion probabilistic models. Proceed. Machine Learn. Research , abs/2102.09672, 2021. [31] D. Pavllo, C. Feichtenhofer, D. Grangier, and M. Auli. 3d human pose estimation in video with temporal convolutions and semi-supervised training. In IEEE Conf. Comput. Vis. Pattern Recog. , 2019. [32] R. Rombach, A. Blattmann, D. Lorenz, P. Esser, and B. Ommer. High-resolution image synthesis with latent diffusion models. In IEEE Conf. Comput. Vis. Pattern Recog. , 2022. [33] C. Saharia, W. Chan, S. Saxena, L. Li, J. Whang, E. L. Denton, K. Ghasemipour, R. Gontijo Lopes, B. Karagol Ayan, T. Salimans, et al. Photorealistic text-to-image diffusion models with deep language understanding. Adv. Neural Inform. Process. Syst. , 35:36479–36494, 2022. [34] S. Sharma, P. T. Varigonda, P. Bindal, A. Sharma, and A. Jain. Monocular 3d human pose estimation by generation and ordinal ranking. In Int. Conf. Comput. Vis. , October 2019. [35] E. Simo-Serra, A. Ramisa, G. Aleny` a, C. Torras, and F. Moreno-Noguer. Single image 3d human pose estimation from noisy observa-tions. In IEEE Conf. Comput. Vis. Pattern Recog. , pages 2673–2680, 2012. [36] J. Sohl-Dickstein, E. Weiss, N. Maheswaranathan, and S. Ganguli. Deep unsupervised learning using nonequilibrium thermodynamics. In 
+
+Int. Conf. Machine Learn. , pages 2256–2265. PMLR, 2015. [37] J. Song, X. Chen, and O. Hilliges. Human body model fitting by learned gradient descent. In Eur. Conf. Comput. Vis. , 2020. [38] Y. Song and S. Ermon. Generative modeling by estimating gradients of the data distribution. In Adv. Neural Inform. Process. Syst. , pages 11895–11907, 2019. [39] Y. Song, J. Sohl-Dickstein, D. P. Kingma, A. Kumar, S. Ermon, and B. Poole. Score-based generative modeling through stochastic differential equations. Int. Conf. Learn. Represent. , 2021. [40] K. Sun, B. Xiao, D. Liu, and J. Wang. Deep high-resolution representation learning for human pose estimation. In IEEE Conf. Comput. Vis. Pattern Recog. , 2019. [41] G. Tevet, S. Raab, B. Gordon, Y. Shafir, D. Cohen-or, and A. H. Bermano. Human motion diffusion model. In Int. Conf. Learn. Represent. , 2023. [42] P. Vincent. A connection between score matching and denoising autoencoders. Neural Comput. , page 1661–1674, 2011. [43] T. von Marcard, R. Henschel, M. Black, B. Rosenhahn, and G. Pons-Moll. Recovering accurate 3d human pose in the wild using imus and a moving camera. In Eur. Conf. Comput. Vis. , sep 2018. [44] J. Wang, C. Rupprecht, and D. Novotny. PoseDiffusion: Solving pose estimation via diffusion-aided bundle adjustment. Int. Conf. Comput. Vis. , 2023. [45] D. Watson, W. Chan, R. Martin-Brualla, J. Ho, A. Tagliasacchi, and M. Norouzi. Novel view synthesis with diffusion models. In Int. Conf. Learn. Represent. , 2023. [46] T. Wehrbein, M. Rudolph, B. Rosenhahn, and B. Wandt. Probabilistic monocular 3d human pose estimation with normalizing flows. In Int. Conf. Comput. Vis. , Oct. 2021. [47] X. Zeng, A. Vahdat, F. Williams, Z. Gojcic, O. Litany, S. Fidler, and K. Kreis. Lion: Latent point diffusion models for 3d shape generation. In Adv. Neural Inform. Process. Syst. , 2022. [48] W. Zhao, W. Wang, and Y. Tian. Graformer: Graph-oriented trans-former for 3d pose estimation. In IEEE Conf. Comput. Vis. Pattern Recog. , pages 20406–20415, 2022. [49] W. Zhu, X. Ma, Z. Liu, L. Liu, W. Wu, and Y. Wang. Motionbert: A unified perspective on learning human motion representations. In Int. Conf. Comput. Vis. , 2023. Fig. 8: MPJPE (blue) and reprojection error (green) as a function of guidance scale γ.
+
+Fig. 9: Joint distribution of MPJPE and reprojection error for 
+
+γ = 2 × 10 −4.IX. 2D K EYPOINT ALIGNMENT 
+
+For the multiple hypothesis pose estimation experiments in Section V we use a fixed guidance scale γ = 2 × 10 −4.Intuitively, the guidance scale provides a trade off between the observation likelihood and the pose prior. To quantify the alignment of generated poses with the observation likelihood we plot the reprojection error between generated poses and the 2D keypoints in Figure 8. We observe that error decreases as γ increases, i.e, generated poses are better aligned with the observation likelihood. We additionally show the joint distribution of reprojection error and MPJPE in Figure 9 and observe that the distribution is weakly correlated, suggesting that for a large enough γ (2 × 10 −4) the reprojection error is minimal and misalignment with the observation likelihood does not significantly contribute to MPJPE. X. K EYPOINT DETECTOR FAILURE CASES 
+
+We present qualitative example of pose estimation inac-curacy caused by keypoint detection failure in Figure 10. In the first and third rows, occlusion of the legs cause keypoint detection failure, and in the second row, keypoints from the background subject have been incorrectly assigned to the foreground subject. XI. M ULTIPLE HYPOTHESIS EXAMPLES 
+
+We present qualitative examples of multiple hypothesis pose estimation in Figure 11. Note the greater variance in the z (depth) dimension compared to the x and y dimensions. As our observation likelihood is defined in the image plane, the magnitude of gradient ∇x(j)
+
+> t
+
+log p(c | xt) is smaller in the z dimension (and is zero at the principal point), leading to greater variance. 
+
+Failure due to depth ambiguity: There is inherent depth ambiguity in monocular methods, and while the increased diversity demonstrated above is a desirable capability, depth ambiguity can also causes a failure mode in our method. As the observation likelihood is based on re-projection to the image plane, there exists an infinite number of poses which match the 2D observations, however not all are plau-sible, and the observation likelihood can guide the reverse process into these kinematically implausible regions. This is particularly problematic for our method in cases with large depth variance, i.e., when the subject is bending towards or away from the camera. We present examples of these failure cases in Figure 12. Note that for each row, there are both correct and incorrect sampled poses, highlighting the benefit of estimating a probabilistic distribution instead of a single deterministic pose. The first column is from the camera view, and the second and third columns show the same samples from the side views where the failure mode is apparent. The first and second rows show incorrect poses where the upper body has rotated backwards instead of forwards around the hip joints. The third row is a case where a sample has implausible bone lengths, with the bones becoming elongated in the lower body, and compressed in the upper body. These poses maximize the observation likelihood as the projection of the 3D joints are consistent with the 2D detections, however are incorrect and kinematically implausible. XII. Q UALITATIVE POSE EXAMPLES 
+
+In this section we present additional qualitative pose examples for various tasks. 
+
+Pose Completion: We present additional qualitative ex-amples of pose completion in Figure 13. Note that the sampled poses may not necessarily be consistent with the image due to the partial observation likelihood, however the samples are visually plausible as a complete human pose. The inpainted joints are coherent with the remaining joints, and bone lengths in limbs appear symmetric and of plausible length. 
+
+Pose Diversity: We show additional qualitative examples for 2D detections with high uncertainty in Figure 14. Note that the projection of the uncertain joint is consistent with the covariance of the observation likelihood, indicating that the posterior pose distribution successfully reflects the un-certainty in the 2D detections. 
+
+In-the-wild Examples: The 3DPW dataset is particularly diverse, including in-the-wild scenes of multiple subjects. We Fig. 10: Failure cases for pose estimation on the 3DPW dataset. Poses are shown from the front, left, right and rear view points in each column. Rows one and three show keypoint detection failure due to occlusion, row two shows failure due to detection of wrong subject. present qualitative examples of pose estimation on 3DPW in Figure 15. Fig. 11: Examples for multiple hypothesis pose estimation. Poses are shown from the front, left, right and rear view points in each column. One sample is shown in bold, other samples are shown in a lighter shade for visual clarity. Note the higher variance in the side views (columns two and three) due to depth ambiguity. Fig. 12: Failure cases for pose estimation. In particular poses with large rotation around the hips joints are problematic, with generated poses either rotating backwards in an implausible manner, or shortening the bone lengths to match the 2D detections. A plausible pose sample is shown in bold, with the failure case shown in a lighter shade. 
+
+Fig. 13: Pose completion example for different completion tasks. Red joints are inpainted by the pose prior. Fig. 14: Examples showing pose estimation results for examples where 2D detections have high uncertainty. The observation likelihood and projection of the uncertain joints is shown on the image in column one, columns two-five show different pose samples. Projection of the uncertain joint is visually consistent with the covariance of the observation likelihood. Fig. 15: In-the-wild pose estimation examples from 3DPW dataset. Grayscale images illustrated for context. When multiple subjects are present, the pose result is for the subject centered in the image.

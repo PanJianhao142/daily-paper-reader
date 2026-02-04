@@ -1,0 +1,1578 @@
+Title: Distance Marching for Generative Modeling
+
+URL Source: https://arxiv.org/pdf/2602.02928v1
+
+Published Time: Wed, 04 Feb 2026 01:29:13 GMT
+
+Number of Pages: 29
+
+Markdown Content:
+# Distance Marching for Generative Modeling 
+
+Zimo Wang 1 Ishit Mehta 1 Haolin Lu 1 Chung-En Sun 1 Ge Yan 1 Tsui-Wei Weng 1 Tzu-Mao Li 1
+
+## Abstract 
+
+Time-unconditional generative models learn time-independent denoising vector fields. But without time conditioning, the same noisy input may cor-respond to multiple noise levels and different de-noising directions, which interferes with the super-vision signal. Inspired by distance field modeling, we propose D ISTANCE MARCHING , a new time-unconditional approach with two principled infer-ence methods. Crucially, we design losses that focus on closer targets. This yields denoising di-rections better directed toward the data manifold. Across architectures, Distance Marching consis-tently improves FID by 13.5% on CIFAR-10 and ImageNet over recent time-unconditional base-lines. For class-conditional ImageNet generation, despite removing time input, Distance Marching surpasses flow matching using our losses and in-ference methods. It achieves lower FID than flow matching’s final performance using 60% of the sampling steps and 13.6% lower FID on average across backbone sizes. Moreover, our distance prediction is also helpful for early stopping dur-ing sampling and for OOD detection. We hope distance field modeling can serve as a principled lens for generative modeling. 
+
+## 1. Introduction 
+
+Recent advances in generative modeling have been driven by diffusion and flow-based approaches (Sohl-Dickstein et al., 2015; Ho et al., 2020; Song et al., 2020a;b; Rezende & Mohamed, 2015; Chen et al., 2018; Lipman et al., 2022), which learn denoising vector fields that transport noise to-ward the data manifold. In practice, high-fidelity and fast sampling typically rely on explicit time conditioning and tightly coupled schedules and parameterizations (Nichol & Dhariwal, 2021; Karras et al., 2022; Ho & Salimans, 2022; Lu et al., 2022; Peebles & Xie, 2023). Although removing explicit time conditioning simplifies the method and enables 
+
+> 1
+
+UC San Diego. Correspondence to: Tzu-Mao Li 
+
+<tzli@ucsd.edu >.ours flow matching flow matching ours  
+
+> data manifold
+> distance field
+> data mea n
+
+Figure 1. We propose D ISTANCE MARCHING to generate images without time input. It is inspired by distance modeling and pro-duces a denoising direction focusing on closer targets, while flow matching loss learns a direction biased toward the data mean in the early stage. We compare outcomes after 20% of the steps to show our generation wanders less. See detailed analysis in Sec. 4. 
+
+flexible denoising tasks, recent attempts (Sun et al., 2025; Balcerak et al., 2025; Wang & Du, 2025) often fall back on ad-hoc, architecture-dependent coefficient constraints and sacrifice image quality. A key obstacle is that, once explicit time conditioning is removed, the same noisy input can arise from multiple noise levels and different denoising directions, making the de-noising target fundamentally ambiguous (Li et al., 2025; Bertrand et al., 2025). Under standard denoising objectives, the optimizer averages over these incompatible targets and may deviate from a direction pointing toward the mani-fold. Empirically, we find that simple time-based reweight-ing does not resolve this ambiguity, and conditional gen-eration can further amplify it through train–inference mis-match (Cheng & Schwing, 2025). In this work, we draw inspiration from computer graphics, particularly distance-field-based methods for surface recon-struction and rendering, and propose D ISTANCE MARCH -
+
+> ING
+
+. We find these seemingly unrelated problems highly rel-evant to generative modeling: both require reasoning about a low-dimensional structure embedded in an ambient space and navigating points toward that structure. Motivated by this connection, we introduce distance-field-inspired losses to train a neural network that depends only on the current point, thereby decoupling generation from explicit time con-ditioning. This distance-field view makes standard gradient 1
+
+> arXiv:2602.02928v1 [cs.LG] 3 Feb 2026 Distance Marching for Generative Modeling
+
+descent a natural and effective update rule across architec-tures in our analysis and experiments. Moreover, because the field provides a meaningful scalar distance value, it also enables sphere-tracing updates as used in rendering (Hart, 1996), highlighting a concrete advantage of modeling gener-ation from a distance-field perspective. More importantly, from a denoising perspective, distance-field-inspired losses help disambiguate the training target. By concentrating learning on closer targets, the learned denoising direction could more effectively denoise and aligns better with the data manifold. We support this claim with qualitative low-dimensional visualizations and quan-titative high-dimensional comparisons. As a result, D IS - 
+
+> TANCE
+
+MARCHING consistently outperforms prior time-unconditional methods across architectures and scales, re-gardless whether class conditioning is used. 
+
+Contributions. Our main contributions are: • Reformulating time-unconditional generation via distance-field modeling. We propose DISTANCE 
+
+MARCHING , which learns a distance-like field that de-pends only on the current point, decoupling generation from explicit time conditioning. • Two principled inference methods from a distance-field view. The learned field supports standard gradient descent via its direction prediction and sphere-tracing-style adaptive updates via its distance value (Hart, 1996). • Objectives that reduce target ambiguity. From distance-field modeling, we design losses that focus on closer targets, yielding directions that denoise more effec-tively. We support it with low-dimensional visualizations and high-dimensional quantitative comparisons. • Competitive results without time conditioning across architectures and scales. DISTANCE MARCHING im-proves average FID by 13.5% across CIFAR-10 and Ima-geNet over recent time-unconditional baselines at similar model sizes (Tab. 12). It also surpasses strong time-conditional flow-matching models on ImageNet. Notably, we achieve lower FID than the baseline’s final result us-ing only 60% of the sampling steps (Fig. 16) and 13.6% lower FID on average across backbone sizes (Fig. 12). 
+
+## 2. Related Work 
+
+Time-conditioned diffusion and flow models. Diffu-sion (Sohl-Dickstein et al., 2015; Ho et al., 2020; Song et al., 2020a;b) and flow-based models (Rezende & Mohamed, 2015; Chen et al., 2018; Lipman et al., 2022) typically rely on explicit time or noise conditioning and carefully designed parameterizations. Prior work improves sample quality or reduces sampling steps by refining schedules, coefficients, and conditioning mechanisms (Nichol & Dhariwal, 2021; Karras et al., 2022; Ho & Salimans, 2022; Lu et al., 2022; Peebles & Xie, 2023). These methods are effective but suffer from exposure bias: during inference, the model is queried at discrete time steps on states it generated itself, which no longer match the true forward-noise distribution, causing error accumulation (Ning et al., 2023; Li et al., 2023). 
+
+Time-unconditional generative modeling. Removing ex-plicit time conditioning has been explored in several lines of work, including early score matching and energy-based formulations (Hyv ¨arinen & Dayan, 2005; Carreira-Perpinan & Hinton, 2005; LeCun et al., 2006; Du & Mordatch, 2019). However, in high-dimensional image generation, eliminating time or noise inputs can degrade image qual-ity (Du & Mordatch, 2019; Nijkamp et al., 2020; Sun et al., 2025) and training stability (Du et al., 2020). Recent time-unconditional approaches such as uEDM (Sun et al., 2025) and Energy Matching (Balcerak et al., 2025) typically rely on specific coefficient constraints or training schedules, and their sampling remains delicate, with inconsistent gains on large-scale datasets. Equilibrium Matching (Wang & Du, 2025) shows sensitivity to the choice of decaying coeffi-cients with limited theoretical guidance, and its effectiveness drops when switching architectures or training setups. 
+
+Distance-field modeling and sphere tracing. Our method draws inspiration from neural distance fields in geometry processing and rendering (Hoppe et al., 1992; Park et al., 2019; Wang et al., 2025). Distance fields guide points to-ward the zero level set using a direction and magnitude that depend only on spatial coordinates, and sphere tracing (Hart, 1996) exploits this property to take adaptive, well-calibrated steps. Prior work (Gomes & Faugeras, 2003; Atzmon & Lip-man, 2020; Ma et al., 2020) has introduced directional rep-resentations and constraints to better regularize the learned distance field. Permenter & Yuan (2023) and Wan et al. (2024) indicate the potential of distance-based modeling for generation but do not introduce new loss functions. 
+
+## 3. Method 
+
+3.1. Preliminary and Motivation 
+
+DISTANCE MARCHING transfers the geometric intuition of distance fields to image generation by learning distance-like fields toward the data manifold with losses that nat-urally emphasize closer targets. This design mitigates time-marginalized ambiguity via distance-based reweight-ing. Fig. 2 shows our 2D toy example: using distance information, the first update makes a large jump that brings samples close to the target support. This motivates learning a scalar field uθ : R2 → R that behaves like an unsigned distance to an implicitly defined target set S (e.g., the two-moons support in Fig. 2). 2Distance Marching for Generative Modeling         
+
+> (a) Target two-moons (orange) and learned level sets uθ
+> (b) Our learned level sets
+> uθand −∇ xuθ(black arrows) (c) Energy Matching learns an energy landscape with inaccurate gradients and details. (d) Equilibrium Matching provides rough energy landscape especially nearby the data manifold. (e) Our generation avoids meandering near the init: init (black), mid (yellow), and final (blue)
+> Figure 2. In 2D, we learn a distance-like scalar field uθ(x)(a and b) that transports samples onto the support of the data distribution (a). In contrast, prior energy-based methods (c, d), even when using minibatch closest rematching during training to disambiguate targets, do not capture energy landscape details. Because they inherit the flow-matching loss, they become unreliable for determining denoising directions once rematching is impractical due to high-dimensional hubness, as analyzed in Sec. 4. See Sec. C.1 for more details.
+
+At any location x where ∇xuθ (x) exists, such a distance-like field provides two pieces of information: the magnitude 
+
+uθ (x), indicating how far x is from S, and the direction 
+
+−∇ xuθ (x), indicating where to move to approach S. To-gether, these properties suggest distance-adaptive updates as shown in Eq. (1): move along −∇ xuθ (x) with a step size scaled by uθ (x).
+
+xi+1 = xi + uθ (xi) v, v := −∇ uθ (xi) (1) In computer graphics, sphere tracing (Hart, 1996) uses this distance estimate to march efficiently toward a surface and compute the ray–surface intersection; here we use the same distance-scaled step with v = −∇ uθ (xi). Although sphere tracing sets an adaptive step length, our formulation is also well suited to gradient descent: the direction −∇ uθ (xi)
+
+provides a ready-to-use descent direction. The process stops when uθ (xi) falls below a threshold or when the maximum number of steps is reached. Intuitively, image generation shares two key similarities with this procedure. First, starting from an initial point, both seek a target on an implicitly defined manifold: a surface in rendering and the data manifold in image generation. Second, popular generative models refine or denoise inputs through iterative updates, much as sphere tracing requires multiple steps to approach the target surface. Extending this intuition from geometric surfaces to data manifolds, we can regard image generation as a sphere trac-ing or gradient descent process toward the data manifold. Naturally, the spatial position x itself contains all the infor-mation required by the distance field uθ (x) with respect to a given data manifold. Consequently, when training such a field in high-dimensional spaces, there is no need to provide time input t describing how the position x is obtained. More fundamentally, uθ (x) can be interpreted not only as the distance but also as an estimate of the noise level, which maps one-to-one to the time variable t. In the terminology of generative modeling, this formulation without time inputs is thus time-unconditional . Furthermore, because energy can be specified as a function of distance, our model is also an energy-based model. These analogies inspire a new possibility: training a distance-like field in high-dimensional space as the basis for image generation. 
+
+3.2. Low Dimensional Distance Field Modeling 
+
+A critical property of an idealized (unsigned) distance field is that it induces a closest-point projection. Let S be a target data manifold and d(x) the distance from x to S. Wherever 
+
+∇d(x) exists, ∥∇ d(x)∥2 = 1 , and the closest point on S is recovered by 
+
+s(x) = x − d(x)∇d(x) , (2) where s(x) ∈ S denotes the closest surface point to x,assuming x lies in the region where the closest-point projec-tion is unique. To encourage a neural network uθ (x) : RD → R, where θ
+
+represents the network parameters and D the spatial dimen-sion, to learn this behavior, we introduce the One-Step Loss 
+
+(OSL). Given training pairs (x(i), s(i)data ) where s(i)data ∈ S is a target point for x(i), we penalize the discrepancy between the predicted one-step projection and the target: 
+
+LOS = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+x(i) − uθ (x(i))∇uθ (x(i)) − s(i)data 
+
+> 22
+
+x(i) − s(i)data  
+
+> 22
+
++ ϵ .
+
+(3) Here ϵ > 0 is a small constant for numerical stability, remov-ing the singularity at x = sdata . The denominator normal-3Distance Marching for Generative Modeling 
+
+izes across pairs, preventing large-displacement pairs from dominating the training signal. We elaborate on sampling training pairs in Sec. 3.3. Although Eq. (2) characterizes a one-step mapping to the surface, it does not uniquely determine the distance field. In particular, for any constant C ≥ 0, the family 
+
+ˆd(x) = ±
+
+q
+
+∥x − s(x)∥22 + C (4) induces the same one-step projection in Eq. (2) wherever the gradient exists, as shown in Fig. 3 for different values of 
+
+C. We prove it in Sec. A.1. -5 0 5    
+
+> 0
+> 5
+> Figure 3. 1D ˆd(x)to the origin; lighter line, larger c0.
+
+To remove this non-uniqueness of the offset C and sign, we intro-duce a second constraint, the Direc-tional Eikonal Loss (DEL), which fixes the offset by selecting the pos-itive branch and C = c0. Specifi-cally, we match ∇uθ (x(i)) to the corresponding target di-rection implied by Eq. (4) with C = c0:
+
+LDE = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+∇uθ (x(i)) − x(i) − s(i)data 
+
+q
+
+x(i) − s(i)data  
+
+> 22
+
++ c0
+
+> 22
+
+.
+
+(5) Intuitively, one-step loss enforces that uθ induces the de-sired one-step mapping, while directional eikonal loss dis-ambiguates the offset C as c0 of the learned field by con-straining the gradient. Among numerous distance-function constraints, Atzmon & Lipman (2020) and Ma et al. (2020) introduce objectives that closely resemble our losses from a different viewpoint and show strong performance when training distance functions in low-dimensional spaces. We now explain why our losses are particularly compatible with high-dimensional image generation compared with standard flow-matching losses. 
+
+3.3. Distance Marching 
+
+In high-dimensional image space, we propose D ISTANCE 
+
+MARCHING (DM), which predicts a distance-like scalar 
+
+uθ (x) ∈ R and a vector field vθ (x) ∈ RD . During infer-ence, our model supports both sphere tracing and gradient descent. Extending neural distance-field objectives from low-dimensional geometry to images is considerably more chal-lenging. First, naive uniform sampling is not directly appli-cable because the real-image manifold is difficult to sample and traverse. Second, searching for the true closest neighbor in a large dataset is computationally expensive and does not scale; moreover, we show in Sec. 4 that naively replacing targets with nearest neighbors can induce mode collapse and condition mismatch (Cheng & Schwing, 2025). Third, computing ∇uθ via automatic differentiation increases com-putational cost, and backpropagating through the resulting second-order derivatives is notoriously unstable (Czarnecki et al., 2017; Li et al., 2024; Chetan et al., 2025). To sample points near real data in high dimensions, we use the standard linear interpolation in Theorem 3.1 to construct training pairs. To address target-selection issues without nearest-neighbor search or target replacement, we rely on our losses implicitly prioritizing closer targets, as analyzed in Sec. 4. To avoid computing ∇uθ in high dimensions, we predict the direction field vθ (x) directly and do not enforce vθ = ∇uθ , while still preserving our key property of focusing on closer targets (Sec. 4). Although vθ may not be curl-free, we still observe convergence during generation, resembling real optimization (Sec. C.5). 
+
+Training. We adopt the linear interpolation between the initial and target as follows: 
+
+Definition 3.1. Let the dataset be D = {s(1) , . . . , s(N )} ⊂ 
+
+RD . Sample an index I ∼ Unif( {1, . . . , N }) and set 
+
+X1 := s(I). Independently sample X0 ∼ N (0, Id) and interpolation coefficient T ∼ pT supported on (0 , 1) with density pT (t). Define the noised samples 
+
+X := (1 − T )X0 + T X1. (6) Here, pT (t) is a user-chosen time-sampling distribu-tion (Karras et al., 2022; Lee et al., 2024; Lipman et al., 2024). Our training pair realization (x(i), s(i)data ) is drawn from the distribution (X, X1).For the 2D toy model, we find minibatch nearest-target replacement helpful, replacing the target X1 with the closest target within the minibatch. However, Sec. 4 shows that this approach can induce mode collapse in high-dimensional spaces. Even without target replacement, we can learn an accurate distance surrogate in high-dimensional image spaces; we provide quantitative results in Sec. 5. From a denoising perspective, our losses encourage a local behavior: the loss minimizer relies more heavily on closer targets sdata . We present the complete analysis in Sec. 4. We extend the previous losses by replacing ∇u with v and setting denoise θ (x(i)) := x(i) −uθ (x(i))vθ (x(i)), and then the previous losses become: 
+
+LOS = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+denoise θ (x(i)) − s(i)data 
+
+> 22
+
+x(i) − s(i)data  
+
+> 22
+
++ ϵ ,LDE = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+vθ (x(i)) − x(i) − s(i)data 
+
+q
+
+x(i) − s(i)data  
+
+> 22
+
++ c0
+
+> 22
+
+.
+
+(7) The constants ϵ, c 0 > 0 not only avoid division by zero and the resulting numerical instability but also discourage 4Distance Marching for Generative Modeling 
+
+excessive sensitivity near the data manifold. We still expect 
+
+uθ to follow a smoothed distance as in Eq. (4), and we verify this in Fig. 14. For class-conditional generation tasks, we use the class label y ∈ { 1, . . . , K } to select and learn a class-specific field uθ (x, y ) and vθ (x, y ).Our final training loss is the combination of the one-step loss and directional eikonal loss, as shown below: 
+
+L = λ1 LOS + λ2 LDE (8) where λ1, λ 2 > 0 are hyperparameters set by the user. 
+
+Inference. When performing inference, starting from an initial noise sample x0 ∼ p0(x), the sphere tracing (ST) update can flexibly incorporate both distance and direction information: 
+
+xi+1 = xi − η u θ (xi) vθ (xi). (9) Our method also supports gradient descent (GD): 
+
+xi+1 = xi − η vθ (xi). (10) For class-conditional generation, we independently sample the class label y ∈ { 1, . . . , K } as an additional model input and fix it during the iterations. 
+
+## 4. Analysis 
+
+4.1. Empirical Study Mode collapse and condition mismatch. In 2D toy exper-iments, we match each interpolated point to its Euclidean nearest training image. This matching can be done approxi-mately within a minibatch or exactly over the full dataset. However, in image space this rule tends to favor low-contrast images when starting from Gaussian noise. To quantify this bias, we measure the coverage rate on CIFAR-10 with 50k training images, defined as the fraction of training images that become the nearest neighbor of at least one interpolated point. We bin the interpolation coefficient t ∈ [0 , 1] uni-formly; in each bin, we draw 50k Gaussian noise samples, form linear interpolations, and compute nearest neighbors in the training set. Fig. 35 shows the full curve. Near the noise endpoint, the coverage rate drops to 0.17% ,and the top 8 images account for 92 .8% of all nearest-neighbor assignments as shown in Fig. 4. Radovanovic et al. (2010) theoretically characterize this high-dimensional hubness, and Frosio & Kautz (2018) find it from an image-denoising perspective, indicating a severe risk of mode collapse under nearest-neighbor matching.                
+
+> Figure 4. These 8images are the nearest neighbors for 92 .8% of noise-end samples. The leftmost one alone accounts for 62 .2%
+> due to its grayness and low contrast. OSL DEL flow matching 0.0 0.5 1.0
+> Interpolation Coefficient
+> 0
+> 1
+> 2
+> 3
+> Posterior Density
+> 0
+> 50
+> 100
+> 150
+> Angle (degrees)
+> Figure 5. Flow matching does not always help denoising. We compare the minimizer vectors induced by flow matching (red), directional eikonal loss (blue), and one-step loss (orange) at the same location and show the posterior over random matches from 8-Gaussians to two-moons conditioned on this point. The right panel shows the posterior of the interpolation coefficient t(gray) and azimuth angles of each minimizer at that position conditioned on different values of t.
+
+Fortunately, we can perform minibatch re-pairing without replacement, using shorter pairings as an explicit criterion and spreading assignments across all targets. Interestingly, optimal-transport-based re-matching schemes (Tong et al., 2023a; Pooladian et al., 2023) arrive at essentially the same strategy and empirically improve generation quality. How-ever, once additional conditions (e.g., class labels) are intro-duced, re-matching can alter the posterior at a given noise location, creating a train–inference mismatch that hurts per-formance (Cheng & Schwing, 2025). 
+
+Posterior minimizer. We thus face a trade-off: distance information is valuable for disambiguating the target and improving quality, yet relying too heavily on nearest neigh-bors induces hubness and can exacerbate train–inference mismatch. In the time-unconditional setting, the posterior minimizer induced by standard flow matching (FM) can be misleading without concentration on closer neighbors: at the same location x, it may point away from high-density regions of the target distribution, whereas one-step loss and directional eikonal loss yield more stable directions by concentrating on closer targets (Figs. 5 and 9). This failure mode is rooted in posterior ambiguity. Con-ditioning on X = x while marginalizing the interpolation coefficient T mixes match pairs from different time steps, so the posterior (X0, X1) | X = x becomes multi-modal 5Distance Marching for Generative Modeling OSL DEL   
+
+> flow matching s0.0 0.5 1.0
+> Interpolation Coefficient
+> 0.0
+> 2.5
+> 5.0
+> 7.5
+> 10.0
+> Posterior Density
+> 55
+> 50
+> 45
+> 40
+> Angle (degrees)
+
+Figure 6. Flow matching minimizers can be biased toward the data mean, whereas our losses intentionally emphasize closer targets. Even with the (1 − t)−2 reweighting, the reweighted minimizer (green) remains very close to standard flow matching (red). In contrast, one-step loss (orange) and directional eikonal loss (blue) yield minimizers that are less affected by the data mean, leading to more effective early-stage denoising on real images (see Fig. 12). Right: posterior of t (gray) and conditioned azimuths of the minimizers. 
+
+(a) t = 0 .25 (b) t = 0 .90 
+
+Figure 8. With an extra condition on the interpolation coefficient, the directions become meaning-ful and consistent. 
+
+Figure 9. Denoising paths with minimizers of OSL (orange), FM loss (red), or reweighted FM loss (green). 
+
+over heterogeneous directions and targets. Consequently, the squared-loss minimizer v∗(x) = E[X1 − X0 | X = x]
+
+averages incompatible displacements, which can produce a direction that does not correspond to any meaningful denois-ing trajectory. Conditioning additionally on t collapses the posterior to a coherent match, and the minimizer becomes well-defined and interpretable (Fig. 8). A natural modification is to reweight the flow-matching loss by (1 −t)−2 to emphasize larger t. However, this reweighted loss still tends to yield directions that point toward the data mean, as shown in Fig. 6. Because its minimizer initially biases toward the geometric center of the target distribution, it does not induce locality (i.e., focus on closer targets) in the early stage, even in the absence of multi-modality. By contrast, one-step loss explicitly prioritizes closer tar-gets, while directional eikonal loss offers an adjustable inter-mediate concentration between one-step loss and standard flow matching. We formalize this locality property in the next subsection and show that it translates into lower FID in Sec. 5 and Fig. 12. We extend this experiment to 8D in Sec. C.2 and show we are qualitatively superior. 60 70 80    
+
+> =X1X02
+> 0.00
+> 0.05
+> 0.10 Probability Density
+
+(a) The pairwise length factor 
+
+ℓ varies widely from 50 to 80 ,acting as an implicit random reweighting in denoising. 60 70       
+
+> =X1X02X0=x
+> 0
+> 2000
+> 4000
+> 6000 Frequency
+
+(b) For a fixed noise sample x,distances from real images to x
+
+also exhibit high variance. 
+
+Figure 10. The length factor ℓ is high-variance and strongly right-skewed, so the flow matching loss implicitly upweights longer pairs (see Theorem A.1). In contrast, our losses reduce this length-induced bias. 0.8 1.0 1.2     
+
+> (f*OS ,h*DE ) + (g*FM ,h*DE )(f*OS ,g*FM )
+> 0
+> 500
+> 1000 Frequency
+
+Figure 11. An additive re-lation like the 2D angles is observed with a mean 1.0003 in image space. 0.0 0.1 0.2 
+
+Interpolation Coefficient 
+
+> 200
+> 300
+> 400
+> FID
+> w/ FM Loss
+> w/ Reweighted FM Loss
+> w/ One Step Loss
+
+Figure 12. With all other variables con-trolled, one-step loss provides a denois-ing direction that achieves markedly lower FID, corroborating Fig. 6. 
+
+4.2. Properties of Our Loss Design (i) Flow matching loss vs. directional eikonal loss. Time-unconditional flow matching loss makes longer pairs domi-nate the direction, whereas directional eikonal loss is length-neutral. 
+
+(ii) One-step loss. One-step loss explicitly concentrates su-pervision on nearby targets as a feature via inverse distance reweighting, thereby reducing the time-marginalized target ambiguity. Full mathematical statements and proofs are deferred to Sec. A.2. Inverse distance reweighting in Eq. (34) also makes the learned “distance” explicit: under one-step loss, the model learns a displacement, with supervision biased toward closer targets via inverse distance weighting. 
+
+4.3. Exploratory Analysis of an Image Dataset 
+
+We identify key similarities between the 2D toy setting and image space, and quantitatively demonstrate the advantage of one-step loss in Fig. 12. First, Fig. 10 illustrates that the flow matching loss can induce highly imbalanced sample weights on CIFAR-10 because of the pairwise length factor ℓ := ∥X1 − X0∥2
+
+in Theorem A.1. Second, fixing the same condition t = 0, we sample 6Distance Marching for Generative Modeling 
+
+Table 1. 2D point-cloud distance metrics between 10 k generated samples and 10 k target two-moons samples for the 8-Gaussians 
+
+→ two-moons task (lower is better). 
+
+Method w/o t W2 ↓ HD ↓ CD ↓
+
+FM (Lipman et al., 2022) × 0.577 1.337 0.026 OT-CFM (Tong et al., 2023a) × 0.218 1.233 0.019 SB-CFM (Tong et al., 2023a) × 0.218 1.807 0.028 AM (Neklyudov et al., 2023) × 0.581 2.154 0.140 AM Swish (as above) × 0.442 1.719 0.033 EM (Balcerak et al., 2025) ✓ 0.523 1.279 0.031 EqM (Wang & Du, 2025) ✓ 1.433 2.034 0.260 Distance Marching (ours) ✓ 1.435 0.605 0.005 
+
+> W2: Wasserstein-2; HD: Hausdorff distance; CD: Chamfer distance.
+
+different X = X0 ∼ N (0, Id) and numerically com-pute their optimal denoising directions given by directional eikonal loss, one-step loss, and flow matching by visiting all X1 ∈ D : h∗
+
+> DE
+
+, f ∗ 
+
+> OS
+
+:= bs ∗ 
+
+> θ
+
+− x, and g∗
+
+> FM
+
+, respec-tively. As in the 2D case, h∗ 
+
+> DE
+
+lies between f ∗ 
+
+> OS
+
+and g∗
+
+> FM
+
+.We further empirically verify the additive angle relation 
+
+∠(f ∗
+
+> OS
+
+, g∗
+
+> FM
+
+) = ∠(f ∗
+
+> OS
+
+, h∗
+
+> DE
+
+) + ∠(g∗
+
+> FM
+
+, h∗
+
+> DE
+
+) in Fig. 11 using 2048 samples of x ∼ N (0, Id).Finally, with all other settings fixed, one-step loss achieves substantially lower FID than flow matching in Fig. 12, con-sistent with the failure case in Fig. 6 (see Sec. 5.6). 
+
+## 5. Experiments 
+
+5.1. Mechanism study in 2D 
+
+Using our losses, we train a simple 2D scalar network to learn a distance-like field, as shown in Fig. 2, demonstrat-ing the potential of distance fields for data generation. The network follows the exact losses in Sec. 3.2 and performs sphere tracing (Eq. (9)) with Markov chain Monte Carlo (MCMC). This distance-like field guides samples to achieve the lowest Hausdorff and Chamfer distances in Tab. 1, sug-gesting that an accurate distance-like field makes such trans-port possible by providing a reliable geometric signal that keeps trajectories on the support, fills in uncovered regions, and avoids drifting off manifold. As shown in Sec. C.1, other energy-based baselines do not recover an energy landscape that provides a reliable geometric signal and consequently underperform in the metrics regardless of whether MCMC is used. 
+
+5.2. Datasets 
+
+We evaluate the image generation performance on CIFAR-10 (Krizhevsky et al., 2009) and ImageNet-256 (Deng et al., 2009). On ImageNet, we use class-conditional generation to assess semantics; the class label selects a class-specific target manifold (i.e., different level sets) for our model. Original Network (U-Net/SiT) 
+
+> Distance Prediction
+> Class Condition, Optional 2-layer CNN
+
+𝐱 𝑦 𝑢 !
+
+𝐯 !
+
+Figure 13. Image generation pipeline. We predict vθ directly with-out enforcing vθ = ∇uθ , reducing computation cost and instabil-ity while preserving the key properties in Sec. 4. 
+
+Table 2. FID on unconditional CIFAR-10 generation. Bold and underline: best; bold: second-best. 
+
+Method w/o t FID ↓
+
+NCSN++ (Song et al., 2020b) × 2.45 DDPM++ (Kim et al., 2021) × 3.45 FM (Lipman et al., 2022) × 6.35 EDM (Karras et al., 2022) × 1.99 
+
+1-RF FM (Liu et al., 2022) × 2.53 Cooperative DRL-large (Zhu et al., 2023) × 3.68 CLEL-large (Lee et al., 2023) ✓ 8.61 uEDM (Sun et al., 2025) ✓ 2.23 
+
+EM (Balcerak et al., 2025) ✓ 3.34 EqM (Wang & Du, 2025) ✓ 3.36 Distance Marching (ours, gradient descent) ✓ 2.54 Distance Marching (ours, sphere tracing) ✓ 2.23 
+
+5.3. Implementation 
+
+We adopt a U-Net backbone from Lipman et al. (2024) for CIFAR-10 generation and a transformer-based backbone from Ma et al. (2024) for class-conditional ImageNet gen-eration. We keep their original model implementations to ensure that no other architectural differences influence the results, as shown in Fig. 13. To output uθ (x), we introduce a lightweight distance-prediction network (two-layer CNN; relative parameter increase of 0.009%–0.19%). For more details, see Sec. B. 
+
+5.4. Unconditional CIFAR-10 Generation 
+
+DISTANCE MARCHING offers a simple yet effective time-unconditional framework for CIFAR-10 image generation, as shown in Tab. 2. Fig. 27 shows uncurated samples. Our method ranks first (tied) among time-unconditional methods and first among energy-based models. Compared to the other tied time-unconditional model, uEDM (Sun et al., 2025), its sample quality drops substantially when scaling to class-conditional ImageNet (Tab. 12), which we attribute to its delicate coefficient schedule. 
+
+Distance estimate evaluation. We further evaluate the accuracy of distance estimation (Fig. 14). Even with a tiny distance head uθ , the estimation error remains be-low 5% for most samples when using smoothed distance 7Distance Marching for Generative Modeling 0 10 20 30 40 50 60 70   
+
+> XX12
+> 0.00
+> 0.02
+> 0.04
+> 0.06
+> 0.08
+> 0.10
+> MAPE
+
+Figure 14. Distance estimation MAPE. Blue: uθ vs. p∥x − x1∥22 + c0. Orange: ∥uθ vθ ∥ vs. ∥x − x1∥2. Shaded: ±1
+
+std within each bin. 
+
+Table 3. FID on class-conditional ImageNet generation with simi-lar model sizes and same NFE (250). 
+
+Method w/o t FID ↓
+
+DiT-B/2 (Peebles & Xie, 2023) × 43.47 SiT-B/2 (standard FM) (Ma et al., 2024) × 36.68 SiT-B/2 (best; wKL , η t SDE) (Ma et al., 2024) × 33.02 uEDM (Sun et al., 2025) ✓ 40.80 Equilibrium Matching-B/2 (Wang & Du, 2025) ✓ 32.85 Distance Marching-B/2 (ours, sphere tracing) ✓ 33.44 Distance Marching-B/2 (ours, gradient descent) ✓ 32.16 
+
+p∥x − x1∥22 + c0 as the reference. We observe systematic underestimation when ∥x − x1∥ is large, consistent with our earlier analysis that training is dominated by shorter paths. 
+
+5.5. Time-unconditional ImageNet Generation 
+
+Tab. 3 shows that our method scales well to class-conditional ImageNet generation with the lowest FID. Across all back-bone sizes, our method achieves 13.6% lower FID on aver-age than flow matching, which requires time input whereas ours does not (Fig. 15). DISTANCE MARCHING also supports classifier-free guid-ance (CFG) settings for ImageNet experiments; we present samples in Fig. 28. 
+
+Comparison between Gradient Descent and Sphere Trac-ing. Although sphere tracing yields a slightly worse final result on ImageNet at 250 steps, it converges faster than gra-dient descent (Fig. 16). This result also empirically supports convergence without structurally constraining vθ to be the gradient of a scalar potential. 
+
+5.6. Ablation Study–Denoising Direction Evaluation 
+
+We verify the effect of locality on denoising quality (Fig. 6) by comparing FID across objectives while fixing the model architecture and training setup and changing only the loss. Fig. 12 evaluates denoising quality at early times using the generation process in Theorem 3.1. The denoising update depends on the objective: under one-step loss, the network predicts an additive correction that is directly added to the 33 130 458 675   
+
+> Model Parameter Count (M)
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> FID
+> FID vs Model Params
+> DiT
+> SiT w/ FM
+> Ours (ST)
+> Ours (GD) 842
+> Model Patch Size
+> 40
+> 60
+> 80
+> 100
+> 120
+> FID
+> FID vs Patch Size
+> DiT
+> SiT w/ FM
+> Ours (ST)
+> Ours (GD)
+
+Figure 15. DISTANCE MARCHING consistently outperforms DiT and SiT across model sizes and patch sizes, demonstrating strong scalability. Compared to standard flow matching SiT with time input, our method reduces FID by 9.5%–24.7% and 13.6% on average. 0% 25% 50% 75% 100% 
+
+> Generation Steps (%)
+> 200
+> 400
+> FID
+> FID vs Generation Steps
+> SiT w/ FM
+> Ours (ST)
+> Ours (GD)
+
+ST: 
+
+GD: 
+
+FM: 
+
+Figure 16. With step sizes tuned for best 250-step performance, gradient descent and sphere tracing produce perceptually better images earlier than flow matching (SiT+dopri5). We reach flow matching’s final FID within < 60% of the steps. FID uses no CFG (B/2 base); sequences use CFG = 4 (XL/2 base, every 10% steps). See Sec. C.4 for more details. 
+
+input, whereas for flow matching objectives we rescale the output by 1 − t before applying the update. We exclude directional eikonal loss because it does not define an explicit denoising destination (Fig. 11). After training all models for the same number of epochs until convergence, one-step loss yields lower FID, consistent with the benefit of learning from more local targets. Fig. 36 provides full curves. Additional ablations are provided in Sec. C.6: verify mode collapse and condition mismatch; train without directioal eikonal loss; set c0 = ϵ = 0 ; and remove the denominator in one-step loss. 
+
+5.7. Applications of the Distance Estimation Adaptive image generation. Our scalar predictor uθ (x)
+
+not only suggests an appropriate denoising step length but also serves as a practical stopping signal. When uθ increases consistently over successive updates, further denoising is no longer making progress and the process should terminate. Based on this observation, we propose an adaptive gradient 8Distance Marching for Generative Modeling                  
+
+> Table 4. Adaptive stopping for gradient descent sampling using uθ
+> on ImageNet generation.
+> Method ηAvg. Steps ↓FID ↓sFID ↓IS ↑
+> original GD 0.64 250.0 32.16 7.52 45.16 adaptive GD 0.64 175.8 32.73 6.70 45.86
+
+descent sampler that stops once uθ has increased for 10 consecutive steps (Tab. 4). It reduces the average number of steps by 29 .7% , improving sFID and IS over the original gradient descent sampler, at the cost of a small FID increase; the resulting FID remains better than all other baselines. 
+
+Out-of-distribution (OOD) detection. Our distance pre-dictor uθ (x) achieves the best OOD detection performance in Tab. 5 despite being two orders of magnitude smaller than prior energy-based models. uθ (x) assigns lower val-ues to in-distribution samples and yields strong separation. We compare against PixelCNN++ (Salimans et al., 2017), GLOW (Kingma & Dhariwal, 2018), IGEBM (Du & Mor-datch, 2019), and EqM (Wang & Du, 2025).                                 
+
+> Table 5. OOD detection AUROC ↑on CIFAR-10 (in-distribution) with SVHN, Textures, and Constant as OOD datasets. Baseline results from Yoon et al. (2023) and Wang & Du (2025).
+> Method Params SVHN Textures Constant Avg.
+> PixelCNN++ 54M 0.32 0.33 0.71 0.45 GLOW 44M 0.24 0.27 –0.26 IGEBM 19M 0.63 0.48 0.39 0.50 EqM 130M 0.55 0.49 1.00 0.68 Ours 0.10M 0.94 0.49 0.95 0.79
+
+## 6. Conclusion 
+
+We introduced D ISTANCE MARCHING (DM), a distance-field view of time-unconditional generation with a time-independent denoiser. This view yields inference rules naturally compatible with standard gradient descent and also enables sphere tracing. Our distance-inspired objec-tives reduce target ambiguity by emphasizing closer tar-gets. This yields denoising directions better aligned with the data manifold. Across architectures and scales, we achieve state-of-the-art quality among time-unconditional models. On class-conditional ImageNet, it also surpasses strong time-conditioned baselines. We hope this work pro-motes distance-field modeling as a principled lens for de-signing time-unconditional objectives and inference in high-dimensional generative modeling. It may also inspire new directions for time-conditioned models and few-step gener-ation. Finally, as future work, a natural next step is to inte-grate practical, low-cost MCMC refinement, as suggested by our 2D setting, to further improve sample diversity. 
+
+## Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+## References 
+
+Atzmon, M. and Lipman, Y. Sald: Sign agnostic learning with derivatives. arXiv preprint arXiv:2006.05400 , 2020. Balcerak, M., Amiranashvili, T., Terpin, A., Shit, S., Bo-gensperger, L., Kaltenbach, S., Koumoutsakos, P., and Menze, B. Energy matching: Unifying flow matching and energy-based models for generative modeling. arXiv preprint arXiv:2504.10612 , 2025. Bertrand, Q., Gagneux, A., Massias, M., and Emonet, R. On the closed-form of flow matching: Generalization does not arise from target stochasticity. arXiv preprint arXiv:2506.03719 , 2025. Carreira-Perpinan, M. A. and Hinton, G. On contrastive di-vergence learning. In International workshop on artificial intelligence and statistics , pp. 33–40. PMLR, 2005. Chen, R. T., Rubanova, Y., Bettencourt, J., and Duvenaud, D. K. Neural ordinary differential equations. Advances in neural information processing systems , 31, 2018. Cheng, H. K. and Schwing, A. The curse of conditions: An-alyzing and improving optimal transport for conditional flow-based generation. arXiv preprint arXiv:2503.10636 ,2025. Chetan, A., Yang, G., Wang, Z., Marschner, S., and Hariha-ran, B. Accurate differential operators for hybrid neural fields. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 530–539, 2025. Czarnecki, W. M., Osindero, S., Jaderberg, M., Swirszcz, G., and Pascanu, R. Sobolev training for neural networks. 
+
+Advances in neural information processing systems , 30, 2017. Davtyan, A., Dadi, L. T., Cevher, V., and Favaro, P. Faster inference of flow-based generative models via improved data-noise coupling. In The Thirteenth International Con-ference on Learning Representations , 2025. Deng, J., Dong, W., Socher, R., Li, L.-J., Li, K., and Fei-Fei, L. Imagenet: A large-scale hierarchical image database. In 2009 IEEE conference on computer vision and pattern recognition , pp. 248–255. Ieee, 2009. Du, Y. and Mordatch, I. Implicit generation and modeling with energy based models. Advances in neural informa-tion processing systems , 32, 2019. 9Distance Marching for Generative Modeling 
+
+Du, Y., Li, S., Tenenbaum, J., and Mordatch, I. Improved contrastive divergence training of energy based models. 
+
+arXiv preprint arXiv:2012.01316 , 2020. Frosio, I. and Kautz, J. Statistical nearest neighbors for im-age denoising. IEEE Transactions on Image Processing ,28(2):723–738, 2018. Gagneux, A., Martin, S., Gribonval, R., and Massias, M. The generation phases of flow matching: a denoising perspective. arXiv preprint arXiv:2510.24830 , 2025. Gomes, J. and Faugeras, O. The vector distance functions. 
+
+International Journal of Computer Vision , 52(2):161–187, 2003. Hart, J. C. Sphere tracing: A geometric method for the antialiased ray tracing of implicit surfaces. The Visual Computer , 12(10):527–545, 1996. Ho, J. and Salimans, T. Classifier-free diffusion guidance. 
+
+arXiv preprint arXiv:2207.12598 , 2022. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. Advances in neural information process-ing systems , 33:6840–6851, 2020. Hoppe, H., DeRose, T., Duchamp, T., McDonald, J., and Stuetzle, W. Surface reconstruction from unorganized points. In Proceedings of the 19th annual conference on computer graphics and interactive techniques , pp. 71–78, 1992. Hyv ¨arinen, A. and Dayan, P. Estimation of non-normalized statistical models by score matching. Journal of Machine Learning Research , 6(4), 2005. Karras, T., Aittala, M., Aila, T., and Laine, S. Elucidating the design space of diffusion-based generative models. 
+
+Advances in neural information processing systems , 35: 26565–26577, 2022. Kim, D., Shin, S., Song, K., Kang, W., and Moon, I.-C. Soft truncation: A universal training technique of score-based diffusion model for high precision score estimation. arXiv preprint arXiv:2106.05527 , 2021. Kingma, D. P. and Dhariwal, P. Glow: Generative flow with invertible 1x1 convolutions. Advances in neural information processing systems , 31, 2018. Krizhevsky, A., Hinton, G., et al. Learning multiple layers of features from tiny images. 2009. LeCun, Y., Chopra, S., Hadsell, R., Ranzato, M., Huang, F., et al. A tutorial on energy-based learning. Predicting structured data , 1(0), 2006. Lee, H., Jeong, J., Park, S., and Shin, J. Guiding energy-based models via contrastive latent variables. arXiv preprint arXiv:2303.03023 , 2023. Lee, S., Lin, Z., and Fanti, G. Improving the training of rec-tified flows. Advances in neural information processing systems , 37:63082–63109, 2024. Li, M., Qu, T., Yao, R., Sun, W., and Moens, M.-F. Alleviat-ing exposure bias in diffusion models through sampling with shifted time steps. arXiv preprint arXiv:2305.15583 ,2023. Li, Y., Liang, F., Kondratyuk, D., Tomizuka, M., Keutzer, K., and Xu, C. Improved immiscible diffusion: Acceler-ate diffusion training by reducing its miscibility. arXiv preprint arXiv:2505.18521 , 2025. Li, Z., Yang, G., Zhao, Q., Deng, X., Guibas, L., Hariharan, B., and Wetzstein, G. Neural control variates with auto-matic integration. In ACM SIGGRAPH 2024 Conference Papers , pp. 1–9, 2024. Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. Lipman, Y., Havasi, M., Holderrieth, P., Shaul, N., Le, M., Karrer, B., Chen, R. T., Lopez-Paz, D., Ben-Hamu, H., and Gat, I. Flow matching guide and code. arXiv preprint arXiv:2412.06264 , 2024. Liu, X., Gong, C., and Liu, Q. Flow straight and fast: Learning to generate and transfer data with rectified flow. 
+
+arXiv preprint arXiv:2209.03003 , 2022. Lu, C., Zhou, Y., Bao, F., Chen, J., Li, C., and Zhu, J. Dpm-solver: A fast ode solver for diffusion probabilistic model sampling in around 10 steps. Advances in neural information processing systems , 35:5775–5787, 2022. Ma, B., Han, Z., Liu, Y.-S., and Zwicker, M. Neural-pull: Learning signed distance functions from point clouds by learning to pull space onto surfaces. arXiv preprint arXiv:2011.13495 , 2020. Ma, N., Goldstein, M., Albergo, M. S., Boffi, N. M., Vanden-Eijnden, E., and Xie, S. Sit: Exploring flow and diffusion-based generative models with scalable interpolant trans-formers. In European Conference on Computer Vision ,pp. 23–40. Springer, 2024. Neklyudov, K., Brekelmans, R., Severo, D., and Makhzani, A. Action matching: Learning stochastic dynamics from samples. In International conference on machine learn-ing , pp. 25858–25889. PMLR, 2023. 10 Distance Marching for Generative Modeling 
+
+Nichol, A. Q. and Dhariwal, P. Improved denoising diffu-sion probabilistic models. In International conference on machine learning , pp. 8162–8171. PMLR, 2021. Nijkamp, E., Hill, M., Han, T., Zhu, S.-C., and Wu, Y. N. On the anatomy of mcmc-based maximum likelihood learning of energy-based models. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 34, pp. 5272–5280, 2020. Ning, M., Li, M., Su, J., Salah, A. A., and Ertugrul, I. O. Elucidating the exposure bias in diffusion models. arXiv preprint arXiv:2308.15321 , 2023. Park, J. J., Florence, P., Straub, J., Newcombe, R., and Love-grove, S. Deepsdf: Learning continuous signed distance functions for shape representation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 165–174, 2019. Peebles, W. and Xie, S. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF interna-tional conference on computer vision , pp. 4195–4205, 2023. Permenter, F. and Yuan, C. Interpreting and improving diffusion models from an optimization perspective. arXiv preprint arXiv:2306.04848 , 2023. Pooladian, A.-A., Ben-Hamu, H., Domingo-Enrich, C., Amos, B., Lipman, Y., and Chen, R. T. Multisample flow matching: Straightening flows with minibatch cou-plings. arXiv preprint arXiv:2304.14772 , 2023. Radovanovic, M., Nanopoulos, A., and Ivanovic, M. Hubs in space: Popular nearest neighbors in high-dimensional data. Journal of Machine Learning Research , 11(sept): 2487–2531, 2010. Rezende, D. and Mohamed, S. Variational inference with normalizing flows. In International conference on ma-chine learning , pp. 1530–1538. PMLR, 2015. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., and Ommer, B. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pp. 10684–10695, 2022. Salimans, T., Karpathy, A., Chen, X., and Kingma, D. P. Pixelcnn++: Improving the pixelcnn with discretized lo-gistic mixture likelihood and other modifications. arXiv preprint arXiv:1701.05517 , 2017. Sohl-Dickstein, J., Weiss, E., Maheswaranathan, N., and Ganguli, S. Deep unsupervised learning using nonequi-librium thermodynamics. In International conference on machine learning , pp. 2256–2265. pmlr, 2015. Song, J., Meng, C., and Ermon, S. Denoising diffusion im-plicit models. arXiv preprint arXiv:2010.02502 , 2020a. Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Er-mon, S., and Poole, B. Score-based generative modeling through stochastic differential equations. arXiv preprint arXiv:2011.13456 , 2020b. Sun, Q., Jiang, Z., Zhao, H., and He, K. Is noise condition-ing necessary for denoising generative models? arXiv preprint arXiv:2502.13129 , 2025. Tong, A., Fatras, K., Malkin, N., Huguet, G., Zhang, Y., Rector-Brooks, J., Wolf, G., and Bengio, Y. Improving and generalizing flow-based generative models with mini-batch optimal transport. arXiv preprint arXiv:2302.00482 ,2023a. Tong, A., Malkin, N., Fatras, K., Atanackovic, L., Zhang, Y., Huguet, G., Wolf, G., and Bengio, Y. Simulation-free schr ¨odinger bridges via score and flow matching. arXiv preprint arXiv:2307.03672 , 2023b. Wan, Z., Wang, Q., Mishne, G., and Wang, Y. Elucidating flow matching ode dynamics with respect to data geome-tries and denoisers. arXiv preprint arXiv:2412.18730 ,2024. Wang, R. and Du, Y. Equilibrium matching: Genera-tive modeling with implicit energy-based models. arXiv preprint arXiv:2510.02300 , 2025. Wang, Z., Wang, C., Yoshino, T., Tao, S., Fu, Z., and Li, T.-M. Hotspot: Signed distance function optimization with an asymptotically sufficient condition. In Proceedings of the Computer Vision and Pattern Recognition Conference ,pp. 1276–1286, 2025. Yoon, S., Jin, Y.-U., Noh, Y.-K., and Park, F. Energy-based models for anomaly detection: A manifold diffusion re-covery approach. Advances in Neural Information Pro-cessing Systems , 36:49445–49466, 2023. Zhu, Y., Xie, J., Wu, Y., and Gao, R. Learning energy-based models by cooperative diffusion recovery likeli-hood. arXiv preprint arXiv:2309.05153 , 2023. 11 Distance Marching for Generative Modeling 
+
+## Appendix Contents 
+
+Proofs and Derivations ................................................................................................................................ 12 Invariance of the One-Step Projection Under Radial Reparameterizations ........................................................ 12 Properties of Our Loss Design ................................................................................................................. 13 Experiment Settings ................................................................................................................................... 17 Experiment Outcomes................................................................................................................................. 20 2D Comparison with Energy-Based Models ............................................................................................... 20 8D Comparison with Flow Matching Losses .............................................................................................. 22 Generated Samples................................................................................................................................ 24 Generation Process Comparison............................................................................................................... 24 Convergence and Robustness................................................................................................................... 25 Ablation Study ..................................................................................................................................... 26 Supplementary Tables and Figures ........................................................................................................... 29 
+
+## A. Proofs and Derivations 
+
+A.1. Invariance of the One-Step Projection Under Radial Reparameterizations 
+
+This subsection proves the claim in Eq. (4): the one-step map x 7 → x − d(x)∇d(x) does not uniquely identify the underlying (unsigned) distance field. 
+
+Setup. Let S ⊂ RD be a nonempty closed set (e.g., a target manifold). Define the (unsigned) distance-to-set function 
+
+d(x) := min  
+
+> s∈S
+
+∥x − s∥2, g(x) := d(x)2 = min  
+
+> s∈S
+
+∥x − s∥22. (11) Let the (set-valued) closest-point projection be 
+
+ΠS (x) := arg min  
+
+> s∈S
+
+∥x − s∥2. (12) We say the closest-point projection is unique at x if ΠS (x) = {s(x)} for some single point s(x) ∈ S . Uniqueness holds, for example, away from the medial axis of S.
+
+A brief form of Danskin’s theorem. Consider G(x) = min s∈S ϕ(x, s) where S is compact and ϕ is continuous in (x, s),differentiable in x, and ∇xϕ is continuous. If the minimizer is unique at x, i.e., arg min s∈S ϕ(x, s) = {s(x)}, then G is differentiable at x and 
+
+∇G(x) = ∇xϕ(x, s(x)) . (13) (When S is merely closed, the same conclusion holds locally under standard regularity assumptions ensuring exis-tence/uniqueness of the minimizer and local Lipschitzness; we use the theorem only at points where the minimizer is unique and the gradient exists.) 
+
+Lemma 1 (Gradient of squared distance under unique projection). Assume ΠS (x) = {s(x)}. Then g in Eq. (11) is differentiable at x and 
+
+∇g(x) = 2( x − s(x)) . (14) 
+
+Proof. Let ϕ(x, s) = ∥x − s∥22. Then ∇xϕ(x, s) = 2( x − s). By Danskin’s theorem Eq. (13) and uniqueness of the minimizer, we obtain ∇g(x) = ∇xϕ(x, s(x)) = 2( x − s(x)) . That is, the gradient does not depend on the derivative of the minimizer s(x) with respect to x.12 Distance Marching for Generative Modeling 
+
+Proposition 1 (Family inducing the same one-step projection). Fix any constant C ≥ 0 and any sign σ ∈ { +1 , −1},and define 
+
+ˆd(x) := σpg(x) + C = σ
+
+q
+
+∥x − s(x)∥22 + C. (15) Assume ΠS (x) is unique and ∇g(x) exists. At any point where ˆd(x)̸ = 0 and ∇ ˆd(x) exists, the one-step update recovers the same closest point: 
+
+x − ˆd(x) ∇ ˆd(x) = s(x). (16) Consequently, the family in Eq. (15) induces the same one-step projection behavior as in Eq. (2) wherever the gradients exist. 
+
+Proof. By the chain rule applied to Eq. (15), for ˆd(x)̸ = 0 we have 
+
+∇ ˆd(x) = σ · 12pg(x) + C ∇g(x). (17) Using ˆd(x) = σpg(x) + C, we rewrite the prefactor as σ/ pg(x) + C = 1 / ˆd(x), hence 
+
+∇ ˆd(x) = 12 ˆd(x) ∇g(x). (18) Applying Eq. (14) from Lemma 1 yields 
+
+∇ ˆd(x) = 12 ˆd(x) · 2( x − s(x)) = x − s(x)ˆd(x) . (19) Multiplying both sides by ˆd(x) gives ˆd(x) ∇ ˆd(x) = x − s(x), which rearranges to Eq. (16). 
+
+Remark. The proposition shows that constraining only the one-step map x 7 → x − u(x)∇u(x) (e.g., via the One-Step Loss) cannot uniquely determine the scalar field itself: many distinct scalar fields ˆd of the form Eq. (15) yield the same closest-point projection wherever gradients exist. This motivates adding additional constraints (e.g., Eikonal-type regularization) if one wishes to identify an actual distance field. 
+
+A.2. Properties of Our Loss Design 
+
+Motivated by these observations and other effective rematching methods (Liu et al., 2022; Tong et al., 2023a; Pooladian et al., 2023; Tong et al., 2023b; Lee et al., 2024; Li et al., 2025; Davtyan et al., 2025), we next prove why our loss preferentially emphasizes closer supervision, sharpening the distribution of the denoising vector and improving the image quality. 
+
+(i) Time-unconditional flow matching is directionally pulled by longer pairs, while directional eikonal loss is length-neutral. Theorem A.1. Under Theorem 3.1, fix a spatial location and work under this condition given X = x. We rewrite the conditional expectation as Ex[·] := E[· | X = x].(i) With the standard flow matching loss, the learned direction is length-weighted. Let ∆ := X1 − X0, ℓ := ∥∆∥2, and 
+
+u := 
+
+(
+
+∆/ℓ, ℓ > 0,
+
+0, ℓ = 0 . (20) 
+
+Consider the time-unconditional squared regression at x:
+
+JFM (g) := Ex
+
+∥g − ∆∥22
+
+ , g ∈ RD . (21) 
+
+Then JFM is strictly convex and has the unique minimizer 
+
+g∗
+
+> FM
+
+(x) = Ex[∆] = Ex[ℓ u] . (22) 
+
+Therefore, the direction of the fixed point g∗
+
+> FM
+
+(x) is a length-weighted average of denoising directions u, so larger ℓ
+
+pairs exert proportionally larger influence for the final direction. 
+
+13 Distance Marching for Generative Modeling 
+
+(ii) With the directional eikonal loss, the learned direction uses a bounded distance weight. Let X1 denote the random target paired with x under our sampling, and define 
+
+r := ∥x − X1∥2, v := 
+
+(
+
+(x − X1)/r, r > 0,
+
+0, r = 0 . (23) 
+
+Here v has the same conditional distribution of −u given X = x. Recall the directional eikonal target in Eq. (5) (with constant c0 > 0): 
+
+v′(x, X1) := x − X1
+
+√r2 + c0
+
+= r
+
+√r2 + c0
+
+| {z } 
+
+> =: α(r)∈[0 ,1)
+
+v. (24) 
+
+Consider the time-unconditional squared regression at x:
+
+JDE (h) := Ex
+
+∥h − v′∥22
+
+ , h ∈ RD . (25) 
+
+Then JDE is strictly convex and has the unique minimizer 
+
+h∗
+
+> DE
+
+(x) = Ex[v′] = Ex[α(r) v] . (26) 
+
+Since α(r) = r/ √r2 + c0 saturates to 1 as r → ∞ , directional eikonal loss does not indicate an unbalanced weights for longer paths at x.
+
+From this theorem, we observe that the standard flow matching loss is biased toward directions induced by longer matching pairs, which does not provide a consistent way to resolve the ambiguity in the posterior expectation. From a denoising perspective, as we move closer to the target along the path, the denoising direction should become increasingly certain to a consistent direction toward that target, or the trajectory gets drifted away as shown in Fig. 9. 
+
+(ii) One-step loss reduces target ambiguity by focusing on closer data points. 
+
+The above shows directional eikonal loss avoids strong dominance from far/long pairs. We next show one-step loss goes further by explicitly reweighting supervision toward closer targets. From previous derivation, standard flow matching loss even attach higher weights when the denoising vector ∆ is longer. In the following paragraphs, we compare our loss with a weighted version E(1 − T )−2 ∥vθ (x) − ∆∥22 X = x to show our superiority. 
+
+Theorem A.2 (Posterior on index) . Under Theorem 3.1, for any X = x ∈ RD and we rewrite the conditional probability as 
+
+Px[·] := P[· | X = x], the posterior distribution of I is categorical with 
+
+Px(I = i) = Wi(x)
+
+PNj=1 Wj (x) . (27) 
+
+Wi(x) := 
+
+Z 10
+
+pT (t) (1 − t)−d exp 
+
+
+
+− ∥x − ts(i)∥22
+
+2(1 − t)2
+
+
+
+dt. (28) 
+
+Proof. Fix i ∈ { 1, . . . , N } and condition on (I = i, T = t). Then 
+
+X = (1 − t)X0 + ts(i), X | (I = i, T = t) ∼ N 
+
+
+
+ts(i), (1 − t)2Id
+
+
+
+. (29) Hence its density is 
+
+p(x | I = i, T = t) = (2 π)−d/ 2(1 − t)−d exp 
+
+
+
+− ∥x − ts(i)∥22
+
+2(1 − t)2
+
+
+
+. (30) By marginalizing T ,
+
+p(x | I = i) = 
+
+Z 10
+
+pT (t) p(x | I = i, T = t) d t. (31) 14 Distance Marching for Generative Modeling 
+
+By Bayes’ rule and the uniform prior P(I = i) = 1 /N ,
+
+Px(I = i) = p(x | I = i)
+
+PNj=1 p(x | I = j) . (32) Finally, the factor (2 π)−d/ 2 is common to all i in Eq. (30) and cancels after normalization, yielding Eqs. (27) and (28). 
+
+Theorem A.3 (Bayes-optimal update under Eq. (3)) . Let ϵ > 0. Consider the population version of Eq. (3) , and fix 
+
+X = x ∈ RD . Let X1 denote the random target sdata paired with x, with conditional law X1 | X = x. Define 
+
+bsθ (x) := x − uθ (x) ∇uθ (x).
+
+Assume the optimization reaches the global infimum of the population risk. Then any globally optimal solution must satisfy, for (almost every) fixed x,
+
+bs ∗ 
+
+> θ
+
+(x) = 
+
+Ex
+
+h X1
+
+> ∥x−X1∥22+ϵ
+
+i
+
+Ex
+
+h 1
+
+> ∥x−X1∥22+ϵ
+
+i . (33) 
+
+Proof. Consider the pointwise objective induced by Eq. (3) at fixed X = x:
+
+Jx(y) := Ex
+
+ ∥y − X1∥22
+
+∥x − X1∥22 + ϵ
+
+
+
+, y ∈ RD .
+
+Since ϵ > 0, the weight w(X1) := ( ∥x − X1∥22 + ϵ)−1 is strictly positive and finite, and Jx(y) is a convex quadratic function of y. Expanding and differentiating under the expectation gives 
+
+∇yJx(y) = 2 Ex
+
+ y − X1
+
+∥x − X1∥22 + ϵ
+
+
+
+.
+
+Setting the gradient to zero yields 
+
+Ex
+
+ y
+
+∥x − X1∥22 + ϵ
+
+
+
+= Ex
+
+ X1
+
+∥x − X1∥22 + ϵ
+
+
+
+.
+
+Because y is deterministic given x, it can be pulled out on the left and then dividing by the (strictly positive) scalar denominator yields Eq. (33). 
+
+Corollary A.4 (Discrete posterior over dataset indices) . In the setting where X1 | X = x is supported on {s(1) , . . . , s(N )}
+
+with posterior masses πi(x) := Px(I = i),
+
+bs ∗ 
+
+> θ
+
+(x) = 
+
+PNi=1 πi(x) ωi(x) s(i)
+
+PNi=1 πi(x) ωi(x) , where ωi(x) := 1
+
+∥x − s(i)∥22 + ϵ . (34) 
+
+Corollary A.5 (Pointwise Bayes solution for time-unconditional weighted regression) . Let (X, T, ∆) be random variables with X ∈ RD , T ∈ (0 , 1) , and ∆ ∈ RD . Let w : (0 , 1) → (0 , ∞) be measurable with E[w(T ) | X = x] ∈ (0 , ∞). For fixed x ∈ RD , consider 
+
+Jx(y) := Ex
+
+w(T ) ∥y − ∆∥22
+
+ , y ∈ RD .
+
+Then Jx(y) is strictly convex in y and admits the unique minimizer 
+
+y∗(x) = Ex[w(T ) ∆]
+
+Ex[w(T )] . (35) 
+
+Equivalently, 
+
+y∗(x) = 
+
+Z 10
+
+q(t | x) E[∆ | X = x, T = t] d t, q(t | x) ∝ p(t | x) w(t). (36) 15 Distance Marching for Generative Modeling 
+
+Proof. Fix X = x. The convexity and the minimizer Eq. (35) follow from the previous proof. We only justify Eq. (36). By the tower property and measurability of w(T ) w.r.t. T ,
+
+Ex[w(T )∆] = Ex
+
+w(T ) E[∆ | X = x, T ].
+
+Let p(t | x) be the conditional density of T given X = x. Converting the outer expectation into an integral yields 
+
+Ex[w(T )∆] = 
+
+Z 10
+
+w(t) p(t | x) E[∆ | X = x, T = t] d t, Ex[w(T )] = 
+
+Z 10
+
+w(t) p(t | x) d t. (37) Substituting these into Eq. (35) and defining 
+
+q(t | x) := w(t) p(t | x)
+
+R 10 w(τ ) p(τ | x) d τ
+
+
+
+∝ p(t | x) w(t)
+
+
+
+,
+
+we obtain 
+
+y∗(x) = 
+
+Z 10
+
+q(t | x) E[∆ | X = x, T = t] d t, 
+
+which proves Eq. (36). 
+
+Remark A.6 (Effective time-weight under flow matching and why it does not directly penalize ∥x − si∥2). Consider the interpolation model X = (1 − T )X0 + T X1 with X0 ∼ N (0, Id), T ∼ pT on (0 , 1) , and X1 ∈ { s(1) , . . . , s(N )} uniformly. For the flow-matching-style target ∆ := X1 − X0 and time weight w(t) = (1 − t)−2, Theorem A.5 implies that, at fixed 
+
+X = x, different t values contribute according to the effective density 
+
+q(t | x) ∝ p(t | x) (1 − t)−2. (38) Moreover, by Bayes’ rule, 
+
+p(t | x) ∝ pT (t)
+
+> N
+
+X
+
+> i=1
+
+(1 − t)−d exp 
+
+
+
+− ∥x − ts(i)∥22
+
+2(1 − t)2
+
+
+
+, (39) hence 
+
+q(t | x) ∝ pT (t)
+
+> N
+
+X
+
+> i=1
+
+(1 − t)−(d+2) exp 
+
+
+
+− ∥x − ts(i)∥22
+
+2(1 − t)2
+
+
+
+. (40) Crucially, the geometric term depends on ∥x − ts(i)∥2 (distance to the segment {ts(i) : t ∈ [0 , 1] }), rather than ∥x − s(i)∥2.In particular, when x is directly drawn from N (0, Id), the effective density q(t | x) is typically biased toward smaller t. In this regime, ts(i) ≈ 0 for all i, so the exponent in Eq. (40) becomes nearly i-independent: ∥x − ts(i)∥2 ≈ ∥ x∥2. Thus, far data points s(i) can still explain the same contribution via small t, and the flow matching time-weight (1 − t)−2 reweights time rather than introducing an explicit additional penalty in ∥x − s(i)∥2. This contrasts with distance-reweighted objectives (e.g., Eq. (3)), which directly downweight far s(i) through factors such as (∥x − s(i)∥22 + ϵ)−1.16 Distance Marching for Generative Modeling 
+
+## B. Experiment Settings 
+
+In our experiments, we report FID computed using 50 k generated samples unless otherwise specified. To output uθ (x), we introduce a lightweight distance prediction network implemented as a two-layer CNN with 10 ,177 
+
+parameters for CIFAR-10 ( +0 .018% over the original model) and 62 ,801 parameters for ImageNet ( +0 .0093% ∼ 0.19% 
+
+over different backbone sizes) as shown in Fig. 17. For ImageNet generation, we follow SiT (Ma et al., 2024) and other latent diffusion frameworks: we train and sample in the latent space of a pretrained VAE (Rombach et al., 2022), and keep the VAE encoder/decoder frozen throughout all experiments.  
+
+> Figure 17. Distance predictor architecture.
+
+17 Distance Marching for Generative Modeling 
+
+Table 6. Configuration for the CIFAR-10 D ISTANCE MARCHING run. U-Net architecture entries follow the CIFAR-10 preset used in the codebase (Lipman et al., 2024). Our losses in Eq. (7) supervise a quasi-normalized denoising direction, which induces a different target scale than flow matching. We therefore rescale the network output vθ to align with the loss-defined magnitude. 
+
+Setting Value U-Net Architecture 
+
+input size 3 × 32 × 32 
+
+base channels 128 channel multipliers [2, 2, 2] ResBlocks per level 4attention resolutions [2] attention heads 1head channels 256 dropout 0.3 time embedding max period 1,000,000 
+
+vθ (·) output rescaling 1/120.0 
+
+vθ (·) distance input rescaling 1.0 
+
+Distance Predictor 
+
+input channels 3convolution layer 1 Conv2d(3 →32, 3 × 3, padding=1) → ReLU convolution layer 2 Conv2d(32 →32, 3 × 3, padding=1) → ReLU final layer AdaptiveAvgPool2d(1) → Linear(32 →1) 
+
+Training 
+
+GPUs 4 Nvidia A100 (80G) batch size per GPU 128 optimizer AdamW optimizer β1 0.9 optimizer β2 0.95 weight decay 0.01 learning rate 1 × 10 −4
+
+lr schedule constant lr warmup none interpolation coefficient distribution default skewed distribution (Lipman et al., 2024) training epochs 3000 test epoch 1810 
+
+λ1 0.1 
+
+λ2 1.0 
+
+ϵ in OSL 4.0 
+
+c0 in DEL 4.0 
+
+Inference 
+
+sphere tracing step size 0.031 gradient descent step size 0.46 steps 250 
+
+18 Distance Marching for Generative Modeling 
+
+Table 7. Configuration for the ImageNet 256 × 256 DISTANCE MARCHING run. Transformer architecture entries follow the SiT preset used in the codebase (Ma et al., 2024). model S/2 B/2 L/2 XL/2 
+
+SiT Architecture 
+
+latent space size 4 × 32 × 32 
+
+params (M) 33 130 458 675 depth 12 12 24 28 hidden dim 384 768 1024 1152 patch size 2 2 2 2heads 6 12 16 16 
+
+vθ (·) output rescaling 1/120.0 
+
+vθ (·) distance input rescaling 1/100.0 
+
+Distance Predictor 
+
+input channels 4convolution layer 1 Conv2d(4 →64, 3 × 3, padding=1) → ReLU convolution layer 2 Conv2d(64 →64, 3 × 3, padding=1) → ReLU pooling AdaptiveAvgPool2d(1) normalization LayerNorm(64, elementwise affine=False) label embedding LabelEmbedder(num classes, 16) adaLN modulation SiLU → Linear(16 →192) → chunk(shift, scale, gate) residual MLP SiLU → Linear(64 →64) modulation formula h = h + gate ⊙ res mlp (modulate 1d (LN (h), shift , scale )) 
+
+final layer Linear(64 →1) 
+
+Training 
+
+GPUs 4 Nvidia A100 (80G) batch size per GPU 64 optimizer AdamW optimizer β1 0.9 optimizer β2 0.999 weight decay 0.0 learning rate (lr) 1 × 10 −4
+
+lr schedule constant lr warmup none interpolation coefficient distribution Uniform(0 , 0.999) 
+
+training class dropout 0.1 training epochs 80 test epoch 80 
+
+λ1 1.0 
+
+λ2 30.0 
+
+ϵ in OSL 100.0 
+
+c0 in DEL 100.0 
+
+Inference Hyperparameters 
+
+sphere tracing step size 0.022 gradient descent step size 0.64 0.64 0.64 0.68 steps 250 
+
+19 Distance Marching for Generative Modeling 
+
+## C. Experiment Outcomes 
+
+C.1. 2D Comparison with Energy-Based Models 
+
+From an energy-based modeling perspective, the model learns the energy gradient, so generation can always be viewed as performing a form of optimization (Permenter & Yuan, 2023; Balcerak et al., 2025; Wang & Du, 2025). While previous papers have pointed out this connection, their energy landscape modeling is often very rough; as a result, the learned landscape is unreliable even in 2D, and the generation does not obtain any advantage when evaluated by Wasserstein-2 distance (W2), Hausdorff distance (HD), or Chamfer distance (CD). This also helps explain why their high-dimensional performance is ad hoc and difficult to transfer across architectures. In our 2D experiments, we borrow the architecture to generate our samples with our losses from 2D TorchCFM (Tong et al., 2023a). Using our distance field, after jumping the first deterministic sphere tracing step, we run a batched Hamiltonian Monte Carlo (HMC) sampler to produce the final samples. Concretely, we sample an auxiliary momentum p ∼ N (0, m I)
+
+with m = 1 and define the tempered target distribution π(x) ∝ exp  −U (x)/σ 2 with σ = 0 .25 . Each HMC proposal is generated by L = 5 leapfrog steps with step size ϵ = 0 .2, where the potential gradient is scaled as ∇U (x)/σ 2. We then apply a Metropolis–Hastings accept/reject correction using the Hamiltonian H(x, p) = U (x)/σ 2 + ∥p∥22/(2 m). We set 
+
+tspan = linspace(0 , 1, 18) and record 18 states in total; in our implementation this corresponds to 16 HMC proposals after the initial deterministic step. With 18 time points and 5 leapfrog steps per HMC proposal, the trajectory sampler performs 97 NFE (1 initial step and 16 HMC steps × 6 evaluations each). This matches the 100-NFE setting used for other models, and we further show that our advantage over other energy-based models does not come from MCMC, but from accurate geometric signals.  
+
+> Figure 18. Energy Matching fails to capture fine-grained energy variations near the data manifold and is inconsistent across two locations that are equally distant from the data manifold.
+
+We first use the open-source 2D toy implementation of Energy Matching (Balcerak et al., 2025) to generate its 2D samples. We follow exactly the same experimental setup and consider the same generation task from 8-Gaussians to two-moons. The resulting level sets and energy landscape are visualized in Fig. 18. Their method relies on OT coupling (Tong et al., 2023a) and uses a standard ODE solver for energy minimization. However, the learned energy landscape is inaccurate, and the resulting 2D generation does not obtain advantages when evaluated by W2, HD, or CD.        
+
+> Figure 19. Equilibrium Matching (Wang & Du, 2025) learns 4×flow matching denoising vectors from source to target, with a decaying coefficient when t > 0.8; for visualization clarity, we divide the negative gradient vectors by 4when rendering. Equilibrium Matching misses fine-grained energy structure near the data manifold and is inconsistent across two locations that are equally distant from the data manifold.
+
+20 Distance Marching for Generative Modeling 
+
+We next consider Equilibrium Matching (Wang & Du, 2025). Since it does not release a 2D model, we implement its objective by replacing our loss with theirs within the same 2D framework. In short, their learning objective corresponds to a rescaled flow matching vector field, and thus naturally inherits the issues discussed above. In 2D, this rescaling further amplifies the problem: the bottom of the inferred energy landscape becomes noisy, and the landscape remains inconsistent at two corner locations that are equally distant from the data manifold. We also try to reproduce their 2D generation using gradient-descent-based sampling, as they mentioned, but do not obtain a satisfactory result. In Fig. 20 and Tab. 8, we report three generation attempts: (i) Gradient descent only; (ii) Gradient descent + Unadjusted Langevin Algorithm (ULA); and (iii) Gradient descent + HMC. 
+
+(a) Gradient descent only: no exploration for low-potential ar-eas. 
+
+(b) Gradient descent only trajectories. 
+
+(c) Gradient descent and ULA: insuffi-cient exploration for low-potential areas. 
+
+(d) Gradient descent and ULA trajecto-ries. 
+
+(e) Gradient descent and HMC: sufficient exploration reveals the inaccuracy of the energy modeling. 
+
+(f) Gradient descent and HMC trajecto-ries. 
+
+Figure 20. We compare different generation methods on the Equilibrium Matching model, but none of them yields competitive results on this task. Steps are recorded as: init (black), mid (yellow), and final (blue). 
+
+Table 8. 2D point-cloud distance metrics of Fig. 20 between 10 k generated samples and 10 k target two-moons samples for the 8-Gaussians 
+
+→ two-moons task (lower is better). We report the original gradient descent as their best in Tab. 1. 
+
+Method W2 ↓ HD ↓ CD ↓
+
+Equilibrium Matching (Original GD) 1.433 2.034 0.260 Equilibrium Matching (GD+ULA) 1.757 1.982 0.317 Equilibrium Matching (GD+HMC) 2.073 1.680 0.037 Distance Marching (ours) 1.435 0.605 0.005 
+
+> W2: Wasserstein-2; HD: Hausdorff distance; CD: Chamfer distance.
+
+Crucially, 2D MCMC refinements (e.g., ULA/HMC) need faithful energies and gradients as a prerequisite. If the learned landscape is mis-specified or noisy near the data manifold, the chain may mix poorly or drift toward spurious modes, so MCMC typically fails to improve W2/HD/CD and can even worsen them in practice. As a comparison, we also present our level sets in Fig. 2 and the corresponding energy landscape in Fig. 21. It should also be noted that these methods do not constrain the energy itself but only its gradient, whereas we directly model a distance-like field; consequently, our framework also supports sphere tracing, which they do not provide. 
+
+(a) Our losses provide consistent energy modeling with respect to the distance to the data manifold. 
+
+(b) Steps: init (black) and first jump (pur-ple) with sphere trac-ing. 
+
+(c) Step connections (yellow) showing tra-jectories. 
+
+Figure 21. In our 2D toy model, we use a single sphere tracing step to jump to the target region, then Hamiltonian Monte Carlo explores low-potential areas. Final samples are presented in Fig. 2. We avoid meandering near the initialization and achieve the lowest Chamfer and Hausdorff distances in Tab. 1 with meaningful energy landscape. 
+
+21 Distance Marching for Generative Modeling 
+
+C.2. 8D Comparison with Flow Matching Losses 
+
+To bridge the gap between 2D toy settings and image datasets, we use an 8D Gaussian mixture model to validate our previous analysis. Here, we use a mixture of six Gaussians: the initial distribution contains two components, and the target distribution contains four. To reduce estimator variance, we adopt bidirectional importance sampling to propose matchings between the initial and target components that pass through a given position. With this sampling strategy, we observe empirical convergence in neighborhoods around the Gaussian components. For visualization, we apply Fisher’s linear discriminant analysis (LDA) to project the 8D space to 2D (see Fig. 22). LDA yields a linear projection matrix, enabling a faithful 2D visualization of the projected geometry. We keep the same projection matrix for all the following visualizations. 10 5 0 5 10 
+
+7.5 
+
+5.0 
+
+2.5 
+
+0.0 
+
+2.5 
+
+5.0 
+
+Figure 22. We use LDA to visualize the 8D initial distribution (blue) and the target distribution (orange) in 2D. The data mean of the target distribution is marked using the orange star. 
+
+We first show that flow matching losses are biased toward the data mean, whereas our losses focus on closer points in Fig. 23. Because the initial distribution has two components, we visualize the minimizers of each loss at the mean of each component. These vectors minimize each loss under the posterior distribution conditioned on the test position. 10 0 10 LDA dim 1       
+
+> 10
+> 5
+> 0
+> 5LDA dim 2 7.5 5.0 2.5 0.0 LDA dim 1
+> 8
+> 6
+> 4
+> 2
+> 0LDA dim 2 10 010 LDA dim 1
+> 10
+> 5
+> 0
+> 5LDA dim 2 05LDA dim 1
+> 2
+> 0
+> 2
+> 4
+> 6LDA dim 2
+
+Figure 23. Flow matching losses have minimizers (green reweighted, red original) that are strongly biased toward the data mean (orange star). In contrast, one-step loss (orange) and directional eikonal loss (blue) yield minimizers pointing to closer target data, less affected by the data mean. Global and zoom perspectives shown. 
+
+From Fig. 23, both the standard flow matching loss and the (1 − t)−2-reweighted flow matching loss yield minimizers strongly biased toward the data mean. In contrast, the minimizers of the one-step loss and the directional eikonal loss point more closely toward the neighboring data cluster. As shown in Fig. 24, due to the data-mean distortion, flow matching losses yield worse trajectories with higher curvature and slower improvement, as measured by the target p.d.f. From Fig. 24, our initial steps provide better directions, yielding larger likelihood increases and greater outlierness decreases. We further show that the one-step loss provides the most stable guidance in Fig. 25, whereas other minimizers are sensitive to the learning rate/step size η in Fig. 26. Fixing the step number to 10, flow matching theory suggests using η = 1 /10 . In this 8D case, larger η does not improve final performance, but severely perturbs the trajectories and causes divergence in Fig. 26. 22 Distance Marching for Generative Modeling 10 5 0 5 10 LDA dim 1 
+
+5.0 
+
+2.5 
+
+0.0 
+
+2.5 
+
+5.0 LDA dim 2 
+
+> Reweighted FM loss
+> FM loss
+> OSL, lr=0.4
+> DEL, lr=1.0
+
+10 5 0 5 10 LDA dim 1 
+
+5.0 
+
+2.5 
+
+0.0 
+
+2.5 
+
+5.0 LDA dim 2 
+
+> Reweighted FM loss
+> FM loss
+> OSL, lr=0.4
+> DEL, lr=1.0
+
+(a) Trajectories from different minimizers. Mean step turning angles (deg) for the top/bottom tra-jectories in 8D are RFM: 19.59/15.90 and OSL: 8.59/9.36, showing straighter paths for OSL. 0 2 4 6 8 10 step 
+
+30 
+
+25 
+
+20 
+
+15 
+
+10 
+
+> log pdf
+> Reweighted FM loss
+> FM loss
+> OSL, lr=0.4
+> DEL, lr=1.0
+
+0 2 4 6 8 10 step 
+
+80 
+
+60 
+
+40 
+
+20 
+
+> log pdf
+> Reweighted FM loss
+> FM loss
+> OSL, lr=0.4
+> DEL, lr=1.0
+
+(b) Target log-density (likelihood) ↑.Reweighted FM curve may be covered by the FM one. 0 2 4 6 8 10 step 
+
+0.0 
+
+2.5 
+
+5.0 
+
+7.5 
+
+10.0 
+
+12.5 -log p 
+
+> Reweighted FM loss
+> FM loss
+> OSL, lr=0.4
+> DEL, lr=1.0
+
+0 2 4 6 8 10 step 
+
+0
+
+20 
+
+40 
+
+60 -log p 
+
+> Reweighted FM loss
+> FM loss
+> OSL, lr=0.4
+> DEL, lr=1.0
+
+(c) − log p-value (outlierness) ↓.
+
+Figure 24. Flow matching produces more curved trajectories and yields slower improvement in target likelihood than our minimizers. We visualize target log-density along the path and report a Mahalanobis-based negative log p-value as a scale-robust outlierness score. 10 5 0 5 10 LDA dim 1 
+
+5.0 
+
+2.5 
+
+0.0 
+
+2.5 
+
+5.0 LDA dim 2 
+
+> lr=0.1
+> lr=0.2
+> lr=0.4
+> lr=0.8
+
+10 5 0 5 10 LDA dim 1 
+
+5.0 
+
+2.5 
+
+0.0 
+
+2.5 
+
+5.0 LDA dim 2 
+
+> lr=0.1
+> lr=0.2
+> lr=0.4
+> lr=0.8
+
+(a) Trajectories under the directions of OSL mini-mizer with different η.0 2 4 6 8 10 step 
+
+30 
+
+25 
+
+20 
+
+15 
+
+10 
+
+> log pdf
+> lr=0.1
+> lr=0.2
+> lr=0.4
+> lr=0.8
+
+0 2 4 6 8 10 step 
+
+80 
+
+60 
+
+40 
+
+20  
+
+> log pdf
+> lr=0.1
+> lr=0.2
+> lr=0.4
+> lr=0.8
+
+(b) Target log-density (likelihood) ↑.0 2 4 6 8 10 step 
+
+0.0 
+
+2.5 
+
+5.0 
+
+7.5 
+
+10.0 
+
+12.5 -log p 
+
+> lr=0.1
+> lr=0.2
+> lr=0.4
+> lr=0.8
+
+0 2 4 6 8 10 step 
+
+0
+
+20 
+
+40 
+
+60 -log p  
+
+> lr=0.1
+> lr=0.2
+> lr=0.4
+> lr=0.8
+
+(c) − log p-value (outlierness) ↓.
+
+Figure 25. Our one-step loss provides robust guidance across step sizes. It converges to near-zero outlierness over a 4× range of step sizes. 10 5 0 5 10 LDA dim 1 
+
+5.0 
+
+2.5 
+
+0.0 
+
+2.5 
+
+5.0 LDA dim 2 
+
+> lr=0.1
+> lr=0.2
+> lr=0.4
+> lr=0.8
+
+10 5 0 5 10 LDA dim 1 
+
+5.0 
+
+2.5 
+
+0.0 
+
+2.5 
+
+5.0 LDA dim 2 
+
+> lr=0.1
+> lr=0.2
+> lr=0.4
+> lr=0.8
+
+10 5 0 5 10 LDA dim 1 
+
+5.0 
+
+2.5 
+
+0.0 
+
+2.5 
+
+5.0 LDA dim 2 
+
+> lr=0.5
+> lr=1
+> lr=2
+> lr=4
+
+Figure 26. None of the other losses provides reliable guidance over a 4× range of step sizes, as OSL does. Red: FM loss; Green: 
+
+(1 − t)−2-reweighted FM loss; Blue: directional eikonal loss. 
+
+23 Distance Marching for Generative Modeling 
+
+C.3. Generated Samples                 
+
+> Figure 27. Uncurated samples for time- and class-unconditional generation on CIFAR-10. D ISTANCE MARCHING achieves the lowest FID among time-unconditional methods on CIFAR-10.
+> (a) using 250-step gradient descent with η= 0 .5(b) using 250-step sphere tracing with η= 0 .015
+> Figure 28. Curated ImageNet samples generated by our XL model (patch size 2) with CFG scale 4.0. We apply CFG formula (Ho & Salimans, 2022) on vθin gradient descent and uθvθin sphere tracing.
+
+C.4. Generation Process Comparison 
+
+During inference, we observe that our method attains perceptually better samples in fewer steps, whereas flow matching tends to meander in the high-noise regime at the beginning. More concretely, flow matching can exhibit a non-monotonic FID in the early stage, even though the inception score (IS) keeps increasing (see Fig. 29) and coarse structures gradually emerge. It exceeds flow matching’s final IS using only 50% of the sampling steps, converging even faster when measured by IS than by FID. Similar early-stage drifting behavior has also been noted in prior work. Karras et al. (2022) Fig. 1 and Gagneux et al. (2025) Fig. 7 report that samples are shifted toward the data mean at the beginning of generation. Energy 24 Distance Marching for Generative Modeling 0% 25% 50% 75% 100%  
+
+> Generation Steps (%)
+> 0
+> 10
+> 20
+> 30
+> 40
+> Inception Score
+> Inception Score vs Generation Steps
+> SiT w/ FM
+> Ours (ST)
+> Ours (GD)
+> Figure 29. We run the original SiT model (Ma et al., 2024) with flow matching setting using their recommended ODE solver dopri5 for 250 steps, matching our step number, and report the curves of inception score as a supplement of Fig. 16.
+
+Matching (Balcerak et al., 2025) also implies this meandering behavior: every step uses a 1/100 scaled full denoising vector, yet achieves the best performance with 325 steps rather than 100 steps. We visualize intermediate generation slices in Fig. 34 at every 10% progress. Our analysis in Sec. 4 shows that closest-target rematching can induce mode collapse: fully resolving target ambiguity tends to sacrifice the diversity of targets. In our final approach, inverse distance reweighting preserves some ambiguity, so denoising cannot be reliably done in a single step and instead benefits from multiple refinement steps. We conjecture that our model could also inspire few-step generation. This is because many distillation models still rely on a strong multi-step teacher, and stop-gradient supervision pipelines may also benefit from faster fine-grained trajectories Fig. 9. 
+
+C.5. Convergence and Robustness 
+
+One limitation of our current work is that we do not structurally constrain vθ to be a conservative field that is curl-free. In the worst case, a field with strong rotational components can cause trajectories to cycle or oscillate forever. Hence, we use this subsection to empirically illustrate our convergence and robustness. 0 50 100 150 200 250        
+
+> Generation Steps
+> 20
+> 40
+> 60
+> 80
+> u output
+> Distance Prediction vs Generation Steps
+> Ours (GD)
+> Ours (ST)
+> u=c0
+> Figure 30. During ImageNet generation, the distance predicted by uθ, as smoothed by Eq. (4), converges to the nearby √c0as predicted by our analysis. We sample 64 same Gaussian noise vectors and run gradient descent and sphere tracing in parallel; the bold lines show their mean. gradient descent provides a linear descent pattern, while sphere tracing shows an exponential descent.
+
+In Fig. 30, we first plot the distance curves for the 16 Gaussian noise vectors used in Fig. 34, along with 48 additional initial noise vectors, to show that the convergence behaves like real optimization in low-dimensional distance fields. As a comparison, during inference, previous flow matching and diffusion models essentially divide [0 , 1] by the step budget and maintain a step counter as the t input. When t reaches 1, denoising stops. In their theory, the user can only specify the step budget, with no direct control over the step size. We argue that this may not be the optimal perspective, because the model-generated states may not exactly match the t implied by the step index, which is often summarized as exposure bias (Ning et al., 2023; Li et al., 2023). In contrast, our inference methods sphere tracing and gradient descent are principally aligned with our loss design. We observe that the image modification, measured by ∥vθ ∥ (gradient descent) and uθ ∥vθ ∥ (sphere tracing), also converges to near zero in Fig. 31. Having one more hyperparameter to tune does not make our method fragile. In practice, DM has a wide basin of convergence 25 Distance Marching for Generative Modeling 0 50 100 150 200 250 
+
+Generation Steps 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> u v output (GD)
+
+Image Modification vs Generation Steps 
+
+> Ours (GD)
+> Ours (ST)
+> 0
+> 20
+> 40
+> 60
+> u v output (ST)
+
+Figure 31. In the first 40%, gradient descent maintains a steady denoising pace and then rapidly converges to zero modification. Sphere tracing still follows an exponential pattern and has the largest modifications at the beginning, consistent with our analysis in Sec. C.4. 0.4 0.6 0.8 1.0 1.2 1.4     
+
+> GD step size
+> 32
+> 34
+> 36
+> 38
+> 40
+> FID
+> FID vs GD step size
+> Ours (GD)
+> SiT w/ FM
+> EqM 0.015 0.020 0.025 0.030 0.035
+> ST step size
+> 34
+> 36
+> 38
+> 40
+> FID
+> FID vs ST step size
+> Ours (ST)
+> SiT w/ FM
+
+Figure 32. DISTANCE MARCHING is robust to step-size choices. We plot results for our backbone SiT (Ma et al., 2024) and the second-best EqM (Wang & Du, 2025) in gray as references, using the same base model size, training epochs, and evaluation protocol (250 steps, 50k samples). The best step size is highlighted with an additional circle. 
+
+across step sizes, yielding reliable convergence and strong robustness, visualized in Fig. 32. We also find that prior work (Balcerak et al., 2025; Wang & Du, 2025) does not perform well when using a structural constraint (i.e., taking autograd from a scalar network) to make the directions curl-free. We conjecture that current generative model architectures are not designed to preserve directional information after the autograd operator. Moreover, applying constraints on the autograd output, which requires backpropagating through second-order derivatives, is highly unstable (Czarnecki et al., 2017; Li et al., 2024; Chetan et al., 2025). On the other hand, efficiently computing or estimating curl in high-dimensional spaces remains an open problem, let alone using losses to enforce zero curl. We anticipate future work will go deeper into this discussion. 
+
+C.6. Ablation Study Verification of Mode Collapse and Condition Mismatch. We compare our original random linear interpolation against two alternative rematching strategies during training: (i) OT coupling and (ii) minibatch closest coupling. Both variants lead to degraded performance (see Fig. 33 and Tab. 9), consistent with our discussion in Sec. 4. 
+
+Table 9. Quick test on ImageNet generation with 1024 samples. We keep sphere-tracing sampling unchanged (same step budget) and only vary the training-time matching on B/2 SiT model with 80 epochs: random linear interpolation as in Theorem 3.1, OT coupling (Tong et al., 2023a) (i.e., nearest-target matching without replacement), or minibatch closest coupling (i.e., nearest-target matching within each minibatch with replacement). 
+
+Method Inception Score ↑ FID ↓ sFID ↓
+
+no coupling 41.77 71.23 206.2 w/ OT coupling 36.96 77.19 208.2 w/ minibatch closest coupling 26.31 90.79 217.6 
+
+Training without directional eikonal loss. We also train D ISTANCE MARCHING using only the one-step loss and evaluate it under sphere tracing. Removing one-step loss leaves the distance part uθ essentially unconstrained, which makes 26 Distance Marching for Generative Modeling      
+
+> (a) Original random linear matching. (b) OT coupling. (c) Minibatch closest coupling.
+> Figure 33. Comparison of generative models trained by different rematching algorithms, highlighting both condition mismatch and mode collapse: (b) OT coupling introduces more unnatural artifacts in conditional generation; (c) minibatch closest coupling makes the outputs noticeably low-contrast and grayish. We keep CFG scale = 1 (i.e., no CFG) to align with other experiments.
+
+training unstable; therefore, we do not include this setting. As shown in Tab. 10, this variant exhibits a slight degradation in performance. The drop is substantially larger for class-conditional ImageNet generation, while class-unconditional generation remains highly competitive, further supporting the condition mismatch discussed in Sec. 4.          
+
+> Table 10. Training with only one-step loss over-emphasizes nearby targets and degrades sample quality, leading to a higher FID. Consistent with our discussion of conditional mismatch, this degradation is substantially more pronounced on ImageNet. On CIFAR-10, training with only one-step loss still achieves the best performance among energy-based models and ranks second among all time-unconditional methods. All FIDs are computed using 50k generated samples with 250 sphere tracing steps. We tune ηfor each method and report the lowest FID achieved.
+> Method w/ DEL w/o DEL
+> class-unconditional generation (CIFAR-10) 2.23 2.33 class-conditional generation (ImageNet) 33.44 37.01
+
+Loss Variations We apply two different loss designs on CIFAR-10 generation task: (i) set c0 = ϵ = 0 ; (ii) unnormalized one-step loss without the denominator. Consistent with our previous analysis, both degrade generation performance (see Tab. 11).                         
+
+> Table 11. Ablation study on CIFAR-10 of different loss designs. We tune ηfor each method and report the lowest FID achieved.
+> Method FID ↓(ST) FID ↓(GD)
+> original OSL, c0=ϵ= 4 (baseline) 2.23 2.54 original OSL, c0=ϵ= 0 2.37 3.84 unnormalized OSL w/o denominator, c0= 4 3.88 4.63
+
+As in our previous analysis, setting ϵ, c 0 > 0 both prevents division by zero (and the resulting numerical instability) and discourages excessive sensitivity near the data manifold. Neural networks have limited capacity. If we set ϵ = c0 = 0 , the objective effectively demands that the model learn the denoising direction accurately in a tiny neighborhood around the data. In that neighborhood, the correct denoising direction can change very sharply over a very small distance. To represent such sharp local variation, the model must allocate a large portion of its capacity there, which can be an inefficient use of capacity for generation tasks. Even with ϵ = c0 = 0 , the FID does not degrade substantially: we still achieve the best performance among energy-based models and rank second among all time-unconditional methods, indicating robustness to these choices. By contrast, removing the denominator not only loses the inverse distance reweighting we proved in Sec. A.2, but also makes fine-grained denoising difficult to learn. In the unnormalized form, large displacements dominate the training signal, since they consistently incur larger one-step loss errors, which is unavoidable given the ambiguous posterior discussed in Sec. 4. As a result, the model allocates less learning capacity to moderate and lightly noised inputs, whose displacements are inherently smaller. This imbalance leads to a substantially worse FID for the unnormalized one-step loss. 27 Distance Marching for Generative Modeling 
+
+(a) D ISTANCE MARCHING with sphere tracing, η = 0 .022 , no CFG. 
+
+(b) D ISTANCE MARCHING with gradient descent, η = 0 .64 , no CFG. 
+
+(c) Flow matching SiT with ODE solver dopri5, no CFG. 
+
+Figure 34. We perform 250-step generation using SiT-B/2 models trained for 80 epochs under their respective losses, starting from the same initial noise at inference. For each method, the step size is chosen to maximize the final performance after 250 steps. We visualize intermediate outputs at 10%–100% progress in 10% increments. 28 Distance Marching for Generative Modeling 
+
+C.7. Supplementary Tables and Figures 
+
+For several baselines, we directly extract numeric values from the vector graphics metadata in Fig. 3 of Wang & Du (2025), Fig. 8 of Sun et al. (2025), and Fig. 8 of Peebles & Xie (2023). We report these values to two decimal places and expect them to match the originals up to this precision. Due to space constraints in the main paper, we provide additional results here. 
+
+Table 12. FID comparison on CIFAR-10 and ImageNet under comparable model capacity. Baseline numbers are taken from the corresponding papers. 
+
+Method CIFAR-10 ( ∼56M params) ImageNet (SiT B/2) Avg. FID ↓ Rel. diff. FID ↓ Rel. diff. 
+
+Distance Marching 2.33 \ 32.16 \ \
+
+EqM (Wang & Du, 2025) 3.36 +44.2% 32.85 +2.1% +23.2% uEDM (Sun et al., 2025) 2.33 +0.0% 40.80 +26.9% +13.5% 0.0 0.2 0.4 0.6 0.8 1.0 
+
+> Interpolation Coefficient
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Coverage Rate
+
+Figure 35. Coverage rate changes abruptly in the middle, remaining near 0 on the noisy side and saturating near 1 on the data side, indicating a highly non-uniform nearest-neighbor visitation across interpolation time. 0.0 0.2 0.4 0.6 0.8 
+
+> Interpolation Coefficient
+> 50
+> 100
+> 150
+> 200
+> 250
+> 300
+> 350
+> FID
+> w/ FM Loss
+> w/ Reweighted FM Loss
+> w/ One Step Loss
+
+Figure 36. Full FID curves across diffusion time. We partition t ∈ [0 .0, 0.95] into 20 uniform bins (same bin count as Fig. 12, which restricts to t ∈ [0 .0, 0.25] ). For each bin, we sample T uniformly within the bin and generate 2048 noisy samples following Theorem 3.1; FID is computed on the corresponding denoised outputs for each objective. We exclude directional eikonal loss from this comparison because it does not specify a denoising destination; instead, we report in Fig. 11 that its solution lies between the one-step loss minimizer and the flow matching minimizer. Beyond the small-t regime, the performance gaps shrink, and the FID curves across objectives become much less distinguishable. The red and green curves always overlap so that it is hard to distinguish. 
+
+29
