@@ -1,0 +1,559 @@
+Title: DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding
+
+URL Source: https://arxiv.org/pdf/2602.04188v1
+
+Published Time: Thu, 05 Feb 2026 01:27:27 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+Ning Zhang 1 Zhengyu Li 1 Kwong Weng Loh 1 Mingxi Xu 1 Qi Wang 1 Zhengyu Wen 1 Xiaoyu He 1
+
+Wei Zhao 1 Kehong Gong 2 Mingyuan Zhang 1
+
+## Abstract 
+
+Prior masked modeling motion generation meth-ods predominantly study text-to-motion. We present DiMo, a discrete diffusion-style frame-work, which extends masked modeling to bidi-rectional text–motion understanding and genera-tion. Unlike GPT-style autoregressive approaches that tokenize motion and decode sequentially, DiMo performs iterative masked token refine-ment, unifying Text-to-Motion (T2M), Motion-to-Text (M2T), and text-free Motion-to-Motion (M2M) within a single model. This decod-ing paradigm naturally enables a quality-latency trade-off at inference via the number of refine-ment steps.We further improve motion token fi-delity with residual vector quantization (RVQ) and enhance alignment and controllability with Group Relative Policy Optimization (GRPO). Ex-periments on HumanML3D and KIT-ML show strong motion quality and competitive bidirec-tional understanding under a unified framework. In addition, we demonstrate model ability in text-free motion completion, text-guided motion pre-diction and motion caption correction without architectural change. Additional qualitative re-sults are available on our project page: https: //animotionlab.github.io/DiMo/ .
+
+## 1. Introduction 
+
+Bidirectional text–motion understanding and generation is increasingly important for modern motion systems (Guo et al., 2022a). Complementing text2motion (T2M) and mo-tion2text (M2T), many practical tasks such as caption correc-tion, motion continuation, and motion in-betweening require a model to both interpret motion and generate it. Treating T2M and M2T as separate problems leads to inconsistent representations and duplicated engineering, whereas a uni-fied framework provides shared cross-modal embeddings 
+
+> 1
+
+Huawei Central Media Technology Institute 2Huawei Tech-nologies Co., Ltd.. Correspondence to: Mingyuan Zhang 
+
+<zhangmy718@gmail.com >.
+
+Preprint. February 5, 2026. 
+
+Figure 1. Overview of DiMo. DiMo unifies Motion-to-Text (M2T) and Text-to-Motion (T2M) within a single framework, achieving a strong balance between motion realism and semantic consistency across generation and understanding tasks. 
+
+and consistent behavior across tasks. However, achieving high-quality generation, low-latency decoding, editability, and multi-task unification within a single model remains challenging. Most prevailing approaches follow the autoregressive (AR) paradigm: continuous motions are discretized into to-kens and decoded sequentially in a GPT-style manner to accomplish Text-to-Motion (T2M) and Motion-to-Text (M2T) (Jiang et al., 2024; Wang et al., 2024; Guo et al., 2022b). While this line of work has advanced unified in-terfaces and transferability, it faces inherent limitations: (i) token/frame-by-token decoding makes end-to-end latency scale with sequence length; (ii) the unidirectional nature of AR decoding hinders global, multi-step correction, which is important for editing and completion; and (iii) unifying text-conditioned and text-free variants of completion and pre-diction typically requires additional engineering branches and specialized training tricks. Recent module decoupling and cross-modal attention designs alleviate the tug-of-war between language and motion to some extent (Zhu et al., 2025), but decoding and editability remain fundamental bot-tlenecks. We present DiMo , a discrete diffusion framework for bidirectional text–motion modeling. The key idea is to treat both text and motion as noisy sequences and perform K-step parallel denoising that progressively converges un-der global context. Unlike AR decoding, diffusion-style parallel denoising naturally supports parallel generation and multi-step self-correction, enabling a single model to unify 1
+
+> arXiv:2602.04188v1 [cs.CV] 4 Feb 2026 DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding
+
+T2M, M2T, and text-free Motion-to-Motion (M2M). Cru-cially, by adjusting the number of denoising steps at in-ference, the framework provides a tunable quality–latency trade-off, allowing practitioners to select Pareto-optimal operating points for different applications (Li et al., 2022; Nie et al., 2025). To improve motion representation fidelity, we adopt Residual Vector Quantization (RVQ) (Zeghidour et al., 2021) as the motion tokenizer, achieving lower quan-tization error at comparable bitrates; moreover, we further incorporate GRPO within the framework (Shao et al., 2024) to enhance alignment and controllability. On HumanML3D (Guo et al., 2022a), our approach attains competitive results against strong baselines for both T2M and M2T, and empirically validates the quality–latency tunability of diffusion decoding. We also prototype text-free and text-conditioned motion completion and prediction, showcasing the unification and extensibility of DiMo. Our contributions are threefold: 1. Paradigm & tunable decoding. We introduce the diffusion-LLMs training mechanism to bidirectional text–motion (T2M ↔M2T) generation and propose a multi-step parallel denoising decoder under a unified framework. This paradigm naturally enables a quality– latency trade-off, which we validate with Pareto curves from step-count sweeps. Unlike strictly left-to-right decoding, iterative masked refinement enables step-by-step self-correction, which empirically reduces sensitiv-ity to early token mistakes and improves long-horizon coherence. 2. Unified capability & natural extensibility. Beyond standard T2M/M2T, our proposed framework can in-herently support motion completion and prediction both text-free settings and text-conditioned on the T2M side, evidencing the paradigm’s natural extensibility. On the M2T side, we prototype motion-guided text cor-rection and placeholder disambiguation, demonstrating the robustness of our unified semantic space. 3. Practical effectiveness & scalability. We employ RVQ as the motion tokenizer to reduce quantization error and improve downstream quality, and integrate GRPO to enhance alignment and controllability; In HumanML3D and KIT-ML datasets, we achieve com-petitive results on both T2M and M2T tasks. 
+
+## 2. Related Works 
+
+2.1. Human Motion Generation 
+
+Human motion generation has been a long-standing research problem at the intersection of computer vision, computer graphics, and machine learning. Early works relied on mo-tion graphs and statistical models (Rose et al., 1998; Mukai & Kuriyama, 2005), which enabled interpolation of motion clips but lacked semantic controllability. With the devel-opment of deep learning, generative models are introduced into this field. Generative adversarial networks (GANs) (Harvey et al., 2020; Barsoum et al., 2018), variational au-toencoders (VAEs) (Aliakbarian et al., 2020; Petrovich et al., 2021), and diffusion-based approaches (Tevet et al., 2022; Zhang et al., 2024a) further advanced the field, improving the diversity and realism of synthesized sequences. Later works also focus on higher motion controllability (Zhang et al., 2024c; Karunratanakul et al., 2023), motion gener-ation under multimodal control signal (Gong et al., 2023; Zhang et al., 2024b). 
+
+2.2. Bi-directional Motion-Text Generation 
+
+Bridging motion and natural language has attracted in-creasing interest for applications such as video caption-ing, embodied AI, and human-robot interaction. Text-to-motion (T2M) models (Guo et al., 2022a; Petrovich et al., 2022; Zhang et al., 2024a) synthesize 3D motion sequences aligned with textual prompts. A notable effort toward unifi-cation is MotionGPT (Jiang et al., 2024), which quantizes human motion into discrete tokens and treats them as part of a shared vocabulary with language, enabling both T2M and M2T through a large language model backbone. While Mo-tionGPT demonstrates strong bi-directional performance, its autoregressive generation can be inefficient for long motion sequences and may struggle to capture structural refine-ments. MotionGPT-2 (Wang et al., 2024) extends this line by integrating multimodal controls such as single-frame poses into the same framework. Other bi-directional ap-proaches, such as TM2T (Guo et al., 2022b), typically train separate models for each direction, lacking a unified archi-tecture. Our work differs by combining the bi-directional modeling capacity of MotionGPT with the efficiency of masked refinement. 
+
+2.3. Diffusion Language Models (dLLMs) 
+
+While autoregressive (AR) large language models (LLMs) such as GPT-style transformers (Radford et al., 2018; Brown et al., 2020) dominate current research and applications, an alternative line of work explores bidirectional denoising-based models. This family, often referred to as diffusion language models (dLLMs), extends the principles of discrete diffusion (Austin et al., 2021; Nie et al., 2025) and masked language modeling (Devlin et al., 2019) to sequential text generation. Instead of predicting tokens strictly left-to-right, dLLMs apply a diffusion-based noise schedule that progressively corrupts token sequences, and then learn to iteratively de-noise them. Representative works include Diffusion-LM (Li 2DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+et al., 2022), which formulates text generation as discrete denoising diffusion, and MaskGIT (Chang et al., 2022), which introduces iterative masked prediction for efficient parallel decoding. Recent surveys (Yu et al., 2025) highlight that this paradigm achieves competitive quality compared to AR models, while offering controllable sampling, parallel decoding, and a natural quality–latency trade-off. Building on these insights, our proposed DiMo adapts the dLLM paradigm to motion–language modeling, integrating residual vector quantization for motion tokenization with diffusion-style denoising to support bidirectional generation across text and motion. For the language backbone, we adopt the BERT family, whose bidirectional masked lan-guage modeling naturally fits our denoising framework and is well aligned with the size of available motion–language datasets. 
+
+## 3. Methods 
+
+3.1. Overview 
+
+We propose DiMo , a unified framework for bidirectional text-motion generation, covering text-to-motion (T2M), motion-to-text (M2T), and tasks such as motion comple-tion and prediction. DiMo formulates both text and motion as discrete token sequences, applies a diffusion-style cor-ruption process, and trains the model to iteratively denoise them, enabling multi-step parallel decoding that balances generation quality and latency. Our design combines three components: (i) a Residual Vec-tor Quantizer (RVQ) for high-fidelity motion tokens; (ii) a BERT-based masked language model backbone with a mo-tion encoder-decoder, which fuses motion and text embed-dings in a shared denoising framework; and (iii) an optional GRPO-based reinforcement objective for improved cross-modal alignment. This allows DiMo to achieve flexible and high-quality motion-language modeling. 
+
+3.2. DiMo 
+
+DiMo is a unified framework for bidirectional text-motion generation, building on the recent success of discrete dif-fusion language models (dLLMs). Instead of sequentially autoregressing tokens, dLLMs apply random masking and iterative denoising, which naturally supports parallel infer-ence. This allows the model to refine corrupted sequences in multiple steps, dynamically revise low-confidence pre-dictions, and leverage bidirectional attention for stronger contextual reasoning. 
+
+Multi-task Scheduling. To unify multiple objectives, DiMo employs a multi-task scheduling mechanism. During training, each sample within a batch is randomly assigned to one of three tasks: text-to-motion (T2M), motion-to-text (M2T), or motion-to-motion (M2M). The proportion of tasks is controlled by a tunable hyperparameter, enabling fine-grained adjustment of cross-modal versus uni-modal supervision. The definitions of these three tasks are listed as below: • Text-to-Motion (T2M): The model learns to recover corrupted motion sequences from an unmasked text prompt by reconstructing masked motion tokens. All text tokens are reserved while motion tokens are ran-domly masked out. • Motion-to-Text (M2T): The model learns to trans-late movement into natural language descriptions, ef-fectively performing motion captioning. All motion tokens are reserved while text tokens are randomly masked out. • Motion-to-Motion (M2M): In this setting, the model focuses solely on motion by recovering masked motion tokens, ignoring any text input. This self-supervised objective enhances the model’s motion prediction and completion capabilities and enables effective classifier-free guidance for motion sequence inference. 
+
+Masking Schedule and Training Loss We train DiMo with a multi-task masked denoising objective. For each sequence y and its textual description x, a set of positions 
+
+M is masked, and the model predicts the masked tokens from corrupted ˜y. The overall loss is masked cross-entropy: 
+
+Ltask = E(x,y )∼D 
+
+h
+
+− X
+
+> t∈M
+
+log pθ (yt | ˜y, x )
+
+i
+
+. (1) We use a linear masking schedule by sampling a per-sample masking probability u ∼ U (0 , 1) , and masking each token independently with probability u. This exposes the model to a broad distribution of corruption levels within each training batch, ranging from lightly to heavily masked sequences, and encourages robustness across varying degrees of partial observation. 
+
+Confidence-Guided Progressive Inference. We adopt a confidence-guided progressive inference strategy, inspired by non-autoregressive masked decoding (Guo et al., 2024). Given a partially masked sequence ˜y (motion or text to-kens), the model refines it over S denoising steps. At each step s, the model predicts a distribution pθ (yt | ˜y, x ) for all currently masked positions t, and estimates token-wise confidence by the maximum probability: 
+
+ct = max  
+
+> v
+
+pθ (yt = v | ˜y, x ).
+
+Our strategy iteratively commits high-confidence tokens first and refines uncertain regions. The full algorithm is provided in Appendix A. 3DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding  
+
+> Figure 2. Overview of DiMo. Our unified framework supports text-to-motion (T2M), motion-to-text (M2T), and motion-to-motion (M2M) tasks with RVQ-based motion tokenization, multi-task masked training, confidence-guided progressive inference, and GRPO fine-tuning.
+
+3.3. Motion Tokenization with Residual VQ 
+
+Following masked modeling approaches such as Mo-Mask (Guo et al., 2024), we discretize continuous 3D mo-tion sequences into discrete tokens via a Residual Vec-tor Quantizer (RVQ). providing higher representational ca-pacity while maintaining stability. Given a motion M ∈
+
+RT ×J×3, the encoder produces discrete indices: 
+
+z ∈ { 1, . . . , N }⌊ Tr ⌋× R,
+
+where R is the number of residual layers. Each layer uses an independent codebook and N is the number of entities of each codebook. r is the ratio of temporal compression. 
+
+3.4. Model Architecture DiMo is designed as a unified denoising architecture for text-to-motion (T2M), motion-to-text (M2T), and motion-to-motion (M2M) generation. The model builds upon a bidirec-tional masked language model while introducing modality-specific encoders and decoders for motion. This hybrid design allows DiMo to preserve the strengths of pretrained LLMs for text reasoning while explicitly modeling the struc-ture of motion tokens. An overview of the architecture is shown in Figure 2. 
+
+Language backbone. We adopt a pretrained BERT-based masked language model as the textual backbone. BERT’s bidirectional contextualization naturally aligns with our dis-crete diffusion-style denoising objective, in contrast to au-toregressive LLMs that impose a strict left-to-right order. The backbone produces contextual embeddings for textual tokens and serves as the fusion space where text and motion features interact. We extend the tokenizer with additional special tokens to represent motion masks and padding, en-suring that the model can process multimodal sequences consistently. 
+
+Motion token encoder. Continuous motion sequences are first discretized via Residual Vector Quantization (RVQ), yielding multi-level motion tokens. To embed these tokens into the LLM’s hidden space, we introduce a dedicated mo-tion encoder. For each RVQ codebook level, an embedding table and a lightweight Transformer encoder process the token stream, capturing hierarchical motion dynamics. The outputs are fused through learnable weights and augmented with positional embeddings. This design enables motion features to be expressed in the same representational space as text tokens, while preserving high-fidelity motion details. 
+
+Motion token decoder. Reconstruction of motion tokens is handled by a motion decoder. Each RVQ level is paired with a Transformer-based prediction head that refines back-bone features and outputs logits over the motion vocabu-lary. By decoding tokens across RVQ levels in parallel, the decoder preserves coarse-to-fine motion fidelity while supporting efficient training and inference. An additional output projection layer maps hidden states to motion tokens, ensuring compatibility with the denoising objective. 
+
+3.5. Reward Design 
+
+To fine-tune DiMo beyond likelihood training, we design task-specific reward functions for text-to-motion (T2M) and motion-to-text (M2T), and optimize them jointly with GRPO (Sec. 3.6). The rewards are chosen to reflect se-mantic fidelity and modality-specific quality criteria, while remaining compatible with reinforcement learning. 
+
+Reward for Text-to-Motion (T2M). Given a text prompt 
+
+x, the model generates a motion ˆm. To evaluate its semantic correctness, we utilize our pre-trained (frozen) M2T branch 4DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+as a proxy evaluator to infer a pseudo caption ˆt and compare it with the ground-truth caption t in the CLIP embedding space: 
+
+RT2M ( ˆ m, t ) = cos  CLIP(ˆ t), CLIP( t). (2) This reward captures whether the generated motion conveys the intended textual meaning, without relying on heuristic metrics. We further explore alternative T2M reward designs, such as using external motion-to-text feature extractors. Re-sults and ablation studies for different reward strategies are reported in Appendix D.1. 
+
+Reward for Motion-to-Text (M2T). For a given motion 
+
+m, the model outputs a caption ˆt. We combine verb con-sistency and semantic similarity, scaled by a length penalty (LP) to discourage degenerate outputs: 
+
+RM2T (ˆ t, t ) = λverb VerbMatch(ˆ t, t )+ λclip cos  CLIP(ˆ t), CLIP( t) · LP( |ˆt|, |t|),
+
+(3) 
+
+LP( |ˆt|, |t|) = exp 
+
+
+
+− γ 1 − |ˆt|
+
+> max( |t|,1)
+
+
+
+. (4) Here VerbMatch measures verb overlap between ˆt and t,CLIP similarity reflects semantic alignment, and LP penal-izes captions that are disproportionately short or long. We use default weights (λverb , λ clip ) = (0 .3, 0.7) to emphasize more on semantic consistency and γ = 1 .0.
+
+3.6. GRPO Objective 
+
+We adopt Group Relative Policy Optimization (GRPO) (Shao et al., 2024) to fine-tune DiMo. GRPO is a critic-free variant of PPO that eliminates the need for a value network by normalizing rewards within candidate groups, thereby reducing computation and memory costs. 
+
+Objective. For each input q (text or motion), we sample G
+
+candidate outputs {oi}Gi=1 from the old policy πold , compute rewards ri = R(oi, q ) (Sec. 3.5), and update the policy πθ
+
+by maximizing: 
+
+JGRPO (θ) = Eq, o i
+
+"
+
+1
+
+G
+
+> G
+
+X
+
+> i=1
+
+min 
+
+
+
+ρi(θ)Ai,
+
+clip  ρi(θ), 1 − ϵ, 1 + ϵ Ai
+
+#
+
+− β D KL 
+
+ πθ (·| q) ∥ πref (·| q). (5) Here ρi(θ) = πθ (oi|q) 
+
+> πold (oi|q)
+
+is the importance ratio , i.e., the likelihood of a sampled output under the current policy rela-tive to the old policy. Ai = ri−μσ is the group-normalized advantage, ϵ = 0 .1 is the clipping range, and β = 0 .004 is the KL coefficient. We found these settings to yield stable training, while larger or smaller values often led to unstable updates. 
+
+## 4. Experiments 
+
+4.1. Implementation Details 
+
+Our model is trained on 16 × 32 GB Ascend 910 NPUs for 50 epochs with a mini-batch size of 32. Motion se-quences are quantized into discrete tokens using a 6-layer RVQ tokenizer with 1024 codewords per layer. Text is to-kenized with a pre-trained BERT-large tokenizer (Devlin et al., 2019). The backbone uses a hidden size of 1024 with 16 transformer layers. The downsample ratio r is 4. Using a 20 fps frame rate, 1.5 tokens per frame, and a 1024-size codebook (10 bits/token), the resulting token rate is 30 tokens/s with a bitrate of 300 bits/s. Optimization uses AdamW (Loshchilov & Hutter, 2019) with a learning rate of 5 × 10 −5, weight decay 0.01 , and a linear warmup of 5k steps. Inference uses progressive unmasking with K = 20 refinement steps for T2M and 
+
+K = 30 for M2T, classifier-free guidance (CFG) with a constant scale 3.0. GRPO fine-tuning is applied as a second stage (Sec. 3.6). 
+
+4.2. Main Results 
+
+Table 1 reports quantitative results on the Hu-manML3D (Guo et al., 2022a) benchmark. Overall, DiMo demonstrates a strong balance between motion generation and motion understanding within a unified framework. For Text-to-Motion (T2M), DiMo achieves one of the lowest FID scores among unified models (0.050 without GRPO and 0.047 after GRPO), indicating that the generated motions closely match the real-data distribution in terms of geometric and perceptual fidelity. On retrieval-based metrics (R@1/R@3), DiMo remains competitive but does not consistently outperform the strongest baselines such as MotionGPT-3 or MoTe. We observe that these metrics are highly dependent on the be-havior of the pre-trained text–motion evaluator. Notably, even real motions only achieve 51.1% R@1 under the same evaluator, suggesting that higher retrieval scores may favor in-distribution motion patterns rather than faithfully captur-ing semantic alignment. This indicates that retrieval-based metrics are influenced by distributional similarity to the evaluator’s training data and may not always reflect human perception. To further support this observation, we include a blind human preference study in Appendix C. For Motion-to-Text (M2T), where evaluation is conducted on ground-truth motions, DiMo shows more advantages across text metrics including BLEU, ROUGE-L, CIDEr, 5DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+Table 1. Quantitative results of Text-to-Motion and Motion-to-Text on HumanML3D. Category Method T2M M2T                                                                                                                                                                                                                                                                                                      
+
+> R@1 ↑R@2 ↑R@3 ↑FID ↓Div →MM ↑MM Dist ↓R@1 ↑R@3 ↑BLEU@1 ↑BLEU@4 ↑ROUGE-L ↑CIDEr ↑BERTScore ↑
+> Real Motion 0.511 0.703 0.797 0.002 9.503 -2.974 0.523 0.828 -----T2M Only MDM --0.611 0.544 9.559 2.799 5.566 -------MotionDiffuse 0.491 0.681 0.782 0.630 9.410 1.553 3.113 -------MLD 0.481 0.673 0.772 0.473 9.724 2.413 3.196 -------MoMask 0.521 0.713 0.807 0.045 9.620 1.241 2.958 -------T2M-GPT 0.492 0.679 0.775 0.141 9.722 1.831 3.121 -------ReMoDiffuse 0.510 0.698 0.795 0.103 9.018 1.795 2.974 -------MoGenTS 0.529 0.719 0.812 0.033 9.570 -2.867 -------MotionLCM 0.502 0.698 0.798 0.304 9.607 2.259 3.012 -------ReMoMask 0.531 0.722 0.813 0.099 9.535 2.823 2.865 -------MaskControl --0.805 0.083 9.395 ---------Separated Model TM2T 0.424 0.618 0.729 1.501 8.589 2.424 3.467 0.516 0.823 48.9 7.0 38.1 16.8 32.2 LaMP 0.557 0.751 0.843 0.032 9.571 -2.759 0.547 0.831 47.8 13.0 37.1 28.9 -MG-MotionLLM 0.516 0.706 0.802 0.303 9.960 2.125 2.952 0.592 0.866 -8.1 --36.7 Unified Model MotionGPT 0.492 0.681 0.778 0.232 9.528 2.008 3.096 0.543 0.827 48.2 12.5 37.4 29.2 32.4 MotionGPT2 0.427 0.627 0.764 0.614 11.256 2.357 3.164 0.558 0.838 48.7 13.8 37.6 29.8 32.6 MotionGPT3 0.553 0.747 0.837 0.208 9.700 1.018 2.725 0.573 0.864 59.1 19.4 46.2 28.7 35.2 MoTe 0.548 0.737 0.825 0.075 -2.399 2.867 0.577 0.871 46.7 11.2 37.4 31.5 30.3 Ours w/o GRPO 0.528 0.723 0.818 0.050 9.515 2.016 2.867 0.569 0.850 63.9 22.6 47.0 57.2 37.5 Ours w/ GRPO 0.528 0.724 0.818 0.047 9.419 2.000 2.862 0.577 0.855 64.2 22.7 47.1 58.1 37.7
+
+Table 2. Quantitative results of Text-to-Motion and Motion-to-Text on KIT-ML.                                                                                      
+
+> T2M M2T
+> Method R@1 ↑R@2 ↑R@3 ↑FID ↓Div →MM ↑MM Dist ↓R@1 ↑R@3 ↑BLEU@1 ↑BLEU@4 ↑ROUGE-L ↑CIDEr ↑BERTScore ↑
+> Real motion 0.424 0.649 0.779 0.031 11.08 -2.788 0.399 0.793 -----MotionGPT 0.366 0.558 0.680 0.510 10.35 2.328 3.527 -------MotionGPT2 0.427 0.627 0.764 0.614 11.256 2.357 3.164 -------MoTe 0.419 0.627 0.741 0.256 -2.615 3.216 0.421 0.765 44.9 14.5 41.8 55.6 35.9 Ours 0.406 0.620 0.741 0.206 10.892 1.690 2.983 0.396 0.723 52.5 17.8 48.0 68.7 37.7
+
+Table 3. Ablation study: backbone scaling and scaling law. Text-to-Motion Motion-to-Text Backbone R@1 ↑ R@3 ↑ FID ↓ R@1 ↑ R@3 ↑ BLEU@1 ↑ ROUGE-L ↑ CIDEr ↑                        
+
+> ALBERT 0.455 0.753 0.947 0.528 0.821 63.1 46.1 54.5 BERT-base 0.493 0.780 0.135 0.582 0.857 65.0 47.6 58.9
+> BERT-large 0.528 0.818 0.050 0.569 0.850 63.9 47.0 57.2
+
+and BERTScore. This demonstrates that the learned motion representations preserve rich and structured semantic infor-mation, which can be consistently mapped back to natural language. Overall, DiMo emphasizes perceptual realism and distributional fidelity in motion generation, as reflected by strong FID scores, while exhibiting different sensitivity on retrieval-based metrics that rely on a fixed evaluator. We future validate DiMo pipeline with KIT-ML and Motion-X datasets, refer to Table 2 for KIT-ML dataset. The detailed KIT-ML reports and results for Motion-X can be found at Appendix D.2. 
+
+4.3. Ablation Studies Ablation — Backbone scaling and scaling law. Table 3 compares three masked-language backbones (ALBERT, BERT-base, BERT-large) to study the correlation between model size and generation quality. We observe a monotonic improvement on T2M task with backbone scale (BERT-large 
+
+> BERT-base > ALBERT), yielding consistent gains across key metrics such as R-Precision, FID. However, in terms of text performance, bert-base shows better results, likely because the textual corpus in HumanML3D is relatively limited. As future work, it is necessary to investigate the scaling laws on larger-scale motion generation datasets. 
+
+Latency–quality Trade-off. The progressive denoising mechanism of discrete diffusion enables a smooth trade-off between inference latency and generation quality by tuning the number of sampling steps and confidence thresholds. We measure latency and core quality metrics (FID, BLEU, R@1, and human preference) under several sampling bud-gets (e.g., K = 30 , 20 , 10 ; see Table 4). Results indicate that reducing K from 30 to 5 substantially cuts inference time while only incurring modest quality degradation. De-spite having a larger model size than prior baselines, our model achieves a better quality–latency trade-off: very few steps (e.g., K = 5 ) already outperform existing methods in T2M FID with minimal latency, while more steps (10–30) further improve quality metrics at the cost of higher but still reasonable latency. This demonstrates that the number of re-6DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+Table 4. Ablation on computation vs quality. Text metrics (BLEU@1, BLEU@4, ROUGE-L, CIDEr, BERTScore) are in percentage. Our model is evaluated under different denoising steps with BERT-large backbone. Text-to-Motion Motion-to-Text Computational Cost Method R@1 ↑ R@2 ↑ R@3 ↑ FID ↓ Latency(s) R@1 ↑ R@3 ↑ BLEU@1 ↑ BLEU@4 ↑ ROUGE ↑ BERTScore ↑ Latency(s) #Params FLOPs/sample MotionGPT 0.492 0.681 0.778 0.232 1.04 0.543 0.827 48.2 12.5 37.4 32.4 0.48 220M 7.45T MotionGPT-3 0.553 0.747 0.837 0.208 1.02 0.573 0.864 59.1 19.4 46.2 35.2 1.30 238M 11T MG-MotionLLM 0.516 0.706 0.802 0.303 1.09 0.592 0.866 - 8.1 - 36.7 0.60 220M 1.66T Ours(5 steps) 0.523 0.719 0.812 0.120 0.41 0.465 0.744 54.7 16.2 42.2 19.2 0.21 473M 0.64T Ours(10 steps) 0.527 0.724 0.817 0.068 0.76 0.510 0.795 56.8 19.1 44.9 26.4 0.38 473M 1.28T Ours(20 steps) 0.528 0.723 0.818 0.050 1.55 0.568 0.845 62.5 22.0 47.3 35.4 0.81 473M 2.56T Ours(30 steps) 0.524 0.720 0.815 0.052 2.39 0.569 0.850 63.9 22.6 47.0 37.5 1.18 473M 3.84T 
+
+Table 5. Ablation study: model performance under different RVQ layer. #RVQ Layer Reconstruction Text-to-Motion Motion-to-Text MSE ↓ R@1 ↑ R@2 ↑ R@3 ↑ FID ↓ R@1 ↑ R@3 ↑ BLEU@1 ↑ BLEU@4 ↑ ROUGE-L ↑ CIDEr ↑ BERTScore ↑                                                
+
+> 10.0830 0.515 0.711 0.806 0.200 0.558 0.841 62.8 22.0 46.5 55.0 36.2 40.0215 0.527 0.722 0.821 0.076 0.579 0.845 64.2 22.8 47.2 58.3 37.0 60.0118 0.528 0.723 0.818 0.050 0.569 0.850 63.9 22.6 47.0 57.2 37.5
+> 80.0101 0.531 0.729 0.824 0.121 0.573 0.847 63.8 22.3 47.0 57.4 37.1
+
+finement (denoising) steps provides flexible operating points balancing speed and quality beyond previous approaches. 
+
+Effect of RVQ Stage Depth. Table 5 shows that multi-stage residual quantization significantly improves reconstruction fidelity and downstream generation/understanding perfor-mance. A 6-stage RVQ consistently outperforms single-stage quantization on FID, R-Precision, and all text-based metrics. The hierarchical residual codebooks allow the first stage to capture coarse, low-frequency body structure while later stages encode high-frequency details. This frequency-wise decomposition substantially reduces quantization error for fine details and provides the discrete diffusion backbone with more informative tokens, yielding motions that are clearer in both semantics and detail and producing more ac-curate textual descriptions. Reconstruction MSE decreases monotonically with increasing RVQ depth, confirming that deeper quantization better preserves motion details. Down-stream T2M/M2T metrics improve up to 4–6 layers but saturate or fluctuate slightly beyond that, likely due to the trade-off between tighter reconstruction and more complex codebooks. Here we use refinement steps K = 20 for T2M generation and K = 30 for M2T generation. Besides the above mentioned experiments, we also thor-oughly ablate different masking schedules across modalities, different task proportions, scales of classifier-free guidance for motion sequence generation, and study the effectiveness of multi-task training. More discussion details can be found in Appendix D. 
+
+4.4. Qualitative Results 
+
+We present qualitative examples to further illustrate the characteristics of DiMo’s bidirectional denoising paradigm. Unlike one-pass autoregressive generation, DiMo can itera-tively refine outputs by re-masking and re-denoising subse-quences. This flexibility enables progressive improvement of motion quality and the ability to adjust local segments without regenerating the entire sequence. Figure 3 shows a text-to-motion example: DiMo generates motions that follow the caption and preserve coherent body dynamics. Figure 4 shows a motion-to-text case: given a motion sequence, DiMo produces concise captions that capture key actions and their temporal order. These results indicate that DiMo handles both directions within a unified framework. Compared with autoregressive approaches such as MotionGPT and MotionGPT3, DiMo tends to preserve fine-grained motion details throughout the sequence, maintaining later-stage semantics without relying on strong early-frame cues. We have porvided more qualitative comparisons with a structured demo page in the supplementary material. 
+
+## 5. Applications 
+
+Motion Inbetweening/Completion . Given the beginning and ending segments of a motion sequence, DiMo recon-structs the masked middle portion to ensure temporal co-herence and kinematic naturalness. Unlike text-conditioned methods, it operates in a text-free manner by iteratively denoising the missing region. This allows DiMo to flexi-bly handle partial observations without relying on explicit linguistic supervision. As shown in Figure 5(a), this pro-cess yields smooth transitions and semantically consistent motions. 
+
+Motion Continuation/Prediction . DiMo supports motion continuation, where a motion and its textual description are given and additional semantic content is appended to the 7DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding   
+
+> Figure 3. Text-to-motion comparison: DiMo generates more coherent and semantically aligned motions.
+> Figure 4. Motion-to-text comparison: DiMo produces concise and accurate action descriptions.
+
+text to extend the sequence. The model uses the new linguis-tic cues to generate successive motion segments, continuing the motion naturally. This setting highlights DiMo’s ability to fuse evolving language semantics with long-horizon mo-tion dynamics. Figure 5(b) demonstrates coherent motion extensions. 
+
+Caption Correction . Beyond motion inbetweening and continuation, DiMo also supports motion-guided caption correction. When a caption mismatches the underlying ac-tion (e.g., describing walking as running), the model refines the text to align with the observed motion. By iteratively de-noising text tokens conditioned on motion, DiMo enforces tighter cross-modal consistency. As shown in Figure 5(c), this process progressively corrects semantic discrepancies. 
+
+## 6. Conclusions 
+
+We have presented DiMo , a unified discrete diffusion frame-work for bidirectional text-to-motion (T2M) and motion-to-text (M2T) modeling. By combining masked progressive refinement with classifier-free guidance, DiMo enables ef-ficient parallel decoding and supports motion generation and understanding within a single framework. With ad-ditional GRPO-based fine-tuning, the model benefits from task-specific reinforcement signals that consistently improve semantic alignment and output quality across both direc-tions. Experiments on HumanML3D and KIT-ML demon-strate that DiMo achieves a strong and well-balanced perfor-mance compared to prior unified motion–language models, particularly in terms of perceptual motion quality and text generation accuracy. More discussions are at Appendix E. Beyond standard T2M and M2T tasks, DiMo naturally ex-tends to motion completion, prediction, and caption correc- 
+
+> Figure 5. Application: Examples of downstream tasks enabled by DiMo
+
+tion without architectural changes, highlighting the flexibil-ity of the proposed paradigm. Future work includes scal-ing the framework beyond skeletal motion to mesh-based or multi-agent settings, as well as exploring more robust external reward models for GRPO to further enhance con-trollability, robustness, and semantic faithfulness. 8DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+## Impact Statement 
+
+This paper presents work whose goal is to advance the field of machine learning. There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. 
+
+## References 
+
+Aliakbarian, S., Saleh, F. S., Salzmann, M., Petersson, L., and Gould, S. A stochastic conditioning scheme for diverse human motion prediction. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 5223–5232, 2020. Austin, J., Johnson, D. D., Ho, J., Tarlow, D., and van den Berg, R. Structured denoising diffusion models in discrete state-spaces. In Ranzato, M., Beygelzimer, A., Dauphin, Y., Liang, P., and Vaughan, J. W. (eds.), Advances in Neural Information Processing Systems , volume 34, pp. 17981–17993. Curran Associates, Inc., 2021. Barsoum, E., Kender, J., and Liu, Z. Hp-gan: Probabilistic 3d human motion prediction via gan. In Proceedings of the IEEE conference on computer vision and pattern recognition workshops , pp. 1418–1427, 2018. Brown, T., Mann, B., Ryder, N., Subbiah, M., Kaplan, J. D., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., Agarwal, S., Herbert-Voss, A., Krueger, G., Henighan, T., Child, R., Ramesh, A., Ziegler, D., Wu, J., Winter, C., Hesse, C., Chen, M., Sigler, E., Litwin, M., Gray, S., Chess, B., Clark, J., Berner, C., McCandlish, S., Radford, A., Sutskever, I., and Amodei, D. Language models are few-shot learners. In Larochelle, H., Ranzato, M., Hadsell, R., Balcan, M., and Lin, H. (eds.), Advances in Neural Information Processing Systems , volume 33, pp. 1877–1901. Curran Associates, Inc., 2020. Chang, H., Zhang, H., Jiang, L., Liu, C., and Freeman, W. T. Maskgit: Masked generative image transformer. In 
+
+The IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , June 2022. Devlin, J., Chang, M.-W., Lee, K., and Toutanova, K. BERT: Pre-training of deep bidirectional transformers for lan-guage understanding. In Burstein, J., Doran, C., and Solorio, T. (eds.), Proceedings of the 2019 Conference of the North American Chapter of the Association for Com-putational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) , pp. 4171–4186, Min-neapolis, Minnesota, June 2019. Association for Compu-tational Linguistics. doi: 10.18653/v1/N19-1423. Gong, K., Lian, D., Chang, H., Guo, C., Jiang, Z., Zuo, X., Mi, M. B., and Wang, X. Tm2d: Bimodality driven 3d dance generation via music-text integration. In Pro-ceedings of the IEEE/CVF International Conference on Computer Vision , pp. 9942–9952, 2023. Guo, C., Zou, S., Zuo, X., Wang, S., Ji, W., Li, X., and Cheng, L. Generating diverse and natural 3d human motions from text. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pp. 5152–5161, 2022a. Guo, C., Zuo, X., Wang, S., and Cheng, L. Tm2t: Stochastic and tokenized modeling for the reciprocal generation of 3d human motions and texts. In European Conference on Computer Vision , pp. 580–597. Springer, 2022b. Guo, C., Mu, Y., Javed, M. G., Wang, S., and Cheng, L. MoMask: Generative masked modeling of 3D human motions. In The IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. Harvey, F. G., Yurick, M., Nowrouzezahrai, D., and Pal, C. Robust motion in-betweening. ACM Transactions on Graphics (TOG) , 39(4):60–1, 2020. Jiang, B., Chen, X., Liu, W., Yu, J., Yu, G., and Chen, T. Motiongpt: Human motion as a foreign language. 
+
+Advances in Neural Information Processing Systems , 36, 2024. Karunratanakul, K., Preechakul, K., Suwajanakorn, S., and Tang, S. Guided motion diffusion for controllable human motion synthesis. In Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision , pp. 2151–2162, 2023. Li, X., Thickstun, J., Gulrajani, I., Liang, P. S., and Hashimoto, T. B. Diffusion-lm improves controllable text generation. In Koyejo, S., Mohamed, S., Agarwal, A., Belgrave, D., Cho, K., and Oh, A. (eds.), Advances in Neural Information Processing Systems , volume 35, pp. 4328–4343. Curran Associates, Inc., 2022. Lin, C.-Y. Rouge: A package for automatic evaluation of summaries. In Text summarization branches out , pp. 74–81, 2004. Loshchilov, I. and Hutter, F. Decoupled weight decay regu-larization. In 7th International Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019 . OpenReview.net, 2019. Mukai, T. and Kuriyama, S. Geostatistical motion interpola-tion. In ACM SIGGRAPH 2005 Papers , pp. 1062–1070. 2005. Nie, S., Zhu, F., You, Z., Zhang, X., Ou, J., Hu, J., Zhou, J., Lin, Y., Wen, J.-R., and Li, C. Large language diffusion models. arXiv preprint arXiv:2502.09992 , 2025. 9DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+Papineni, K., Roukos, S., Ward, T., and Zhu, W.-J. Bleu: a method for automatic evaluation of machine transla-tion. In Proceedings of the 40th annual meeting of the Association for Computational Linguistics , pp. 311–318, 2002. Petrovich, M., Black, M. J., and Varol, G. Action-conditioned 3d human motion synthesis with transformer vae. In Proceedings of the IEEE/CVF International Con-ference on Computer Vision , pp. 10985–10995, 2021. Petrovich, M., Black, M. J., and Varol, G. Temos: Generat-ing diverse human motions from textual descriptions. In 
+
+European Conference on Computer Vision , pp. 480–497. Springer, 2022. Radford, A., Narasimhan, K., Salimans, T., and Sutskever, I. Improving language understanding by generative pre-training. In OpenAI Technical Report , 2018. Rose, C., Cohen, M. F., and Bodenheimer, B. Verbs and adverbs: Multidimensional motion interpolation. IEEE Computer Graphics and Applications , 18(5):32–40, 1998. Shao, Z., Wang, P., Zhu, Q., Xu, R., Song, J., Zhang, M., Li, Y., Wu, Y., and Guo, D. Deepseekmath: Pushing the limits of mathematical reasoning in open language models, 2024. Tevet, G., Raab, S., Gordon, B., Shafir, Y., Cohen-or, D., and Bermano, A. H. Human motion diffusion model. In The Eleventh International Conference on Learning Representations , 2022. Vedantam, R., Lawrence Zitnick, C., and Parikh, D. Cider: Consensus-based image description evaluation. In Pro-ceedings of the IEEE conference on computer vision and pattern recognition , pp. 4566–4575, 2015. Wang, Y., Huang, D., Zhang, Y., Ouyang, W., Jiao, J., Feng, X., Zhou, Y., Wan, P., Tang, S., and Xu, D. Motiongpt-2: A general-purpose motion-language model for motion generation and understanding, 2024. Yu, R., Li, Q., and Wang, X. Discrete diffusion in large lan-guage and multimodal models: A survey. arXiv preprint arXiv:2506.13759 , 2025. Zeghidour, N., Luebs, A., Omran, A., Skoglund, J., and Tagliasacchi, M. Soundstream: An end-to-end neural audio codec, 2021. Zhang, M., Cai, Z., Pan, L., Hong, F., Guo, X., Yang, L., and Liu, Z. Motiondiffuse: Text-driven human motion generation with diffusion model. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2024a. Zhang, M., Jin, D., Gu, C., Hong, F., Cai, Z., Huang, J., Zhang, C., Guo, X., Yang, L., He, Y., and Liu, Z. Large motion model for unified multi-modal motion generation. 
+
+arXiv preprint arXiv:2404.01284 , 2024b. Zhang, M., Li, H., Cai, Z., Ren, J., Yang, L., and Liu, Z. Finemogen: Fine-grained spatio-temporal motion generation and editing. Advances in Neural Information Processing Systems , 36, 2024c. Zhang, T., Kishore, V., Wu, F., Weinberger, K. Q., and Artzi, Y. Bertscore: Evaluating text generation with bert. arXiv preprint arXiv:1904.09675 , 2019. Zhu, B., Jiang, B., Wang, S., Tang, S., Chen, T., Luo, L., Zheng, Y., and Chen, X. Motiongpt3: Human motion as a second modality, 2025. 10 DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+# APPENDIX FOR DIMO
+
+## LLM Usage 
+
+A large language model was used as a writing assistant to improve the clarity and readability of the manuscript. All final research decisions and methodological contributions were made and verified by the authors. 
+
+## A. Confidence-Guided Progressive Inference 
+
+During inference, DiMo follows a progressive unmasking strategy guided by prediction confidence. Starting from a fully masked or partially corrupted sequence, the model iteratively fills masked positions according to a predefined schedule 
+
+{ks}Ss=1 , where ks controls how many tokens are committed at step s.At each iteration, the model predicts token distributions for all masked positions and computes a confidence score as the maximum predicted probability. A subset of masked positions with the highest confidence is then selected and committed, while the remaining positions stay masked for subsequent iterations. This strategy has two key advantages: (1) high-confidence tokens are fixed early, anchoring the global structure of the sequence; (2) uncertain regions are deferred and refined in later steps, reducing error accumulation and improving global coherence. After S iterations, all tokens are committed, yielding the final generated sequence. 
+
+Algorithm 1 Confidence-Guided Progressive Inference 
+
+Require: Corrupted sequence ˜y, condition x, inference steps S
+
+Ensure: Generated sequence y 
+
+> 1:
+
+for s = 1 to S do  
+
+> 2:
+
+Predict logits pθ (yt | ˜y, x ) for all masked t 
+
+> 3:
+
+Compute confidence ct = max v pθ (yt = v | ˜y, x ) 
+
+> 4:
+
+Select top-ks masked positions with highest ct 
+
+> 5:
+
+Commit: ˜yt ← arg max v pθ (yt = v | ˜y, x ) 
+
+> 6:
+
+end for  
+
+> 7:
+
+return y
+
+## B. Evaluation Metrics 
+
+For Text-to-Motion (T2M) , follow existing works (Guo et al., 2022b; 2024; Jiang et al., 2024; Wang et al., 2024; Zhu et al., 2025), we evaluate motion quality and text–motion alignment. Motion realism is measured by Fr ´echet Inception Distance (FID), while R-Precision (R@1/2/3) and Multimodal Distance (MM Dist) assess semantic consistency between motion and text. We further report Diversity (Div) to capture variation across generated motions, and Multi-Modality (MM) to measure the ability to produce multiple plausible outputs for the same text. For Motion-to-Text (M2T) , follow existing works (Guo et al., 2022b; 2024; Jiang et al., 2024; Wang et al., 2024; Zhu et al., 2025), we adopt standard captioning metrics, including BLEU@1/4, ROUGE-L, CIDEr, and BERTScore, which jointly evaluate lexical overlap and semantic similarity to reference descriptions. In addition, we report R-Precision to measure alignment between generated texts and their corresponding motions. The detailed formulations of each metric are introduced below. 
+
+R-Precision. R-Precision measures retrieval performance by computing the fraction of relevant items within the top-R
+
+retrieved results. In text-to-motion, this means retrieving the correct motion from a database given a text query, or vice versa. 
+
+R-Prec = |Rel ∩ Top-R|
+
+R (6) where Rel is the set of relevant items (ground-truth matches) and Top-R is the set of retrieved items at rank R. The metric ranges from 0 to 1, with higher values indicating better retrieval accuracy. 
+
+Fr ´echet Inception Distance (FID). FID (Guo et al., 2022a) measures the distributional distance between real and generated samples in a feature space, capturing both mean and covariance statistics. Lower FID indicates that generated samples are 11 DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+closer to real samples in distribution. FID = ∥μr − μg ∥22 + Tr  Σr + Σ g − 2(Σ r Σg )1/2 (7) where μr , Σr are the mean and covariance of real samples in the feature space, and μg , Σg are the corresponding statistics of generated samples. The first term measures the distance between means, while the second term accounts for differences in covariance structure. 
+
+Diversity. Diversity (Guo et al., 2022a) quantifies the average pairwise distance between generated samples in the feature space, reflecting variability among generated motions. Higher values indicate more diverse generations. Div = 2
+
+M (M − 1) 
+
+X
+
+> i<j
+
+∥f (xi) − f (xj )∥2 (8) where {xi}Mi=1 are generated samples and f (·) is a feature extractor such as a motion encoder. The summation averages the pairwise Euclidean distance across all distinct sample pairs. 
+
+Multi-Modality. Multi-Modality (Guo et al., 2022a) measures the variability of outputs generated from the same input condition, capturing the model’s ability to produce multiple plausible outputs. It is computed as the average pairwise distance between multiple samples generated for the same condition. MM = 2
+
+K(K − 1) 
+
+X
+
+> i<j
+
+∥f (xti) − f (xtj )∥2 (9) where {xti}Ki=1 are the generated samples conditioned on the same text t, and f (·) is a feature extractor. The metric encourages both relevance to the condition and diversity among outputs. 
+
+Multimodal Distance. Multimodal Distance (Guo et al., 2022a) evaluates how closely aligned text and motion representa-tions are in a shared embedding space. Lower values indicate better alignment between modalities. MM Dist = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+d(ftext (ti), f motion (mi)) (10) where {(ti, m i)}Ni=1 are paired text and motion samples, ftext and fmotion are embedding functions for text and motion respectively, and d(·, ·) is a distance function such as Euclidean distance or cosine distance. 
+
+BLEU. BLEU (Papineni et al., 2002) evaluates the n - gram precision of generated text against reference text, penalized by a brevity term to avoid favoring short outputs. The most common setup is BLEU@4, which considers up to 4 - gram matches. BLEU@N = BP · exp 1
+
+N
+
+> N
+
+X
+
+> n=1
+
+log pn
+
+!
+
+(11) where N is the maximum n-gram order (commonly N = 4 ), and pn is the modified n-gram precision defined as 
+
+pn =
+
+P 
+
+> ngram ∈C
+
+min 
+
+
+
+Count C (ngram ), max R∈Refs Count R(ngram )
+
+P 
+
+> ngram ∈C
+
+Count C (ngram ) . (12) The brevity penalty (BP) is applied to discourage very short candidates: BP =
+
+(
+
+1 if c > r, e(1 −r/c ) if c ≤ r, (13) 12 DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding                                                                        
+
+> Table 6. Text-to-Motion quantitative results on HumanML3D. Method R@1 ↑R@2 ↑R@3 ↑FID ↓Div →MM ↑MM Dist ↓
+> Real motions 0.511 0.703 0.797 0.002 9.503 –2.974 TM2T 0.424 0.618 0.729 1.501 8.589 2.424 3.467 MotionGPT 0.492 0.681 0.778 0.232 9.528 2.008 3.096 MotionGPT2 0.427 0.627 0.764 0.614 11.256 2.357 3.164 MotionGPT3 0.553 0.747 0.837 0.208 9.700 1.018 2.725
+> MG-MotionLLM 0.516 0.706 0.802 0.303 9.960 2.125 2.952 MoTe 0.548 0.737 0.825 0.075 –2.399 2.867 Ours w/o GRPO 0.528 0.723 0.818 0.050 9.515 2.016 2.867 Ours w/ GRPO 0.528 0.724 0.818 0.047 9.419 2.000 2.862
+
+where C denotes the candidate sentence, Refs the set of reference sentences, Count C (ngram ) the number of times an n - gram appears in the candidate, and Count R(ngram ) the count of the same n -gram in reference R. The clipping operation min( ·)
+
+ensures that the n -gram precision does not reward repeated n -grams beyond what occurs in references. Here c is the length (in tokens) of the candidate sentence, and r is the effective reference length, chosen as the reference length closest to c.
+
+ROUGE-L. ROUGE-L (Lin, 2004) measures the quality of generated text by computing the longest common subsequence (LCS) between candidate and reference, which captures sentence-level fluency without requiring consecutive matches. The score combines precision and recall of the LCS using an F -measure formulation. ROUGE-L = (1 + β2) · PLCS · RLCS 
+
+RLCS + β2 · PLCS 
+
+(14) where RLCS = LCS (c,r ) 
+
+> |r|
+
+and PLCS = LCS (c,r ) 
+
+> |c|
+
+, with LCS (c, r ) denoting the length of the longest common subsequence between candidate c and reference r. The parameter β controls the relative importance of recall and precision (commonly 
+
+β = 1 for equal weighting). Here |c| is the candidate length in tokens and |r| is the reference length in tokens. 
+
+CIDEr. CIDEr (Vedantam et al., 2015) evaluates the similarity of a candidate sentence against multiple references using a TF-IDF weighted n - gram representation. It is designed to capture consensus among reference captions and reduce the effect of common n-grams. CIDEr (c, S ) = 1
+
+|S|
+
+X
+
+> s∈S
+
+g(c) · g(s)
+
+∥g(c)∥∥ g(s)∥ (15) where c is the candidate sentence, S is the set of reference sentences, and g(x) denotes the TF-IDF vector representation of n - grams extracted from text x. The numerator g(c) · g(s) is the dot product between the candidate and reference vectors, while the denominator normalizes by their Euclidean norms to compute cosine similarity. 
+
+BERTScore. BERTScore (Zhang et al., 2019) evaluates the semantic similarity between generated and reference sentences using contextual embeddings from a pretrained language model such as BERT. It computes the average maximum similarity between tokens across candidate and reference. BERTScore (c, r ) = 1
+
+|c|
+
+X
+
+> x∈c
+
+max  
+
+> y∈r
+
+cos  f (x), f (y) (16) where c is the candidate sentence, r is the reference sentence, f (·) is the contextual embedding function from BERT, and 
+
+cos( ·, ·) denotes cosine similarity. For each token x in the candidate, the most similar token y in the reference is found in embedding space, and the similarities are averaged across all candidate tokens. 
+
+## C. Additional Analysis and User Studies 
+
+In the Text-to-Motion literature, Fr ´echet Inception Distance (FID) is used for evaluating motion generation quality, as it directly measures the distributional similarity between generated motions and real data. On HumanML3D, DiMo achieves 13 DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding                  
+
+> Table 7. Human preference study results on Text-to-Motion generation. Setting #Samples Option 1 Option 2 Option 3 GT vs. MotionGPT-3 200 GT: 74% MotionGPT-3: 26% -GT vs. Ours 200 GT: 60% Ours: 40% -MotionGPT vs. MotionGPT-3 vs. Ours 1060 MotionGPT: 27.6% MotionGPT-3: 32.8% Ours: 39.6%
+
+a clear improvement in FID over prior unified frameworks (e.g., 0.047 vs. 0.075 for MoTe), indicating that its generated motions are closer to the real motion distribution. In contrast, R-Precision depend heavily on the quality and generalization ability of the text–motion evaluator used for scoring. To investigate how well the r-precision evaluation mechanism aligns with human choices, we conduct the user study with the following setup: 1) Each trial showed the text prompt and [two/three] rendered motion animations side-by-side. No method names were shown.2) Randomization and blinding. The left/right (or order) assignment was randomized per trial. Raters were blinded to the source model. As shown in Table 6, Real motions only achieve an R@1 of 51.1%, which is lower than MotionGPT-3, MG-MotionLLM, MoTe, and our method under the same evaluator. This does not mean that these models generate motions more faithful to the text prompts than the ground truth. Instead, it indicates that the evaluator has limited generalization: it more easily recognizes in-domain motions similar to those seen during training, while its retrieval performance deteriorates for motions that it has not seen before. Consequently, a higher R-Precision may largely reflect that the generated sequences resemble training motions, rather than guaranteeing better semantic alignment with the text. To further validate this hypothesis, we conduct human preference studies (Table 7):1)Ground Truth vs. MotionGPT-3 (200 test samples, given same text description ), 2) Ground Truth vs. Ours (200 test samples), and 3) MotionGPT vs. MotionGPT-3 vs. Ours (1060 test samples); given same text description, let user pick which motion is more aligned with text. While the numerical R-Precision scores suggest the ordering MotionGPT-3 >Ours >Ground Truth, human raters consistently prefer MotionGPT-3 <Ours <Ground Truth. This discrepancy highlights the unreliability of R-Precision as an absolute quality measure among strong methods. Therefore, on the T2M task, considering both FID and human preferences, our approach delivers clearly improved motion quality and text–motion consistency compared to existing work. 
+
+## D. More Quantitative Results 
+
+D.1. Ablation on T2M Reward Design 
+
+To study how reward design affects GRPO fine-tuning for Text-to-Motion (T2M), we compare three variants under the same backbone and training protocol: (i) w/o GRPO : supervised training only; (ii) GRPO (Self M2T) : the main setting, where the reward is computed by re-inferring a pseudo caption with DiMo’s motion-to-text (M2T) branch and measuring its alignment with the ground-truth text; and (iii) GRPO (Motion Extractor) : computing the reward with a separately trained motion–text feature extractor with similar setup as the automatic evaluator used for reporting metrics. As shown in Table 8, both GRPO variants consistently improve T2M FID over supervised training, while maintaining or slightly improving M2T text quality. The Motion Extractor variant achieves the best FID, with M2T performance closely matching the Self M2T variant. However, since the Motion Extractor reward is trained with the similar setup of metric-reporting evaluator family, using it as the default setting may blur the separation between optimization and evaluation. Therefore, we keep GRPO (Self M2T) as the default setting in the main paper and present GRPO (Motion Extractor) as an ablation. Overall, these results verify that GRPO can be effectively applied to fine-tune our unified model under different reward definitions. More broadly, an interesting direction is to explore more independent reward modeling strategies—for example, leveraging human preference signals collected from user studies—as a complementary supervision source for post training fine-tuning. 
+
+D.2. Ablations on Other Datasets 
+
+Since most previous unified model-based works did not use the Motion-X dataset, direct comparisons are not available and Motion-X does not provide a unified and standardized public evaluation protocol. Therefore, we re-implement several representative text-to-motion baselines under a consistent experimental setup, including T2M-GPT and MoMask, and 14 DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+Table 8. Ablation on GRPO reward design (HumanML3D). Method R@1 R@2 R@3 FID ↓ M2T R@1 BLEU@1 CIDEr BERTScore Ours w/o GRPO 0.528 0.723 0.818 0.050 0.569 63.9 57.2 37.5 Ours w/ GRPO (Self M2T) 0.528 0.724 0.818 0.047 0.577 64.2 58.1 37.7 Ours w/ GRPO (Motion Extractor) 0.526 0.720 0.821 0.041 0.574 64.0 57.6 37.7 
+
+evaluate for the T2M task only. The quantitative results are summarized in Table 9. From the results, we observe that our method achieves performance on par with strong T2M-specific models such as MoMask in retrieval metrics, while obtaining the best FID score, indicating superior motion realism and better alignment with the real-data distribution. We also include a more complete coverage of prior work done on KIT-ML in Table 10. As MotionGPT3 reported only results for model trained on single task for KIT-ML dataset, here we group them under separated model. 
+
+Table 9. Motion-X results on the Text-to-Motion (T2M) task with reproduced baselines. Due to the lack of a standardized evaluation protocol and missing M2T reports in prior work, we only compare T2M performance under a unified setup. Method R@1 ↑ R@2 ↑ R@3 ↑ FID ↓ Div → MM Dist ↓
+
+Real motions 0.510 0.691 0.791 – 9.442 3.310 T2M-GPT 0.370 0.546 0.654 2.174 9.303 4.252 MoMask 0.287 0.445 0.554 0.884 8.400 2.792 
+
+Ours 0.376 0.556 0.665 0.870 8.330 4.154 
+
+Table 10. Quantitative results of KIT-ML Text-to-Motion and Motion-to-Text. † marks as single-task model reported by author (Zhu et al., 2025). Category Method T2M M2T                                                                                                                                                                                                                                                                                                      
+
+> R@1 ↑R@2 ↑R@3 ↑FID ↓Div →MM ↑MM Dist ↓R@1 ↑R@3 ↑BLEU@1 ↑BLEU@4 ↑ROUGE-L ↑CIDEr ↑BERTScore ↑
+> Real Motion 0.424 0.649 0.779 0.031 11.08 -2.788 0.399 0.793 -----T2M Only MDM --0.396 0.497 10.847 1.907 9.191 -------MotionDiffuse 0.417 0.621 0.739 1.954 11.1 0.730 2.958 -------MLD 0.39 0.609 0.734 0.404 10.8 2.192 3.204 -------MoMask 0.433 0.656 0.781 0.204 -1.131 2.779 -------T2M-GPT 0.416 0.627 0.745 0.514 10.921 1.570 3.007 -------ReMoDiffuse 0.427 0.641 0.765 0.155 6.371 1.239 2.814 -------DiverseMotion 0.416 0.637 0.760 0.468 10.873 2.062 2.892 -------MoGenTS 0.445 0.671 0.797 0.143 10.918 -2.711 -------BAMM 0.438 0.661 0.788 0.183 11.008 1.609 2.723 -------ReMoMask 0.453 0.682 0.805 0.138 10.830 2.017 2.682 -------BAD 0.417 0.631 0.750 0.221 11.000 1.170 2.941 -------MARDM 0.387 0.610 0.749 0.242 -1.312 3.374 -------Separated Model TM2T 0.280 0.463 0.587 3.599 9.473 3.292 4.591 0.359 0.668 46.70 18.40 44.20 79.50 23.00 LaMP 0.479 0.691 0.826 0.141 10.929 -2.704 0.540 0.844 -----MotionGPT3† 0.456 0.680 0.803 0.227 11.026 0.904 2.704 -------Unified Model MotionGPT 0.366 0.558 0.680 0.510 10.350 2.328 3.527 -------MotionGPT2 0.427 0.627 0.764 0.614 11.256 2.357 3.164 -------MoTe 0.419 0.627 0.741 0.256 -2.615 3.216 0.421 0.765 44.90 14.51 41.80 55.60 35.90 Ours w/o GRPO 0.406 0.620 0.741 0.206 10.892 1.690 2.983 0.396 0.723 52.50 17.80 48.00 68.70 37.70
+
+D.3. Effect of Masking Schedule Effect of Masking Schedule. We further ablate the effect of masking schedules for text and motion tokens. Table 11 compares the baseline configuration, which applies a linear masking schedule to both modalities, with two alternatives: (i) applying a cosine schedule to motion tokens while keeping text linear ( mcos linear ), and (ii) applying cosine schedules to both text and motion tokens ( mcos mcos ). We observe that the baseline linear masking yields the best overall retrieval accuracy and the lowest FID. In contrast, cosine masking significantly degrades motion fidelity, especially when applied jointly to both text and motion. Interestingly, 15 DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+Table 11. Ablation on masking schedules for text and motion tokens. ( mcos mcos ). Schedule R@1 ↑ R@2 ↑ R@3 ↑ FID ↓ Diversity →
+
+Baseline (linear + linear) 0.528 0.723 0.818 0.050 9.300 
+
+mcos linear (motion=cosine, text=linear) 0.502 0.699 0.795 0.369 9.030 mcos mcos (motion=cosine, text=cosine) 0.507 0.701 0.798 0.264 8.947 
+
+cosine-based schedules result in slightly higher diversity, suggesting that they encourage more varied predictions at the cost of semantic consistency. Overall, these results indicate that linear masking provides a more stable learning signal for DiMo, and mixing masking schedules across modalities does not yield additional benefits. 
+
+D.4. Effect of Multi-task Proportion 
+
+Table 12 examines how different training mixtures of text-to-motion (T2M), motion-to-text (M2T), and motion-only samples influence performance. We observe that M2T results are largely invariant to the data ratio: BLEU, ROUGE, CIDEr, and BERTScore remain stable even when the proportion of captioning samples is reduced. This indicates that the pretrained language backbone already provides strong priors for text generation, such that extensive exposure to captioning data is not required for competitive M2T performance. In contrast, T2M quality exhibits greater sensitivity to the task mixture. Allocating excessive capacity to M2T leads to a measurable decline in motion fidelity (lower recall, higher FID), reflecting the higher difficulty of modeling discrete motion tokens compared to text. The 8:1:1 configuration yields the most favorable balance, achieving strong language grounding while preserving the highest motion generation quality. 
+
+Table 12. Ablation study: model performance under different data mixture ratios. Text-to-Motion (%) Motion (%) Motion-to-Text (%) Text-to-Motion Motion-to-Text R@1 ↑ R@2 ↑ R@3 ↑ FID ↓ R@1 ↑ R@3 ↑ BLEU@1 ↑ BLEU@4 ↑ ROUGE-L ↑ CIDEr ↑ BERTScore ↑                                       
+
+> 80 10 10 0.528 0.723 0.818 0.050 0.569 0.850 63.9 22.6 47.0 57.2 37.6 70 10 20 0.523 0.722 0.820 0.091 0.578 0.850 64.4 22.3 47.1 58.2 38.1
+> 60 10 30 0.515 0.712 0.810 0.077 0.553 0.825 60.4 19.6 44.4 53.0 35.8
+
+D.5. Effect of Classifier-Free Guidance (CFG) at Inference 
+
+We further study the impact of classifier-free guidance (CFG) scale on inference quality. Table 13 reports results across scales {2, 3, 4, 5, 6}. We find that retrieval accuracy (R@1/2/3) improves when increasing the scale from 2 to 4, with s = 4 
+
+yielding the highest recall. FID is lowest around s = 3 –4, while larger scales ( s ≥ 5) noticeably degrade fidelity. Diversity also reaches its maximum at s = 3 , whereas the matching score remains relatively stable across different settings. Overall, moderate CFG values ( s = 3 –4) provide the best trade-off, enhancing semantic alignment without sacrificing motion quality, while overly strong guidance harms realism and reduces diversity. 
+
+Table 13. Ablation on classifier-free guidance (CFG) scale during inference. Moderate scales ( s = 3 –4) achieve the best balance between motion fidelity and semantic alignment. CFG Scale R@1 ↑ R@2 ↑ R@3 ↑ FID ↓
+
+2 0.520 0.714 0.811 0.063 3 (Ours) 0.528 0.723 0.818 0.050 
+
+4 0.528 0.725 0.817 0.059 5 0.525 0.721 0.818 0.067 6 0.526 0.720 0.814 0.112 
+
+16 DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+Table 14. Ablation on down-weighting the probability of generating [PAD] tokens during text inference. We compare multiplicative factors of 0.7 and 0.8 against the baseline ( 0.85 ). Pad prob factor R@1 R@3 BLEU@1 BLEU@4 ROUGE-L CIDEr BERTScore 0.70 0.571 0.849 44.9 12.2 38.3 29.9 29.7 0.80 0.585 0.861 61.7 20.6 46.0 56.3 37.1 
+
+0.85 (baseline) 0.558 0.842 60.4 19.5 44.4 52.9 35.8 
+
+D.6. Effect of Down-weighting [PAD] Tokens 
+
+We found that the BERT backbone tends to over-generate [PAD] tokens at inference time. To mitigate this, we down-weight their probability by a multiplicative factor. Table 14 compares different settings. A too aggressive penalty ( 0.7) harms caption quality, leading to lower BLEU, ROUGE, CIDEr, and BERTScore. In contrast, a mild penalty ( 0.8) achieves the best results, substantially improving caption fluency and semantic alignment while maintaining retrieval performance. This demonstrates that carefully tuning the [PAD] suppression factor is crucial for balancing sequence validity and output quality. 
+
+Note: Results reported in the appendix may vary slightly from the main tables due to differences in experimental runs and random seeds. 
+
+D.7. Effect of Multi-task Training (M2M / T2M / M2T) 
+
+To study the effect of the multi-task formulation, we perform an ablation over the three training objectives: (i) Motion-to-Motion (M2M), (ii) Text-to-Motion (T2M), and (iii) Motion-to-Text (M2T). We toggle each objective on/off and report the full set of T2M and M2T metrics on HumanML3D. Results are summarized in Table 15. 
+
+Table 15. Multi-task ablation on HumanML3D. Removing any single objective degrades either T2M or M2T performance, while the full configuration (M2M + T2M + M2T) achieves the best overall trade-off across metrics.                                                                                                                            
+
+> Tasks T2M Retrieval ↑T2M Generation M2T Retrieval ↑M2T Text ↑
+> M2M T2M M2T R@1 R@2 R@3 FID ↓Div →MM ↑MM Dist ↓R@1 R@3 BLEU@1 BLEU@4 ROUGE-L CIDEr BERTScore No No Yes –––––––0.547 0.822 56.9 16.3 42.8 45.9 34.3 No Yes No 0.518 0.704 0.801 0.323 9.335 2.014 2.999 –––––––No Yes Yes 0.530 0.725 0.824 0.114 9.583 2.399 2.839 0.561 0.849 65.3 23.2 47.2 57.6 37.4 Yes No Yes –––––––0.559 0.838 56.4 15.9 42.5 47.1 34.5 Yes Yes No 0.515 0.714 0.814 0.174 9.146 2.106 2.956 –––––––Yes Yes Yes 0.528 0.723 0.818 0.050 9.515 2.016 2.867 0.569 0.850 63.9 22.6 47.0 57.2 37.5
+
+The results show that the three objectives are mutually beneficial. Training only with T2M improves the T2M branch but yields weaker motion semantics, while training only with M2T produces stronger captioning but degrades motion quality. Introducing M2M further enhances motion coherence and enables effective classifier-free guidance. The complete configuration (M2M + T2M + M2T) achieves the best balance on both T2M and M2T metrics, indicating that unified optimization encourages better motion–text alignment and motion structure. 
+
+## E. Limitations and Future Directions 
+
+Despite the encouraging results, DiMo has several limitations that merit discussion and point to important directions for future work. 
+
+Modeling Trade-offs. DiMo prioritizes perceptual realism and distributional fidelity in motion generation, as reflected by strong FID scores. However, this design choice does not always translate into peak performance on retrieval-based metrics such as R-Precision, which are sensitive to the specific behavior of a fixed text–motion evaluator. As discussed in Sec. 4 and Appendix C, optimizing for perceptual quality may lead to generated motions that are closer to the true data distribution but less aligned with the inductive biases of the evaluator. Understanding how to better balance perceptual fidelity and evaluator-specific retrieval scores remains an open problem. 17 DiMo: Discrete Diffusion Modeling for Motion Generation and Understanding 
+
+Evaluation Protocol Limitations. Current T2M evaluation relies heavily on automatic retrieval-based metrics. Our analysis shows that even ground-truth motions achieve relatively low R@1 scores under the same evaluator, suggesting that these metrics favor in-distribution motion patterns rather than fully capturing semantic alignment as perceived by humans. While we complement quantitative results with a human preference study, designing more robust and interpretable evaluation protocols for text–motion alignment remains an important challenge for the community. 
+
+Reward Design. We adopt GRPO to improve alignment and controllability using task-specific rewards that are lightweight and model-aware. Our ablations (Appendix D.1) show that GRPO consistently improves T2M FID while maintaining strong M2T performance. More broadly, reward design involves practical trade-offs between simplicity, generality, and the type of supervision signal available. A potentially stronger alternative is to train a dedicated reward model calibrated to human judgments (e.g., from user-study preference data) and use it as a complementary signal for motion–language alignment finetuning. Overall, these limitations highlight that unified text–motion modeling involves non-trivial trade-offs between generation quality, semantic alignment, and evaluation methodology. We hope DiMo serves as a step toward more principled and holistic solutions in this space. 18

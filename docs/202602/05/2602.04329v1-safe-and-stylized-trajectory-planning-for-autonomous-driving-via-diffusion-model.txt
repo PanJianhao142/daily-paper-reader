@@ -1,0 +1,399 @@
+Title: Safe and Stylized Trajectory Planning for Autonomous Driving via Diffusion Model
+
+URL Source: https://arxiv.org/pdf/2602.04329v1
+
+Published Time: Thu, 05 Feb 2026 01:46:27 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Safe and Stylized Trajectory Planning for Autonomous Driving via Diffusion Model 
+
+Shuo Pei 1, Yong Wang 1,∗, Yuanchen Zhu 2, Chen Sun 1, Qin Li 2, Yanan Zhao 2, Huachun Tan 2
+
+Abstract — Achieving safe and stylized trajectory planning in complex real-world scenarios remains a critical challenge for autonomous driving systems. This paper proposes the SDD Planner , a diffusion-based framework designed to effectively reconcile safety constraints with driving styles in real time. The framework integrates two core modules: a Multi-Source Style-Aware Encoder, which employs distance-sensitive attention to fuse dynamic agent data and environmental contexts for hetero-geneous safety–style perception; and a Style-Guided Dynamic Trajectory Generator, which adaptively modulates priority weights within the diffusion denoising process to generate user-preferred yet safe trajectories. Extensive experiments demon-strate that SDD Planner achieves state-of-the-art performance. On the StyleDrive benchmark, it improves the SM-PDMS met-ric by 3.9% over WoTE, the strongest baseline. Furthermore, on the NuPlan Test14 and Test14-hard benchmarks, SDD Planner ranks first with overall scores of 91.76 and 80.32, respectively, outperforming leading methods such as PLUTO. Real-vehicle closed-loop tests further confirm that SDD Planner maintains high safety standards while aligning with preset driving styles, validating its practical applicability for real-world deployment. 
+
+Index Terms — Autonomous driving, trajectory planning, dif-fusion models, multi-modal encoding, stylized driving 
+
+I. INTRODUCTION Autonomous driving (AD) has emerged as a transforma-tive technology in modern transportation, aiming to enhance road safety, traffic efficiency, and user comfort through intelligent perception, decision-making, and control [1], [2], [3]. Central to an AD system is its ability to perceive the surrounding environment, predict the behaviors of nearby agents, and plan safe, efficient, and human-like trajectories under complex and uncertain traffic conditions. Among these modules, trajectory planning serves as the core component that directly bridges high-level behavioral reasoning with low-level vehicle control, fundamentally determining both the safety and ride experience of autonomous vehicles. Traditional rule-based planning methods generate trajectories based on predefined traffic rules and handcrafted heuristics, demonstrating high stability and interpretability in structured environments [4]. However, their dependence on manually          
+
+> *This work was supported by the National Key Research and Devel-opment Program of China (Grant No. 2023YFB2504704-02), the Shan-dong Provincial Key Research and Development Program (Grant No. 2023CXPT032), and the Research Grants Council of Hong Kong (Grant No. 27206525).
+> 1Shuo Pei, Chen Sun, and Yong Wang (Corresponding author) are with the Department of Data and Systems Engineering, The University of Hong Kong, Hong Kong, China. (e-mail: wy0304@hku.hk). 2Yuanchen Zhu, Qin Li, Yanan Zhao, Huachun Tan are with the Beijing Institute of Technology, Beijing, China.
+
+designed rules limits adaptability to unstructured or interac-tive scenarios, and updating these rules requires extensive engineering effort [5]. In contrast, learning-based planners have gained attention for their flexibility and capacity to model complex driv-ing behaviors from data. Particularly, end-to-end learning paradigms have shown promising results in both simulation and real-world deployments, enabling adaptive and context-aware trajectory generation across diverse traffic scenar-ios [6]. Among these approaches, diffusion-based planning has recently emerged as a powerful generative modeling technique capable of capturing multimodal trajectory dis-tributions through iterative denoising processes [7], [8]. This capability allows for generating diverse and physi-cally plausible driving behaviors, offering advantages over conventional learning-based methods that often converge to single-modal or overly conservative solutions [5]. Despite these advancements, current diffusion-based planners remain limited in user-centric deployment. Existing methods often employ fixed safety–style weights, lack dynamic adaptation to heterogeneous risks, and insufficiently model interactions with dynamic agents [9], [10]. As a result, they struggle to generate trajectories that are simultaneously safe, adaptive, and aligned with user preferences. Moreover, users exhibit diverse safety perceptions and driving habits. For example, aggressive drivers may prefer tighter safety margins, while conservative users prioritize comfort and caution. Failing to adapt to these personalized preferences not only degrades ride comfort but also undermines user trust in autonomous systems. Therefore, trajectory planning must evolve from a purely safety-driven optimization problem into a user-centric decision task that jointly accounts for safety, comfort, and individualized driving styles [11]. Early efforts in stylized driving have progressed from handcrafted rule tuning to learning-based and multi-objective optimization methods [12], [13]. Handcrafted approaches use fixed parameters for simplicity but lack adaptability in dy-namic contexts. Learning-based methods, such as GANs [14] or reinforcement learning (RL) [15], capture style patterns from data yet often sacrifice safety by using static weight-ing between safety and style objectives. Multi-objective approaches [13], [16] partially mitigate this through scenario-dependent weighting but still fail to adapt in real time to evolving risks or low-risk conditions. Consequently, a gap remains for planners that dynamically reconcile safety and style under complex multi-agent environments while preserving interpretability and real-time feasibility. To address these challenges, this paper proposes the  
+
+> arXiv:2602.04329v1 [cs.RO] 4 Feb 2026 Fig. 1. Comparison of different trajectory planning paradigms . Unlike existing methods that compromise between safety and style, the proposed SDD Planner achieves user-preferred, multi-style trajectories with adaptive safety performance, approaching the ideal balance point.
+
+Stylish Diffusion Drive (SDD) Planner , a diffusion-based trajectory planner designed for safe, adaptive, and stylized driving. As shown in Fig. 1, existing methods often deviate from the ideal balance between safety adaptability and style flexibility, whereas the proposed SDD Planner generates trajectories closer to this ideal, flexibly adapting to multiple driving styles (aggressive, normal, conservative). The main contributions of this work are summarized as follows:  
+
+> •
+
+A Style-Driven Diffusion Planner (SDD Planner) is proposed for user-centric trajectory planning, achieving a dynamic balance between safety, comfort, and driving style through diffusion-based generative modeling.  
+
+> •
+
+We design a Multi-Source Style-Aware Encoder with distance-sensitive attention, enabling precise fusion of dynamic agents and environmental context to accom-modate heterogeneous safety and style preferences.  
+
+> •
+
+We develop a Style-Guided Dynamic Trajectory Gener-ator that adaptively adjusts priority weights in real time, producing trajectories that are both user-preferred and safe.  
+
+> •
+
+Extensive experiments on the NuPlan and StyleDrive datasets, together with closed-loop real-vehicle tests, verify that SDD Planner achieves state-of-the-art safety compliance, style alignment, and engineering practical-ity in real environments. II. RELATED WORK 
+
+A. Rule-based Planning 
+
+Rule-based planning methods represent a foundational paradigm for AD trajectory generation. These approaches rely on translating explicit traffic rules, handcrafted safety heuristics, and fixed operational boundaries into determinis-tic decision logic [4], [11]. Their chief advantage is high stability and predictability in structured scenarios, where they ensure trajectory legality and basic collision avoidance by strictly adhering to predefined constraints, such as fixed safety buffers or speed limits [17]. However, the efficacy of rule-based methods is fundamentally constrained by their inherent rigidity. This rigidity creates a critical trade-off, making them ill-suited for balancing safety with stylized driving demands. First, their reliance on static, handcrafted parameters prevents adaptation to heterogeneous user prefer-ences (e.g., aggressive vs. conservative profiles), as the fixed safety weights cannot be dynamically adjusted to individual driving styles [5]. Second, this same inflexibility leads to poor performance in complex, unstructured environments. The fixed rules often result in sub-optimal, bi-modal failures: they either enforce over-conservative behaviors that compro-mise comfort or create safety gaps when failing to account for nuanced, dynamic interactions with other agents [16]. Consequently, while rule-based methods provide a baseline for safety, they lack the adaptive flexibility required to co-optimize safety constraints with personalized, context-aware driving styles. 
+
+B. Learning-based Planning 
+
+Learning-based planning methods emerged to address the inflexibility of rule-based approaches, leveraging data-driven models to capture complex environmental interactions and stylistic driving patterns from large-scale datasets. This paradigm is broadly divided into modular and end-to-end subcategories, both aiming to enhance adaptability while preserving safety [18]. Modular learning methods decompose the planning problem into sequential sub-tasks (e.g., obstacle prediction, behavior classification, trajectory optimization), which are then optimized individually via supervised learn-ing or reinforcement learning (RL). For instance, TransFuser [19] fuses multi-modal perceptual features (LiDAR, cam-era) to predict safe driving behaviors, while WoTE [20] employs edge-aware attention to refine waypoint generation, improving safety in dynamic scenarios. While these methods improve adaptability, integrating style remains a challenge. Some RL-based approaches integrate style-similarity rewards to align trajectories with specific templates (e.g., aggressive or conservative) [15], [14]. However, they typically rely on static safety-style weight ratios, failing to dynamically adjust priorities when risk levels change (e.g., increasing safety weights near pedestrians) [12]. End-to-end learning methods directly map raw perceptual inputs to control commands. This approach eliminates handcrafted sub-modules, enabling the model to learn holistic, end-to-end driving styles. Pi-oneered by Bojarski et al. [21] for steering control, this strategy was later extended by conditional imitation learn-ing frameworks to generate style-aware trajectories based on expert demonstrations [22]. Despite their potential for style replication, end-to-end methods suffer from significant safety opacity. Their “black-box” nature makes it difficult to verify or guarantee safe behavior in out-of-distribution (OOD) scenarios. Consequently, style adaptation often in-advertently compromises safety, such as when replicating aggressive speed profiles that elevate collision risk [11], [23]. Overall, while learning-based methods show promise for stylized driving, they struggle to dynamically balance safety constraints with personalized preferences. Their main limitations, including fixed safety–style weights, weak dy-namic agent modeling, and poor interpretability of end-to-end models, highlight the need for a unified approach that adapts safety in real time while maintaining flexible driving styles. 
+
+C. Diffusion-based Planning 
+
+Diffusion-based generative models have recently emerged as a dominant paradigm in autonomous driving trajec-tory generation. Their primary advantage over deterministic learning-based methods lies in the capability to model multi-modal trajectory distributions, thereby capturing diverse and physically plausible driving behaviors in dynamic environ-ments [7], [8], [24]. However, the application of these models to user-centric planning remains constrained by their rigidity in balancing safety and driving style [5], [9]. Existing frame-works exhibit two primary limitations. First, most approaches lack dynamic reconciliation between safety constraints and stylistic preferences. Early works, such as Diffusion Policy [8], focus on static goal-reaching tasks without explicit style awareness. While extensions like DiffusionES [25] introduce multimodality via map conditioning, they typically rely on fixed safety weights, restricting adaptation to varying risk levels. Similarly, classifier-guided models [9] often enforce safety constraints using static parameters, failing to accom-modate the heterogeneous safety margins required by ag-gressive versus cautious drivers [10]. Second, environmental fusion and interaction modeling are often oversimplified. Methods like DiffusionTraj [5] employ attention mechanisms for inter-agent relations but often neglect temporal dynam-ics in rapidly evolving scenes. Furthermore, safety-focused variants such as SafeDiff [10] rely on handcrafted rules, and multimodal approaches like MultiDiffPlan [26] often neglect complex inter-agent influences, leading to suboptimal performance in multi-obstacle scenarios. These limitations highlight the need for a generative framework that can dynamically adapt to both safety requirements and user-aligned stylistic preferences [9]. III. PRELIMINARIES 
+
+A. Problem Formulation 
+
+We formulate stylized trajectory planning as a conditional generative modeling task. Let x(0) ∈ RB×Tpred ×2 denote the target ground-truth trajectory sequences, where B represents the batch size and Tpred denotes the prediction horizon. The last dimension corresponds to longitudinal and lateral coordinates in the ego-centric frame. The planning process is conditioned on a heterogeneous context set I, which en-compasses the ego-vehicle state, the positions of N dynamic agents p ∈ RB×N ×2, and static map elements. Furthermore, to explicitly govern the planning behavior, a discrete driving style indicator S ∈ { Aggressive , Normal , Conservative } is introduced. The objective is to approximate the conditional distribution pθ (x(0) |I ), where the raw input I is encoded into a high-dimensional stylized feature representation zstyle .
+
+B. Conditional Diffusion Backbone 
+
+To address the generative modeling of trajectory distribu-tions, we adopt the Denoising Diffusion Probabilistic Model (DDPM) as the mathematical backbone. This framework ap-proximates the data distribution q(x(0) ) via a parameterized Markov chain spanning T diffusion steps [7], [27]. The forward process gradually corrupts the clean trajectory 
+
+x(0) by injecting Gaussian noise according to a fixed variance schedule β1, . . . , β T . At an arbitrary step t, the noisy state 
+
+x(t) is sampled from the distribution: 
+
+q(x(t)|x(0) ) = N (x(t); √¯αtx(0) , (1 − ¯αt)I), (1) where αt = 1 −βt and ¯αt = Qts=1 αs are coefficients derived from the variance schedule, and I denotes the identity matrix. As t approaches the total steps T , the distribution of x(T )
+
+converges to a standard isotropic Gaussian N (0 , I).In the reverse process, a neural network ϵθ is employed to reconstruct x(0) from the latent noise x(T ) through iterative denoising. Crucially, this process is explicitly conditioned on the stylized embedding zstyle to ensure the generated trajectories align with the driving context: 
+
+pθ (x(t−1) |x(t), zstyle ) = N (x(t−1) ; μθ (x(t), t, zstyle ), σ 2 
+
+> t
+
+I).
+
+(2) Here, zstyle represents the context features extracted by the encoder, the mean μθ is predicted by the network 
+
+ϵθ (x(t), t, zstyle ), and σ2 
+
+> t
+
+is a time-dependent variance term fixed to βt or ˜βt [27]. This formulation allows the high-dimensional features to guide the generation process foun-dationally. IV. METHODOLOGY 
+
+A. Overview 
+
+Fig. 2 presents an overview of the proposed SDD Plan-ner, which integrates multi-source style-aware encoding with style-guided dynamic trajectory generation. A diffusion model serves as the core of trajectory generation, enabling iterative denoising that aligns safety constraints and stylized preferences across time steps. To capture environmental information and user-specific style requirements, the Multi-Source Style-Aware Encoder processes a range of inputs, including the ego-vehicle state, dynamic traffic participants, static maps, and traffic light states. These inputs are trans-formed into unified feature representations using a distance-aware attention mechanism that prioritizes nearby partici-pants according to stylized driving preferences. Temporal self-attention models cross-time dependencies, while spatial self-attention captures relative positional relationships; their fusion produces high-dimensional stylized features ( zstyle )that encode both scene context and style attributes—serving as critical conditioning signals for the diffusion process. The core Style-Guided Dynamic Trajectory Generator consists of two components tightly coupled with the diffusion model: (1) A Dynamic Guidance Unit, which leverages classifier-guided diffusion [5] with energy functions for collision avoidance and speed compliance. The weights of these energy functions are dynamically adjusted based on real-time traffic conditions (e.g., road curvature, traffic density) across diffusion time steps (Fig. 2(b)), balancing safety and style expression while guiding the denoising process; (2) A Multi-Objective Fusion and Decoding Unit, which normalizes and fuses the energy signals, combining them with zstyle to generate executable trajectories via the diffusion decoder. As shown in Fig. 2(b), the diffusion process progresses from t = T (pure noisy trajectories) to t = 0 (clean stylized trajectories), with each time step refining the trajectory to adhere to safety rules and match preset styles (aggressive, normal, conservative). 
+
+B. Multi-Source Style-Aware Encoder 
+
+In autonomous driving systems, the environmental percep-tion encoder embeds multi-source heterogeneous inputs into a high-dimensional feature space. This space generates zstyle ,which is fed into the diffusion decoder at every time step to ensure trajectory consistency with scene context and user preferences [19]. Key symbols and their physical meanings are defined in Table I. 
+
+TABLE I: Key Symbols Definition for Multi-Source Style-Aware Encoder.                                                
+
+> Symbol Physical Meaning Dimension/Value Data Source/Remark
+> BTraining batch size B= 32 Model hyperparameter
+> NDynamic traffic participants count N≤100 LiDAR/camera perception
+> pPlanar coordinates (x: fwd, y: lat) RB×N×2Ego-centric system
+> Tpred Prediction horizon (Time steps) Tpred = 50 (5s) Planning parameter
+> Lfeat Encoded feature sequence length Lfeat =N·Tpred Spatio-temporal fusion
+> DFeature vector dimension D= 128 Model hyperparameter
+> HNumber of attention heads H= 8 Transformer configuration
+> κDistance attenuation coefficient κ∈(0 ,1] Optimized on StyleDrive
+> γTemporal attenuation coefficient γ= 0 .05 Cross-validation
+
+The Multi-Source Style-Aware Encoder introduces adistance-aware attention mechanism in relationship model-ing, dynamically adjusting attention based on traffic partic-ipants’ spatial positions to align with stylized requirements. This mechanism integrates a Euclidean distance-based bias in self-attention, prioritizing closer participants with higher weights. For N traffic participants with positions p ∈ RB×N ×2,the pairwise Euclidean distance matrix Ddist ∈ RB×N ×N is computed as: 
+
+Ddist [b, i, j ] = ∥pb,i − pb,j ∥2, (3) where ∥ · ∥ 2 denotes the Euclidean norm ( L2 norm), and 
+
+Ddist [b, i, j ] represents the distance between the i-th and j-th participants in the b-th batch sample. For participants beyond the perception range, their distance is set to ∞ to avoid interfering with attention weight calculation. A distance-aware attention bias is constructed using a learnable attenuation coefficient κ > 0:
+
+Mdist = −κ · Ddist . (4) The negative sign ensures that distant participants have smaller bias values. When combined with softmax normal-ization, this reduces the attention weight of distant partic-ipants, ensuring zstyle emphasizes critical dynamic agents (e.g., nearby vehicles) that directly influence diffusion-based trajectory safety [5]. The coefficient κ is initialized to 0.1
+
+and constrained to (0 , 1] during training. Extended to multi-head attention (with H attention heads), the bias is replicated along the head dimension to form the final attention mask: 
+
+Mhead = Mdist ⊗ 1H , (5) where ⊗ denotes replication along the head dimension, and 
+
+Mhead ∈ RB×H×N ×N adjusts the attention weight of each head to ensure consistent distance-aware guidance. Invalid participants (e.g., out-of-range objects, perception confidence < 0.6) are masked to −10 9 via a binary mask 
+
+mask ∈ { 0, 1}B×N . To align with the attention dimensions, this mask is broadcasted to RB×H×N ×N :
+
+Mfinal = Mhead + Broadcast (mask ) · (−10 9), (6) where invalid interactions in rows and columns are penalized to eliminate interference. The temporal self-attention matrix At ∈ RTpred ×Tpred mod-els cross-time behavioral dependencies, integrating spatial distances and temporal weights to capture how dynamic agents’ movements evolve over time: 
+
+At[i, j ] = exp  −γ∥vi − vj ∥2 + rtemporal [i, j ] , (7) where vi denotes the feature vector of the i-th time step (fused ego-vehicle state and dynamic agent features with dimension D = 128 ); γ = 0 .05 is a temporal attenuation co-efficient balancing short- and long-term time dependencies; and rtemporal [i, j ] is a learnable temporal relative positional embedding adopting sinusoidal encoding. In the spatial dimension, the self-attention matrix As ∈
+
+RN ×N allocates weights using relative position features to encode spatial relationships between the ego-vehicle and obstacles: 
+
+As[m, n ] = σ (Ws [vm∥vn∥remb ]) , (8) where σ is the sigmoid function, and Ws ∈ RD×3D is a learnable weight matrix. Here, remb ∈ RD is the embedding of the relative position ra2a = ( p[m] − p[n]) /100 , projected via an MLP to match the feature dimension D.Temporal and spatial attention matrices are fused via Kro-necker product to integrate multi-dimensional spatiotemporal relationships: 
+
+Afusion = At ⊗ A s ∈ R(N ·Tpred )×(N ·Tpred ). (9) The Kronecker product ensures that the fused matrix retains both temporal dependencies and spatial relationships. The fused attention matrix refines multi-source input features into 
+
+zstyle ∈ RB×Lfeat ×D , ensuring the diffusion decoder receives scene-aware and style-aligned guidance. Fig. 2. Overall architecture of the SDD Planner. (a) The framework encodes multi-source scenario inputs via a Multi-Source Style-Aware Encoder             
+
+> into high-dimensional stylized features ( zstyle ), serving as critical conditioning signals. (b) Style-Guided Dynamic Trajectory Generator: The diffusion decoder iteratively denoises trajectories from Gaussian noise ( t=T) to stylized paths ( t= 0 )via a time-step adaptive classifier-guided framework. This process is governed by: Style Conditioning , where zstyle is injected via Scale Shift to enforce context consistency; and Dynamic Guidance , which modifies the score function via fused energy gradients to strictly enforce safety and style constraints.
+
+C. Style-Guided Dynamic Trajectory Generator 
+
+To enable stylized autonomous driving with safety con-straints, we design a time-step adaptive classifier-guided diffusion framework [5]. Its core modifies the diffusion model’s score function via energy gradients, with guidance strength and energy weights adjusted dynamically across diffusion time steps. 
+
+1) Diffusion Model Foundation: Forward and Reverse Processes: The diffusion model operates over T discrete time steps (set to T = 1000 ), divided into two phases: Forward Diffusion (Noising Process):Starting from a clean trajectory x(0) ∈ RB×L×2 (where the last dimension repre-sents longitudinal and lateral coordinates), we iteratively add Gaussian noise to generate a noisy trajectory x(t) at time step 
+
+t:
+
+x(t) = √¯αtx(0) + √1 − ¯αtϵ, (10) where ϵ ∼ N (0 , I) is standard Gaussian noise, ¯αt =Qts=1 αs denotes the cumulative product of noise coeffi-cients, and αs follows a pre-defined linear variance schedule. This schedule ensures that by t = T , x(T ) approximates pure Gaussian noise. Reverse Diffusion (Denoising Process):The diffusion de-coder learns to reverse the noising process, predicting the noise ϵθ (x(t), t, zstyle ) at each time step t, conditioned on the noisy trajectory x(t), time step t, and stylized features 
+
+zstyle . The trajectory is updated as: 
+
+x(t−1) = 1
+
+√αt
+
+
+
+x(t) − 1 − αt
+
+√1 − ¯αt
+
+ϵθ
+
+
+
++ σtϵ′, (11) where σt is the time-step-dependent noise scale derived via Bayesian theorem ( σ2 
+
+> t
+
+= 1− ¯αt−1  
+
+> 1−¯αt
+
+·(1 −αt)), and ϵ′ ∼ N (0 , I)
+
+is residual noise to preserve trajectory multimodality. As t
+
+decreases from T to 0, x(t) gradually converges to a clean, stylized trajectory. 
+
+2) Dynamic Guidance Across Diffusion Time Steps: To integrate safety and style into the denoising process, we modify the denoiser’s score function with time-step adaptive energy guidance: 
+
+˜sθ (x(t), t ) = sθ (x(t), t ) − λ(t)∇x(t) Eϕ(x(t), t ), (12) where sθ (x(t), t ) = −∇ x(t) log pθ (x(t)) represents the base score function of the diffusion model; λ(t) = 1 .5 − 1.2 · 
+
+> tT
+
+denotes the time-step-dependent guidance intensity; and 
+
+Eϕ(x(t), t ) is the fused energy function. The schedule λ(t)
+
+imposes strong guidance ( λ ≈ 1.5) at early steps to enforce strict safety constraints, and weaker guidance ( λ ≈ 0.3) at late steps to refine style details. 
+
+3) Dynamic-Weight Collision Avoidance Guidance: For safety-style alignment, a collision risk energy function quan-tifies the probability of collision for x(t) at each time step: 
+
+Ecollision (x(t)) = 
+
+> L−1
+
+X
+
+> k=0
+
+X
+
+> i
+
+exp 
+
+
+
+− d2 
+
+> i
+
+(t, k )
+
+σ2
+
+> d
+
+
+
+, (13) where di(t, k ) denotes the minimum Euclidean distance between the ego-vehicle and the i-th obstacle at trajectory point k; σd = 2 .5 m is the distance attenuation coefficient determined via statistical analysis; and L represents the number of trajectory points. The exponential term ensures that closer obstacles lead to higher energy penalties. A multi-risk fusion weight function adjusts the collision avoidance priority across diffusion time steps: 
+
+wcollision (t) = α(t) · X
+
+> i
+
+1
+
+di(t) + ϵ · max 
+
+
+
+0, vrel ,i (t)
+
+vmax,rel 
+
+
+
+· exp 
+
+ c(t)
+
+σc
+
+
+
+,
+
+(14) where α(t) = α0 · (1 + 0 .8 · tT ) is the safety base weight; 
+
+vrel ,i (t) denotes the relative speed of the i-th obstacle; and 
+
+c(t) represents the road curvature at time step t. This function enables adaptive response to high-risk scenarios. 
+
+4) Dynamic-Weight Speed Compliance Guidance: For style-specific speed control, a speed energy function mea-sures deviation from style benchmarks at each diffusion time step: 
+
+Espeed (x(t)) = 
+
+> L−1
+
+X
+
+> k=0
+
+ vcurrent (t, k ) − vdesired (t, k )
+
+vlimit (t)
+
+2
+
+, (15) where vcurrent (t, k ) is the speed of the ego-vehicle; 
+
+vdesired (t, k ) denotes the style-specific benchmark speed (e.g., 
+
+1.1 · vlimit for aggressive style); and vlimit (t) represents the road speed limit. A style-adaptive speed weight function adjusts priority across time steps: 
+
+wspeed (t) = β(t) · min 
+
+
+
+1, |∆v(t)|
+
+vdesired (t)
+
+
+
+·
+
+
+
+1 + γ · exp 
+
+
+
+− ρ(t)
+
+σρ
+
+ 
+
+,
+
+(16) where β(t) = β0 · (1 − 0.6 · tT ) is the speed base weight; 
+
+∆v(t) denotes the speed deviation; and ρ(t) represents the traffic density at time step t.
+
+5) Multi-Objective Energy Fusion: A normalized energy function fuses collision avoidance and speed compliance signals, ensuring stable guidance across diffusion time steps: 
+
+E(x(t)) = wcollision (t)
+
+wcollision (t) + wspeed (t) Ecollision (x(t))+ wspeed (t)
+
+wcollision (t) + wspeed (t) Espeed (x(t)).
+
+(17) This fusion enables scenario-adaptive priority adjustment, ensuring that the Style-Guided Dynamic Trajectory Gen-erator dynamically reconciles safety constraints and user preferences throughout the denoising process. V. EXPERIMENT 
+
+A. Experimental Setup 1) Datasets: Experiments are conducted on two author-itative autonomous driving datasets: StyleDrive [16] and NuPlan [6]. StyleDrive is large-scale real-world dataset for personalized end-to-end autonomous driving (E2EAD). It contains 30k scenarios with multi-source annotated driving styles (aggressive, normal, conservative), built on OpenScene trajectories from 16 drivers across Singapore and the U.S. It provides comprehensive scene topology, semantics, and human-machine verified style labels, serving as a benchmark for personalized E2EAD models. NuPlan provides 1,200h real-world driving data in four cities with multi-modal sensor streams, HD maps, and over 80k challenging interaction events. It includes standard benchmark splits (Val14, Test14, and Test14-hard) for model validation and evaluation in regular and high-risk scenarios. 
+
+2) Evaluation Metrics: To assess whether the proposed model achieves a balance between safety/feasibility and alignment with driving style preferences, we adopt the Style-Modulated Predictive Driver Model Score (SM-PDMS) 
+
+[16]. SM-PDMS extends the Predictive Driver Model Score (PDMS) from NavSim by introducing a behavior alignment term that measures the consistency between the policy and specified style preferences, thereby overcoming PDMS’s limitation of neglecting style adaptation. The metric retains key PDMS components, including No Collision (NC) and 
+
+Drivable Area Compliance (DAC) . We further adopt a set of standard closed-loop indicators, including Collisions ,
+
+Time to Collision (TTC) , Drivable , Comfort , Progress (EP) , and the aggregated Score , which together quantify safety, rule compliance, ride comfort, and driving efficiency. All performance results are reported as normalized scores (0–100), averaged across all scenarios. 
+
+3) SOTA Methods: We compare the proposed SDD Plan-ner with representative state-of-the-art baselines: AD-MLP 
+
+[28]: A base end-to-end autonomous driving (E2EAD) model with an MLP core, lacking style adaptation. TransFuser 
+
+[19]: A multi-modal E2EAD model fusing image and LiDAR features, generating only generic trajectories. WoTE [20]: A BEV-based E2EAD model focusing on long-term environ-ment prediction, lacking style adaptation. Diffusion-Planner 
+
+[9]: A trajectory planning model based on diffusion proba-bilistic models. IDM [29]: A classical rule-based planner of-ficially implemented on the NuPlan platform. PDM [11]: The NuPlan challenge winner, with three variants (Closed, Open, Hybrid) combining rule-based and learning-based strategies. 
+
+UrbanDriver [22]: A learning-based planner on NuPlan, optimized with policy gradients for adaptive driving. Game-Former [4]: A game-theoretic interaction model refined with rule-based conflict resolution. PlanTF [23]: A Transformer-based closed-loop planner designed for improved real-time performance. 
+
+4) Implementation Details: All experiments were con-ducted on a high-performance server.The details of the hardware and software configurations used in the experiment are as follows: In terms of hardware, the Central Processing Unit (CPU) is Intel (R) Xeon (R) Platinum 8362, with an operating frequency of 2.80 GHz; the Graphics Processing Unit (GPU) adopts the NVIDIA A100-SXM4 model and is equipped with 4 sets of 80 GB GPU memory. For software, the operating system uses Ubuntu 22.04, the CUDA Toolkit version is 12.1, and the deep learning framework adopts PyTorch 2.0.0+cu118. 
+
+B. Quantitative Results                                                       
+
+> TABLE II: Performance comparison on the StyleDrive dataset. SDD-A, SDD-N, and SDD-C denote results on Aggressive, Normal, and Conser-vative driving styles, respectively.
+> Models NC DAC Style-Modulated Submetrics SM-PDMS TTC Comf. EP AD-MLP 92.44 78.35 83.67 99.62 77.91 63.70 TransFuser 96.54 87.92 90.96 99.70 84.46 78.13 WoTE 97.32 92.29 92.60 99.05 76.52 80.32 Diffu-Planner 96.50 91.65 90.67 99.72 80.34 80.21 SDD (ours) 97.81 93.50 92.79 99.87 84.79 84.23
+> SDD-A (ours) 97.34 92.95 91.86 99.50 84.11 82.92 SDD-N (ours) 97.65 93.30 92.11 99.71 84.19 83.32 SDD-C (ours) 98.26 93.45 94.99 99.86 81.53 83.91
+
+As summarized in Table II, the proposed SDD Planner consistently surpasses baseline models (AD-MLP, Trans-Fuser, WoTE, Diff-Planner) across both safety and style-modulated evaluation metrics on the StyleDrive dataset. In TABLE III: Performance comparison on NuPlan dataset.                                                                                                   
+
+> Planner (Type) Test14-hard Test14 Val14 Score Score Score Collisions TTC Drivable Comfort Progress
+> IDM 56.21 70.42 75.43 86.12 78.93 99.41 89.00 95.43 PDM-Closed 65.08 91.03 91.72 86.51 87.10 100.0 97.21 93.47 PDM-Hybrid 66.13 90.28 90.71 86.50 76.20 100.0 92.51 98.12 GameFormer 67.85 81.85 79.78 82.50 72.50 65.00 98.00 90.00 PLUTO 80.12 91.29 90.68 89.95 87.64 99.45 94.47 97.79 PDM-Open* 35.53 52.23 54.24 65.75 69.50 93.50 98.50 95.00 UrbanDriver 49.95 57.15 54.11 67.32 70.84 95.34 92.15 94.76 GameFormer w/o refine. 7.08 11.31 12.69 42.20 27.50 23.00 98.53 57.00 PlanTF 69.63 85.58 84.75 89.00 87.50 99.50 96.00 99.50 PLUTO w/o refine.* 70.74 89.62 88.11 92.39 87.61 99.54 97.19 98.78 SDD Planner (ours) 80.32 91.76 91.83 96.00 90.79 100.0 94.00 100.0
+
+terms of safety, SDD Planner achieves the highest scores in NC and DAC, improving by 0.51% and 1.22% compared to the strongest baseline (WoTE). For style-sensitive met-rics, TTC remains competitive (ranked second with only a 0.22% gap to WoTE), while SDD Planner attains leading performance in both Comf. (99.87) and EP (84.79), with EP improved by 0.44% relative to TransFuser, highlighting its strength in balancing efficiency and comfort. Most notably, the integrated SM-PDMS score demonstrates a substantial 3.9% gain over WoTE, confirming SDD Planner’s superior overall capability in stylized autonomous driving. When evaluated under fixed driving style constraints, the SDD vari-ants reveal clear alignment with intended behavioral tenden-cies. Specifically, SDD-A shows minimal EP degradation (-0.80%) while maintaining efficiency priority; SDD-N yields balanced yet slightly reduced results across metrics (-1.08% SM-PDMS); and SDD-C improves safety-critical metrics (NC +0.46%, TTC +2.37%) at the cost of lower efficiency (-3.84% EP). These shifts precisely reflect aggressive, nor-mal, and conservative driving preferences, thereby validating the adaptability of the proposed planner to diverse styles without compromising core safety requirements. Overall, these findings demonstrate that SDD Planner achieves a dual objective: ensuring robust safety guarantees while flexibly adapting to personalized driving styles. This balance between safety feasibility and preference alignment underscores its practicality and scalability for real-world deployment in complex, style-diverse autonomous driving scenarios. As shown in Table III, the proposed SDD Planner achieves superior performance across the NuPlan benchmarks, consis-tently outperforming state-of-the-art hybrid, learning-based, and rule-based methods in both overall score and critical sub-indicators. In the Test14-hard benchmark, which evaluates planners under highly challenging driving conditions, SDD Planner achieves the best overall score (80.32), slightly surpassing PLUTO (80.12). In the Test14 benchmark, SDD Planner again ranks first with a score of 91.76, outperforming PLUTO (91.29) and all other methods, confirming its stabil-ity in standard urban driving conditions. In the Val14 bench-mark, SDD Planner ranks first with an overall score of 91.83. Compared with PLUTO, the leading hybrid planning method (90.68), SDD Planner achieves substantial gains in safety-related indicators, reducing collisions by 6.05% and improv-ing TTC by 3.15%, while also obtaining a perfect score of 100.0 in the progress metric. Against PDM-Closed, the strongest rule-based baseline (91.72), SDD Planner achieves a slightly higher overall score but significantly outperforms it in safety-critical dimensions, including collisions and TTC. These results confirm that SDD Planner achieves state-of-the-art performance on the NuPlan benchmarks. It not only achieves strong efficiency but also ensures superior safety guarantees. 
+
+C. Case Analysis 
+
+> Fig. 3. The performance of SDD Planner and PLUTO in the same scenario.
+
+This subsection provides a visualization analysis to further verify the safety and personalization capabilities of the pro-posed SDD Planner. As shown in Fig. 3, in a representative scenario from the Test14-hard benchmark, PLUTO[30] fails to maintain safe interactions with surrounding vehicles, as it repeatedly shifts attention between the preceding and adjacent vehicles. This strategy leads to delayed decision-making and eventually a collision. In contrast, SDD Planner leverages its encoder to focus on the most critical target vehi-cle, enabling timely and stable interaction, thereby ensuring both safety and comfort. Fig. 4 visualizes the adaptive adjustment of dynamic weights under different driving styles. In the aggressive style case (Fig. 4(a)), as the driving scene becomes more expansive, the speed weight increases while the collision weight decreases, highlighting a preference for efficiency. In the normal style case (Fig. 4(b)), the speed weight decreases before cornering, stabilizes while navigating the corner, and gradually increases when exiting, reflecting balanced behavior between safety and efficiency. Fig. 5 illustrates the generated trajectories under different driving styles in the same scenario. The aggressive style em-Fig. 4. Weight change chart for two different driving scenarios. 
+
+> Fig. 5. Comparison of generated trajectories under different driving styles.
+
+phasizes higher speed while avoiding collisions, the normal style balances speed and collision avoidance, and the con-servative style prioritizes collision avoidance at the expense of speed. This confirms that SDD Planner can accurately capture and reproduce distinct style characteristics while maintaining safety. In summary, these qualitative results demonstrate that SDD Planner not only achieves superior safety compared to baseline methods but also flexibly adapts to different driving styles, generating diverse yet safe trajec-tories aligned with personalized preferences. 
+
+D. Ablation Study 
+
+To validate the effectiveness of the proposed dynamic attention and guidance mechanisms, ablation experiments are conducted. The dynamic attention mechanism considers distance-sensitive weights for surrounding vehicles, while the dynamic guidance mechanism adaptively adjusts the safety (α) and speed ( β) coefficients. 
+
+1) Module Ablation: Three ablated variants were evalu-ated on the NuPlan dataset to isolate the contributions of each module: Variant 1 (Fixed Attention Weights) : Removes the dynamic attention mechanism; all surrounding vehicles receive equal fixed attention weights. Variant 2 (Fixed Guidance Weights) : Disables dynamic guidance; collision and speed weights are fixed at 0.6 and 0.4, respectively. 
+
+> Fig. 6. The acceleration of ego vehicle in the same scenario
+
+Variant 3 (Full Ablation) : Removes both dynamic attention and dynamic guidance mechanisms.      
+
+> TABLE IV: Ablation experiment results for dynamic guidance mechanism.
+> Model Total Score
+> SDD Planner (Ours) 91.83 Variant 1 (Fixed Attention) 85.01 Variant 2 (Fixed Guidance) 80.70 Variant 3 (Full Ablation) 77.89
+
+As shown in Table IV, the full SDD Planner achieves the highest score, while all ablated variants show significant performance drops.As shown in Fig. 6, we selected a typical scenario from the NuPlan dataset for observation. The ego vehicle acceleration of the model proposed in this paper is similar to that of the expert’s behavior, and the introduction of the dynamic mechanism makes the acceleration change of the model more gradual. Variant 3 exhibits severe accelera-tion fluctuations, reducing comfort, highlighting the necessity of both dynamic attention and guidance mechanisms for safe and smooth trajectory planning. 
+
+2) Weights Ablation: The heatmap in Fig. 7 demonstrates that properly tuned dynamic guidance weights effectively maximize performance. The effect of maximum collision weight ( αmax ) and maximum speed weight ( βmax ) on per-formance is further analyzed: (1) The values of αmax below 1.0 lead to insufficient safety regulation; values above 1.4 overly constrain trajectories, and the optimal αmax is 1.2. (2) The values of βmax below 2.0 reduce speed efficiency; values above 2.8 may cause speed overload, and the optimal βmax 
+
+is 2.5. Both module-level and weight-level ablations demonstrate that the dynamic attention and guidance mechanisms are essential for generating safe, comfortable, and efficient tra-jectories. Proper tuning of αmax and βmax ensures peak performance of the SDD Planner. 
+
+E. Real-Vehicle Deployment and Verification 
+
+Two typical urban scenarios are selected to verify the safety performance and style adaptability of trajectory gen-eration by the SDD Planner under different style configura-tions. 
+
+1) System Configuration and Deployment: We deployed the proposed framework on a real-world experimental Fig. 7. Performance heatmap of maximum safety weight (αmax ) and maximum speed weight ( βmax ). Peak performance occurs at αmax = 1 .2  
+
+> and βmax = 2 .5.
+
+platform for closed-loop performance validation. The au-tonomous vehicle utilizes a robust heterogeneous computing architecture centered on an Industrial Personal Computer (IPC). The core processing unit integrates both an NVIDIA Orin platform and an Intel Xeon CPU to effectively manage the substantial computational load. The planning pipeline is initiated by receiving fused obstacle data from the LiDAR and cameras via Ethernet (1000BASE-T). This high-speed input link guarantees minimal transmission delay ( ≤ 2 ms) with a 10 Hz update frequency. The data then undergoes es-sential preprocessing—including coordinate transformation to the vehicle frame and Gaussian filtering for noise re-duction—before feeding into the quantized planning model. Subsequently, the generated trajectory commands are reliably transmitted to the IPU Controller via the CAN FD bus. To ensure precise execution and stability, a critical time-stamp alignment mechanism is employed, achieving a synchro-nization error of ≤ 1 ms. This synchronization successfully matches the control period of the chassis actuators ( ≤ 20 ms), ultimately enabling the efficient and stable integration of our diffusion-based trajectory planner with the vehicle’s low-level control system. 
+
+2) Dynamic Obstacle Avoidance Test: This experiment evaluates the SDD Planner in a narrow two-way single-lane scenario where the ego vehicle must bypass a pedestrian while simultaneously managing interactions with multiple dynamic participants. As illustrated in Fig. 8(a)–(f), the ego vehicle adopts a conservative strategy. It first yields to an approaching vehicle and then executes a controlled lane-borrowing maneuver to pass the pedestrian without abrupt longitudinal or lateral actions. The spatio-temporal trajectory shown on the right of Fig. 8 further characterizes this behav-ior. Upon detecting both the pedestrian and the oncoming vehicle, the ego vehicle initiates a smooth deceleration to approximately 18 km/h (peak deceleration: 1.2 m/s 2), provid-ing sufficient temporal margin for the subsequent maneuver. During the bypass, the trajectory exhibits a modest lateral shift with a maximum lateral acceleration of about 0.6 m/s 2,while maintaining a safety margin of roughly 1.8 m from the pedestrian and over 5 m from the oncoming vehicle. When a second oncoming vehicle appears, the planner temporarily stabilizes the lateral motion rather than initiating an im-mediate return, thereby avoiding aggressive merging. After the lane becomes clear, the ego vehicle transitions smoothly back to its original lane and regains its cruising speed of approximately 30 km/h. Throughout the interaction, the min-imum distance to dynamic obstacles remains above 3.2 m, demonstrating that the SDD Planner consistently preserves safety and generates smooth, well-structured trajectories in this constrained and highly interactive scenario. 
+
+3) Aggressive-Style Lane Merging: This experiment eval-uates the SDD Planner in an intersection scenario that requires the ego vehicle to merge from a through lane into the far-left turning lane while interacting with adjacent traffic. In contrast to conservative behavior, the aggressive style emphasizes efficiency and actively seeks viable merging gaps. As shown in Fig. 9(a)–(f), once a suitable opening is identified next to the left-side vehicle, the ego vehicle performs a continuous double lane change to secure the turning position without intermediate hesitation. The spatio-temporal trajectory in Fig. 9 characterizes this maneuver over a 5.8 s horizon. At the onset (Frames a–b), the planner commands a deliberate acceleration from 25 km/h to 32 km/h (peak longitudinal acceleration 2.1 m/s 2) to match the speed of vehicles in the target lane. After confirming a minimum admissible lateral gap of 4.2 m (Frames c–d), the system initiates a rapid lateral transition with a peak lateral accel-eration of 1.3 m/s 2, enabling the vehicle to cross the first lane boundary within 1.5 s. As the adjacent vehicle begins to decelerate (relative speed −6 km/h), the planner immediately proceeds with the second lane shift using a comparable lateral acceleration of 1.4 m/s 2, avoiding any unnecessary dwelling in the intermediate lane. The resulting trajectory demonstrates that the aggressive style increases maneuvering efficiency achieving an average speed of 30 .5 km/h, approxi-mately 12% higher than the conservative counterpart. It also consistently maintains safe clearance from surrounding vehi-cles, with a minimum relative distance of 2.8 m. These results indicate that the SDD Planner can reproduce assertive yet safety-compliant behavior required in competitive merging scenarios. VI. CONCLUSION This paper proposes the SDD Planner, a novel diffusion-based framework that effectively addresses the critical chal-lenge of reconciling strict safety constraints with personal-ized driving styles in autonomous driving. The core innova-tion relies on a Multi-Source Style-Aware Encoder to extract heterogeneous features and a Style-Guided Dynamic Tra-jectory Generator that utilizes an adaptive classifier-guided diffusion mechanism, strategically prioritizing safety goals early and style compliance late in the denoising process. Extensive empirical validation confirms the framework’s Fig. 8. Dynamic Obstacle Avoidance Scenario. (a)–(f) Key frames from the front-facing camera showing the ego vehicle yielding to an SUV and borrowing the opposite lane to bypass a pedestrian. Right: Spatio-temporal trajectory color-coded by time. The visualization demonstrates that the planner maintains safe clearance from both the pedestrian and oncoming traffic while executing smooth, conservative maneuvers. 
+
+Fig. 9. Aggressive Continuous Lane Change Scenario. (a)-(f) Front-facing camera frames showing the ego vehicle accelerating and executing a double lane change to merge in front of a yielding vehicle. Right: The spatio-temporal trajectory color-coded by time. The visualization highlights the aggressive style’s steep lateral maneuvering and continuous path planning to maximize intersection efficiency. 
+
+superiority. On the StyleDrive benchmark, the SDD Plan-ner achieved a state-of-the-art SM-PDMS score of 84.23, demonstrating a substantial 3.9% gain over the strongest baseline and validating its precise style adaptation capability. Furthermore, the planner established superior safety and robustness on the NuPlan benchmark, achieving the highest overall score of 80.32 on the challenging Test14-hard split, surpassing the leading hybrid method. It also demonstrated superior safety by reducing collisions by 6.05% compared to PLUTO on the Val14 set. Rigorous ablation studies further confirmed the necessity of the proposed dynamic attention and guidance mechanisms for generating smooth and accurate trajectories, as their removal led to a significant performance drop. Finally, the SDD Planner was successfully deployed in closed-loop tests on the NVIDIA Orin platform. Real-vehicle experiments subsequently verified its ability to robustly execute diverse styles ranging from conservative obstacle avoidance to aggressive merging while consistently maintaining superior safety margins. In summary, SDD Plan-ner provides a unified, efficient, and deployable solution that advances the state-of-the-art by simultaneously satisfying the fundamental requirements of safety and the nuanced demands of personalization. Future work will focus on improving multi-modal fusion efficiency and extending style modeling to capture broader scene-centric driving cultures. REFERENCES [1] Y. Tang, H. He, Y. Wang, Z. Mao, and H. Wang, “Multi-modality 3d object detection in autonomous driving: A review,” Neurocomputing ,vol. 553, p. 126587, 2023. [2] Y. Tang, H. He, Y. Wang, and Y. Wu, “Flexible anchor-based trajectory prediction for different types of traffic participants in autonomous driving systems,” Expert Systems with Applications , p. 127629, 2025. [3] Y. Wang, J. Tang, Q. Li, Y. Zhao, C. Sun, and H. He, “Model-free control framework for stability and path-tracking of autonomous independent-drive vehicles,” IEEE Transactions on Transportation Electrification , 2025. [4] Z. Huang, H. Liu, C. Wu, W. Li, X. Mao, A. Bochkovskiy, Y. Dick-stein, and V. Jampani, “Gameformer: Game-theoretic modeling of multi-agent interaction for autonomous driving,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) ,2023, pp. 3905–3915. [5] Y. Zhang, Z. Liu, and H. Wang, “Diffusion-based trajectory prediction with interaction-aware attention,” in Conference on Robot Learning (CoRL) , 2023, pp. 1234–1245. [6] H. Caesar, S. Banerjee, J. Griffis, P. Xuan, D. Chou, and O. Beijbom, “Nuplan: A closed-loop planning benchmark for autonomous vehi-cles,” IEEE Transactions on Robotics , vol. 39, no. 2, pp. 1195–1212, 2023. [7] J. Sohl-Dickstein, E. Weiss, N. Maheswaranathan, and S. Ganguli, “Deep unsupervised learning using nonequilibrium thermodynamics,” in Proceedings of the 32nd International Conference on Machine Learning (ICML) . PMLR, 2015, pp. 2256–2265. [8] C. Chi, S. Feng, Y. Du, Z. Xu, E. Cousineau, B. Richter, and S. Song, “Diffusion policy: Visuomotor policy learning via action diffusion,” in 
+
+Proceedings of Robotics: Science and Systems (RSS) , 2023. [9] Y. Zheng, R. Liang, K. Zheng, J. Zheng, L. Mao, and J. Li, “Diffusion-based planning for autonomous driving with flexible guidance,” in Pro-ceedings of the International Conference on Learning Representations (ICLR) , 2025, arXiv preprint arXiv:2501.15564. [10] X. Chen, Y. Sun, and Z. Li, “Safediff: Safety-constrained diffusion planning for autonomous vehicles,” in 2024 IEEE International Con-ference on Intelligent Vehicles (IV) . IEEE, 2024, pp. 901–908. [11] D. Dauner, M. Hallgarten, A. Geiger, and K. Chitta, “Pdm: A hybrid model for closed-loop autonomous driving planning,” arXiv preprint arXiv:2306.07962, Tech. Rep., 2023. [12] Y. Wang, X. Chen, N. Zheng, and R. Yang, “Safety-constrained styl-ized trajectory planning for autonomous vehicles,” IEEE Transactions on Vehicular Technology , vol. 70, no. 12, pp. 12 645–12 656, 2021. [13] H. Zhang, M. Liu, B. Li, and Y. Wang, “Adaptive weighting for stylized autonomous driving: A scenario-aware multi-objective opti-mization approach,” IEEE Transactions on Intelligent Vehicles , vol. 8, no. 3, pp. 2145–2156, 2023. [14] J. Chen, Y. Li, H. Zhang, and Z. Wang, “Gan-based data augmentation for reinforcement learning in autonomous driving,” in Proceedings of the 2020 IEEE International Conference on Intelligent Transportation Systems (ITSC) . IEEE, 2020, pp. 1–6. [15] Y. Li, W. Zhang, J. Wang, and H. Lu, “Multi-style autonomous driving planning via reinforcement learning with dynamic reward shaping,” in 2022 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2022, pp. 8972–8978. [16] L. Zhang, C. Wang, S. E. Li, J. Yu, and M. Yang, “Styledrive: A dataset for personalized end-to-end autonomous driving,” IEEE Transactions on Intelligent Vehicles , vol. 9, no. 3, pp. 2890–2902, 2024. [17] Q. Li, H. He, M. Hu, and Y. Wang, “Spatio-temporal joint trajectory planning for autonomous vehicles based on improved constrained iterative lqr,” Sensors , vol. 25, no. 2, p. 512, 2025. [18] J. Wu, C. Huang, H. Huang, C. Lv, Y. Wang, and F.-Y. Wang, “Recent advances in reinforcement learning-based autonomous driving behav-ior planning: A survey,” Transportation Research Part C: Emerging Technologies , vol. 164, p. 104654, 2024. [19] K. Chitta, S. Casas, A. Behl, and A. Geiger, “Transfuser: Multimodal fusion for end-to-end autonomous driving,” in 2022 IEEE/CVF Con-ference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 2022, pp. 11 082–11 091. [20] J. Li, C. Wang, M. Liu, and H. Zhang, “Wote: Waypoint transformer with edge-aware attention for robust autonomous driving planning,” in 2023 IEEE International Conference on Intelligent Vehicles (IV) .IEEE, 2023, pp. 1234–1240. [21] M. Bojarski, D. Del Testa, D. Dworakowski, B. Firner, B. Flepp, P. Goyal, L. D. Jackel, M. Monfort, U. Muller, and J. Zhang, “End to end learning for self-driving cars,” IEEE Transactions on Intelligent Transportation Systems , vol. 18, no. 10, pp. 2474–2483, 2016. [22] C. Scheel, M. Schreiber, and M. Lienkamp, “Urbandriver: End-to-end driving for complex urban scenarios using conditional imitation learning,” in 2021 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2021, pp. 14 461–14 467. [23] J. Cheng, Y. Liu, Q. Wang, and L. Zhang, “Plantf: A transformer-based framework for unified motion planning in autonomous driving,” in 2023 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2023, pp. 7892–7898. [24] Y. Tang, H. He, Y. Wang, and Y. Wu, “Using a diffusion model for pedestrian trajectory prediction in semi-open autonomous driving environments,” IEEE Sensors Journal , vol. 24, no. 10, pp. 17 208– 17 218, 2024. [25] B. Yang, H. Su, N. Gkanatsios, T.-W. Ke, A. Jain, J. Schneider, and K. Fragkiadaki, “Diffusion-es: Gradient-free planning with diffusion for autonomous and instruction-guided driving,” in 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2024, pp. 21 567–21 576. [26] H. Wang, X. Chen, and J. Zhang, “Multi-modal diffusion planning with scene graph fusion,” in European Conference on Computer Vision (ECCV) . Springer, 2024, pp. 456–471. [27] J. Ho, A. Jain, and P. Abbeel, “Denoising diffusion probabilistic models,” in Advances in Neural Information Processing Systems (NeurIPS) , vol. 33, 2020, pp. 6840–6851. [28] Y. Zhai, W. Li, and D. Wang, “Rethinking the open-loop evalua-tion of end-to-end autonomous driving in nuscenes,” arXiv preprint arXiv:2305.10430 , 2023. [29] M. Treiber, A. Hennecke, and D. Helbing, “The intelligent driver model: A simple car-following model for highway traffic,” Transporta-tion Research Part C: Emerging Technologies , vol. 8, no. 5, pp. 381– 396, 2000. [30] J. Cheng, Y. Chen, and Q. Chen, “Pluto: Pushing the limit of imita-tion learning-based planning for autonomous driving,” arXiv preprint arXiv:2404.14327 , 2024.

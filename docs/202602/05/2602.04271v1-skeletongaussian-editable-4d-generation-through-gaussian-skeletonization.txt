@@ -1,0 +1,413 @@
+Title: SkeletonGaussian: Editable 4D Generation through Gaussian Skeletonization
+
+URL Source: https://arxiv.org/pdf/2602.04271v1
+
+Published Time: Thu, 05 Feb 2026 01:35:07 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# SkeletonGaussian: Editable 4D Generation through Gaussian Skeletonization 
+
+# Lifan Wu Ruijie Zhu Yubo Ai Tianzhu Zhang University of Science and Technology of China    
+
+> {wusar, ruijiezhu, erebai }@mail.ustc.edu.cn, tzzhang@ustc.edu.cn
+
+Abstract 
+
+4D generation has made remarkable progress in syn-thesizing dynamic 3D objects from input text, images, or videos. However, existing methods often represent motion as an implicit deformation field, which limits di-rect control and editability. To address this, we pro-pose SkeletonGaussian, a novel framework for gener-ating editable, dynamic 3D Gaussians from monocu-lar video input. Our approach introduces a hierarchi-cal, articulated representation that decomposes motion into sparse, rigid motion explicitly driven by a skeleton and fine-grained, non-rigid motion. Concretely, we ex-tract a robust skeleton and drive rigid motion via lin-ear blend skinning, followed by a hexplane-based re-finement for non-rigid deformations—enhancing inter-pretability and editability. Experimental results show that SkeletonGaussian surpasses existing methods in generation quality while enabling intuitive motion edit-ing, establishing a new paradigm for editable 4D gener-ation. Project page: https://wusar.github.io/ projects/skeletongaussian/ 
+
+Keywords: 4D Generation, Gaussian Splatting, Motion Editing, Skeleton Modeling, Dynamic 3D 
+
+1. Introduction 
+
+Dynamic 3D generation, also referred to as 4D gener-ation, aims to create dynamic 3D objects from input text, images, or videos. It has become a prominent research area, expanding creative possibilities in fields such as animation, game design, autonomous driving, and film production. In this paper, we focus on generating editable dynamic 3D Gaussian models [14, 54, 61] from monocular video input. Recent advancements in text-to-3D generation [22, 39, 52, 64] and image-to-3D synthesis [23, 26, 40, 49, 50] have enhanced the creation of diverse 3D objects. Build-ing upon these developments, novel techniques [14, 54, 61] have emerged in the field of 4D generation. These methods leverage Score Distillation Sampling (SDS) loss, derived from diffusion model priors [58, 44, 27, 19], to optimize 4D object representation models. Depending on the type of 4D model used, existing methods can be categorized into three main classes: dynamic Neural Radiance Field (NeRF) generation [13, 33, 65, 38, 35, 36], dynamic 3D Gaussian generation [34], and dynamic mesh generation [19]. Despite these advances, current 4D object representa-tion methods typically model motion as an implicit defor-mation field [3], which limits direct control and editability. Editing deformation fields [3] in 4D models often requires retraining the deformation field, making the process time-consuming and lacking real-time feedback. Moreover, the parameter requirements of the deformation method grow quadratically with time, making it challenging to apply this motion modeling approach to long-duration sequences. Ad-ditionally, implicit deformation representations are diffi-cult to convert into standard skeleton or pose data, which obstructs seamless integration with widely used animation tools and pipelines (e.g., Blender [2]). Together, these lim-itations hinder the adoption of practical motion generation workflows. To tackle these challenges, we aim to develop a high-quality 4D generation workflow that not only produces su-perior 4D results but also facilitates real-time motion edit-ing. Inspired by recent advances in human reconstruc-tion [37, 41, 11, 15], which integrate the SMPL model [28] into 4D Gaussian modeling, we introduce SkeletonGaus-sian . SkeletonGaussian is an innovative framework for editable 4D generation through Gaussian skeletonization. This framework introduces a lightweight, hierarchical ar-ticulated motion representation technique that captures mo-tion details across multiple levels. Therefore, it enables effi-cient and high-quality 4D generation, while providing flex-ible editing capabilities. SkeletonGaussian integrates linear blend skinning (LBS) and skeleton-driven articulated motion representations into 4D generation tasks. It decomposes object motion into two components: sparse rigid deformation, driven by the skele-ton, and fine non-rigid deformation, which captures intri-cate motion details such as wrinkles in clothing and skin. Our 4D generation pipeline consists of three stages: static 3D Gaussian generation, rigid motion modeling, and non-rigid motion refinement. We adopt UniRig [67] as the de-fault skeleton extractor for robust, category-agnostic rig-ging, while using Coverage Axis++ as an ablation base-line. By leveraging hierarchical motion structures, Skele-1  
+
+> arXiv:2602.04271v1 [cs.CV] 4 Feb 2026 (a) Input Video (b) Skelton -Driven 4D Gaussian (c) Motion Editing
+
+Figure 1: Given (a) an input monocular video, we propose a novel 4D generation method SkeletonGaussian which uses (b) a skeleton to drive the motion of 4D Gaussian model. SkeletonGaussian enables (c) direct motion editing through the skeleton’s explicit motion representation, allowing users to adjust skeleton poses to modify the motion of the objects directly. tonGaussian effectively captures complex motion dynam-ics, particularly in scenarios involving substantial transfor-mations and intricate deformations. Moreover, Skeleton-Gaussian enables users to directly modify motion by edit-ing the skeleton. It seamlessly integrates into existing 3D animation workflows, allowing for real-time motion adjust-ments without the need for computationally expensive opti-mization. The skeletal structure encodes the object’s physi-cal topology, eliminating the need for auxiliary constraints, such as ARAP loss. Meanwhile, the explicit skeleton defor-mation method is highly parameter-efficient. The number of learnable pose parameters grows linearly with joints and time ( O(B × T )), reducing memory and training time com-pared to dense deformation fields. To validate the effective-ness of our method, we conduct quantitative and qualitative experiments using the Consistent4D [13] dataset. Our con-tributions are summarized as follows: • We propose SkeletonGaussian , a skeleton-driven dy-namic 3D Gaussian framework for motion model-ing in generative tasks. By employing a hierarchi-cal motion representation, SkeletonGaussian enhances motion fidelity while offering interpretable and ed-itable pose controls. In contrast to dense deforma-tion fields, the skeleton-based pose parameterization is more parameter-efficient, thereby reducing both stor-age demands and training times. • Our explicit skeleton-based representation enables di-rect, real-time motion editing through the manipula-tion of skeletal poses. The generated motions can be exported in standard skeleton and pose formats, ensur-ing seamless integration with animation pipelines such as Blender [2]. 
+
+2. Related Work 
+
+Skeleton-Based Motion Representations. Skeleton-based motion representation is crucial in computer vision and graphics due to its manipulability and ability to model de-tailed object motion. It is extensively used in computer graphics, animation generation, and pose estimation. Lin-ear Blend Skinning (LBS) is a commonly used technique for animating 3D models by applying transformations to a hierarchical skeleton, where the movement of joints influ-ences the deformation of the model’s surface, enabling re-alistic motion and posing [16]. LBS is extensively used in contemporary 3D animation and motion modeling. In prac-tical applications, models such as the Skinned Multi-Person Linear Model (SMPL) [28] employ LBS to combine joint articulation with skin meshes, resulting in realistic human motion and deformation. Similarly, FLAME [18] extends this method to facial animation, while SMAL [73] adapts it for animal modeling, demonstrating its versatility across different specialized fields. 
+
+3D Skeleton Generation. The extraction of skeletons from 3D representations, such as meshes or point clouds, is a well-established study area. Traditional methods relied on hand-crafted rules to extract geometric features. Techniques such as Laplacian contraction [4] reduce point clouds to their topological structures, facilitating the extraction of key joints and skeletons. Offline approaches [32, 6, 53, 55, 17] have further refined this process. Recent methods [60, 21] employ deep neural networks to predict curve-based skele-tons. In our system, we adopt UniRig [67] as the de-fault skeleton extractor due to its generalizable rigging prior across categories, while also evaluating Coverage Axis++ [53] as a baseline in our ablations (Section 4.3). Both extractors are integrated into a unified pipeline with consistent axis correction and scale normalization. 
+
+3D Deformation. In 3D modeling, deformation techniques incorporate deformation fields into static 3D models. These techniques can be classified based on the model’s 3D rep-resentation: (1) Mesh Deformation. Classical mesh-based methods, such as Laplacian coordinates [25, 47] and cage-based techniques [62], focus on preserving geometric de-tails during transformations, making them suitable for static objects. (2) NeRF-Based Deformation. Recent advance-ments in dynamic NeRF reconstruction utilize plane de-composition and 4D grids [3, 7] to achieve dynamic scene reconstruction by deforming canonical NeRF. (3) 3D Gaus-sian Deformation. Recent advancements in 3D Gaussian splatting [14] significantly accelerate rendering. Dynamic 3D Gaussian methods [31, 54, 61, 72, 30] leverage defor-mation fields [3] to model 3D Gaussian motion. Some ap-proaches, such as SC-GS [12] and BAGS [70], use sparse control points to represent 3D deformation. However, these methods rely on hexplane and MLP-based techniques to implicitly model control point movement and deformation, whereas our method explicitly models motion using a skele-ton and joint pose parameterization. Recent techniques for 3D Gaussian-based dynamic human motion [37, 41, 11, 15] combine rigid skeletal skinning and non-rigid deformations for precise motion modeling. Our approach draws inspi-ration from these works, employing a skeleton-based defor-mation in 3D Gaussian rendering to provide an intuitive and efficient method for editable 4D generation. 
+
+3D and 4D Generation. In 3D generation, Dream-Fusion [39] first introduced score distillation sampling (SDS) [39, 52] loss, which optimizes NeRF [33] to pro-duce high-quality 3D models. Building on advancements in 3D Gaussian techniques [14], DreamGaussian [50] lever-ages Gaussian splatting for 3D generation, significantly im-proving speed and performance. In 4D generation research, traditional motion generation methods [9, 48] are often lim-ited to specific characters or datasets, reducing their appli-cability across diverse objects. Recently, diffusion model-based approaches [45, 1, 24, 43, 71, 13, 66, 63] address these limitations by integrating SDS loss into 4D frame-work, enabling more versatile and generalized motion gen-eration. Approaches such as SC4D [56] introduce control points for motion transfer, enhancing editing flexibility in 4D generation. Additionally, Diffusion4D [20] and Stable Video 4D [57] achieve spatiotemporal consistency through specialized attention layers. STAG4D [66] initializes multi-view images anchored to input video frames, which are then used for multi-view SDS computation. Building on these advancements, our work introduces a novel skeleton-driven 3D Gaussian deformation framework for 4D gener-ation tasks, offering a more intuitive and efficient approach to motion modeling and editing. 
+
+3. Method 
+
+As illustrated in Figure 2, the 4D object generation pipeline of SkeletonGaussian consists of three stages: (1) 
+
+Static 3D Object Generation and Skeleton Extraction 
+
+(Section 3.1): A static 3D object is initially generated us-ing a 3D Gaussian generation method [14, 50]. Subse-quently, an inherent skeletal structure is constructed for the 3D Gaussian model. (2) Rigid Motion Modeling (Sec-tion 3.2): To capture the primary rigid motion of the object, a skeletal skinning network is employed, and the motion trajectories of each skeletal point are calculated using For-ward Kinematics. Linear Blend Skinning (LBS) is then ap-plied to deform the 3D Gaussian model according to these skeletal trajectories. During this stage, the skeleton poses 
+
+are optimized to match the reference video sequences. (3) 
+
+Non-Rigid Motion Modeling (Section 3.3): Fine-grained non-rigid motions are represented through a hexplane [3] and a deformation MLP. At this stage, the skeletal skinning network remains frozen, while only the 3D Gaussian and the hexplane deformation field are trained to capture finer deformations. Through these three stages, SkeletonGaussian generates a high-quality 4D object comprising a 3D Gaussian model, a skeletal pose representing the object’s rigid motion, and a fine-grained deformation field, achieving high-quality dy-namic 3D object generation. The following sections detail each of these training stages. 
+
+> 3.1. Static 3D Gaussian and Skeleton Generation
+
+To generate a static 3D Gaussian and its corresponding skeletal structure, we select the middle frame of the video as the reference frame for constructing the initial static 3D Gaussian model Gc in canonical space: 
+
+Gc = {pc, qc, s, σ, c}, (1) where pc, qc, s, σ, and c represent the position, quater-nions, scale, opacity, and spherical harmonics coefficients of the 3D Gaussian in canonical space, respectively. The middle frame is chosen as the static reference because it minimizes the motion discrepancy with all other frames, thereby reducing task complexity. The static 3D Gaussian Rigid LBS            
+
+> Deformation
+> ℱ𝑙𝑏𝑠
+> Optimizable
+> Skeleton Pose θ𝑡
+> MV -SDS Loss &
+> Photometric loss
+> Rendered Image
+> Pose -Deformed
+> Skeleton 𝐵 𝐽 ,θ𝑡
+> Reference Video
+> Rigid deformed
+> 3D Gaussians 𝒢 r
+> Rigid Deformation
+> (Sec. 3.2)
+> Generated
+> Skeleton 𝐽
+> Canonical 3D
+> Gaussian 𝒢 𝒸
+> Static Generation
+> (Sec. 3.1)
+> Training Objectives
+> (Sec. 3.4)
+> Non -Rigid Refinement
+> (Sec. 3.3)
+> Non -Rigid
+> Refinement
+> ℱ𝑛𝑟
+> Observation space
+> 3D Gaussian 𝒢 𝑜
+> Gaussian
+> Rasterizer
+> Operation Flow Gradient Flow
+
+Figure 2: Pipeline of the SkeletonGaussian framework for 4D object generation, divided into three stages: (1) Static 3D Object Generation and Skeleton Extraction : Starting from a frame at the video’s midpoint, a static 3D Gaussian model 
+
+Gc (Section 3.1) is generated in canonical space, from which an inherent skeletal structure is subsequently extracted. (2) 
+
+Rigid Motion Modeling : Using LBS, rigid deformations Flbs (Section 3.2) under various poses θt are applied to rigidly deform Gc into Gr . During this stage, the skeleton poses θt are optimized. (3) Non-Rigid Motion Modeling : To capture fine-grained deformations, a deformation field Fnr (Section 3.3) refines the motion of the rigidly deformed 3D Gaussian Gr ,transforming it into the observation space Gaussian Go. Fnr comprises a hexplane [3] and an MLP. All three stages share the same Training Objectives (Section 3.4). A differentiable Gaussian rasterizer renders images of the observation space 3D Gaussian Go from multiple viewpoints, comparing them to the reference video with photometric and MV-SDS losses for backpropagation. model is trained using both the multi-view SDS loss and the photometric consistency loss. Further details are provided in Section 3.4. 
+
+Skeleton Generation. To generate the kinematic tree struc-ture of the skeleton joints J, the mesh structure of the static object is first extracted from the static 3D Gaussian using occupation fields and the marching cubes algorithm [29]. We adopt a robust rigging pipeline built on UniRig [67] (default in our system), which predicts joint candidates and their connectivity to form an articulated skeleton for gen-eral objects. In practice, we support two invocation modes to enhance reproducibility and portability across environ-ments: (1) an internal Python inference path, and (2) an 
+
+external script path that caches results on disk and can be launched from sandboxed environments. Prior to building forward kinematics (FK), we apply standard preprocessing to ensure consistent coordinate conventions across extrac-tors. Based on the extracted skeletal points, we construct a kinematic tree by computing a Minimum Spanning Tree (MST) over candidate joints, and we preserve joint iden-tifiers when available from the extractor to maintain con-sistency with rigging conventions. The kinematic tree pro-vides a compact structural abstraction of the 3D Gaussian and serves as the control scaffold for subsequent motion generation. 
+
+3.2. 3D Gaussian Rigid Deformation 
+
+To model the primary motion of the 3D Gaussian, we use LBS to apply rigid deformation to the canonical 3D Gaus-sian Gc, denoted as Flbs . Let J = {Jb}Bb=1 represent the set of static joint positions of the skeleton, and let θt represent the skeleton’s pose at a specific time t. Under these condi-tions, the corresponding rigidly deformed 3D Gaussian Gr
+
+is computed as follows: 
+
+Gr = Flbs (Gc; J, θ t). (2) Note that while LBS results in non-rigid deformation, we term this “rigid deformation” to highlight it is driven by rigid skeletal joints, distinguishing it from the subsequent non-rigid refinement. 
+
+Rigid Position and Rotation Transform. The deformed 3D Gaussian point Gir is computed by applying a transfor-mation matrix Ti to the 3D Gaussian point Gic. Ti is a weighted sum of the transformation matrices Bk(J, θ t) cor-responding to the nearest K skeletal joints, with weights 
+
+wk,i :
+
+Ti =
+
+> K
+
+X
+
+> k=1
+
+wk,i Bk(J, θ t). (3) The transformed position pir and the rotation qir of the de-formed 3D Gaussian Gic are calculated as follows: 
+
+pir = Tipic + to, qir = Ti(1:3 ,1:3) · qic, (4) where T1:3 ,1:3 refers to the rotational component extracted from the transformation matrix Ti. The term to denotes the global translation of the root joint at time t.
+
+Forward Kinematics. To compute skeletal animations and joint motions, we use the forward kinematics approach. Forward kinematics determines each joint’s transformation by recursively accumulating the transformations of its an-cestor joints. It relies on a hierarchical skeleton tree struc-ture, where the transformation matrix Bk(J, θ t) for each joint k is obtained by multiplying the local transformations 
+
+θjt of all its ancestor joints j ∈ A(k):
+
+Bk(J, θ t) = Y
+
+> j∈A(k)
+
+θt,j . (5) 
+
+Skeletal Skinning Weights. To compute the skinning weights wk,i for each Gaussian point i relative to its sur-rounding skeleton joints, we apply the K-nearest neighbors (KNN) algorithm to identify the K nearest points. The weights are determined using inverse distance weighting, where the weight is inversely proportional to the distance 
+
+dk,i between point i and skeleton joint k:
+
+wk,i =
+
+> 1
+> dk,i
+
+PKk=1 1
+
+> dk,i
+
+. (6) We employ fixed inverse-distance KNN weights due to their simplicity and lack of training requirements. In future work, we plan to explore learning-based skinning weight fields to further improve deformation quality. 
+
+Skeletal Pose Smoothness. The skeletal pose is repre-sented by a tensor θ ∈ RT ×B×4, where T is the number of frames, B is the number of joints, and each entry θt,k 
+
+represents a 4D quaternion encoding the rotation of the k-th joint at the t-th frame. Additionally, we introduce a variable 
+
+to to record the global translation of the root joint. Directly optimizing skeleton poses can lead to overfitting, causing the model to capture noise from the training data and pro-duce jitter in the generated motion. To mitigate this prob-lem, we employ window smoothing to the skeleton poses, which uses a sliding window of size 2w + 1 during training to smooth the motion across w neighboring frames. For the local skeletal pose θt at each time step t, we compute the av-erage pose ¯θt by averaging across frame t and its neighbors. This smoothed value ¯θt is then used as input for LBS defor-mations. For simplicity, we use θt instead of ¯θt elsewhere. The formula is: 
+
+¯θt = 12w + 1 
+
+> w
+
+X
+
+> i=−w
+
+θt+i. (7) 
+
+> 3.3. Non-Rigid Refinement
+
+LBS effectively captures global object motion but strug-gles to represent detailed motions, such as clothing wrin-kles, due to the limited number of skeletal joints. To over-come this limitation, we propose a non-rigid deformation method to capture these detailed motions. Our approach employs a hexplane-based 4D representation to refine the motion of static 3D Gaussians. Specifically, we integrate a hexplane and an MLP to regress displacement, rotation, and scale changes of the 3D Gaussian. The non-rigid defor-mation function Fnr which transforms the rigidly deformed 3D Gaussian Gr into the observation space 3D Gaussian Go
+
+is given by: 
+
+Go = Fnr (Gr ). (8) The observation space 3D Gaussian Go is then rendered through Gaussian rasterization. During this refinement field training stage, the skeletal skinning network is frozen, and only the 3D Gaussian and hexplane deformation field are trained to capture fine-grained deformations. 
+
+> 3.4. Training Objectives
+
+Our objective is to generate a 4D Gaussian representa-tion of the target object from an input video sequence by optimizing the static 3D Gaussian model, the skeleton poses 
+
+θt, and the refinement field parameters Fnr . We begin by applying the multi-view diffusion model Zero123++ [44] to generate multi-view sequences It 
+
+> anchor
+
+from the video in-puts. These sequences act as spatiotemporal anchors, which are later used to compute the MV-SDS loss. The 3D Gaus-sian is then projected onto the screen to produce output im-ages, which are compared with the anchor images It 
+
+> anchor
+
+us-ing the multi-view Score Distillation Sampling (SDS) loss 
+
+LM V −SDS from Zero123 [27]. In addition, the loss func-tion includes a reconstruction loss Lrec and a foreground masking loss Lmask between the reference image Iref t and the front-view rendered image. A regularization loss Lreg 
+
+is also applied to the deformation field Fnr to enforce tem-poral smoothness in the motion. For a detailed explanation of the loss function, please refer to the Appendix Section 9. The final optimization objective is given by: 
+
+L = LM V −SDS + λ1Lrec + λ2Lmask + λ3Lreg . (9) 
+
+> 3.5. Generated Motion Editing
+
+SkeletonGaussian provides an efficient approach for editing generated motion through its sparse, explicit skeleton-based representation. Users can intuitively adjust the motion of skeletal points by modifying poses at spe-cific time steps, thereby altering the entire motion trajec-tory. We develop a GUI that simplifies the process of mo-tion editing. This method also aligns with current motion Figure 3: Visualizing 4D Object Motion with Skeleton Poses. We present generated 4D object motion and its corresponding skeleton poses, where the viewpoint rotates from left to right, and time progresses linearly from left to right. Edited Motion  Generated Motion 
+
+Figure 4: Editing Generated Motion. We visualize the gen-erated motion (top) and edited motion sequence (bottom). Users can directly adjust the skeleton poses of specific joints at different times to edit the object’s motion. modeling techniques in computer graphics, enabling users to modify skeletal movements in popular 3D editors such as Blender [2]. Additionally, the hierarchical structure of the skeleton tree facilitates hierarchical motion editing, where adjustments to a parent node automatically propagate to its child nodes. Motion editing is illustrated in Figure 4. 
+
+4. Experiments 
+
+> 4.1. Experiment Setup
+
+Implementation Details. (1) Static Stage : We generate six anchor view videos Iit (i ∈ { 1... 6}) using Zero123++ [44] from the input monocular video Iref t . The SDS loss is computed using Zero-1-to-3 [27]. 10000 3D Gaussian points are randomly initialized within a spherical canoni-cal space. This stage is trained for 1500 steps to produce a static 3D Gaussian. Subsequently, a skeleton is gener-ated using UniRig [67] (default). We support both an in-ternal Python path and an external cached script path for cross-environment execution. (2) Skeleton Training Stage :Skeleton poses are trained for 2500 steps. A smoothing window of size three is applied to the skeleton poses. (3) 
+
+Non-Rigid Motion Refinement : A hexplane and a defor-mation MLP are trained for 7000 steps to capture the fine-grained motion. The detailed implementation and hyper-parameters are provided in Appendix Section 8. The en-tire training process takes approximately 1 hour on an RTX 3090 GPU, and the rendering process can be performed at 150 FPS in real time. 
+
+Evaluation Dataset. To fairly evaluate our method against the baselines, we use the Consistent4D dataset [13], which includes 4D animation assets from Sketchfab [46] for fur-ther animation assessment. The dataset comprises 12 syn-thetic and 12 real-world videos, each captured with a static vertically aligned camera focused on dynamic objects. Each video contains 32 frames over approximately 2 seconds. 
+
+Evaluation Metrics. We evaluate the quality of generated 4D videos based on their alignment with reference videos, spatio-temporal consistency, and motion fidelity. For each test object and method, we use a frontal view video as in-put to generate a corresponding dynamic 3D model, ren-dering four videos from azimuth angles of 75°, 15°, 105°, and 195° at a 0° elevation. These rendered videos are com-pared with the ground-truth videos in the dataset to evalu-ate the generation quality. Our evaluation metrics include CLIP [42], LPIPS [69], and FVD [51] for Video-to-4D evaluation. CLIP and LPIPS evaluate the semantic and perceptual similarities between generated and real images, while FVD computes frame quality and temporal consis-tency. Since DreamGaussian4D generates videos with only 16 frames, we use the FVD-16 score, which computes the FVD based on the first 16 frames. 
+
+Baselines. We compare SkeletonGaussian with several re-cent 4D generation methods capable of generating multi-view videos from a single-view video input, including Con-sistent4D [13], STAG4D [66], 4DGen [63], and Dream-Gaussian4D [43]. All baselines are evaluated on the Consis-Reference video  SkeletonGaussian  (Ours)  STAG4D  DreamGaussian4D Figure 5: Qualitative Comparisons. We compare our method with STAG4D [66] and DreamGaussian4D [43]. For each instance, we render two viewpoints at two time steps. We also visualize the skeleton poses of SkeletonGaussian. Table 1: Quantitative Evaluation of 4D Generation on the Consistent4D Dataset. SkeletonGaussian outperforms in both image quality and video frame consistency. Method CLIP ↑ LPIPS ↓ FVD ↓
+
+Consistent4D [13] 0.877 0.161 1518.5 DreamGaussian4D [43] 0.913 0.143 994.11 4DGen(16 frames) [63] 0.909 0.137 913.10 STAG4D [66] 0.909 0.126 992.2 
+
+SkeletonGaussian (Ours) 0.923 0.125 847.8 
+
+tent4D dataset using their official code and configurations. Quantitative and qualitative comparisons are presented in Figure 5 and Table 1. 
+
+> 4.2. Comparisons
+
+Quantitative Comparisons. As shown in Table 1, our method outperforms STAG4D, DreamGaussian4D, and 4DGen on the Consistent4D [13] dataset in terms of ref-erence view alignment (LPIPS, CLIP), indicating that our approach generates more realistic images. Furthermore, our method achieves the lowest FVD score, demonstrating that our generated videos exhibit fewer temporal artifacts and better match real-world footage. These results highlight the effectiveness of SkeletonGaussian. 
+
+Qualitative Comparison. We compare the 4D outputs gen-erated by our method with STAG4D and DreamGaussian4D in Figure 5. For each video, we render the 4D results at two timestamps and from two perspectives: one from the front and the other from the back. Additionally, we visualize the skeletons of our method. Our approach achieves high-fidelity reconstruction with stable geometry and consistent texture. The results maintain fine details across frames, demonstrating robustness in both spatial and temporal as-pects. 
+
+User Study. To validate our method, we conduct user stud-ies to evaluate multi-view video synthesis and 4D outputs. We select 20 real-world and synthetic videos from the Ob-javerse [5] and Consistent4D [13] datasets. Participants compare results from three methods (SkeletonGaussian and three baselines) based on a novel camera view, choosing the most stable, realistic, and reference-like video. Skele-tonGaussian is preferred by 32.5%, followed by STAG4D (27.5%), 4DGen (22.5%), and DreamGaussian4D (17.5%). (c) Full 
+
+(Rigid+Non -rigid )
+
+(a)  Rigid -only 
+
+(LBS) 
+
+(b) Non -rigid -only 
+
+(HexPlane+MLP )Figure 6: Qualitative evaluations of the ablation study. We visualize the skeleton poses and the objects at different time steps. 
+
+> 4.3. Ablation Studies
+
+In this section, we evaluate the effectiveness of various motion modeling methods by analyzing the quality of the generated 4D Gaussians through a series of ablation studies. We assess the quality, memory requirements, and training time of different motion modeling approaches, providing quantitative comparisons in Table 2 and qualitative compar-isons in Figure 6. 
+
+Rigid-only (LBS). Using only rigid LBS preserves articu-lated structure but underfits fine non-rigid motion (see Fig-ure 6). Thanks to the compact pose parameterization that scales as O(B×3×T ), it achieves the smallest deformation-module VRAM and the shortest training time in Table 2. In our setting with B ≈ 30 and T = 32 , this amounts to 
+
+30 ×32 ×3 scalars, i.e., only storing joint rotation angles; the rigid stage takes about 1000 steps ( 0.2 h ). 
+
+Non-rigid-only (HexPlane+MLP). The non-rigid field captures detailed deformations but lacks an articulated prior, reducing temporal stability. Its parameter count scales with grid/plane resolutions and MLP widths, leading to the largest deformation-module VRAM and the longest training time; empirically the memory cost grows roughly O(T 2)
+
+with sequence length, making long sequences hard to opti-mize. On Consistent4D with T = 32 , we measure the defor-mation module VRAM at 136.40 MiB, and the deformation stage takes about 8000 steps ( 1.5 h ). Quantitatively, it can slightly improve per-frame fidelity (LPIPS/CLIP) but still trails the Full model on overall temporal quality. The Full (Rigid+Non-rigid) model combines both stages; its deformation-module VRAM is close to the non-rigid variant with a negligible skeleton overhead, and the total training time is roughly the sum of the two stages ( 1.7 h ). 
+
+Pose Smoothness. The pose-smoothness regularizer im-proves the temporal continuity of articulated poses, yielding smoother motion and fewer jitters. Quantitatively, remov-ing it degrades LPIPS/FVD, as summarized in Table 4. 
+
+Skeleton Extractor (Coverage Axis++ vs UniRig). We also ablate the skeleton extractor under the same pipeline. Coverage Axis++ [53] selects skeletal points via cover-age heuristics and connects them via a Minimum Spanning Tree, whereas UniRig [67] provides a stronger, category-agnostic rigging prior with joint proposals and connectivity that we further regularize via FK. Replacing UniRig with Coverage Axis++ (row “Using Coverage Axis++” in Ta-ble 4) weakens temporal stability and increases artifacts. Qualitatively, Figure 6 shows more stable and semantically aligned joints with UniRig, which improves control and re-duces topological errors. 
+
+Impact of Initial Frame Selection. We further analyze how the choice of the initial reference frame affects the gen-eration results. Our method typically uses the first frame as the canonical reference. Experiments indicate that selecting a frame with clear visibility and a neutral pose contributes to a more accurate canonical 3D Gaussian initialization. How-ever, our skeleton-driven deformation mechanism provides strong geometric priors, making the system relatively ro-bust to the initial frame selection. Even when initialized from frames with partial self-occlusions, the method can recover plausible motion dynamics through the subsequent rigid and non-rigid optimization stages. Quantitative results are shown in Table 3. Table 2: Quantitative ablation on motion modeling. Metrics include CLIP/LPIPS/FVD and efficiency (VRAM in MiB and training time in minutes) measured for the deformation module only, excluding the static 3D Gaussian. We compare Rigid-only (LBS), Non-rigid-only (HexPlane+MLP), and Full (Rigid+Non-rigid). Method CLIP ↑ LPIPS ↓ FVD ↓ VRAM (MiB) ↓ Train Time (min) ↓               
+
+> Rigid-only (LBS) 0.901 0.135 1012.6 0.01 12 Non-rigid-only (HexPlane+MLP) 0.909 0.126 992.2 136.40 90
+> Full (Rigid+Non-rigid) 0.923 0.125 847.8 136.41 102
+
+Table 3: Ablation study on the impact of initial frame se-lection. We compare selecting the first frame (Frame 0), the middle frame (Frame 15), and a random frame as the initialization for the 3D Gaussian field. The results show consistent performance across different initial frames. Initial Frame Selection CLIP ↑ LPIPS ↓ FVD ↓
+
+Frame 0 (First Frame) 0.921 0.126 851.2 Frame 15 (Middle Frame) 0.923 0.125 847.8 
+
+Random Frame 0.919 0.128 858.5 Table 4: Compact ablations on pose smoothness and skele-ton extractor. “Coverage Axis++” swaps UniRig in the Full (Rigid+Non-rigid) model; “w/o Pose Smoothness” drops the pose-smoothness regularizer; “Full” uses UniRig with pose smoothness. Method CLIP ↑ LPIPS ↓ FVD ↓
+
+Using Coverage Axis++ 0.918 0.128 890.4 w/o Pose Smoothness 0.906 0.131 1034.3 Full (Rigid+Non-rigid) 0.923 0.125 847.8 
+
+5. Discussion 
+
+Limitations and Future Directions. We observe that in-correct skeleton retrieval can degrade the quality of the gen-erated results. Specifically, in some cases, severe topolog-ical errors in skeleton extraction can diminish the quality of the generated results. Additionally, there may be cases where objects do not have a clear skeleton structure, and our method performs poorly in these situations. The hex-plane deformation field demonstrates error compensation capabilities for mild skeletal inaccuracies, helping to ad-dress this issue. Furthermore, we are developing an adap-tive skeleton error-correcting mechanism that dynamically adjusts the skeleton structure during training. Please refer to Appendix Section 11 for a detailed analysis of failure cases. Currently, our method does not support multi-object mo-tion, thus limiting its applicability in scenarios involving multiple objects. Future work could address this limitation by incorporating independent skeletons for each object. Ad-ditionally, we are developing the integration of predefined skeleton templates, such as SMPL [28], to initialize the 3D Gaussian and skeleton structure using vertex and joint positions. We also successfully integrate the human pose estimation method ViTPose [59] into SkeletonGaussian to initialize the skeleton poses. This integration is expected to improve the accuracy and quality of 4D motion gener-ation significantly. Furthermore, our approach can seam-lessly integrate with skeleton-controlled video generation techniques, such as ControlNet [68, 8, 10]. Using 3D skele-tons as conditional inputs for diffusion models in 2D images opens new possibilities for 4D generation. Additionally, en-hanced skeletal control provides a novel representation of motion, which could be applied to motion-tracking tasks. 
+
+6. Conclusion 
+
+This paper introduces SkeletonGaussian, a framework for generating editable 4D Gaussian-based models from monocular video. By explicitly decomposing motion into rigid skeletal movements and fine-grained non-rigid details, this framework improves control and interpretability in 4D Gaussian modeling. SkeletonGaussian operates in three phases: constructing a static 3D Gaussian model, modeling rigid motion through skeletal LBS, and refining non-rigid motion using a hexplane-based deformation field. This hi-erarchical structure enables intuitive motion editing by ad-justing skeleton poses and aligning seamlessly with stan-dard animation workflows. Experimental results demon-strate that SkeletonGaussian delivers superior quality over existing methods, offering a new paradigm for editable 4D motion generation. 
+
+References              
+
+> [1] S. Bahmani, I. Skorokhodov, V. Rong, G. Wetzstein, L. Guibas, P. Wonka, S. Tulyakov, J. J. Park, A. Tagliasacchi, and D. B. Lindell. 4d-fy: Text-to-4d generation using hybrid score distillation sampling. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 7996–8006, 2024. 3 [2] Blender. Blender. https://www.blender.org/ ,2024. Accessed: 2024-10-22. 1, 2, 6 [3] A. Cao and J. Johnson. Hexplane: A fast representation for dynamic scenes. In Proceedings of the IEEE/CVF Con-
+
+ference on Computer Vision and Pattern Recognition , pages 130–141, 2023. 1, 3, 4 [4] J. Cao, A. Tagliasacchi, M. Olson, H. Zhang, and Z. Su. Point cloud skeletons via laplacian based contraction. In 
+
+2010 Shape Modeling International Conference , pages 187– 197. IEEE, 2010. 3 [5] M. Deitke, D. Schwenk, J. Salvador, L. Weihs, O. Michel, E. VanderBilt, L. Schmidt, K. Ehsani, A. Kembhavi, and A. Farhadi. Objaverse: A universe of annotated 3d objects. 
+
+arXiv preprint arXiv:2212.08051 , 2022. 7 [6] Z. Dou, C. Lin, R. Xu, L. Yang, S. Xin, T. Komura, and W. Wang. Coverage axis: Inner point selection for 3d shape skeletonization. In Computer Graphics Forum , volume 41, pages 419–432. Wiley Online Library, 2022. 3 [7] S. Fridovich-Keil, G. Meanti, F. R. Warburg, B. Recht, and A. Kanazawa. K-planes: Explicit radiance fields in space, time, and appearance. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 12479–12488, 2023. 3 [8] Y. Guo, C. Yang, A. Rao, Z. Liang, Y. Wang, Y. Qiao, M. Agrawala, D. Lin, and B. Dai. Animatediff: Animate your personalized text-to-image diffusion models without specific tuning. arXiv preprint arXiv:2307.04725 , 2023. 9 [9] F. G. Harvey, M. Yurick, D. Nowrouzezahrai, and C. Pal. Ro-bust motion in-betweening. ACM Transactions on Graphics (TOG) , 39(4):60–1, 2020. 3 [10] L. Hu. Animate anyone: Consistent and controllable image-to-video synthesis for character animation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8153–8163, 2024. 9 [11] L. Hu, H. Zhang, Y. Zhang, B. Zhou, B. Liu, S. Zhang, and L. Nie. Gaussianavatar: Towards realistic human avatar modeling from a single video via animatable 3d gaussians. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 634–644, 2024. 1, 3 [12] Y.-H. Huang, Y.-T. Sun, Z. Yang, X. Lyu, Y.-P. Cao, and X. Qi. Sc-gs: Sparse-controlled gaussian splatting for ed-itable dynamic scenes. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 4220–4230, 2024. 3 [13] Y. Jiang, L. Zhang, J. Gao, W. Hu, and Y. Yao. Consis-tent4d: Consistent 360 {\ deg } dynamic object generation from monocular video. arXiv preprint arXiv:2311.02848 ,2023. 1, 2, 3, 6, 7 [14] B. Kerbl, G. Kopanas, T. Leimk¨ uhler, and G. Drettakis. 3d gaussian splatting for real-time radiance field rendering. 
+
+ACM Trans. Graph. , 42(4):139–1, 2023. 1, 3 [15] M. Kocabas, J.-H. R. Chang, J. Gabriel, O. Tuzel, and A. Ranjan. Hugs: Human gaussian splats. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 505–515, 2024. 1, 3 [16] J. P. Lewis, M. Cordner, and N. Fong. Pose space deforma-tion: a unified approach to shape interpolation and skeleton-driven deformation. In Seminal Graphics Papers: Pushing the Boundaries, Volume 2 , pages 811–818. 2023. 2 [17] P. Li, B. Wang, F. Sun, X. Guo, C. Zhang, and W. Wang. Q-mat: Computing medial axis transform by quadratic er-ror minimization. ACM Transactions on Graphics (TOG) ,35(1):1–16, 2015. 3 [18] T. Li, T. Bolkart, M. J. Black, H. Li, and J. Romero. Learning a model of facial shape and expression from 4d scans. ACM Trans. Graph. , 36(6):194–1, 2017. 2 [19] Z. Li, Y. Chen, and P. Liu. Dreammesh4d: Video-to-4d gen-eration with sparse-controlled gaussian-mesh hybrid repre-sentation. arXiv preprint arXiv:2410.06756 , 2024. 1 [20] H. Liang, Y. Yin, D. Xu, H. Liang, Z. Wang, K. N. Platanio-tis, Y. Zhao, and Y. Wei. Diffusion4d: Fast spatial-temporal consistent 4d generation via video diffusion models. arXiv preprint arXiv:2405.16645 , 2024. 3 [21] C. Lin, C. Li, Y. Liu, N. Chen, Y.-K. Choi, and W. Wang. Point2skeleton: Learning skeletal representations from point clouds. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 4277–4286, 2021. 3 [22] C.-H. Lin, J. Gao, L. Tang, T. Takikawa, X. Zeng, X. Huang, K. Kreis, S. Fidler, M.-Y. Liu, and T.-Y. Lin. Magic3d: High-resolution text-to-3d content creation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pat-tern Recognition , pages 300–309, 2023. 1 [23] Y. Lin, H. Han, C. Gong, Z. Xu, Y. Zhang, and X. Li. Consis-tent123: One image to highly consistent 3d asset using case-aware diffusion priors. arXiv preprint arXiv:2309.17261 ,2023. 1 [24] H. Ling, S. W. Kim, A. Torralba, S. Fidler, and K. Kreis. Align your gaussians: Text-to-4d with dynamic 3d gaus-sians and composed diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8576–8588, 2024. 3 [25] Y. Lipman, O. Sorkine, M. Alexa, D. Cohen-Or, D. Levin, C. R¨ ossl, and H.-P. Seidel. Laplacian framework for interac-tive mesh editing. International Journal of Shape Modeling ,11(01):43–61, 2005. 3 [26] M. Liu, C. Xu, H. Jin, L. Chen, M. Varma T, Z. Xu, and H. Su. One-2-3-45: Any single image to 3d mesh in 45 sec-onds without per-shape optimization. Advances in Neural Information Processing Systems , 36, 2024. 1 [27] R. Liu, R. Wu, B. Van Hoorick, P. Tokmakov, S. Zakharov, and C. Vondrick. Zero-1-to-3: Zero-shot one image to 3d object. In Proceedings of the IEEE/CVF international con-ference on computer vision , pages 9298–9309, 2023. 1, 5, 6[28] M. Loper, N. Mahmood, J. Romero, G. Pons-Moll, and M. J. Black. Smpl: A skinned multi-person linear model. In Sem-inal Graphics Papers: Pushing the Boundaries, Volume 2 ,pages 851–866. 2023. 1, 2, 9 [29] W. E. Lorensen and H. E. Cline. Marching cubes: A high res-olution 3d surface construction algorithm. In Seminal graph-ics: pioneering efforts that shaped the field , pages 347–353. 1998. 4 [30] J. Lu, J. Deng, R. Zhu, Y. Liang, W. Yang, T. Zhang, and X. Zhou. Dn-4dgs: Denoised deformable network with temporal-spatial aggregation for dynamic scene render-ing. Advances in Neural Information Processing Systems ,37:84114–84138, 2024. 3 [31] J. Luiten, G. Kopanas, B. Leibe, and D. Ramanan. Dynamic 3d gaussians: Tracking by persistent dynamic view synthe-sis. arXiv preprint arXiv:2308.09713 , 2023. 3 [32] L. Meyer, A. Gilson, O. Scholz, and M. Stamminger. Cher-rypicker: Semantic skeletonization and topological recon-struction of cherry trees, 2023. 3 [33] B. Mildenhall, P. P. Srinivasan, M. Tancik, J. T. Barron, R. Ramamoorthi, and R. Ng. Nerf: Representing scenes as neural radiance fields for view synthesis. Communications of the ACM , 65(1):99–106, 2021. 1, 3 [34] Z. Pan, Z. Yang, X. Zhu, and L. Zhang. Fast dynamic 3d object generation from a single-view video. arXiv preprint arXiv:2401.08742 , 2024. 1 [35] K. Park, U. Sinha, J. T. Barron, S. Bouaziz, D. B. Goldman, S. M. Seitz, and R. Martin-Brualla. Nerfies: Deformable neural radiance fields. In Proceedings of the IEEE/CVF In-ternational Conference on Computer Vision , pages 5865– 5874, 2021. 1 [36] K. Park, U. Sinha, P. Hedman, J. T. Barron, S. Bouaziz, D. B. Goldman, R. Martin-Brualla, and S. M. Seitz. Hypernerf: A higher-dimensional representation for topologically vary-ing neural radiance fields. arXiv preprint arXiv:2106.13228 ,2021. 1 [37] C. Pokhariya, I. N. Shah, A. Xing, Z. Li, K. Chen, A. Sharma, and S. Sridhar. Manus: Markerless grasp capture using articulated 3d gaussians. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 2197–2208, 2024. 1, 3 [38] G. Pons-Moll, F. Moreno-Noguer, E. Corona, and A. Pumarola. D-nerf: Neural radiance fields for dynamic scenes. In 2021 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . IEEE, 2021. 1 [39] B. Poole, A. Jain, J. T. Barron, and B. Mildenhall. Dream-fusion: Text-to-3d using 2d diffusion. arXiv preprint arXiv:2209.14988 , 2022. 1, 3 [40] G. Qian, J. Mai, A. Hamdi, J. Ren, A. Siarohin, B. Li, H.-Y. Lee, I. Skorokhodov, P. Wonka, S. Tulyakov, et al. Magic123: One image to high-quality 3d object genera-tion using both 2d and 3d diffusion priors. arXiv preprint arXiv:2306.17843 , 2023. 1 [41] Z. Qian, S. Wang, M. Mihajlovic, A. Geiger, and S. Tang. 3dgs-avatar: Animatable avatars via deformable 3d gaus-sian splatting. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 5020– 5030, 2024. 1, 3 [42] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin, J. Clark, et al. Learning transferable visual models from natural language supervision. In International conference on machine learn-ing , pages 8748–8763. PMLR, 2021. 6 [43] J. Ren, L. Pan, J. Tang, C. Zhang, A. Cao, G. Zeng, and Z. Liu. Dreamgaussian4d: Generative 4d gaussian splatting. 
+
+arXiv preprint arXiv:2312.17142 , 2023. 3, 6, 7 [44] R. Shi, H. Chen, Z. Zhang, M. Liu, C. Xu, X. Wei, L. Chen, C. Zeng, and H. Su. Zero123++: a single image to con-sistent multi-view diffusion base model. arXiv preprint arXiv:2310.15110 , 2023. 1, 5, 6 [45] U. Singer, S. Sheynin, A. Polyak, O. Ashual, I. Makarov, F. Kokkinos, N. Goyal, A. Vedaldi, D. Parikh, J. Johnson, et al. Text-to-4d dynamic scene generation. arXiv preprint arXiv:2301.11280 , 2023. 3 [46] Sketchfab. Sketchfab 3d models. https://sketchfab. com/3d-models , 2024. Accessed: 2024-10-22. 6 [47] O. Sorkine and M. Alexa. As-rigid-as-possible surface mod-eling. In Symposium on Geometry processing , volume 4, pages 109–116. Citeseer, 2007. 3 [48] P. Starke, S. Starke, T. Komura, and F. Steinicke. Motion in-betweening with phase manifolds. Proceedings of the ACM on Computer Graphics and Interactive Techniques , 6(3):1– 17, 2023. 3 [49] J. Sun, B. Zhang, R. Shao, L. Wang, W. Liu, Z. Xie, and Y. Liu. Dreamcraft3d: Hierarchical 3d generation with boot-strapped diffusion prior. arXiv preprint arXiv:2310.16818 ,2023. 1 [50] J. Tang, J. Ren, H. Zhou, Z. Liu, and G. Zeng. Dreamgaus-sian: Generative gaussian splatting for efficient 3d content creation. arXiv preprint arXiv:2309.16653 , 2023. 1, 3 [51] T. Unterthiner, S. Van Steenkiste, K. Kurach, R. Marinier, M. Michalski, and S. Gelly. Towards accurate generative models of video: A new metric & challenges. arXiv preprint arXiv:1812.01717 , 2018. 6 [52] H. Wang, X. Du, J. Li, R. A. Yeh, and G. Shakhnarovich. Score jacobian chaining: Lifting pretrained 2d diffusion models for 3d generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 12619–12629, 2023. 1, 3 [53] Z. Wang, Z. Dou, R. Xu, C. Lin, Y. Liu, X. Long, S. Xin, L. Liu, T. Komura, X. Yuan, et al. Coverage axis++: Efficient inner point selection for 3d shape skeletonization. arXiv preprint arXiv:2401.12946 , 2024. 3, 8, 1 [54] G. Wu, T. Yi, J. Fang, L. Xie, X. Zhang, W. Wei, W. Liu, Q. Tian, and X. Wang. 4d gaussian splatting for real-time dynamic scene rendering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 20310–20320, 2024. 1, 3 [55] S. Wu, H. Huang, M. Gong, M. Zwicker, and D. Cohen-Or. Deep points consolidation. ACM Transactions on Graphics (ToG) , 34(6):1–13, 2015. 3 [56] Z. Wu, C. Yu, Y. Jiang, C. Cao, F. Wang, and X. Bai. Sc4d: Sparse-controlled video-to-4d generation and motion trans-fer. arXiv preprint arXiv:2404.03736 , 2024. 3 [57] Y. Xie, C.-H. Yao, V. Voleti, H. Jiang, and V. Jampani. Sv4d: Dynamic 3d content generation with multi-frame and multi-view consistency. arXiv preprint arXiv:2407.17470 , 2024. 3[58] J. Xing, M. Xia, Y. Zhang, H. Chen, X. Wang, T.-T. Wong, and Y. Shan. Dynamicrafter: Animating open-domain images with video diffusion priors. arXiv preprint arXiv:2310.12190 , 2023. 1 [59] Y. Xu, J. Zhang, Q. Zhang, and D. Tao. Vitpose: Sim-ple vision transformer baselines for human pose estima-tion. Advances in Neural Information Processing Systems ,35:38571–38584, 2022. 9 [60] Z. Xu, Y. Zhou, E. Kalogerakis, and K. Singh. Predicting animation skeletons for 3d articulated models via volumetric nets. In 2019 international conference on 3D vision (3DV) ,pages 298–307. IEEE, 2019. 3 [61] Z. Yang, X. Gao, W. Zhou, S. Jiao, Y. Zhang, and X. Jin. De-formable 3d gaussians for high-fidelity monocular dynamic scene reconstruction. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 20331–20341, 2024. 1, 3 [62] W. Yifan, N. Aigerman, V. G. Kim, S. Chaudhuri, and O. Sorkine-Hornung. Neural cages for detail-preserving 3d deformations. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 75–83, 2020. 3 [63] Y. Yin, D. Xu, Z. Wang, Y. Zhao, and Y. Wei. 4dgen: Grounded 4d content generation with spatial-temporal con-sistency. arXiv preprint arXiv:2312.17225 , 2023. 3, 6, 7 [64] C. Yu, Q. Zhou, J. Li, Z. Zhang, Z. Wang, and F. Wang. Points-to-3d: Bridging the gap between sparse points and shape-controllable text-to-3d generation. In Proceedings of the 31st ACM International Conference on Multimedia ,pages 6841–6850, 2023. 1 [65] Y.-J. Yuan, Y.-T. Sun, Y.-K. Lai, Y. Ma, R. Jia, and L. Gao. Nerf-editing: geometry editing of neural radiance fields. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pages 18353–18364, 2022. 1 [66] Y. Zeng, Y. Jiang, S. Zhu, Y. Lu, Y. Lin, H. Zhu, W. Hu, X. Cao, and Y. Yao. Stag4d: Spatial-temporal anchored generative 4d gaussians. arXiv preprint arXiv:2403.14939 ,2024. 3, 6, 7, 1 [67] J.-P. Zhang, C.-F. Pu, M.-H. Guo, Y.-P. Cao, and S.-M. Hu. One model to rig them all: Diverse skeleton rigging with unirig. arXiv preprint arXiv:2504.12451 , 2025. 1, 3, 4, 6, 8 [68] L. Zhang, A. Rao, and M. Agrawala. Adding conditional control to text-to-image diffusion models. In Proceedings of the IEEE/CVF International Conference on Computer Vi-sion , pages 3836–3847, 2023. 9 [69] R. Zhang, P. Isola, A. A. Efros, E. Shechtman, and O. Wang. The unreasonable effectiveness of deep features as a percep-tual metric. In Proceedings of the IEEE conference on com-puter vision and pattern recognition , pages 586–595, 2018. 6[70] T. Zhang, Q. Gao, W. Li, L. Liu, and B. Chen. Bags: Build-ing animatable gaussian splatting from a monocular video with diffusion priors. arXiv preprint arXiv:2403.11427 ,2024. 3 [71] Y. Zhao, Z. Yan, E. Xie, L. Hong, Z. Li, and G. H. Lee. Ani-mate124: Animating one image to 4d dynamic scene. arXiv preprint arXiv:2311.14603 , 2023. 3 [72] R. Zhu, Y. Liang, H. Chang, J. Deng, J. Lu, W. Yang, T. Zhang, and Y. Zhang. Motiongs: Exploring ex-plicit motion guidance for deformable 3d gaussian splat-ting. Advances in Neural Information Processing Systems ,37:101790–101817, 2024. 3 [73] S. Zuffi, A. Kanazawa, D. W. Jacobs, and M. J. Black. 3d menagerie: Modeling the 3d shape and pose of animals. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , pages 6365–6373, 2017. 2 Supplementary Material for SkeletonGaussian: Editable 4D Generation through Gaussian Skeletonization 
+
+7. HexPlane Deformation Field 
+
+To achieve a precise refinement of the rigidly deformed 3D Gaussian Gr into the observed 3D Gaussian Go, we adopt a HexPlane combined with an MLP as a 3D Gaus-sian deformation model. This setup estimates the positional offset, rotational variation, and scaling adjustment of each Gaussian based on its spatial coordinates (x, y, z ) and tem-poral input t. As depicted in Figure 7, the HexPlane frame-work breaks down the 4D field into six feature planes, each corresponding to a pair of coordinate axes. This decompo-sition method not only ensures computational efficiency but also represents the 4D field as a weighted combination of trainable 4D basis functions. We first extract feature repre-sentations from the HexPlane. These features are then pro-cessed by an MLP decoder, which outputs the Gaussian’s positional displacement, rotation adjustment, and scaling transformation. 
+
+8. Implementation Details 
+
+We initialize the static object with 10000 Gaussian points within a sphere of radius 2 and train the object over 1500 steps. Using the Coverage Axis++ method [53], 70 skeleton points are extracted from the resulting static 3D Gaussian. Subsequently, skeleton poses are trained for 2,500 steps, with a smoothing window of size 3 applied to ensure tempo-ral smoothness. The learning rate for pose training gradu-ally decreases from 0.00005 to 0.000005. The learning rate for the deformation hexplane is initialized at 1.6×10 −4, and it decays to 1.6 × 10 −6 by the end of the training process. The loss functions are configured as follows: the weight for the SDS loss is fixed at 1, while the reconstruction and mask losses are weighted at 2 × 10 4 and 1 × 10 3, respec-tively. Real-time rendering achieves a performance rate of 150 FPS. 
+
+9. Additional Information on Loss Functions 
+
+We adopt the multi-view Score Distillation Sampling (SDS) loss formulation as described in [66]. At each timestep t, we obtain six anchor views {Iit }i∈{ 1... 6} along with a reference view Iref t . During optimization, we em-ploy multi-view SDS, leveraging both the generated images 
+
+{Iit }i=1 ... 6 and the reference image Iref t . The multi-view score distillation loss function LM V -SDS is defined as: 
+
+LM V -SDS = α1LiSDS + α2Lref SDS 
+
+= α1LSDS (ϕ, I it ) + α2LSDS (ϕ, I ref t ),
+
+where α1 and α2 are weighting parameters. The index i is chosen based on the proximity of the rendering viewpoint to that of the generated images. This selection process, known as multi-view score distillation sampling, involves identify-ing the reference image that is closest to the rendered cam-era view for SDS loss computation. The gradient of the SDS loss is given by: 
+
+∇θ LSDS (ϕ, x) = Et,ϵ 
+
+
+
+ω(t)(ˆ ϵθ (zt; Iin , R, T, t ) − ϵ) ∂x
+
+∂θ 
+
+
+
+,
+
+ˆz = zt − σtˆϵt(z; Iin , R, T).
+
+Here, θ represents the parameters of the 3D representation, 
+
+x denotes the rendered image at the current view, t is the timestep in the diffusion process, ϵ is the ground-truth noise, and ˆϵ is the predicted noise from the noisy image zt, condi-tioned on the initial input Iin and the relative camera pose 
+
+(R, T).In addition, we compute both the reconstruction loss 
+
+Lrec and the foreground mask loss Lmask using the ref-erence image. These losses are formulated as follows: 
+
+Lrec = Iit − Iref t
+
+> 2
+
+, (10) 
+
+Lmask = M it − M ref t
+
+> 2
+
+, (11) where Iit and Iref t represent the generated and reference im-ages, respectively, while M it and M ref t denote their corre-sponding foreground masks. To ensure spatiotemporal consistency, we apply Total Variation (TV) regularization Lreg , following [3]. The final optimization objective is formulated as: 
+
+L = LM V −SDS + λ1Lrec + λ2Lmask + λ3Lreg , (12) where λ1, λ2, and λ3 are weighting parameters that con-trol the contributions of the respective loss terms. 
+
+10. Additional Results for 4D Generation 
+
+We present additional results for 4D generation to fur-ther illustrate the effectiveness of our approach. Rotation-view visualizations of the generated objects are shown in Figure 8, while front-view visualizations are provided in Figure 9. Additionally, we include visualizations of the corresponding skeletons that capture the objects’ motion. Notably, the skeleton poses align seamlessly with the ob-jects’ movements, highlighting the motion modeling ability of SkeletonGaussian. 11. Failure Cases 
+
+Through experimental analysis, we observe that the qual-ity of skeleton extraction significantly impacts our 4D gen-eration performance, although these failure cases occur in-frequently in our test scenarios. Our investigation identifies two primary categories of failures: 
+
+Category 1: Inaccurate Skeleton Extraction As shown in Figure 10, the egret example illustrates how errors in skeleton extraction can degrade generation quality. In this case, the canonical frame is set to the 15th frame of the sequence, where the bird’s legs are crossed. Consequently, our method misinterprets the leg topology, leading to incor-rect skeletal connections that compromise the quality of 4D generation. This issue can be mitigated by selecting a dif-ferent canonical frame (the 10th frame in this example) or manually refining the extracted skeleton. 
+
+Category 2: Non-Skeletal Structures The pistol exam-ple in Figure 11 highlights the limitations of skeletal mod-els in representing rigid-body transformations. Since the gun barrel lacks articulation, it does not conform to a skele-tal parameterization, making this representation unsuitable for capturing its motion. As a result, our framework strug-gles to accurately reconstruct sliding motions along the bar-rel axis, as skeletal transformations cannot effectively ap-proximate rigid translations. This limitation underscores the broader challenge of applying skeletal-based approaches to non-articulated objects. However, our method excels at modeling naturally articulated structures such as humans, animals, and plants, where motion priors align well with the skeletal representation space. Rigid deformed 
+
+3D Gaussians 𝒢 r Δ Position 
+
+Δ Rotation 
+
+Δ Scaling  Observation space 
+
+3D Gaussian  𝒢 𝑜 
+
+Time  t
+
+HexPlane 
+
+YZ 
+
+XZ XY 
+
+Yt 
+
+Zt  Xt 
+
+Space Plane 
+
+Space -Time 
+
+Plane 
+
+MLP 
+
+Query 
+
+Query 
+
+Grid Feature Figure 7: Illustration of the non-rigid deformation field using HexPlane, which captures intricate motion details. Figure 8: Qualitative results illustrating gradual changes in time stamps and view angles from left to right. Figure 9: Front-view qualitative results with varying time stamps from left to right. Input Video       
+
+> Generated Output
+> (select 15th frame
+> as static frame)
+> Generated Skeleton
+> Generated Output
+> and Skeleton
+> Generated Output
+> (select 10th frame
+> as static frame)
+> Generated Skeleton
+> Generated Skeleton
+> Frame 0 Frame 5 Frame 10 Frame 15 Frame 20 Frame 25 Frame 30
+
+Figure 10: Visualization of failure cases. Top: The egret case shows how leg posture misestimation can lead to incorrect results when the 15th frame is selected as the static frame. Bottom: Selecting the 10th frame as static frame can resolves the issue. Input Video 
+
+> Generated Output
+> Generated Skeleton
+> Generated Output
+> and Skeleton
+
+Figure 11: Visualization of failure cases. The pistol case demonstrates the challenges of modeling non-articulated structures.
