@@ -1,0 +1,4453 @@
+Title: Stable Velocity: A Variance Perspective on Flow Matching
+
+URL Source: https://arxiv.org/pdf/2602.05435v1
+
+Published Time: Fri, 06 Feb 2026 02:00:20 GMT
+
+Number of Pages: 35
+
+Markdown Content:
+# Stable Velocity: A Variance Perspective on Flow Matching 
+
+Donglin Yang † 1 Yongxing Zhang 2 3 Xin Yu 1 Liang Hou 4 Xin Tao 4 Pengfei Wan 4 Xiaojuan Qi ‡ 1
+
+Renjie Liao ‡ 2 3 5 
+
+## Abstract 
+
+While flow matching is elegant, its reliance on single-sample conditional velocities leads to high-variance training targets that destabilize optimiza-tion and slow convergence. By explicitly char-acterizing this variance, we identify 1) a high-variance regime near the prior, where optimiza-tion is challenging, and 2) a low-variance regime 
+
+near the data distribution, where conditional and marginal velocities nearly coincide. Leveraging this insight, we propose Stable Velocity , a uni-fied framework that improves both training and sampling. For training, we introduce Stable Veloc-ity Matching (StableVM), an unbiased variance-reduction objective, along with Variance-Aware Representation Alignment (VA-REPA), which adaptively strengthen auxiliary supervision in the 
+
+low-variance regime . For inference, we show that dynamics in the low-variance regime admit closed-form simplifications, enabling Stable Ve-locity Sampling (StableVS), a finetuning-free ac-celeration. Extensive experiments on ImageNet 
+
+256 × 256 and large pretrained text-to-image and text-to-video models, including SD3.5, Flux, Qwen-Image, and Wan2.2, demonstrate consis-tent improvements in training efficiency and more than 2× faster sampling within the low-variance regime without degrading sample quality. Our code is available at https://github.com/ linYDTHU/StableVelocity .
+
+## 1. Introduction 
+
+Recent years have seen major advances in generative mod-eling driven by diffusion (Sohl-Dickstein et al., 2015; Ho et al., 2020; Song et al., 2020; Karras et al., 2022b), flow  
+
+> †
+
+This work was conducted during the author’s internship at Kling Team. ‡ Project Lead. 1University of Hong Kong, Hong Kong 2University of British Columbia, Canada 3Vector Insti-tute for AI, Toronto, Canada 4Kling Team, Kuaishou Technol-ogy 5Canada CIFAR AI Chair. Correspondence to: Xiaojuan Qi 
+
+<xjqi@eee.hku.hk >, Renjie Liao <rjliao@ece.ubc.ca >.
+
+Preprint. February 6, 2026. 
+
+matching (Lipman et al., 2022; Liu et al., 2022), and stochas-tic interpolants (Albergo et al., 2023; Ma et al., 2024; Yu et al., 2024). These approaches transform a simple prior dis-tribution, e.g ., standard normal, into a complex data distribu-tion through a stochastic or deterministic dynamic process, admitting a unified formulation that has enabled scalable training and state-of-the-art performance across image gen-eration (Labs, 2024; Esser et al., 2024; Wu et al., 2025a) and restoration (Rombach et al., 2022; Lin et al., 2024), and video generation (Brooks et al., 2024; Wan et al., 2025). Among these approaches, Conditional Flow Matching (CFM) (Tong et al., 2023) provides an elegant objective for learning the probability flow without explicitly simu-lating the forward SDE or PF-ODE. By training a neural network to predict conditional velocity fields, CFM enjoys both theoretical guarantees and practical scalability. Despite its elegance, CFM suffers from a fundamental yet underexplored limitation: the variance of its training tar-get. In practice, the conditional velocity vt(xt | x0) is a single-sample Monte Carlo estimate of the true marginal ve-locity vt(xt), which can exhibit high variance, particularly at timesteps where the marginal distribution remains close to the prior. Such high-variance targets not only slow con-vergence, but also induce a mismatch between the empirical optimization dynamics and the ideal population objective. While prior work has empirically observed variance-related inefficiencies in diffusion training (Karras et al., 2022a; Choi et al., 2022; Xu et al., 2023), a principled variance-theoretic understanding within flow matching and stochastic interpolants has been largely missing. In this work, we develop a variance-based perspective on stochastic interpolants. By explicitly characterizing the vari-ance of conditional velocity targets, we reveal a two-regime structure that governs both training and inference: a high-variance regime near the prior, where optimization is inher-ently noisy, and a low-variance regime near the data distri-bution, where conditional and marginal velocities coincide. This insight naturally leads to the Stable Velocity frame-work. For training, we introduce Stable Velocity Match-ing (StableVM), an unbiased variance-reduction objective, together with Variance-Aware Representation Alignment (VA-REPA), which adaptively strengthen auxiliary super-1
+
+> arXiv:2602.05435v1 [cs.CV] 5 Feb 2026 Stable Velocity: A Variance Perspective on Flow Matching
+
+vision when the variance is low. For inference, we show that dynamics in the low-variance regime admit closed-form simplifications, enabling finetuning-free acceleration via Stable Velocity Sampling (StableVS). We validate our proposed approach on ImageNet 256 × 256 
+
+and standard text-to-image and text-to-video benchmarks using state-of-the-art pretrained models. StableVM and VA-REPA consistently outperform REPA (Yu et al., 2024) across a wide range of model scales and training variants, including REG (Wu et al., 2025b) and iREPA (Singh et al., 2025) (Sec. 4.2). Meanwhile, StableVS achieves more than 
+
+2× inference acceleration in the low-variance regime for recent flow-based models, such as SD3.5 (Esser et al., 2024), Flux (Labs, 2024), Qwen-Image (Wu et al., 2025a), and Wan2.2 (Wan et al., 2025), without perceptible degradation in sample quality (Sec. 4.3). 
+
+## 2. Variance Analysis of Flow Matching 
+
+We first briefly review flow matching and stochastic inter-polants. Details as well as their connections to score-based diffusion models are deferred to Appendix A. 
+
+Flow Matching and Stochastic Interpolants. Given sam-ples from an unknown data distribution q(x0) over Rd,flow matching (Lipman et al., 2022; Liu et al., 2022; Lip-man et al., 2024a) and stochastic interpolants (Albergo et al., 2023; Albergo & Vanden-Eijnden, 2023) define a continuous-time corruption process 
+
+xt = αtx0 + σtε, ε ∼ N (0 , I), (1) where αt and σt are differentiable functions satisfying α2 
+
+> t
+
++
+
+σ2 
+
+> t
+
+> 0 for all t ∈ [0 , 1] , with boundary conditions α0 =
+
+σ1 = 1 and α1 = σ0 = 0 . Most works (Ma et al., 2024; Yu et al., 2024; Lipman et al., 2022; Liu et al., 2022; Lipman et al., 2024a) adopt a simple linear interpolant αt = 1 −
+
+t, σ t = t. This process induces a conditional velocity field 
+
+vt(xt | x0) = σ′
+
+> t
+
+σt
+
+(xt − αtx0) + α′
+
+> t
+
+x0, (2) where α′ 
+
+> t
+
+and σ′ 
+
+> t
+
+denote the time derivative. The correspond-ing marginal velocity field 
+
+vt(xt) = Ept(x0|xt)[vt(xt | x0)] . (3) 
+
+Conditional Flow Matching (CFM). Training typically uses the CFM objective (Tong et al., 2023): 
+
+min  
+
+> θ
+
+Et, q (x0), p t(xt|x0)λt ∥vθ (xt, t ) − vt(xt|x0)∥2 , (4) where λt is a positive weighting function, and vθ (·, ·) : [0 , 1] × Rd → Rd is a neural velocity field parameterized by 
+
+θ. Here, the conditional path distribution is pt(xt | x0) =            
+
+> Figure 1. Variance curves of VCFM (t)with 15%–85% quantile bands. Evaluated on GMMs of varying dimensionality, CIFAR-10 images, and 256 ×256 ImageNet latents obtained by the Stable Diffusion VAE. The y-axis reports VCFM (t)normalized by the square root of the data dimension. See Appendix F.2 for details.
+
+N (xt | αtx0, σ 2 
+
+> t
+
+I). The minimizer of Eq. (4) is provably the true marginal velocity field (Tong et al., 2023; Xu et al., 2023; Ma et al., 2024): 
+
+v∗ 
+
+> θ
+
+(xt, t ) = Ept(x0|xt) [vt(xt | x0)] = vt(xt). (5) 
+
+Variance of CFM. Although unbiased, the CFM target is only a single-sample Monte Carlo estimator of Eq. (3), which can exhibit high variance (Owen, 2013; Elvira & Martino, 2021). Following Xu et al. (2023), we quantify this variance by the average trace of the conditional velocity covariance at time t:
+
+VCFM (t) = Ept(xt)
+
+Tr  Cov pt(x0|xt)
+
+ vt(xt | x0) 
+
+= Eq(x0), p t(xt|x0)
+
+h
+
+∥vt(xt | x0) − vt(xt)∥2i
+
+. (6) To characterize the behavior of VCFM (t), we evaluate it on Gaussian mixture models (GMMs), CIFAR-10 (Krizhevsky, 2009), and ImageNet latent codes produced by the pre-trained Stable Diffusion VAE (Rombach et al., 2022). As shown in Fig. 1, two consistent patterns emerge: • Low- vs. high-variance regimes. VCFM (t) remains close to zero at small t but increases rapidly as t grows, naturally separating the process into a low-variance regime (0 ≤
+
+t < ξ ) and a high-variance regime (ξ ≤ t ≤ 1). • Effect of dimensionality. As data dimensionality in-creases, the split point ξ shifts toward 1, enlarging the low-variance regime while also increasing the overall variance magnitude. Fig. 2 illustrates the two regimes: in the low -variance regime 
+
+the posterior concentrates on a single reference sample, while in the high -variance regime it spreads over multiple samples, leading to large variance. Increasing dimension-ality delays this mixing effect and shifts the split point ξ
+
+closer to 1. Although the exact split point ξ depends on the 2Stable Velocity: A Variance Perspective on Flow Matching 
+
+unknown data distribution, our variance analysis suggests a clear dimensionality-dependent trend, which provides prac-tical guidance for choosing ξ in real-world settings. In summary, these observations naturally suggest two key questions: (1) How can we reduce training variance in the high - variance regime without altering the global mini-mizer? (2) How can the low -variance regime be exploited for stronger supervision and faster sampling? 
+
+## 3. Variance-Driven Optimization of Training and Sampling 
+
+In this section, we address the two questions posed in Sec. 2 from a unified, variance-driven perspective. 
+
+3.1. Stable Velocity Matching 
+
+We propose Stable Velocity Matching (StableVM), a variance-reduced yet unbiased alternative to CFM. The key idea is to replace the single-sample conditional velocity tar-get with a multi-sample, self-normalized aggregation over reference data points under the multi-sample conditional path. This reduces training variance while preserving the exact same global minimizer as CFM in Eq. (5). 
+
+Multi-sample conditional path. Inspired by (Xu et al., 2023), we introduce n reference samples {xi
+
+> 0
+
+}ni=1 ,drawn i.i.d . from the data distribution q(x0). We then define a composite conditional probability path 
+
+pGMM 
+
+> t
+
+ xt | xi
+
+> 0
+> ni=1
+
+ := Pni=1 1 
+
+> n
+
+pt(xt | xi
+
+> 0
+
+), which is essentially a mixture of conditional probabilities associated with each reference sample. The posterior under the GMM path admits a simple mixture form (Prop. E.1) , and pre-serves the original marginal path in expectation, a property that is crucial for unbiasedness. 
+
+StableVM target. Based on the reference samples, we define the StableVM target bvStableVM as the self-normalized importance weighted average of the conditional velocities:              
+
+> bvStableVM (xt;{xi
+> 0}ni=0 ) :=
+> Pnk=1 pt(xt|xk
+> 0)vt(xt|xk
+> 0)
+> Pnj=1 pt(xt|xj
+> 0).
+
+(7) Compared to the CFM target vt(xt | x0), this can be viewed as a multi-sample Monte Carlo estimator of the same marginal velocity field vt(xt).
+
+Training objective. We train a neural velocity field 
+
+vθ (xt, t ) by minimizing 
+
+LStableVM (θ)= Et, {xi
+
+> 0}∼ qn
+> xt∼pGMM
+> t
+
+vθ (xt, t ) − bvStableVM (xt; {xi
+
+> 0
+
+}ni=0 ) 2
+
+.
+
+(8) Our StableVM target is compatible with general stochastic interpolant framework. Under the special case of VP dif-fusion, it resembles the STF objective (Eq. (22)) in form, but differs fundamentally in how the noisy training input 
+
+xt is constructed. STF generates xt by perturbing a single 
+
+reference sample, i.e., xt ∼ pt(xt | x10), and then forms a self-normalized weighted target over the remaining refer-ences. In contrast, StableVM explicitly samples xt from a composite conditional path pGMM  
+
+> t
+
+over the entire reference batch, which yields an unbiased target and extends naturally beyond VP diffusion. Details are provided in Appendix C. 
+
+Unbiasedness and optimality. The following theorem es-tablishes two key properties of StableVM: it remains unbi-ased and admits the same global minimizer as CFM. 
+
+Theorem 3.1. (a) The StableVM target is unbiased. That is, for any xt, we have 
+
+E{xi 
+
+> 0}∼ pGMM
+> t(·| xt)
+
+hbvStableVM (xt; {xi
+
+> 0
+
+}ni=0 )
+
+i
+
+= vt(xt).
+
+(b) The global minimizer v∗(xt, t ) of the StableVM objective 
+
+LStableVM is the true velocity field vt(xt).
+
+Proofs are provided in Appendix E.2. 
+
+Variance of StableVM. While remaining unbiased, Sta-bleVM strictly reduces the variance of the training target. Following Eq. (6), we derive the average trace-of-covariance 
+
+VStableVM (t)= Ext∼pt
+
+
+
+Tr 
+
+
+
+Cov {xi
+
+> 0}∼ pGMM
+> t
+
+bvStableVM 
+
+ 
+
+= E xt∼pt
+
+> {xi
+> 0}∼ pGMM
+> t
+
+vt(xt) − bvStableVM (xt; {xi
+
+> 0
+
+}ni=0 ) 2
+
+.
+
+(9) 
+
+Theorem 3.2. Fix t ∈ [0 , 1] . We always have VStableVM (t) ≤VCFM (t).
+
+In fact, we can prove the following stronger variance bound stating that the variance decays in the rate of O(1 /n ). Proofs are provided in Appendix E.3. 
+
+Theorem 3.3. Fix t ∈ [0 , 1] . Let vt be bounded. Assume  (n − 1) ∥bvt − vt(xt)∥2∞ 
+
+> n=1
+
+is uniformly integrable. Let 
+
+ε ∈ (0 , 1) . Assume 
+
+M := 
+
+Z
+
+> {x:pt(x)≤ε}
+
+Ex0∼pt(·| xt)
+
+h
+
+∥vt(xt | x0) − vt(xt)∥2i
+
+dxt < ∞.
+
+Then, for large enough n, we have 
+
+VStableVM (t) ≤ 1
+
+n − 1
+
+ 1
+
+ε · V CFM (t) + M
+
+
+
++ o
+
+ 1
+
+n
+
+
+
+.
+
+The training procedure is summarized in Alg. 1. 3Stable Velocity: A Variance Perspective on Flow Matching                      
+
+> Figure 2. Illustration of CFM variance VCFM (t).(a) The low-variance regime (t≤ξ), where the posterior pt(x0|xt)is sharply concentrated and the conditional velocity vt(xt|x0)nearly coincides with the true velocity vt(xt), yielding VCFM (t)≈0. (b) The
+> high-variance regime (t > ξ ), the posterior spreads over multiple reference samples, causing the conditional velocity to fluctuate and resulting in a large VCFM (t).
+
+Extension to Class-Conditional Generation with Classifier-Free Guidance. Extending StableVM to condi-tional generation introduces sparsity challenges, as only a small subset of reference samples may match a given label or prompt. To address this, we maintain a class-conditional memory bank of capacity K, pre-populated from the training dataset and updated using a FIFO policy. This allows StableVM to construct the mixture-based noisy input and target field using a sufficiently large and diverse reference set even when per-batch class frequency is low. Crucially, this mechanism preserves unbiasedness, as all references are drawn from the true data distribution, while effectively amortizing reference sampling over time. The full algorithm is provided in Alg. 2. 
+
+3.2. Variance-Aware Representation Alignment 
+
+Recent work on representation alignment (REPA) (Yu et al., 2024) and its variants (Leng et al., 2025; Wu et al., 2025b; Singh et al., 2025) demonstrates that auxiliary semantic supervision can substantially accelerate the training of diffu-sion transformers (Peebles & Xie, 2023a; Ma et al., 2024). From a variance-regime perspective, we empirically find that the effectiveness of REPA largely arises when applied in the low-variance regime .As shown in Sec. 2, the generative process decomposes into low- and high-variance regimes. In the low-variance regime , xt remains strongly coupled to x0, preserving se-mantic information and making representation alignment well-conditioned. In contrast, in the high-variance regime 
+
+near pure noise, xt carries little information about x0, and the posterior p(x0 | xt) becomes highly multimodal, ren-dering deterministic alignment ill-posed. Fig. 3 empirically illustrates this regime dependence. When evaluated on a well-trained model, the per-timestep representation-alignment loss remains low and learnable in the low-variance regime, but saturates at high values in the high-variance regime. Consistently, restricting representa-tion alignment to early timesteps yields substantially better FID than applying it uniformly, while applying it only in the high-variance regime provides negligible benefit. Motivated by these observations, we propose variance-aware representation alignment (VA-REPA): semantic alignment should be applied selectively in the low-variance regime 
+
+where the supervision signal is informative. This principle is independent of the specific representation or loss formu-lation and applies uniformly to REPA and its variants. Let ℓRA (xt) denote a per-sample representation-alignment loss. We introduce a nonnegative weighting function w(t) ∈
+
+[0 , 1] and define the overall training objective as 
+
+L = LStableVM + λRA 
+
+Et, xt [w(t) ℓRA (xt)] 
+
+Et[w(t)] . (10) The normalization by Et[w(t)] ensures that the alignment term is scaled by the number of effective samples , preventing vanishing gradients when most samples fall in the high-variance regime .
+
+Weighting functions. We consider three weighting schemes to modulate the alignment objective: (i) a hard threshold 
+
+whard (t) = I[t < ξ ] for explicit ablation; (ii) a sigmoid relax-ation wsigmoid (t) = σ(k(ξ − t)) , where k controls the sharp-ness of the transition; and (iii) an SNR-based weighting 
+
+wSNR (t) = SNR( t)SNR( t)+SNR( ξ) , with SNR( t) = α2 
+
+> t
+
+/σ 2 
+
+> t
+
+, which anchors the midpoint ( w = 0 .5) at t = ξ. All weights are applied per sample and normalized within each minibatch. 
+
+3.3. Stable Velocity Sampling 
+
+We introduce Stable Velocity Sampling (StableVS), a prin-cipled, finetuning-free acceleration strategy for sampling in the low-variance regime . As shown in Sec. 2 (Fig. 2), the conditional variance VCFM (t) becomes negligible over a range of early timesteps. In this regime, the instantaneous 4Stable Velocity: A Variance Perspective on Flow Matching 0.2 0.4 0.6 0.8      
+
+> Timestep t
+> 0.8
+> 0.7
+> 0.6
+> 0.5
+> 0.4
+> 0.3
+> Representation Alignment Loss
+> Learnable
+> (clear signal)
+> Hard to learn
+> (noisy signal)
+> (a) REPA Loss over Diffusion Time
+> Low-variance regime
+> High-variance regime
+> SiT-XL
+> (baseline)
+> REPA
+> t[0, 1]
+> REPA
+> t[0, 0.7]
+> REPA
+> t[0.7, 1]
+> 0
+> 10
+> 20
+> 30
+> 40
+> FID-50k
+> 41.00
+> 18.58 17.88
+> 38.89
+> (b) FID-50k @ 100k Iterations
+
+Figure 3. Motivation for variance-aware representation alignment. (a) In the low-variance regime , the alignment loss remains consistently low on a pretrained model from REPA (Yu et al., 2024), indicating a learnable and informative supervision signal. In contrast, in the high-variance regime , the loss stays high, reflecting the ill-posed nature of semantic recovery from noise. (b) Restricting representation alignment to the low-variance regime yields the best FID, while applying it only in the high-variance regime provides minimal meaningful improvement over the baseline. These results indicate that representation alignment should be activated adaptively rather than uniformly along the diffusion trajectory. 
+
+velocity vt(xt) is effectively determined by a single dom-inant data point x0, allowing the true velocity field to be well approximated by the conditional velocity vt(xt | x0).StableVS exploits this structure to enable stable, large-step integration without degrading sample quality, provided the model accurately recovers vt(xt).
+
+StableVS for SDE. For the reverse SDE (Eq. (16)), we derive the following DDIM-style (Song et al., 2021a) poste-rior: 
+
+pτ (xτ | xt, vt(xt)) = N  μτ |t, β 2 
+
+> t
+
+I , (11) where βt = fβ στ and fβ ∈ [0 , 1] is a control-lable parameter. We then define the noise ratio ρt := p(σ2 
+
+> τ
+
+− β2 
+
+> t
+
+)/σ 2 
+
+> t
+
+and the velocity coupling coefficient λt := (ατ − αtρt)/(α′ 
+
+> t
+
+− αtσ′
+
+> t
+
+/σ t). The posterior mean μτ |t is then given by: 
+
+μτ |t =
+
+
+
+ρt − λt
+
+σ′
+
+> t
+
+σt
+
+
+
+xt + λtvt(xt). (12) The full derivation is provided in Appendix E.4. 
+
+StableVS for ODE. For the probability flow ODE, we define the integral factor Ψt,τ := 1
+
+> Ct
+
+R τtC(s) 
+
+> σs
+
+ds , where 
+
+C(s) = α′ 
+
+> s
+
+− αsσ′
+
+> s
+
+/σ s. The exact solution at timestep 
+
+τ is: 
+
+xτ = στ
+
+ 1
+
+σt
+
+− σ′
+
+> t
+
+σt
+
+Ψt,τ 
+
+
+
+xt + Ψ t,τ vt(xt)
+
+
+
+. (13) The derivation is in Appendix E.5. In the special case of linear interpolant ( i.e ., αt = 1 − t,
+
+σt = t), setting βt = 0 in Eq. (11) makes two samplers coincide: 
+
+xτ = xt + ( τ − t)vt(xt). (14) In the low-variance regime , the probability flow trajectory reduces to a straight line with constant velocity, allowing exact integration via Euler steps of arbitrary size. 
+
+## 4. Experiments 
+
+In this section, we empirically validate the three components of our variance-driven framework. Specifically, we address the following questions: 1. Can StableVM and VA-REPA improve generation perfor-mance and training speed? (Tab. 1, 2) 2. Can StableVM and VA-REPA generalize across different training settings? (Tab. 2, 3, 4, Fig. 4) 3. Can StableVS greatly reduce the sampling steps within the low-variance regime without performance degradation on pretrained T2I and T2V models? (Tab. 5, 6, Fig. 5) 
+
+4.1. Setup Implementation Details. Unless otherwise specified, the implementations of StableVS and VA-REPA follow the con-figuration of REPA (Yu et al., 2024). All models are trained on the ImageNet (Deng et al., 2009) training split. Input im-ages are encoded into latent representations z ∈ R32 ×32 ×4
+
+using the pre-trained VAE from Stable Diffusion (Rombach et al., 2022). For StableVM and VA-REPA, we set the split point ξ = 0 .7, the bank capacity K = 256 , and adopt the sigmoid weighting function wsigmoid (t). StableVS uses 9 steps in the low-variance regime , with ξ = 0 .85 and fβ = 0 .
+
+Evaluation. For StableVM and VA-REPA, we follow the ADM evaluation protocol (Dhariwal & Nichol, 2021). Gen-eration quality is assessed using FID (Heusel et al., 2017), IS (Salimans et al., 2016), sFID (Nash et al., 2021), and precision/recall (Kynk ¨a ¨anniemi et al., 2019), all computed 5Stable Velocity: A Variance Perspective on Flow Matching 
+
+over 50K generated samples. Following Yu et al. (2024), we employ an SDE Euler-Maruyama sampler with 250 steps. For experiments with classifier-free guidance (CFG) (Ho & Salimans, 2022), we use a guidance scale of w = 1 .8 with interval-based CFG schedule (Kynk¨ a¨ anniemi et al., 2024). We further evaluate StableVS on standard text-to-image (T2I) and text-to-video (T2V) benchmarks. For T2I, we adopt the GenEval benchmark (Ghosh et al., 2023), which comprises 553 prompts spanning 6 categories. Following the official protocol, we generate four samples per prompt using random seeds {0, 1000 , 2000 , 3000 }. For T2V, we evaluate on T2V-CompBench (Sun et al., 2025), which con-tains 1,400 text prompts covering seven aspects of composi-tionality. For both tasks, we additionally report reference-based metrics, including PSNR, SSIM, and LPIPS (Zhang et al., 2018), computed with respect to a 30-step baseline. 
+
+4.2. Evaluation of StableVM and VA-REPA Quantitative Evaluation. We evaluate StableVM and VA-REPA against state-of-the-art latent diffusion transformers under both classifier-free guidance (CFG) and non-CFG settings. Tab. 1 reports CFG results using the SiT-XL back-bone for all methods. With only 80 training epochs, our approach achieves the strongest overall performance among all compared methods, outperforming prior REPA-based approaches in both FID and IS, while remaining highly competitive with REPA-E (Leng et al., 2025). Although REPA-E attains a slightly lower FID, the gap is marginal, and our method reaches comparable generation quality at substantially lower training cost. Notably, REPA-E relies on expensive end-to-end fine-tuning of both the autoencoder and the diffusion transformer, whereas our pipeline keeps the autoencoder fixed, resulting in a more modular and com-putationally efficient training procedure. Tab. 2 reports results without CFG over multiple SiT ar-chitectures and training checkpoints. Across all reported settings, StableVM and VA-REPA consistently improve FID, IS, precision, and recall over vanilla REPA, demonstrating strong scalability and stability with respect to both model size and training duration. 
+
+Variation in REPA-based Methods. StableVM and VA-REPA can plug into existing REPA-style pipelines without modifying the underlying method. Tab. 3 reports results at 100k iterations for vanilla REPA, REG, and iREPA. Inte-grating our approach consistently improves the performance across all variants, demonstrating that our contributions are orthogonal and provide reliable, drop-in performance gains. 
+
+Ablation on Split Point ξ. The split point ξ defines the boundary between the low-variance regime and the high-variance regime , and determines the extent of representation alignment. Tab. 4 analyzes the effect of different ξ values 
+
+Table 1. Comparison of latent diffusion transformers with CFG. We compare our method against baselines including MaskDiT (Zheng et al., 2023), DiT-XL/2 (Peebles & Xie, 2023b), SiT-XL/2 (Ma et al., 2024), Faster-DiT (Yao et al., 2024), REPA (Yu et al., 2024), iREPA (Singh et al., 2025), REG (Wu et al., 2025b), and REPA-E (Leng et al., 2025). The first Ours 
+
+block uses the standard REPA sampling protocol, while the second adopts class-balanced sampling (marked with ∗) following REPA-E. Methods marked with † require fine-tuning autoencoders.                                                                                            
+
+> Model Epochs FID ↓sFID ↓IS ↑Prec .↑Rec. ↑
+> Latent Diffusion Transformers
+> MaskDiT 1600 2.28 5.67 276.6 0.80 0.61 DiT-XL/2 1400 2.27 4.60 278.2 0.83 0.57 SiT-XL/2 1400 2.06 4.50 270.3 0.82 0.59 Faster-DiT 400 2.03 4.63 264.0 0.81 0.60
+> Representation Alignment Methods
+> REPA 80 1.98 4.60 263.0 0.80 0.61
+> 800 1.42 4.70 305.7 0.80 0.65 iREPA 80 1.93 4.59 268.8 0.80 0.60 REG 80 1.86 4.49 321.4 0.76 0.63 480 1.40 4.24 296.9 0.77 0.66
+> Ours 80 1.80 4.52 272.4 0.81 0.60 400 1.47 4.51 300.3 0.80 0.63 REPA-E †80 1.67 ∗4.12 ∗266.3 ∗0.80 ∗0.63 ∗
+> 800 1.12 ∗4.09 ∗302.9 ∗0.79 ∗0.66 ∗
+> Ours 80 1.71 ∗4.54 ∗274.2 ∗0.81 ∗0.61 ∗
+> 400 1.34 ∗4.53 ∗305.0 ∗0.80 ∗0.64 ∗
+
+at multiple training stages. At early training (100k itera-tions), a smaller split point ( ξ = 0 .6) achieves the best FID, indicating that weaker alignment provides an easier supervisory signal that accelerates initial convergence. As training progresses, ξ = 0 .7 consistently yields the best overall performance, particularly at 400k iterations, where it delivers the best performance. In contrast, a larger split point ( ξ = 0 .8) degrades performance, due to noisy supervi-sion introduced from the high-variance regime. Based on these results, we adopt ξ = 0 .7 as the default setting. 
+
+Ablations on weighting schemes w(t) and bank capac-ity K. Fig. 4 studies the sensitivity of VA-REPA weight-ing strategies and the StableVM memory bank capacity. Across all weighting strategies, incorporating VA-REPA consistently improves performance over the REPA baseline. Among them, soft weighting schemes outperform the hard threshold, with wsigmoid (t) achieving the best overall results. For the memory bank, K = 256 is sufficient to obtain stable variance reduction, while increasing to K = 1024 yields only marginal gains, indicating diminishing returns. 
+
+4.3. Evaluation of StableVS StableVS reduces sampling cost while preserving con-tent across solvers and modalities. Tab. 5 and 6 show that replacing the base solver with StableVS only in the low-variance regime substantially reduces the total number of 6Stable Velocity: A Variance Perspective on Flow Matching 
+
+Table 2. Variation in Model Scale and Checkpoints. Comparison of our full method (StableVM + VA-REPA) against vanilla-REPA. Results are reported without CFG.                                                                      
+
+> Method Iter FID ↓sFID ↓IS ↑Prec. ↑Rec. ↑
+> SiT-B/2 (130M) REPA 100k 52.06 8.18 26.8 0.45 0.59
+> Ours 100k 49.69 8.18 28.5 0.46 0.60
+> SiT-L/2 (458M) REPA 100k 22.75 5.52 59.9 0.61 0.63
+> Ours 100k 21.03 5.51 63.9 0.62 0.63
+> SiT-XL/2 (675M) REPA 100k 18.59 5.39 70.6 0.64 0.62
+> Ours 100k 17.12 5.39 74.8 0.65 0.63
+> REPA 200k 11.04 5.02 101.9 0.68 0.64
+> Ours 200k 10.56 5.03 105.4 0.69 0.64
+> REPA 400k 8.13 5.01 124.5 0.69 0.66
+> Ours 400k 7.58 5.03 127.6 0.70 0.66
+
+Table 3. Compatibility of StableVM + VA-REPA with REPA variants. Integration results for vanilla REPA, REG, and iREPA. All metrics are reported at 100k iterations.                                    
+
+> Methods FID ↓sFID ↓IS ↑Prec. ↑Rec. ↑
+> REPA 18.59 5.39 70.6 0.64 0.62
+> +Ours 17.12 5.39 74.8 0.65 0.63
+> REG 8.90 5.50 125.3 0.72 0.59
+> +Ours 8.11 5.34 128.8 0.74 0.60
+> iREPA 16.62 5.31 76.7 0.65 0.63
+> +Ours 16.02 5.30 78.6 0.66 0.63
+
+sampling steps without degrading generation quality. Across SD3.5, Flux, Qwen-Image-2512, and Wan2.2, StableVS with 9 low-variance steps consistently matches or exceeds 30-step baselines, while naively shortening the base solver leads to noticeable drops in reference metrics. This behav-ior is solver-agnostic and holds for both images and videos: similar gains are observed across Euler, DPM-Solver++, and UniPC. On GenEval, StableVS recovers the perceptual fidelity lost by short-step baselines, producing outputs in-distinguishable from 30-step results; on T2V-CompBench, it maintains generative performance while significantly im-proving reference metrics, indicating that step reduction doesn’t alter spatial structure, motion patterns, or seman-tic content. These findings directly support our analysis in Sec. 3.3: in the low-variance regime, the posterior effec-tively collapses, rendering the sampling trajectory determin-istic. Consequently, replacing the base solver with StableVS in this regime changes the numerical integration path but not the resulting sample, a conclusion confirmed by qualitative comparisons in Fig. 5 under identical random seeds. 
+
+Choice of split point ξ for StableVS. We note that the split point ξ used for StableVS differs from that used for VA-REPA. Empirically, we find that a smaller split point adopted in VA-REPA ( ξ = 0 .7) yields samples that are closer to the original 30-step baseline, whereas a larger split point ( e.g ., ξ = 0 .85 ) allows more aggressive step reduction with minimal quality degradation. A detailed ablation over 
+
+Table 4. Ablation on split point ξ. Impact of different split points across training stages. The default setting ( ξ = 0 .7) is highlighted.                                                          
+
+> Iter Split point ξFID ↓sFID ↓IS ↑Prec. ↑Rec. ↑
+> 100k 0.6 17.38 5.36 73.7 0.65 0.63
+> 0.7 17.63 5.33 73.2 0.65 0.62 0.8 17.85 5.34 72.3 0.65 0.62 200k 0.6 10.57 5.02 104.2 0.69 0.64 0.7 10.56 5.03 105.4 0.69 0.64 0.8 10.73 5.02 103.4 0.68 0.65
+> 400k 0.6 7.97 5.04 124.3 0.70 0.66 0.7 7.58 5.03 127.6 0.70 0.66
+> 0.8 7.62 4.97 127.0 0.70 0.66 Hard Sigmoid SNR
+> 17.5
+> 18.0
+> 18.5
+> FID ↓
+> 17.88
+> 17.63
+> 17.71
+> (a) Weighting w(t)
+> REPA (18.59)
+> 256 1024
+> 17.5
+> 18.0
+> 18.5
+> 18.03
+> 17.93
+> (b) Bank capacity K
+> REPA (18.59)
+
+Figure 4. Ablation on VA-REPA weighting and StableVM bank capacity. Left: effect of different weighting schemes w(t),showing that soft weightings outperform hard thresholding. Right: effect of memory bank capacity K, where K = 256 already achieves near-optimal performance. All results are evaluated at 100k iterations. REPA baseline is shown as a dashed line. 
+
+ξ and other StableVS hyperparameters is provided in Tab. 9. 
+
+## 5. Related Works 
+
+Training Acceleration of Diffusion and Flow Models. Dif-fusion and flow matching models exhibit strong generative performance but incur substantial computational costs when trained on high-resolution data. To mitigate this burden, prior work has explored three complementary directions. First, dimensionality reduction methods compress high-resolution data into lower-dimensional representations to reduce training cost. Latent diffusion (Rombach et al., 2022) pioneered this paradigm, with subsequent improvements fo-cusing on more efficient autoencoders (Chen et al., 2025) or localized modeling (Wang et al., 2023). Second, several works incorporate auxiliary regularization or self-supervised objectives to stabilize optimization and accelerate conver-gence (Zheng et al., 2023; Yu et al., 2024; Wu et al., 2025b; Leng et al., 2025; Singh et al., 2025). Third, improvements to the training objective itself aim to reduce variance or imbalance across timesteps, including log-normal timestep sampling and SNR-aware weighting (Karras et al., 2022b; Choi et al., 2022). More closely related to our work, re-cent studies employ self-normalized importance sampling (SNIS) estimators (Hesterberg, 1995) to reduce the vari-ance of score estimation (Xu et al., 2023; Niedoba et al., 2024), albeit at the cost of introducing bias. In contrast, 7Stable Velocity: A Variance Perspective on Flow Matching 
+
+Table 5. Evaluation on T2V-CompBench at 640 × 480 p for Wan2.2 (Wan et al., 2025). StableVS replaces the base solver in the 
+
+low-variance regime [0 , ξ ] (steps in parentheses), keeping the high-variance regime [ξ, 1] unchanged. Split point fixed at ξ = 0 .85 .Highlighted rows show StableVS matches or exceeds 30-step baselines with fewer steps.                                                               
+
+> Solver configuration Reference metrics T2V-CompBench metrics Base solver Solver in [0 , ξ ]Total steps PSNR ↑SSIM ↑LPIPS ↓Consist ↑Dynamic ↑Spatial ↑Motion ↑Action ↑Interact ↑Numeracy ↑
+> UniPC UniPC(19) 30 –––0.842 0.120 0.607 0.299 0.749 0.708 0.476
+> UniPC(13) 20 15.61 0.593 0.377 0.821 0.123 0.618 0.265 0.720 0.703 0.462
+> StableVS(9) 20 31.10 0.942 0.036 0.843 0.123 0.610 0.289 0.753 0.699 0.476 A photo of a
+> bench
+> Euler(30 steps) Euler(20 steps) Euler (11 steps)
+> +StableVS (9 Steps)
+> A photo of a
+> cow
+> A photo of a
+> bicycle
+> A photo of a
+> clock
+
+Figure 5. Visual comparison across prompts on SD3.5 (Esser et al., 2024). Results are generated using the Euler solver with 30 and 20 steps, and with StableVS replacing Euler in the low-variance regime , all under the same random seeds. Compared to the standard 20-step solver, StableVS yields outputs that more closely resemble the 30-step results. Zoom in for details. Addi-tional qualitative comparisons are provided in Appendix H. 
+
+our work provides a variance-centric analysis that explicitly reveals a two-regime structure in stochastic interpolants, and introduces an unbiased, variance-reducing training objec-tive StableVM together with VA-REPA, unifying variance reduction and auxiliary supervision under a single principle. 
+
+Sampling Acceleration of Diffusion and Flow Models. 
+
+Reducing the number of sampling steps is critical for prac-tical deployment of diffusion and flow-based generative models. Existing approaches can be broadly categorized into training-required and training-free methods. Training-required approaches leverage additional learning to enable few-step generation, including progressive distillation (Sal-imans & Ho, 2022; Sauer et al., 2024), consistency mod-els (Song et al., 2023), inductive moment matching (Zhou et al., 2025), and mean flow models (Geng et al., 2025). Training-free approaches instead focus on improved numer-ical solvers for the reverse ODE, such as DDIM (Song et al., 2021a), DPM-Solver and its variants (Lu et al., 2022; 2025), and UniPC (Zhao et al., 2023). While these methods im-
+
+Table 6. Evaluation on GenEval at 1024 × 1024 resolution. 
+
+StableVS replaces the base solver in the low-variance regime 
+
+[0 , ξ ], while keeping the high-variance regime [ξ, 1] unchanged. Numbers in parentheses (e.g., Euler(19)) denote the number of sampling steps in the low-variance regime . The split point is fixed to ξ = 0 .85 for all models. Highlighted rows demonstrate that StableVS achieves comparable results to the 30-step baseline with fewer total sampling steps. Full results are reported in Tab. 10.                                                                         
+
+> Solver configuration Overall ↑Reference metrics Base solver Solver in [0 , ξ ]Total steps PSNR ↑SSIM ↑LPIPS ↓
+> SD3.5-Large
+> Euler Euler(19) 30 0.723 –––Euler(13) 20 0.710 16.93 0.753 0.333
+> StableVS(9) 20 0.723 36.92 0.980 0.021
+> DPM++ DPM++(19) 30 0.724 –––DPM++(13) 20 0.717 17.42 0.784 0.287
+> StableVS(9) 20 0.719 32.61 0.957 0.063
+> Flux-dev
+> Euler Euler(19) 30 0.660 –––Euler(13) 20 0.659 19.74 0.820 0.244
+> StableVS(9) 20 0.666 35.45 0.968 0.025
+> Qwen-Image-2512
+> Euler Euler(22) 30 0.733 –––Euler(12) 17 0.721 17.01 0.767 0.277
+> StableVS(9) 17 0.731 32.27 0.962 0.031
+
+prove integration accuracy, they treat the entire diffusion tra-jectory uniformly. Our StableVS departs from this view by exploiting the low-variance regime identified in our analysis, where the sampling dynamics become effectively determin-istic. This regime-aware perspective enables aggressive step reduction without retraining, while remaining compatible with existing solvers in the high-variance regime. 
+
+## 6. Conclusion 
+
+In this work, we develop a variance-based perspective on stochastic interpolants and reveal a two-regime structure that fundamentally governs both training and sampling dynam-ics. Our analysis shows that high-variance conditional veloc-ity targets hinder optimization, whereas in the low-variance regime the conditional and true velocities coincide, yielding both stable supervision and predictable dynamics. Building on this insight, we introduce the Stable Velocity frame-work, comprising StableVM for unbiased variance-reduced training, VA-REPA for selectively applying auxiliary super-vision, and StableVS for finetuning-free acceleration at in-ference. Extensive experiments on ImageNet 256 × 256 and large pretrained T2I and T2V models demonstrate consistent improvements in training stability and substantial sampling speedups without sacrificing sample quality. Beyond the specific methods introduced here, our results suggest that explicitly modeling variance structure along the generative 8Stable Velocity: A Variance Perspective on Flow Matching 
+
+trajectory provides a principled foundation for designing more efficient training objectives and sampling algorithms in diffusion and flow-based generative models. 
+
+## Acknowledgments 
+
+This work was supported by Kuaishou Technology and also funded, in part, by the NSERC DG Grant (No. RGPIN-2022-04636), the Vector Institute for AI, Canada CIFAR AI Chair, NSERC Canada Research Chair (CRC), NSERC Discovery Grants, and a Google Gift Fund. Resources used in preparing this research were provided, in part, by the Province of Ontario, the Government of Canada through the Digital Research Alliance of Canada alliance.can. ca , and companies sponsoring the Vector Institute www. vectorinstitute.ai/#partners , and Advanced Research Computing at the University of British Columbia. Additional hardware support was provided by John R. Evans Leaders Fund CFI grant. 9Stable Velocity: A Variance Perspective on Flow Matching 
+
+## References 
+
+Albergo, M. S. and Vanden-Eijnden, E. Building normal-izing flows with stochastic interpolants. In 11th Inter-national Conference on Learning Representations, ICLR 2023 , 2023. Albergo, M. S., Boffi, N. M., and Vanden-Eijnden, E. Stochastic interpolants: A unifying framework for flows and diffusions. arXiv preprint arXiv:2303.08797 , 2023. Anderson, B. D. Reverse-time diffusion equation models. 
+
+Stochastic Processes and their Applications , 12(3):313– 326, 1982. Brooks, T., Peebles, B., Holmes, C., DePue, W., Guo, Y., Jing, L., Schnurr, D., Taylor, J., Luh-man, T., Luhman, E., Ng, C., Wang, R., and Ramesh, A. Video generation models as world simulators. 2024. URL https://openai.com/ research/video-generation-models-as\ -world-simulators .Chen, J., Cai, H., Chen, J., Xie, E., Yang, S., Tang, H., Li, M., Lu, Y., and Han, S. Deep compression autoencoder for efficient high-resolution diffusion models, 2025. URL 
+
+https://arxiv.org/abs/2410.10733 .Choi, J., Lee, J., Shin, C., Kim, S., Kim, H., and Yoon, S. Perception prioritized training of diffusion models. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 11472–11481, 2022. Deng, J., Dong, W., Socher, R., Li, L.-J., Li, K., and Fei-Fei, L. ImageNet: A large-scale hierarchical image database. In IEEE Conference on Computer Vision and Pattern Recognition , 2009. Dhariwal, P. and Nichol, A. Diffusion models beat GANs on image synthesis. In Advances in Neural Information Processing Systems , 2021. Elvira, V. and Martino, L. Advances in importance sampling. 
+
+arXiv preprint arXiv:2102.05407 , 2021. Esser, P., Kulal, S., Blattmann, A., Entezari, R., M ¨uller, J., Saini, H., Levi, Y., Lorenz, D., Sauer, A., Boesel, F., et al. Scaling rectified flow transformers for high-resolution image synthesis. In Forty-first international conference on machine learning , 2024. Geng, Z., Deng, M., Bai, X., Kolter, J. Z., and He, K. Mean flows for one-step generative modeling. arXiv preprint arXiv:2505.13447 , 2025. Ghosh, D., Hajishirzi, H., and Schmidt, L. Geneval: An object-focused framework for evaluating text-to-image alignment. Advances in Neural Information Processing Systems , 36:52132–52152, 2023. Hesterberg, T. Weighted average importance sampling and defensive mixture distributions. Technometrics , 37(2): 185–194, 1995. Heusel, M., Ramsauer, H., Unterthiner, T., Nessler, B., and Hochreiter, S. GANs trained by a two time-scale update rule converge to a local nash equilibrium. In Advances in Neural Information Processing Systems , 2017. Ho, J. and Salimans, T. Classifier-free diffusion guidance. 
+
+arXiv preprint arXiv:2207.12598 , 2022. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. Advances in neural information process-ing systems , 33:6840–6851, 2020. Huang, C.-W., Lim, J. H., and Courville, A. C. A varia-tional perspective on diffusion-based generative models and score matching. Advances in Neural Information Processing Systems , 34:22863–22876, 2021. Jeha, P., Grathwohl, W., Andersen, M. R., Ek, C. H., and Frellsen, J. Variance reduction of diffusion model’s gradi-ents with taylor approximation-based control variate. In 
+
+ICML 2024 Workshop onStructured Probabilistic Infer-ence & Generative Modeling , 2024. Karras, T., Aittala, M., Aila, T., and Laine, S. Elucidating the design space of diffusion-based generative models. In Advances in Neural Information Processing Systems ,2022a. Karras, T., Aittala, M., Aila, T., and Laine, S. Elucidating the design space of diffusion-based generative models. 
+
+Advances in neural information processing systems , 35: 26565–26577, 2022b. Kingma, D. P. Adam: A method for stochastic optimization. In International Conference on Learning Representations ,2015. Krizhevsky, A. Learning multiple layers of features from tiny images. University of Toronto , 2009. Kynk ¨a ¨anniemi, T., Karras, T., Laine, S., Lehtinen, J., and Aila, T. Improved precision and recall metric for assess-ing generative models. In Advances in Neural Information Processing Systems , 2019. Kynk ¨a ¨anniemi, T., Aittala, M., Karras, T., Laine, S., Aila, T., and Lehtinen, J. Applying guidance in a limited interval improves sample and distribution quality in diffusion models. arXiv preprint arXiv:2404.07724 , 2024. Labs, B. F. Flux. https://github.com/ black-forest-labs/flux , 2024. 10 Stable Velocity: A Variance Perspective on Flow Matching 
+
+Lehmann, E. and Romano, J. Testing Statistical Hypotheses . Springer Texts in Statistics Series. Springer International Publishing, 2023. ISBN 9783030705800. URL https://books.google. com.hk/books?id=NIDzzwEACAAJ .Leng, X., Singh, J., Hou, Y., Xing, Z., Xie, S., and Zheng, L. Repa-e: Unlocking vae for end-to-end tuning with latent diffusion transformers. arXiv preprint arXiv:2504.10483 ,2025. Lin, X., He, J., Chen, Z., Lyu, Z., Dai, B., Yu, F., Qiao, Y., Ouyang, W., and Dong, C. Diffbir: Toward blind image restoration with generative diffusion prior. In European conference on computer vision , pp. 430–448. Springer, 2024. Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. Lipman, Y., Havasi, M., Holderrieth, P., Shaul, N., Le, M., Karrer, B., Chen, R. T., Lopez-Paz, D., Ben-Hamu, H., and Gat, I. Flow matching guide and code. arXiv preprint arXiv:2412.06264 , 2024a. Lipman, Y., Havasi, M., Holderrieth, P., Shaul, N., Le, M., Karrer, B., Chen, R. T. Q., Lopez-Paz, D., Ben-Hamu, H., and Gat, I. Flow matching guide and code, 2024b. URL 
+
+https://arxiv.org/abs/2412.06264 .Liu, X., Gong, C., and Liu, Q. Flow straight and fast: Learning to generate and transfer data with rectified flow. 
+
+arXiv preprint arXiv:2209.03003 , 2022. Loshchilov, I. Decoupled weight decay regularization. In 
+
+International Conference on Learning Representations ,2017. Lu, C., Zhou, Y., Bao, F., Chen, J., Li, C., and Zhu, J. Dpm-solver: A fast ode solver for diffusion probabilistic model sampling in around 10 steps. Advances in Neural Information Processing Systems , 35:5775–5787, 2022. Lu, C., Zhou, Y., Bao, F., Chen, J., Li, C., and Zhu, J. Dpm-solver++: Fast solver for guided sampling of diffusion probabilistic models. Machine Intelligence Research , pp. 1–22, 2025. Ma, N., Goldstein, M., Albergo, M. S., Boffi, N. M., Vanden-Eijnden, E., and Xie, S. Sit: Exploring flow and diffusion-based generative models with scalable interpolant trans-formers. In European Conference on Computer Vision ,pp. 23–40. Springer, 2024. Nash, C., Menick, J., Dieleman, S., and Battaglia, P. W. Generating images with sparse representations. In Inter-national Conference on Machine Learning , 2021. Niedoba, M., Green, D., Naderiparizi, S., Lioutas, V., Lav-ington, J. W., Liang, X., Liu, Y., Zhang, K., Dabiri, S., ´Scibior, A., et al. Nearest neighbour score estimators for diffusion generative models. In Proceedings of the 41st International Conference on Machine Learning , pp. 38117–38144, 2024. Owen, A. B. Monte Carlo theory, methods and examples .Stanford, 2013. Peebles, W. and Xie, S. Scalable diffusion models with transformers. In IEEE International Conference on Com-puter Vision , 2023a. Peebles, W. and Xie, S. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF interna-tional conference on computer vision , pp. 4195–4205, 2023b. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., and Ommer, B. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pp. 10684–10695, 2022. Salimans, T. and Ho, J. Progressive distillation for fast sampling of diffusion models. arXiv preprint arXiv:2202.00512 , 2022. Salimans, T., Goodfellow, I., Zaremba, W., Cheung, V., Rad-ford, A., and Chen, X. Improved techniques for training GANs. In Advances in Neural Information Processing Systems , 2016. Sauer, A., Lorenz, D., Blattmann, A., and Rombach, R. Ad-versarial diffusion distillation. In European Conference on Computer Vision , pp. 87–103. Springer, 2024. Singh, J., Leng, X., Wu, Z., Zheng, L., Zhang, R., Shecht-man, E., and Xie, S. What matters for representation alignment: Global information or spatial structure? arXiv preprint arXiv:2512.10794 , 2025. Sohl-Dickstein, J., Weiss, E., Maheswaranathan, N., and Ganguli, S. Deep unsupervised learning using nonequi-librium thermodynamics. In International Conference on Machine Learning , 2015. Song, J., Meng, C., and Ermon, S. Denoising diffusion implicit models. In International Conference on Learning Representations , 2021a. Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Er-mon, S., and Poole, B. Score-based generative modeling through stochastic differential equations. arXiv preprint arXiv:2011.13456 , 2020. 11 Stable Velocity: A Variance Perspective on Flow Matching 
+
+Song, Y., Durkan, C., Murray, I., and Ermon, S. Maxi-mum likelihood training of score-based diffusion models. 
+
+Advances in neural information processing systems , 34: 1415–1428, 2021b. Song, Y., Dhariwal, P., Chen, M., and Sutskever, I. Consis-tency models. In International Conference on Machine Learning , pp. 32211–32252. PMLR, 2023. Sun, K., Huang, K., Liu, X., Wu, Y., Xu, Z., Li, Z., and Liu, X. T2v-compbench: A comprehensive benchmark for compositional text-to-video generation. In Proceedings of the Computer Vision and Pattern Recognition Conference ,pp. 8406–8416, 2025. Tong, A., Fatras, K., Malkin, N., Huguet, G., Zhang, Y., Rector-Brooks, J., Wolf, G., and Bengio, Y. Improving and generalizing flow-based generative models with mini-batch optimal transport. arXiv preprint arXiv:2302.00482 ,2023. Vincent, P. A connection between score matching and de-noising autoencoders. Neural computation , 23(7):1661– 1674, 2011. von Platen, P., Patil, S., Lozhkov, A., Cuenca, P., Lambert, N., Rasul, K., Davaadorj, M., Nair, D., Paul, S., Liu, S., Berman, W., Xu, Y., and Wolf, T. Diffusers: State-of-the-art diffusion models. URL https://github.com/ huggingface/diffusers .Wan, T., Wang, A., Ai, B., Wen, B., Mao, C., Xie, C.-W., Chen, D., Yu, F., Zhao, H., Yang, J., et al. Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 , 2025. Wang, R. and He, K. Diffuse and disperse: Image generation with representation regularization, 2025. URL https: //arxiv.org/abs/2506.09027 .Wang, Z., Cheng, S., Yueru, L., Zhu, J., and Zhang, B. A wasserstein minimum velocity approach to learning unnormalized models. In International Conference on Ar-tificial Intelligence and Statistics , pp. 3728–3738. PMLR, 2020. Wang, Z., Jiang, Y., Zheng, H., Wang, P., He, P., Wang, Z., Chen, W., Zhou, M., et al. Patch diffusion: Faster and more data-efficient training of diffusion models. Ad-vances in neural information processing systems , 36: 72137–72154, 2023. Wang, Z., Zhao, W., Zhou, Y., Li, Z., Liang, Z., Shi, M., Zhao, X., Zhou, P., Zhang, K., Wang, Z., Wang, K., and You, Y. Repa works until it doesn’t: Early-stopped, holistic alignment supercharges diffusion training, 2025. URL https://arxiv.org/abs/2505.16792 .Wu, C., Li, J., Zhou, J., Lin, J., Gao, K., Yan, K., ming Yin, S., Bai, S., Xu, X., Chen, Y., Chen, Y., Tang, Z., Zhang, Z., Wang, Z., Yang, A., Yu, B., Cheng, C., Liu, D., Li, D., Zhang, H., Meng, H., Wei, H., Ni, J., Chen, K., Cao, K., Peng, L., Qu, L., Wu, M., Wang, P., Yu, S., Wen, T., Feng, W., Xu, X., Wang, Y., Zhang, Y., Zhu, Y., Wu, Y., Cai, Y., and Liu, Z. Qwen-image technical report, 2025a. URL https://arxiv.org/abs/2508.02324 .Wu, G., Zhang, S., Shi, R., Gao, S., Chen, Z., Wang, L., Chen, Z., Gao, H., Tang, Y., Yang, J., et al. Represen-tation entanglement for generation: Training diffusion transformers is much easier than you think. arXiv preprint arXiv:2507.01467 , 2025b. Xu, Y., Tong, S., and Jaakkola, T. Stable target field for reduced variance score estimation in diffusion mod-els, 2023. URL https://arxiv.org/abs/2302. 00670 .Yao, J., Wang, C., Liu, W., and Wang, X. Fasterdit: Towards faster diffusion transformers training without architecture modification. Advances in Neural Information Processing Systems , 37:56166–56189, 2024. Yu, S., Kwak, S., Jang, H., Jeong, J., Huang, J., Shin, J., and Xie, S. Representation alignment for generation: Training diffusion transformers is easier than you think. 
+
+arXiv preprint arXiv:2410.06940 , 2024. Zhang, R., Isola, P., Efros, A. A., Shechtman, E., and Wang, O. The unreasonable effectiveness of deep features as a perceptual metric. In CVPR , 2018. Zhao, W., Bai, L., Rao, Y., Zhou, J., and Lu, J. Unipc: A unified predictor-corrector framework for fast sampling of diffusion models. Advances in Neural Information Processing Systems , 36:49842–49869, 2023. Zheng, H., Nie, W., Vahdat, A., and Anandkumar, A. Fast training of diffusion models with masked transformers. 
+
+arXiv preprint arXiv:2306.09305 , 2023. Zhou, L., Ermon, S., and Song, J. Inductive moment match-ing. arXiv preprint arXiv:2503.07565 , 2025. 12 Stable Velocity: A Variance Perspective on Flow Matching 
+
+## A. Preliminaries 
+
+The probability flow ordinary differential equation (PF-ODE) for flow matching is defined as follows, 
+
+dxt = vt(xt) d t (15) induces marginal distributions that match that of Eq. (1) for all time t ∈ [0 , 1] .In addition, there exists a reverse stochastic differential equation (SDE) whose marginal pt(x) coincides with that of the PF-ODE in Eq. (15), but with an added diffusion term (Ma et al., 2024): 
+
+dxt = vt(xt) d t − 12 wtst(xt) d t + √wt dwt, (16) where wt is a standard Wiener process in backward time, √wt is the diffusion coefficient, and the score st(xt) = 
+
+∇xt log pt(xt) can be re-expressed using the velocity field (Ma et al., 2024): 
+
+st(xt) = σ−1 
+
+> t
+
+(αtvt(xt) − α′
+
+> t
+
+xt)/(α′
+
+> t
+
+σt − αtσ′
+
+> t
+
+). (17) In diffusion models (Sohl-Dickstein et al., 2015; Ho et al., 2020; Song et al., 2020), the forward process can be modeled as an Itˆ o SDE: 
+
+dx = f (x, t ) d t + g(t) d w, (18) where w is the standard Wiener process, f (·, t ) : Rd → Rd is vector-valued function called drift coefficient of xt and 
+
+g(·) : R → R is a scalar function known as the diffusion coefficient of xt. It gradually transforms the data distribution 
+
+q to a known prior as time goes from t = 0 to 1. With stochastic process defined in Eq. (18), Variance-Preserving (VP) diffusion model (Ho et al., 2020; Song et al., 2020; Karras et al., 2022a) implicitly define both αt and σt in Eq. (1) with an equilibrium distribution as prior. VP diffusion commonly chooses αt = cos( π 
+
+> 2
+
+t), σ t = sin( π 
+
+> 2
+
+t).The diffusion model is trained to estimate the score of the marginal distribution at time t, ∇xt pt(xt), via a neural network. Specifically, the training objective is a weighted sum of the denoising score matching (DSM) (Vincent, 2011): 
+
+min  
+
+> θ
+
+Et,q (x0),p t(xt|x0)λt ∥sθ (xt, t ) − st(xt | x0)∥2 , (19) where λt is a positive weighting function, sθ (·, ·) : [0 , 1] × Rd → Rd is a time-dependent vector field parametrized as neural network with parameters θ, the conditional probability path pt(xt | x0) = N (xt | αtx0, σ 2 
+
+> t
+
+I), and the conditional score function st(xt | x0) = ∇xt log pt(xt | x0). The Eq. (19) shares a very similar form with CFM target in Eq. (4). Also, similar to Eq. (5), the objective in Eq. (19) admits a closed-form minimizer (Song et al., 2020; Xu et al., 2023): 
+
+s∗ 
+
+> θ
+
+(xt, t ) = Ept(x0|xt) [st(xt | x0)] = st(xt) (20) Here, the marginal probability path pt(xt) is a mixture of conditional probability paths pt(xt | x0) that vary with data points x0, that is, 
+
+pt(xt) = 
+
+Z
+
+pt(xt | x0)q(x0) d x0. (21) 
+
+## B. More Discussion on Related Works 
+
+Representation Alignment and Training Acceleration. A growing body of work shows that shaping intermediate representations can substantially accelerate the training of diffusion and flow-based generative models. REPA (Yu et al., 2024) introduces an auxiliary objective that aligns hidden states of diffusion transformers with features from pretrained visual encoders, yielding significant gains under limited training budgets. Several follow-up methods explore alternative alignment strategies and regularization mechanisms. Dispersive Loss (Wang & He, 2025) removes the need for external teachers by encouraging internal feature dispersion, providing a lightweight, encoder-free form of representation regularization. HASTE (Wang et al., 2025) addresses over-regularization by restricting alignment to early training stages and disabling it later for improved stability. REG (Wu et al., 2025b) departs from explicit alignment altogether, instead entangling noisy latents with compact semantic tokens throughout the denoising trajectory. REPA-E (Leng et al., 2025) further extends REPA 13 Stable Velocity: A Variance Perspective on Flow Matching 
+
+by jointly fine-tuning both the VAE and diffusion model, substantially improving performance at the cost of increased training complexity. More recently, iREPA (Singh et al., 2025) demonstrates that the effectiveness of representation alignment is driven primarily by spatial structure rather than high-level semantics, enhancing REPA through spatially aware projections and normalization. Our variance-aware perspective is orthogonal to these approaches: rather than modifying the form or source of alignment, we identify when semantic supervision is well-defined along the generative trajectory. As a result, VA-REPA can be naturally combined with existing alignment methods to further improve training efficiency and stability. 
+
+Variance Reduction for Diffusion and Flow Models. Several works have explored variance reduction for diffusion models through importance sampling over timesteps, primarily aiming to reduce the variance of the diffusion ELBO and empirically improving training efficiency (Huang et al., 2021; Song et al., 2021b). Alternative approaches leverage control variates instead of importance sampling to stabilize training objectives (Wang et al., 2020; Jeha et al., 2024). More closely related to our work, recent studies employ self-normalized importance sampling (SNIS) estimators (Hesterberg, 1995) to reduce the variance of score estimation (Xu et al., 2023; Niedoba et al., 2024). These methods achieve variance reduction by aggregating multiple conditional scores, but typically introduce bias due to self-normalization. In contrast, StableVM focuses on a different source of variance that arises in flow-matching objectives, namely the variability induced by individual reference pairs (x0, ϵ ) during target construction. We reduce this variance by aggregating reference samples into a composite conditional formulation, which enables variance reduction while preserving unbiasedness. As a result, StableVM complements existing diffusion-based variance reduction techniques and is particularly effective in settings where variance originates from reference-level stochasticity rather than timestep sampling. 
+
+## C. Comparison with Stable Target Field 
+
+The standard training objective for diffusion models (Ho et al., 2020; Song et al., 2020; Karras et al., 2022b) is based on 
+
+denoising score matching (DSM) (Vincent, 2011), also suffers from high variance. To address this issue, Xu et al. (2023) proposed the Stable Target Field (STF), which stabilizes training by leveraging a reference batch B = {xi
+
+> 0
+
+}ni=1 ∼ q(x0). The STF objective is defined as 
+
+LSTF (θ, t ) = E{xi 
+
+> 0}ni=1 ∼q(x0), p t(xt|x10)
+
+vθ (xt, t ) −
+
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+) st(xt | xk 
+
+> 0
+
+)
+
+> 2
+
+. (22) Unlike DSM ( n = 1 ), STF forms a weighted average of scores over the reference batch, with weights determined by the conditional likelihoods pt(xt | xk 
+
+> 0
+
+). This reduces the covariance of the target by a factor of n, thereby lowering variance. While STF introduces bias, the minimizer of LSTF is given by 
+
+v∗(xt, t ) = Ep(x0|xt), {xi
+
+> 0}ni=2 ∼q(x0)
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+) st(xt | xk 
+
+> 0
+
+), (23) which deviates from the true score st(xt). However, as n → ∞ , this bias vanishes and the weighted estimator converges to the true score. Our approach differs from STF in three important ways: 1. General framework. We extend the variance analysis and variance-reduction strategy to the flow matching as well as stochastic interpolant framework, which generalizes beyond VP diffusion and exhibits a distinct variance structure. 2. Unbiased objective. Instead of relying on a finite-sample weighted average, we propose a mixture of conditional probabilities that eliminates bias while still achieving variance reduction. 3. Class-conditional extension. While STF does not naturally extend to class-conditional settings, we design a tailored algorithm that maintains variance reduction under classifier-free guidance, improving both convergence and training efficiency. To further elucidate these differences, we evaluate unconditional generation on CIFAR-10 (Krizhevsky, 2009). For a fair comparison, both STF and StableVM use the same reference batch size n = 2048 . All metrics are computed over 50K generated samples. 14 Stable Velocity: A Variance Perspective on Flow Matching      
+
+> Table 7. Unconditional CIFAR-10 generation. Performance comparison between CFM, STF, and StableVM. STF instantiated directly from Eq. 22 performs poorly, whereas StableVM achieves faster convergence and better sample quality via unbiased variance reduction. All results use n= 2048 and 50k generated samples.
+
+Iter Model FID ↓ IS ↑ sFID ↓ Prec .↑ Rec. ↑
+
+30k CFM 10.76 7.97 4.55 0.58 0.57 STF (Eq. 22) 38.37 6.02 9.94 0.52 0.45 STF (original impl.) 9.91 8.01 4.51 0.58 0.58 
+
+StableVM 9.31 8.02 4.62 0.59 0.57 50k CFM 7.50 8.30 4.25 0.60 0.59 STF (Eq. 22) 29.18 6.59 7.65 0.52 0.50 STF (original impl.) 7.07 8.24 4.22 0.60 0.59 StableVM 6.87 8.38 4.34 0.61 0.59 
+
+200k CFM 3.58 9.06 3.94 0.65 0.61 STF (Eq. 22) 13.50 7.69 4.88 0.56 0.57 STF (original impl.) 3.93 8.92 4.06 0.65 0.61 
+
+StableVM 3.56 9.05 3.98 0.65 0.60 (a)  (b)  (c)  (d)   
+
+> Figure 6. Qualitative comparison of generated samples on CIFAR-10. Samples generated by the checkpoint at 50k iterations (a) CFM, (b) STF instantiated directly from Eq. 22, (c) the original STF implementation, and (d) our StableVM. StableVM produces sharper and more coherent samples, consistent with its improved convergence and variance reduction.
+
+In this experiment, the STF baseline strictly follows Eq. 22: the reference batch B = {xi
+
+> 0
+
+}ni=1 is sampled from the data distribution, and the noisy input xt is generated by applying the forward process to the single reference sample x10. While this matches the theoretical formulation in the original paper, it differs from the implementation used by Xu et al. (2023), which instead applies noise to the first M samples in the reference batch and treats them as training inputs. This modification yields a near-unbiased estimator, since xt is no longer conditioned on a single reference point but effectively drawn from a composite distribution over multiple samples. This behavior closely resembles the composite conditional distribution 
+
+pGMM 
+
+> t
+
+ xt | { xi
+
+> 0
+
+}ni=1 
+
+ introduced in Sec. 3.1. By contrast, StableVM explicitly samples xt from a Gaussian mixture model constructed over the reference batch, ensuring unbiased targets while reducing the variance. As shown in Tab. 7 and Fig. 6, STF instantiated directly from Eq. 22 underperforms even standard CFM, whereas StableVM consistently accelerates convergence and improves sample quality. While the original STF implementation performs substantially better than its direct instantiation from Eq. 22, yet still lags behind StableVM, this comparison highlights a key distinction: STF’s empirical gains arise from an implicit deviation from its theoretical objective, whereas StableVM is explicitly designed to be unbiased, variance-reduced, and readily extensible to flow-matching settings. 15 Stable Velocity: A Variance Perspective on Flow Matching 
+
+## D. Algorithms 
+
+For clarity of presentation, we provide the detailed training procedures of StableVM in this appendix. The main text focuses on the variance-driven formulation and theoretical properties, while Algorithm 1 summarizes the core StableVM training loop. We further extend StableVM to the class-conditional setting with classifier-free guidance, with the complete procedure given in Algorithm 2. StableVM introduces additional computation and memory overhead that scales linearly with the bank capacity, i.e. O(K)
+
+. Specifically, the self-normalized target requires computing a weighted average over the reference batch for each class, and in class-conditioned generation, the memory bank stores latent representations per class. For example, in ImageNet generation, storing 256 latents for each of the 1,000 classes in fp16 precision requires approximately 2 GB of additional memory. The associated computation incurs only minor latency, which is negligible compared to the model’s forward and backward passes. 
+
+Algorithm 1 Stable Velocity Matching 
+
+Require: Training iteration T , initial model vθ , dataset D, learning rate η 
+
+> 1:
+
+for iter = 1 . . . T do  
+
+> 2:
+
+Sample a batch {xi
+
+> 0
+
+}ni=0 from D 
+
+> 3:
+
+Uniformly sample time t ∼ qt(t) from [0 , 1]  
+
+> 4:
+
+Sample perturbed batch {xjt }Mj=1 from 
+
+pGMM  
+
+> t
+
+(xjt | { xi
+
+> 0
+
+}ni=0 ) = 
+
+> K
+
+X
+
+> i=0
+
+1
+
+n pt(xjt | xi
+
+> 0
+
+) 
+
+> 5:
+
+Calculate stable vector field for all xjt :
+
+ˆvStableVM (xjt ; {xi
+
+> 0
+
+}ni=0 ) := 
+
+Pnk=1 pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+) 
+
+> 6:
+
+Calculate loss: 
+
+L(θ) = 1
+
+M
+
+> M
+
+X
+
+> j=1
+
+λ(t) ∥vθ (xjt , t ) − ˆvStableVM (xjt ; {xi
+
+> 0
+
+}ni=0 )∥2 
+
+> 7:
+
+Update model: θ ← θ − η∇L (θ) 
+
+> 8:
+
+end for  
+
+> 9:
+
+Return vθ
+
+16 Stable Velocity: A Variance Perspective on Flow Matching 
+
+Algorithm 2 Stable Velocity Matching with Classifier-free Guidance 
+
+Input: training iterations T , model vθ , dataset D, learning rate η, batch size B, number of classes C, per-class bank capacity K, CFG dropout probability pcfg 
+
+Initialize memory bank M = {M c}Cc=0 , where c=0 , . . . , C −1 denote class-conditional banks and c=C is the unconditional bank 
+
+for c = 0 , . . . , C do 
+
+Mc ← prefilled FIFO queue of capacity K
+
+end for for iter = 1 . . . T do 
+
+Sample times {ti}Bi=1 ∼ qt([0 , 1]) 
+
+Uniformly sample labels {yi}Bi=1 from {0, . . . , C −1}
+
+Set yi ← C with probability pcfg 
+
+for i = 1 . . . B do 
+
+Sample perturbed sample xiti from 
+
+pGMM (xiti | M yi ) = 1
+
+|M yi |
+
+X 
+
+> xref 0∈M yi
+
+pt(xiti | xref 0 )
+
+Compute stable field 
+
+vMyi (xiti ) = X 
+
+> xref 0∈M yi
+
+pt(xiti | xref 0 )
+
+P  
+
+> yref 0∈M yi
+
+pt(xiti | yref 0 ) vt(xiti | xref 0 )
+
+end for 
+
+Compute loss 
+
+L(θ) = 1
+
+B
+
+> B
+
+X
+
+> i=1
+
+λ(ti) vθ (xiti , t i, y i) − vMyi (xiti ) 2
+
+Update parameters θ ← θ − η∇θ L(θ)
+
+Sample B = {(xi
+
+> 0
+
+, y i)}Bi=1 from D
+
+for i = 1 . . . B do 
+
+Push xi 
+
+> 0
+
+into Myi (evict oldest if full) Push xi 
+
+> 0
+
+into MC (unconditional bank) 
+
+end for end for Output: trained velocity field vθ
+
+## E. Proofs 
+
+E.1. pGMM  
+
+> t
+
+Posterior Proposition E.1. The posterior pGMM 
+
+> t
+
+  xi 
+
+> 0
+> ni=1
+
+| xt
+
+ = 1
+
+> n
+
+Pni=1 
+
+
+
+pt
+
+ xi 
+
+> 0
+
+| xt
+
+ Q   
+
+> j̸=i
+
+q(xj
+
+> 0
+
+)
+
+
+
+.Proof. This is a simple application of the Bayes rule. Note that we have 
+
+pGMM 
+
+> t
+
+xi 
+
+> 0
+> ni=1
+
+| xt
+
+
+
+= pGMM 
+
+> t
+
+ xt | xi
+
+> 0
+> ni=1
+
+ · Qni=1 q(xi
+
+> 0
+
+)
+
+pt(xt)= 1
+
+pt(xt)
+
+> n
+
+X
+
+> i=1
+
+1
+
+n · pt(xt | xi
+
+> 0
+
+)
+
+! nY
+
+> i=1
+
+q(xi
+
+> 0
+
+)
+
+!
+
+(24) 
+
+= 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+ pt(xt | xi
+
+> 0
+
+)
+
+pt(xt) ·
+
+> n
+
+Y
+
+> j=1
+
+q(xj
+
+> 0
+
+)
+
+
+
+= 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+pt(xi 
+
+> 0
+
+| xt) Y 
+
+> j̸=i
+
+q(xj
+
+> 0
+
+)
+
+ ,
+
+as desired. 17 Stable Velocity: A Variance Perspective on Flow Matching 
+
+E.2. Proof of Unbiasedness (Theorem 3.1) Theorem 3.1. (a) The StableVM target is unbiased. That is, for any xt, we have 
+
+E{xi 
+
+> 0}∼ pGMM
+> t(·| xt)
+
+hbvStableVM (xt; {xi
+
+> 0
+
+}ni=0 )
+
+i
+
+= vt(xt).
+
+(b) The global minimizer v∗(xt, t ) of the StableVM objective LStableVM is the true velocity field vt(xt).Proof. (a) Using Eq. (24), we obtain 
+
+E{xi
+
+> 0
+
+}ni=1 ∼pGMM  
+
+> t(·| xt)
+
+" nX
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+)
+
+#
+
+=
+
+Z 1
+
+n · pt(xt)
+
+> n
+
+X
+
+> i=1
+
+pt(xt | xi
+
+> 0
+
+)
+
+! nY
+
+> i=1
+
+q(xi
+
+> 0
+
+)
+
+!
+
+·
+
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+) dx1: n
+
+> 0
+
+= 1
+
+n · pt(xt)
+
+Z nY
+
+> i=1
+
+q(xi
+
+> 0
+
+)
+
+! nX
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+)
+
+!
+
+dx1: n
+
+> 0
+
+= 1
+
+n · pt(xt)
+
+> n
+
+X
+
+> k=1
+
+Z nY
+
+> i=1
+
+q(xi
+
+> 0
+
+)
+
+!
+
+pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+) d x1: n
+
+> 0
+
+= 1
+
+n · pt(xt)
+
+> n
+
+X
+
+> k=1
+
+Z Y
+
+> i̸=k
+
+q(xi
+
+> 0
+
+)
+
+ pt(xt, xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+) d x1: n
+
+> 0
+
+= 1
+
+n · pt(xt)
+
+> n
+
+X
+
+> k=1
+
+Y
+
+> i̸=k
+
+Z
+
+q(xi
+
+> 0
+
+) d xi
+
+> 0
+
+ ·
+
+Z
+
+pt(xt, xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+) d xk
+
+> 0
+
+
+
+= 1
+
+n
+
+> n
+
+X
+
+> k=1
+
+Z
+
+pt(xk 
+
+> 0
+
+| xt)vt(xt | xk 
+
+> 0
+
+) d xk 
+
+> 0
+
+= vt(xt),
+
+as desired. (b) Recall the StableVM objective Eq. (8) 
+
+LStableVM (θ, t )= Ext∼pt, {xi
+
+> 0
+
+}ni=1 ∼pGMM  
+
+> t(·| xt)
+
+ vθ (xt, t ) −
+
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+)
+
+> 2
+
+
+
+= Ext∼pt
+
+Z
+
+pGMM 
+
+> t
+
+xi 
+
+> 0
+> ni=1
+
+| xt
+
+
+
+vθ (xt, t ) −
+
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+)
+
+> 2
+
+dx1: n
+
+> 0
+
+ .
+
+For each xt, let 
+
+Lxt (v) := 
+
+Z
+
+pGMM 
+
+> t
+
+xi 
+
+> 0
+> ni=1
+
+| xt
+
+
+
+v −
+
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+)
+
+> 2
+
+dx1: n 
+
+> 0
+
+.
+
+It suffices to show that for each xt, setting v to vt(xt) above minimizes Lxt . Note that Lxt is differentiable and strictly 18 Stable Velocity: A Variance Perspective on Flow Matching 
+
+convex in v, so the minimizer v∗ must satisfy ∇L xt (v∗) = 0 . It follows that 
+
+0 = 2 
+
+Z
+
+pGMM 
+
+> t
+
+xi 
+
+> 0
+> ni=1
+
+| xt
+
+
+
+v∗ −
+
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+)
+
+!
+
+dx1: n
+
+> 0
+
+= 2 
+
+Z
+
+pGMM 
+
+> t
+
+xi 
+
+> 0
+> ni=1
+
+| xt
+
+
+
+v∗ dx1: n
+
+> 0
+
+− 2
+
+Z
+
+pGMM 
+
+> t
+
+xi 
+
+> 0
+> ni=1
+
+| xt
+
+ nX
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+) dx1: n
+
+> 0
+
+= 2 v∗ − 2vt(xt),
+
+where we have used part (a) in the last step. Therefore, vt(xt) is the unique minimizer of Lxt . This finishes the proof. 
+
+E.3. Proofs of the Variance Bounds (Theorem 3.2 and Theorem 3.3) 
+
+In this section, we prove the variance reduction bound of our StableVM target as in Eq. (9). We first recall that the StableVM target is the following estimator 
+
+bvt := 
+
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+) vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+) ∈ Rd, (25) where xt ∼ pt and xi 
+
+> 0
+> ni=1
+
+∼ pGMM  
+
+> t
+
+(· | xt).We first prove the weaker version of the variance bound. 
+
+Theorem 3.2. Fix t ∈ [0 , 1] . We always have VStableVM (t) ≤ V CFM (t).Proof. We have 
+
+VStableVM (t)= E{xi 
+
+> 0}ni=1 ∼qn
+
+Ext∼pGMM   
+
+> t(·|{ xi
+> 0}ni=1 )
+
+vt(xt) −
+
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+)
+
+> 2
+
+= E{xi
+
+> 0}ni=1 ∼qn
+
+Z 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+pt(xt | xi
+
+> 0
+
+)
+
+!
+
+vt(xt) −
+
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+)
+
+> 2
+
+dxt
+
+
+
+≤ E{xi
+
+> 0}ni=1 ∼qn
+
+"Z 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+pt(xt | xi
+
+> 0
+
+)
+
+! nX
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+) vt(xt) − vt(xt | xk 
+
+> 0
+
+) 2 dxt
+
+#
+
+= E{xi
+
+> 0}ni=1 ∼qn
+
+"Z 1
+
+n
+
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+) vt(xt) − vt(xt | xk 
+
+> 0
+
+) 2 dxt
+
+#
+
+= 1
+
+n · E{xi
+
+> 0}ni=1 ∼qn
+
+" nX
+
+> k=1
+
+Z
+
+pt(xt | xk 
+
+> 0
+
+) vt(xt) − vt(xt | xk 
+
+> 0
+
+) 2 dxt
+
+#
+
+= 1
+
+n · E{xi
+
+> 0}ni=1 ∼qn
+
+" nX
+
+> k=1
+
+Ext∼pt(·| xk  
+
+> 0)
+
+vt(xt) − vt(xt | xk 
+
+> 0
+
+) 2
+
+#
+
+= 1
+
+n
+
+> n
+
+X
+
+> k=1
+
+VCFM (t) = VCFM (t),
+
+where the inequality is by Jensen’s inequality and the convexity of ∥ · ∥ 2.Before proceeding to proving the stronger bound, we first give an alternative interpretation of the posterior 
+
+pGMM 
+
+> t
+
+  xi 
+
+> 0
+> ni=1
+
+| xt
+
+. Consider the following procedure conditioned on xt:19 Stable Velocity: A Variance Perspective on Flow Matching 
+
+1. Sample a latent index I uniformly from {1, . . . , n }.2. Sample xI 
+
+> 0
+
+∼ pt(· | xt) and xj 
+
+> 0
+
+∼ q for all j̸ = I.We claim the following: 
+
+Lemma E.2. (a) The joint distribution of xi 
+
+> 0
+> ni=1
+
+sampled from the above procedure conditioned on xt is exactly 
+
+pGMM 
+
+> t
+
+  xi 
+
+> 0
+> ni=1
+
+| xt
+
+.(b) xi 
+
+> 0
+> ni=1
+
+are independent conditioned on xt and I.Proof. (a) Note that the joint distribution of xi 
+
+> 0
+> ni=1
+
+sampled from the above procedure is 
+
+1
+
+n
+
+> n
+
+X
+
+> i=1
+
+pt(xi 
+
+> 0
+
+| xt) Y 
+
+> j̸=i
+
+q(xj
+
+> 0
+
+)
+
+ ,
+
+which matches the joint distribution given by the posterior of pGMM  
+
+> t
+
+.(b) This is clear by construction. The following lemmas compute the variance of the StableVM estimator step-by-step. 
+
+Lemma E.3. We have 
+
+Cov ( bvt | xt) = E [Cov ( bvt | xt, I ) | xt] ,
+
+where the expectation on the right-hand side is over the random variable I.Proof. By the law of total covariance, we have 
+
+Cov ( bvt | xt) = EI
+
+Cov  bvt | xt, I  | xt
+
+ + Cov I
+
+ Ebvt | xt, I  | xt
+
+ .
+
+We claim that Ebvt | xt, I  does not depend on I, so the second term above would be 0.Let i ∈ [n]. We have 
+
+Ebvt | xt, I = i =
+
+Z
+
+pt(xi 
+
+> 0
+
+| xt) Y 
+
+> j̸=i
+
+q(xj
+
+> 0
+
+) ·
+
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+) vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+) dx1: n 
+
+> 0
+
+.
+
+Let π : Rnd → Rnd that swaps x10 and xi
+
+> 0
+
+, i.e. π(x10, . . . , xi
+
+> 0
+
+, . . . , xn 
+
+> 0
+
+) = ( xi
+
+> 0
+
+, . . . , x10, . . . , xn 
+
+> 0
+
+). Note that we have 
+
+| det Dπ | = 1 since the Jacobian Dπ is a permutation matrix. Then by the change of variable formula, we have 
+
+Ebvt | xt, I = i =
+
+Z
+
+pt(x10 | xt) Y 
+
+> j̸=1
+
+q(xj
+
+> 0
+
+) ·
+
+> n
+
+X
+
+> k=1
+
+pt(xt | xk 
+
+> 0
+
+) vt(xt | xk 
+
+> 0
+
+)
+
+Pnj=1 pt(xt | xj
+
+> 0
+
+) dx1: n
+
+> 0
+
+= Ebvt | xt, I = 1 .
+
+This shows that Cov I
+
+ Ebvt | xt, I  | xt
+
+ = 0 , which finishes the proof. For the next two lemmas, we fix ℓ ∈ [d] and only consider the ℓth component bv(ℓ) 
+
+> t
+
+for simplicity. Define 
+
+Vn−1 := X 
+
+> k̸=i
+
+pt(xt | xk 
+
+> 0
+
+)v(ℓ) 
+
+> t
+
+(xt | xk 
+
+> 0
+
+), Pn−1 := X 
+
+> k̸=i
+
+pt(xt | xk 
+
+> 0
+
+),vi := pt(xt | xi
+
+> 0
+
+)v(ℓ) 
+
+> t
+
+(xt | xi
+
+> 0
+
+), pi := pt(xt | xi
+
+> 0
+
+).
+
+20 Stable Velocity: A Variance Perspective on Flow Matching 
+
+Then we have 
+
+bv(ℓ) 
+
+> t
+
+= Vn−1 + vi
+
+Pn−1 + pi
+
+.
+
+Note that conditioned on xt and I = i, the random variables xk 
+
+> 0
+
+for k̸ = i are all independent and follow the data distribution 
+
+q by Lemma E.2. Let us also first compute some expectations that will be useful later. We have for k̸ = i,
+
+E pt(xt | xk 
+
+> 0
+
+) | xt, I = i =
+
+Z
+
+pt(xt | xk 
+
+> 0
+
+)q(xk 
+
+> 0
+
+) d xk 
+
+> 0
+
+=
+
+Z
+
+pt(xt, xk 
+
+> 0
+
+) d xk 
+
+> 0
+
+= pt(xt), (26) 
+
+E pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+) | xt, I = i =
+
+Z
+
+pt(xt | xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+)q(xk 
+
+> 0
+
+) d xk
+
+> 0
+
+=
+
+Z
+
+pt(xt, xk 
+
+> 0
+
+)vt(xt | xk 
+
+> 0
+
+) d xk
+
+> 0
+
+= pt(xt)
+
+Z pt(xt, xk 
+
+> 0
+
+)
+
+pt(xt) vt(xt | xk 
+
+> 0
+
+) d xk
+
+> 0
+
+= pt(xt)
+
+Z
+
+pt(xk 
+
+> 0
+
+| xt)vt(xt | xk 
+
+> 0
+
+) d xk
+
+> 0
+
+= pt(xt)vt(xt), (27) 
+
+Ex0∼pt(·| xt) [vt(xt | x0) | xt] = 
+
+Z
+
+pt(x0 | xt) vt(xt | x0) d x0 = vt(xt), (28) and 
+
+Ex0∼q
+
+ pt(x0 | xt)
+
+q(x0)
+
+
+
+=
+
+Z
+
+pt(x0 | xt) d x0 = 1 . (29) We then continue with the lemmas. 
+
+Lemma E.4. As n → ∞ , we have 
+
+√n − 1
+
+ Vn−1
+
+Pn−1
+
+− v(ℓ) 
+
+> t
+
+(xt)
+
+
+
+> d
+
+−→ N 
+
+
+
+0, Ex0∼pt(·| xt)
+
+ pt(xt | x0)
+
+pt(xt)
+
+
+
+v(ℓ) 
+
+> t
+
+(xt | x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2 
+
+,
+
+where the random variables Vn−1 and Pn−1 are conditioned on xt and I = i.Proof. Write 
+
+f (x0) := v(ℓ) 
+
+> t
+
+(xt | x0), w(x0) := pt(x0 | xt)
+
+q(x0) .
+
+Then we have 
+
+Vn−1
+
+Pn−1
+
+=
+
+P  
+
+> k̸=i
+
+pt(xt | xk 
+
+> 0
+
+) v(ℓ) 
+
+> t
+
+(xt | xk 
+
+> 0
+
+)
+
+P  
+
+> k̸=i
+
+pt(xt | xk 
+
+> 0
+
+) =
+
+P  
+
+> k̸=i
+
+pt(xt | xk 
+
+> 0
+
+) f (xk 
+
+> 0
+
+)
+
+P  
+
+> k̸=i
+
+pt(xt | xk 
+
+> 0
+
+)=
+
+P       
+
+> k̸=ipt(xt|xk
+> 0)q(xk
+> 0)
+> pt(xt)q(xk
+> 0)
+
+f (xk 
+
+> 0
+
+)
+
+P      
+
+> k̸=ipt(xt|xk
+> 0)q(xk
+> 0)
+> pt(xt)q(xk
+> 0)
+
+=
+
+P    
+
+> k̸=ipt(xk
+> 0|xt)
+> q(xk
+> 0)
+
+f (xk 
+
+> 0
+
+)
+
+P   
+
+> k̸=ipt(xk
+> 0|xt)
+> q(xk
+> 0)
+
+=
+
+P  
+
+> k̸=i
+
+w(xk 
+
+> 0
+
+) f (xk 
+
+> 0
+
+)
+
+P  
+
+> k̸=i
+
+w(xk 
+
+> 0
+
+) . (30) Recall from Lemma E.2 that conditioned on xt and I = i, the xi
+
+> 0
+
+’s are all independent. Therefore, Eq. (30) is a self-normalized importance sampling estimator (Chapter 9 of (Owen, 2013)) with importance distribution q(x0), nominal distribution pt(x0 | xt), and importance weight ratio w(x0).21 Stable Velocity: A Variance Perspective on Flow Matching 
+
+Note that by Eq. (28) and Eq. (29), we have 
+
+Ex0∼pt(·| xt)[f (x0)] = v(ℓ) 
+
+> t
+
+(xt), Ex0∼q [w(x0)] = 1 .
+
+Following results using the delta method as in (Lehmann & Romano, 2023) (Theorem 11.2.14) and (Owen, 2013) (Eq. (9.8)), we have that 
+
+√n − 1
+
+ Vn−1
+
+Pn−1
+
+− v(ℓ) 
+
+> t
+
+(xt)
+
+ d
+
+−→ N 
+
+
+
+0, Ex0∼q
+
+
+
+w(x0)2 
+
+f (x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2 
+
+.
+
+Expanding the variance term above gives us 
+
+Ex0∼q
+
+
+
+w(x0)2 
+
+f (x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2
+
+= Ex0∼q
+
+ pt(x0 | xt)2
+
+q(x0)2 ·
+
+
+
+v(ℓ) 
+
+> t
+
+(xt | x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2
+
+=
+
+Z pt(x0 | xt)2
+
+q(x0) ·
+
+
+
+v(ℓ) 
+
+> t
+
+(xt | x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2
+
+dx0
+
+= 1
+
+pt(xt)
+
+Z
+
+pt(x0 | xt) · pt(x0 | xt) pt(xt)
+
+q(x0)
+
+
+
+v(ℓ) 
+
+> t
+
+(xt | x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2
+
+dx0
+
+= 1
+
+pt(xt)
+
+Z
+
+pt(x0 | xt) · pt(xt | x0)
+
+
+
+v(ℓ) 
+
+> t
+
+(xt | x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2
+
+dx0
+
+= 1
+
+pt(xt) · Ex0∼pt(·| xt)
+
+
+
+pt(xt | x0)
+
+
+
+v(ℓ) 
+
+> t
+
+(xt | x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2
+
+,
+
+as desired. 
+
+Lemma E.5. Assume  (n − 1) ∥bvt − vt(xt)∥2∞ 
+
+> n=1
+
+is uniformly integrable. Then we have 
+
+Var 
+
+bv(ℓ) 
+
+> t
+
+| xt, I = i
+
+
+
+= 1
+
+n − 1 Ex0∼pt(·| xt)
+
+ pt(xt | x0)
+
+pt(xt)
+
+
+
+v(ℓ) 
+
+> t
+
+(xt | x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2
+
++ o
+
+ 1
+
+n
+
+
+
+for large n.Proof. Let g(x, y ) = x/y so that bv(ℓ) 
+
+> t
+
+= g(Vn−1 + vi, P n−1 + pi). Performing a Taylor expansion of g at the point 
+
+(Vn−1, P n−1) gives us 
+
+bv(ℓ) 
+
+> t
+
+= g(Vn−1, P n−1) + ∇g(Vn−1 + λn−1vi, P n−1 + λn−1pi)
+
+vi
+
+pi
+
+
+
+= Vn−1
+
+Pn−1
+
++ vi
+
+Pn−1 + λn−1pi
+
+− Vn−1 + λn−1vi
+
+(Pn−1 + λn−1pi)2 pi
+
+for some [0 , 1] -valued random variable λn−1. It follows that 
+
+√n − 1
+
+bv(ℓ) 
+
+> t
+
+− v(ℓ) 
+
+> t
+
+(xt)
+
+
+
+= √n − 1
+
+ Vn−1
+
+Pn−1
+
+− v(ℓ) 
+
+> t
+
+(xt)
+
+
+
++
+
+√n − 1 · vi
+
+Pn−1 + λn−1pi
+
+− √n − 1 · Vn−1 + λn−1vi
+
+(Pn−1 + λn−1pi)2 · pi (31) For the second term in Eq. (31), we first note that by the law of large numbers and Eq. (26), we have Pn−1
+
+> n−1
+> p
+
+−→ pt(xt) as 
+
+n → ∞ . Also note that λn−1 
+
+> n−1
+
+→ 0 as n → ∞ deterministically. It follows that 1 
+
+> n−1
+
+(Pn−1 + λn−1pi) p
+
+−→ pt(xt). We also have vi√n−1 → 0 deterministically since vt is bounded. Hence, we have 
+
+√n − 1 · vi
+
+Pn−1 + λn−1pi
+
+= 
+
+> 1√n−1
+
+vi 
+
+> 1
+> n−1
+
+(Pn−1 + λn−1pi)
+
+> p
+
+−→ 0
+
+22 Stable Velocity: A Variance Perspective on Flow Matching 
+
+by Slutsky’s theorem, so the second term of Eq. (31) converges to 0 in probability. For the third term in Eq. (31), we have 1(n−1) 2 (Pn−1 + λn−1pi)2 p
+
+−→ pt(xt)2 by Slutsky’s theorem. At the same time, by the law of large numbers and Eq. (27), we have Vn−1
+
+> n−1
+> p
+
+−→ pt(xt)v(ℓ) 
+
+> t
+
+(xt). Since vt is bounded, we have λn−1vi 
+
+> n−1
+
+→ 0
+
+deterministically. We also have pi√n−1 → 0 deterministically. Therefore, we get that 
+
+1(n − 1) 3/2 (Vn−1 + λn−1vi) pi = pi
+
+√n − 1 ·
+
+ Vn−1
+
+n − 1 + λn−1vi
+
+n − 1
+
+
+
+> p
+
+−→ 0 ·
+
+
+
+pt(xt)v(ℓ) 
+
+> t
+
+(xt) + 0 
+
+
+
+= 0 ,
+
+by Slutsky’s theorem. Then by Slutsky’s theorem again, we have 
+
+√n − 1 · Vn−1 + λn−1vi
+
+(Pn−1 + λn−1pi)2 · pi = 
+
+> 1(n−1) 3/2
+
+(Vn−1 + λn−1vi) pi 
+
+> 1(n−1) 2
+
+(Pn−1 + λn−1pi)2
+
+> p
+
+−→ 0,
+
+so the third term in Eq. (31) also converges to 0 in probability. Therefore, combining Lemma E.4 and the results above using Slutsky’s theorem, we conclude that 
+
+√n − 1
+
+bv(ℓ) 
+
+> t
+
+− v(ℓ) 
+
+> t
+
+(xt)
+
+ d
+
+−→ N 
+
+
+
+0, Ex0∼pt(·| xt)
+
+ pt(xt | x0)
+
+pt(xt)
+
+
+
+v(ℓ) 
+
+> t
+
+(xt | x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2 
+
+.
+
+Then by the uniform integrability assumption, we have that bv(ℓ) 
+
+> t
+
+has variance 
+
+1
+
+n − 1 Ex0∼pt(·| xt)
+
+ pt(xt | x0)
+
+pt(xt)
+
+
+
+v(ℓ) 
+
+> t
+
+(xt | x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2
+
++ o
+
+ 1
+
+n
+
+
+
+,
+
+as desired. We are now ready to state and prove the main theorem. 
+
+Theorem 3.3. Fix t ∈ [0 , 1] . Let vt be bounded. Assume  (n−1) ∥bvt −vt(xt)∥2∞ 
+
+> n=1
+
+is uniformly integrable. Let ε ∈ (0 , 1) .Assume 
+
+M := 
+
+Z
+
+> {x:pt(x)≤ε}
+
+Ex0∼pt(·| xt)
+
+h
+
+∥vt(xt | x0) − vt(xt)∥2i
+
+dxt < ∞.
+
+Then, for large enough n, we have 
+
+VStableVM (t) ≤ 1
+
+n − 1
+
+ 1
+
+ε · V CFM (t) + M
+
+
+
++ o
+
+ 1
+
+n
+
+
+
+.
+
+Proof. Recall from Eq. (9) that we have 
+
+VStableVM (t) = E
+
+h
+
+Tr Cov ( bvt | xt)
+
+i
+
+= E
+
+h
+
+Tr 
+
+
+
+E
+
+h
+
+Cov ( bvt | xt, I ) | xt
+
+ii 
+
+= E
+
+h
+
+E
+
+h
+
+Tr Cov  bvt | xt, I  | xt
+
+ii 
+
+,
+
+where the second line follows from Lemma E.3, and the third line follows from the linearity of expectation. Note that the inner expectation is over the random variable I, and the outer expectation is over the random variable xt. From Lemma E.5, we have 
+
+Var 
+
+bv(ℓ) 
+
+> t
+
+| xt, I = i
+
+
+
+= 1
+
+n − 1 Ex0∼pt(·| xt)
+
+ pt(xt | x0)
+
+pt(xt)
+
+
+
+v(ℓ) 
+
+> t
+
+(xt | x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2
+
++ o
+
+ 1
+
+n
+
+
+
+.
+
+23 Stable Velocity: A Variance Perspective on Flow Matching 
+
+Then 
+
+Tr Cov  bvt | xt, I = i =
+
+> d
+
+X
+
+> ℓ=1
+
+Var 
+
+bv(ℓ) 
+
+> t
+
+| xt, I = i
+
+
+
+= 1
+
+n − 1
+
+> d
+
+X
+
+> ℓ=1
+
+Ex0∼pt(·| xt)
+
+ pt(xt | x0)
+
+pt(xt)
+
+
+
+v(ℓ) 
+
+> t
+
+(xt | x0) − v(ℓ) 
+
+> t
+
+(xt)
+
+2
+
++ o
+
+ 1
+
+n
+
+
+
+= 1
+
+n − 1 Ex0∼pt(·| xt)
+
+ pt(xt | x0)
+
+pt(xt) ∥vt(xt | x0) − vt(xt)∥2
+
+
+
++ o
+
+ 1
+
+n
+
+
+
+.
+
+Since i does not appear in the last line above, we get 
+
+VStableVM (t) = 1
+
+n − 1 Ext∼pt
+
+
+
+Ex0∼pt(·| xt)
+
+ pt(xt | x0)
+
+pt(xt) ∥vt(xt | x0) − vt(xt)∥2
+
+ 
+
++ o
+
+ 1
+
+n
+
+
+
+≤ 1
+
+n − 1 Ext∼pt
+
+ 1
+
+pt(xt) Ex0∼pt(·| xt)
+
+h
+
+∥vt(xt | x0) − vt(xt)∥2i
+
++ o
+
+ 1
+
+n
+
+
+
+,
+
+where we have used pt(xt | x0) ≤ 1 in the second line. Now we fix some ε > 0. Define P>ε := {x ∈ Rd : pt(x) > ε } and P≤ε := Rd \ P>ε . Then we have 
+
+VStableVM (t) ≤ 1
+
+n − 1
+
+Z
+
+> Rd
+
+Ex0∼pt(·| xt)
+
+h
+
+∥vt(xt | x0) − vt(xt)∥2i
+
+pt(xt) · pt(xt) d xt + o
+
+ 1
+
+n
+
+
+
+= 1
+
+n − 1
+
+Z
+
+> P>ε
+
+Ex0∼pt(·| xt)
+
+h
+
+∥vt(xt | x0) − vt(xt)∥2i
+
+pt(xt) · pt(xt) d xt
+
++ 1
+
+n − 1
+
+Z
+
+> ≤ε
+
+Ex0∼pt(·| xt)
+
+h
+
+∥vt(xt | x0) − vt(xt)∥2i
+
+dxt + o
+
+ 1
+
+n
+
+
+
+≤ 1
+
+ε(n − 1) 
+
+Z
+
+> P>ε
+
+Ex0∼pt(·| xt)
+
+h
+
+∥vt(xt | x0) − vt(xt)∥2i
+
+· pt(xt) d xt + Mn − 1 + o
+
+ 1
+
+n
+
+
+
+≤ 1
+
+ε(n − 1) 
+
+Z
+
+> Rd
+
+Ex0∼pt(·| xt)
+
+h
+
+∥vt(xt | x0) − vt(xt)∥2i
+
+· pt(xt) d xt + Mn − 1 + o
+
+ 1
+
+n
+
+
+
+= 1
+
+ε(n − 1) · Ext∼pt,x0∼pt(·| xt)
+
+h
+
+∥vt(xt | x0) − vt(xt)∥2i
+
++ Mn − 1 + o
+
+ 1
+
+n
+
+
+
+= 1
+
+n − 1
+
+ 1
+
+ε · V CFM (t) + M
+
+
+
++ o
+
+ 1
+
+n
+
+
+
+,
+
+as desired. We note that we can choose a suitable ε in practice such that the set {x : pt(x) ≤ ε} is “small” (in the sense that it has Lebesgue measure close to 0), which would lead to M being close to 0.
+
+E.4. Simulating the Reverse SDE in Low-Variance Regime 
+
+Ma et al. (2024) show that the reverse-time SDE (Eq. (16)) with score function st(x) = ∇x log pt(x) and arbitrary diffusion strength wt ≥ 0 yields the correct marginal density pt(x) at each time t. Furthermore, as established in Anderson (1982); Ma et al. (2024), if xt ∼ pt(x), then the reverse-time solution xτ at any τ ∈ [0 , t ] is distributed according to the posterior: 
+
+pτ (xτ | xt) = Ept(x0|xt) [pτ (xτ | x0, xt)] ≈ pτ (xτ | x0, xt). (32) 
+
+Proposition E.6. Let xt ∼ N (αtx0, σ 2 
+
+> t
+
+I) and xτ ∼ N (ατ x0, σ 2 
+
+> τ
+
+I), where τ < t , and x0 ∼ p(x0) is the clean data sample. For any fixed variance parameter β2 
+
+> t
+
+∈ (0 , σ 2 
+
+> τ
+
+), define the posterior distribution as 
+
+pαt 
+
+> τ
+
+(xτ | xt, x0) = N (ktxt + λtx0, β 2 
+
+> t
+
+I),
+
+24 Stable Velocity: A Variance Perspective on Flow Matching 
+
+then the coefficients 
+
+kt =
+
+s
+
+σ2 
+
+> τ
+
+− β2
+
+> t
+
+σ2
+
+> t
+
+, λt = ατ − αt ·
+
+s
+
+σ2 
+
+> τ
+
+− β2
+
+> t
+
+σ2
+
+> t
+
+guarantee that the marginal of xτ is N (ατ x0, σ 2 
+
+> τ
+
+I).Proof. We begin by expressing xt using the forward diffusion process: 
+
+xt = αtx0 + σtϵ, ϵ ∼ N (0 , I).
+
+We define the reverse model as a Gaussian conditional: 
+
+xτ = ktxt + λtx0 + η, η ∼ N (0 , β 2 
+
+> t
+
+I).
+
+Substituting xt yields: 
+
+xτ = kt(αtx0 + σtϵ) + λtx0 + η = ( ktαt + λt)x0 + ktσtϵ + η. 
+
+Hence, the conditional distribution of xτ given x0 is: 
+
+xτ | x0 ∼ N  (ktαt + λt)x0, (k2 
+
+> t
+
+σ2 
+
+> t
+
++ β2 
+
+> t
+
+)I .
+
+To match the desired marginal xτ ∼ N (ατ x0, σ 2 
+
+> τ
+
+I), we require: 
+
+ktαt + λt = ατ ,k2 
+
+> t
+
+σ2 
+
+> t
+
++ β2 
+
+> t
+
+= σ2 
+
+> τ
+
+.
+
+Solving the second equation above for kt, we obtain: 
+
+kt =
+
+s
+
+σ2 
+
+> τ
+
+− β2
+
+> t
+
+σ2
+
+> t
+
+.
+
+Substituting into first equation, we get: 
+
+λt = ατ − αt ·
+
+s
+
+σ2 
+
+> τ
+
+− β2
+
+> t
+
+σ2
+
+> t
+
+.
+
+Thus, the choice of kt and λt ensures that the conditional distribution of xτ is consistent with the marginal. Within this low variance area, we also have 
+
+vt(xt) ≈ vt(xt | x0) = σ′
+
+> t
+
+σt
+
+(xt − αtx0) + α′
+
+> t
+
+x0, (33) Thus, given the velocity field vt(xt) and the current state xt, the target x0 can be extracted as: 
+
+x0 = vt(xt) − σ′ 
+
+> t
+> σt
+
+xt
+
+α′ 
+
+> t
+
+− σ′ 
+
+> t
+> σt
+
+αt
+
+(34) Plugging in this equation into the original expression, thus the posterior distribution with x0 eliminated via vt(xt), is given by: 
+
+pτ (xτ | xt, vt(xt)) = N  μτ |t, β 2 
+
+> t
+
+I
+
+where the posterior mean is explicitly: 
+
+μτ |t =
+
+s
+
+σ2 
+
+> τ
+
+− β2
+
+> t
+
+σ2
+
+> t
+
+− ατ − αt
+
+s
+
+σ2 
+
+> τ
+
+− β2
+
+> t
+
+σ2
+
+> t
+
+!
+
+·
+
+σ′
+
+> t
+
+σt
+
+α′ 
+
+> t
+
+− σ′
+
+> t
+
+σt
+
+αt
+
+ xt + ατ − αt
+
+s
+
+σ2 
+
+> τ
+
+− β2
+
+> t
+
+σ2
+
+> t
+
+!
+
+· vt(xt)
+
+α′ 
+
+> t
+
+− σ′
+
+> t
+
+σt
+
+αt
+
+25 Stable Velocity: A Variance Perspective on Flow Matching 
+
+Assuming αt = 1 − t and σt = t, the DDIM-style posterior becomes: 
+
+pτ (xτ | xt, vt(xt)) = N  μτ |t, β 2 
+
+> t
+
+I
+
+with mean: 
+
+μτ |t =
+
+r τ 2 − β2
+
+> t
+
+t2 + (1 − τ ) − (1 − t)
+
+r τ 2 − β2
+
+> t
+
+t2
+
+!! 
+
+xt − (1 − τ ) − (1 − t)
+
+r τ 2 − β2
+
+> t
+
+t2
+
+!
+
+tvt(xt)
+
+If we set βt = 0 , we obtain the deterministic sampler: 
+
+xτ = xt + ( τ − t)vt(xt)
+
+E.5. Explicit PF-ODE Solution in Low-Variance Regime 
+
+In low-variance regime (0 ≤ t ≤ ξ), the conditional velocity field simplifies as vt(xt) ≈ vt(xt | x0). We can thus derive explicit solutions to the Probability Flow ODE (PF-ODE) under both the stochastic interpolant and VP diffusion frameworks. We consider the Probability Flow ODE (PF-ODE) under the stochastic interpolant framework: 
+
+dxt
+
+dt = vt(xt) ≈ vt(xt | x0) = σ′
+
+> t
+
+σt
+
+(xt − αtx0) + α′
+
+> t
+
+x0, (35) where αt and σt define a stochastic interpolant, and x0 is the data point to be matched. 
+
+Closed-form of the Target x0 Given the velocity field vt(xt) and the current state xt, the target x0 can be extracted as: 
+
+x0 = vt(xt) − σ′ 
+
+> t
+> σt
+
+xt
+
+α′ 
+
+> t
+
+− σ′ 
+
+> t
+> σt
+
+αt
+
+= vt(xt) − σ′ 
+
+> t
+> σt
+
+xt
+
+Ct
+
+, (36) where we define the coefficient 
+
+Ct := α′ 
+
+> t
+
+− σ′
+
+> t
+
+σt
+
+αt.
+
+Solving the PF-ODE from t to 0 ≤ τ < t We aim to integrate the PF-ODE backward in time from a known terminal state xt. The PF-ODE can be written as: 
+
+dxt
+
+dt + a(t)xt = b(t), where a(t) = − σ′
+
+> t
+
+σt
+
+, b(t) = Ctx0. (37) This is a linear nonhomogeneous first-order ODE. The integrating factor is: 
+
+μ(t) = exp 
+
+Z 
+
+a(t)dt 
+
+
+
+= exp 
+
+
+
+−
+
+Z σ′
+
+> t
+
+σt
+
+dt 
+
+
+
+= 1
+
+σt
+
+.
+
+Multiplying both sides by μ(t) yields: 
+
+ddt 
+
+ xt
+
+σt
+
+
+
+= Ct
+
+σt
+
+x0.
+
+Integrating both sides from t to τ < t :
+
+xτ
+
+στ
+
+= xt
+
+σt
+
++
+
+Z τt
+
+C(s)
+
+σs
+
+ds · x0, (38) which gives: 
+
+xτ = στ
+
+ xt
+
+σt
+
++ I(t, τ ) · x0
+
+
+
+, (39) where 
+
+I(t, τ ) := 
+
+Z τt
+
+C(s)
+
+σs
+
+ds. 
+
+26 Stable Velocity: A Variance Perspective on Flow Matching 
+
+Substituting x0 in Closed Form We now substitute the expression for x0 evaluated at time t:
+
+x0 = vt(xt) − σ′ 
+
+> t
+> σt
+
+xt
+
+Ct
+
+.
+
+Substitute this into the solution: 
+
+xτ = στ
+
+ xt
+
+σt
+
++ I(t, τ ) · vt(xt) − σ′ 
+
+> t
+> σt
+
+xt
+
+Ct
+
+ (40) 
+
+= στ
+
+ 1
+
+σt
+
+− σ′
+
+> t
+
+σt
+
+· I(t, τ )
+
+Ct
+
+
+
+xt + I(t, τ )
+
+Ct
+
+vt(xt)
+
+
+
+. (41) 
+
+Final Expression (Only in Terms of xt)
+
+xτ = στ
+
+ 1
+
+σt
+
+− σ′
+
+> t
+
+σt
+
+· I(t, τ )
+
+Ct
+
+
+
+xt + I(t, τ )
+
+Ct
+
+vt(xt)
+
+
+
+(42) This provides a fully explicit backward solution to the PF-ODE, depending only on xt and the velocity field vt(xt).
+
+Special Case: Linear Interpolant For the linear interpolant with αt = 1 − t and σt = t, we have: 
+
+α′ 
+
+> t
+
+= −1, σ′ 
+
+> t
+
+= 1 , ⇒ Ct = − 1
+
+t , Ct
+
+σt
+
+= − 1
+
+t2 .
+
+Then: 
+
+I(t, τ ) = 
+
+Z τt
+
+− 1
+
+s2 ds = 1
+
+τ − 1
+
+t .
+
+Also note: σ′
+
+> t
+
+σt
+
+= 1
+
+t , Ct = − 1
+
+t .
+
+Plug into the general expression: 
+
+xτ = τ
+
+ 1
+
+t − 1
+
+t · 1/τ − 1/t 
+
+−1/t 
+
+
+
+xt +
+
+ 1/τ − 1/t 
+
+−1/t 
+
+
+
+vt(xt)
+
+
+
+(43) 
+
+= τ
+
+ 1
+
+t +
+
+ 1
+
+τ − 1
+
+t
+
+ 
+
+xt +
+
+ 1
+
+t − 1
+
+τ
+
+
+
+vt(xt)
+
+
+
+(44) 
+
+= xt + ( τ − t)vt(xt). (45) 
+
+Final Linear Interpolant Result 
+
+xτ = xt + ( τ − t)vt(xt) (46) In the case of the linear interpolant, the PF-ODE corresponds to a straight-line trajectory with constant velocity vt(xt),enabling exact integration via Euler steps of arbitrary size. 
+
+## F. More Experimental Results 
+
+F.1. Two-Stage Training and Sampling 
+
+For the two-stage experiment, we set ξ = 0 .7 as the split point between the low-variance and high-variance regimes. During training, timesteps are sampled uniformly from [ξ, 1] , and optimization is performed using either the standard CFM loss or our StableVM loss, while all other configurations follow Sec. 4.1. Specifically, an SiT-XL/2 model is trained from scratch on t ∈ [ξ, 1] , while a pretrained SiT-XL/2 model from REPA is used for stepping in t ∈ [0 , ξ ]. Each model is trained for 500k steps, with checkpoints evaluated every 40k steps. As shown in Tab. 8, StableVM consistently outperforms CFM across training stages, indicating improved optimization stability in the high-variance regime. 27 Stable Velocity: A Variance Perspective on Flow Matching 
+
+Table 8. Two-stage training experiment, comparing CFM and StableVM (bank size K = 256 ). Models are trained for 500k steps with checkpoints evaluated every 40k steps. The results are reported with classifier-free guidance. StableVM consistently achieves better FID and IS across training, demonstrating improved optimization stability when training is restricted to the high-variance regime.                                                                                                                                                         
+
+> # Steps SiT StableVM ( K= 256 )
+> IS ↑FID ↓sFID ↓Precision ↑Recall ↑IS ↑FID ↓sFID ↓Precision ↑Recall ↑
+> 40k (SiT) / 50k (StableVM) 212.5 4.33 6.29 0.71 0.69 219.2 3.92 6.04 0.72 0.69 80k 223.8 3.53 5.61 0.73 0.68 227.3 3.35 5.61 0.73 0.67 120k 234.4 3.07 5.34 0.74 0.67 234.8 3.02 5.40 0.74 0.67 160k 239.7 2.81 5.24 0.74 0.67 238.9 2.87 5.74 0.74 0.66 200k 244.7 2.62 5.20 0.75 0.67 247.0 2.59 5.21 0.75 0.67 240k 247.4 2.54 5.17 0.75 0.67 250.3 2.48 5.20 0.75 0.67 280k 250.9 2.47 5.14 0.75 0.66 253.3 2.40 5.13 0.75 0.67
+> 320k 251.7 2.39 5.17 0.75 0.67 255.4 2.34 5.13 0.75 0.66 360k 255.4 2.35 5.16 0.75 0.67 258.5 2.28 5.11 0.76 0.66 400k 258.6 2.28 5.17 0.76 0.67 261.7 2.17 4.98 0.76 0.67 440k 259.3 2.29 5.20 0.76 0.67 262.3 2.16 5.00 0.76 0.67 480k 259.7 2.26 5.22 0.76 0.67 263.1 2.16 5.03 0.76 0.66 500k 260.1 2.26 5.23 0.76 0.67 262.7 2.17 5.06 0.76 0.67
+
+Figure 7. Comparison of CFM and StableVM with n = 2048 on the synthetic GMM distribution. We plot the second-order moment 
+
+as a function of training iterations at four time steps: t = 0 .20 , 0.30 , 0.40 , and 0.50 .
+
+F.2. Unconditional Synthetic GMM Generation 
+
+We also evaluate Algorithm 1 in the unconditional generation setting. Specifically, we construct a synthetic Gaussian Mixture Model (GMM) distribution and train the model to learn it using either the standard CFM loss or our proposed StableVM loss. The GMM is defined with 100 modes. For each component k, the mean vector μk is sampled independently from a uniform distribution over [−1, 1] in each dimension. The variances are drawn independently per component and per dimension from a uniform distribution over [10 −2, 10 −1], yielding anisotropic Gaussian components. The mixing coefficients π are obtained by sampling each entry from Uniform (0 .1, 1.0) and normalizing so that they sum to one. To generate samples, we first draw a component index k via multinomial sampling according to π, then sample from the corresponding Gaussian using the 28 Stable Velocity: A Variance Perspective on Flow Matching            
+
+> Table 9. Ablation study on hyperparameters of StableVS. We analyze the effects of the split point ξ, the number of steps in the
+> low-variance regime [0 , ξ ], and the variance factor fβof Stable Velocity Sampling for SD3.5-Large (Esser et al., 2024) at 1024 ×1024
+> resolution. All experiments use Euler as the base solver.
+
+Total steps ξ [0 , ξ ] steps fβ Overall ↑ PSNR ↑ SSIM ↑ LPIPS ↓
+
+Baseline 
+
+20 – – – 0.710 16.93 0.753 0.333 
+
+Default StableVS setting 
+
+20 0.85 9 0.0 0.723 36.92 0.980 0.021 
+
+Variance factor fβ
+
+20 0.85 9 0.1 0.719 32.69 0.956 0.036 20 0.85 9 0.2 0.723 29.08 0.908 0.062 
+
+Low-variance regime steps [0 , ξ ]
+
+15 0.85 4 0.0 0.708 29.30 0.873 0.155 25 0.85 14 0.0 0.719 39.79 0.988 0.010 
+
+Split point ξ
+
+26 0.70 9 0.0 0.726 43.65 0.992 0.006 22 0.80 9 0.0 0.724 39.15 0.974 0.014 17 0.90 9 0.0 0.728 31.99 0.959 0.045 reparameterization trick: 
+
+x = μk + σk ⊙ ϵ, where ϵ ∼ N (0 , I),
+
+and ⊙ denotes element-wise multiplication. We fix the data dimensionality to 10 and evaluate both the CFM loss and our proposed StableVM loss with a reference batch size of 2048 on this distribution. Model performance is assessed by computing the second-order moment of the discrepancy between the model’s predicted velocity field vθ (xt, t ) and the true velocity field vt(xt), under the marginal distribution 
+
+pt(xt):
+
+LMSE (t) = 12 Ext∼pt
+
+h
+
+vθ (xt, t ) − vt(xt) 2i
+
+. (47) However, the exact velocity field vt(xt) = Ept(x0|xt)[vt(xt | x0)] is intractable. We therefore approximate it using a self-normalized importance sampling estimator (Hesterberg, 1995). Concretely, given N = 50 ,000 samples {xi
+
+> 0
+
+}Ni=1 drawn from the data distribution, we approximate: 
+
+vt(xt) ≈
+
+> N
+
+X
+
+> i=1
+
+wi(xt) vt(xt | xi
+
+> 0
+
+), where wi(xt) = pt(xt | xi
+
+> 0
+
+)
+
+PNj=1 pt(xt | xj
+
+> 0
+
+) .
+
+This approximation enables us to estimate the second-order moment at any time step t.As shown in Fig. 7, StableVM consistently achieves faster convergence and lower final error than standard CFM across all evaluated timesteps. This behavior directly reflects the variance reduction predicted by our analysis, even in a fully controlled setting where the true velocity field is accessible. 
+
+Reproduction of Fig. 1. To reproduce the variance curves in Fig. 1, we follow the same procedure described above but increase the dimensionality of the synthetic GMM to 100 and 500, using identical configuration settings. The true velocity field is again approximated using the self-normalized importance estimator with N = 10 ,000 samples. For CIFAR-10 and ImageNet latents, we evaluate on the full training set or a 50,000-sample subset. 
+
+F.3. Ablation Studies of Hyperparameters in StableVS 
+
+Tab. 9 presents the effect of three key hyperparameters—the variance factor fβ , the number of steps in the low-variance regime , and the split point ξ—on Stable Velocity Sampling with SD3.5-Large at 1024 × 1024 resolution on the GenEval benchmark. 29 Stable Velocity: A Variance Perspective on Flow Matching 
+
+Table 10. Detailed evaluation on GenEval at 1024 × 1024 resolution. We report the overall GenEval score together with per-category breakdowns. StableVS replaces the base solver in the low-variance regime [0 , ξ ] (with the number of steps indicated in parentheses), while keeping the high-variance regime [ξ, 1] unchanged. The split point is fixed to ξ = 0 .85 for all models.                                                                                                                                                                 
+
+> Solver configuration GenEval Metrics Reference metrics Base solver Solver in [0 , ξ ]Total steps Overall ↑Single ↑Two ↑Counting ↑Colors ↑Position ↑Color Attr ↑PSNR ↑SSIM ↑LPIPS ↓
+> SD3.5-Large (Esser et al., 2024) Euler Euler(19) 30 0.723 0.994 0.907 0.697 0.843 0.293 0.608 –––Euler(13) 20 0.710 0.994 0.884 0.650 0.838 0.290 0.603 16.93 0.753 0.333
+> StableVS(9) 20 0.723 0.994 0.891 0.700 0.838 0.298 0.615 36.92 0.980 0.021
+> DPM++ DPM++(19) 30 0.724 0.997 0.917 0.700 0.825 0.278 0.630 –––DPM++(13) 20 0.717 0.994 0.889 0.681 0.717 0.278 0.620 17.42 0.784 0.287
+> StableVS(9) 20 0.719 0.997 0.889 0.697 0.806 0.275 0.625 32.61 0.957 0.063
+> Flux-dev (Labs, 2024) Euler Euler(19) 30 0.660 0.984 0.828 0.700 0.801 0.205 0.443 –––Euler(13) 20 0.659 0.991 0.838 0.694 0.785 0.203 0.445 19.74 0.820 0.244
+> StableVS(9) 20 0.666 0.981 0.833 0.697 0.798 0.210 0.475 35.45 0.968 0.025
+> Qwen-Image-2512 (Wu et al., 2025a) Euler Euler(22) 30 0.733 0.988 0.907 0.572 0.859 0.450 0.623 –––Euler(12) 17 0.721 0.994 0.899 0.556 0.859 0.430 0.590 17.01 0.767 0.277
+> StableVS(9) 17 0.731 0.988 0.907 0.569 0.859 0.450 0.615 32.27 0.962 0.031
+
+Tab. 9 shows that StableVS is robust to moderate variations in all three hyperparameters. Increasing the variance factor 
+
+fβ introduces additional stochasticity and degrades reference metrics, consistent with our analysis that the low-variance regime admits nearly deterministic dynamics. Similarly, allocating too few steps to the low-variance regime reduces fidelity, while overly aggressive step reduction beyond the regime boundary ( ξ too large) leads to quality degradation. These trends support the variance-regime interpretation underlying StableVS and justify our default configuration. 
+
+F.4. Full Results on Geneval 
+
+Tab. 10 provides the full GenEval category-wise breakdown for all models and solver configurations. 
+
+## G. Experimental Details 
+
+Data preprocessing follows the ADM protocol (Dhariwal & Nichol, 2021), where original images are center-cropped and resized to 256 × 256 resolution. For optimization, we employ AdamW (Kingma, 2015; Loshchilov, 2017) with a constant learning rate of 1 × 10 −4 and a global batch size of 256. Training efficiency and numerical stability are enhanced via mixed-precision ( fp16 ) training, gradient clipping, and an adaptive exponential moving average (EMA) decay schedule following Lipman et al. (2024b). For sigmoid weighting, the sharpness hyperparameters k = 20 .StableVS is implemented on top of the Hugging Face diffusers library (von Platen et al.), which provides robust support for state-of-the-art pre-trained models and flexible sampling pipelines. 
+
+## H. More Qualitative Results 
+
+We provide additional qualitative results for SD3.5 (Esser et al., 2024), Flux (Labs, 2024), SD3 (Esser et al., 2024), and Wan2.2 (Wan et al., 2025), shown in Fig. 8, Fig. 9, Fig. 10, Fig. 11, and Fig. 12, respectively. 30 Stable Velocity: A Variance Perspective on Flow Matching A photo of a 
+
+## carrot 
+
+## Euler(30 steps)  Euler(20 steps)  Euler(11 steps) 
+
+## +StableVS (9 steps) 
+
+## A photo of a 
+
+## suitcase 
+
+## A photo of a 
+
+## fork 
+
+## A photo of a 
+
+## surfboard 
+
+## A photo of a 
+
+## refrigerator 
+
+Figure 8. Visual comparison of SD3.5-Large (Esser et al., 2024) on different prompts. Results are generated using the Euler solver with 30 and 20 steps, and with StableVS replacing Euler in the low-variance regime , all under the same random seed. Compared to the standard 20-step solver, StableVS yields outputs that more closely resemble the 30-step results. Zoom in for details. 
+
+31 Stable Velocity: A Variance Perspective on Flow Matching A photo of a 
+
+## cup 
+
+## Euler( 30  steps)  Euler( 20  steps)  Euler( 11  steps) 
+
+## +StableVS (9 steps) 
+
+## A photo of a 
+
+## microwave 
+
+## A photo of a 
+
+## potted plant 
+
+## A photo of a 
+
+## snowboard 
+
+## A photo of a 
+
+## zebra 
+
+Figure 9. Visual comparison of Flux-dev (Labs, 2024) on different prompts. Results are generated using the Euler solver with 30 and 20 steps, and with StableVS replacing Euler in the low-variance regime , all under the same random seed. Compared to the standard 20-step solver, StableVS yields outputs that more closely resemble the 30-step results. Zoom in for details. 
+
+32 Stable Velocity: A Variance Perspective on Flow Matching A photo of a 
+
+## parking meter 
+
+## Euler(30 steps)  Euler(17 steps)  Euler(8 steps) 
+
+## +StableVS (9 steps) 
+
+## A photo of a 
+
+## spoon 
+
+## A photo of a 
+
+## skateboard 
+
+## A photo of a 
+
+## car 
+
+## A photo of a 
+
+## motorcycle 
+
+Figure 10. Visual comparison of Qwen-Image-2512 (Wu et al., 2025a) on different prompts. Results are generated using the Euler solver with 30 and 17 steps, and with StableVS replacing Euler in the low-variance regime , all under the same random seed. Compared to the standard 17-step solver, StableVS yields outputs that more closely resemble the 30-step results. Zoom in for details. 
+
+33 Stable Velocity: A Variance Perspective on Flow Matching Prompt:  A dog plays guitar while a cat takes a selfie. 
+
+## UniPC (30) 
+
+## UniPC (11 )
+
+## +StableVS (9)
+
+## Prompt:  Green taxi drives past a yellow building. 
+
+## UniPC (11) 
+
+## +StableVS (9) 
+
+## Prompt:  A timelapse of a green banana turning yellow as it ripens. 
+
+## UniPC (11 )
+
+## +StableVS (9)
+
+## UniPC (20) 
+
+## UniPC (30) 
+
+## UniPC (20) 
+
+## UniPC (20 )
+
+## UniPC (30) 
+
+Figure 11. Visual comparison of Wan2.2 (Wan et al., 2025) on different prompts. Results are generated using UniPC solver with 30 and 20 steps, and with StableVS replacing UniPC in the low-variance regime , all under the same random seed. Compared to the standard 20-step solver, StableVS yields outputs that more closely resemble the 30-step results. Zoom in for details. 
+
+34 Stable Velocity: A Variance Perspective on Flow Matching Prompt:  A horse jumps over a fence. 
+
+## UniPC (30) 
+
+## UniPC (11) 
+
+## +StableVS (9) 
+
+## Prompt:  A boat sails to the left on the ocean. 
+
+## UniPC (11) 
+
+## +StableVS (9) 
+
+## Prompt:  A dog running on the left of a bicycle. 
+
+## UniPC (11) 
+
+## +StableVS (9) 
+
+## UniPC (20) 
+
+## UniPC (30) 
+
+## UniPC (20) 
+
+## UniPC (20) 
+
+## UniPC (30) 
+
+Figure 12. Visual comparison of Wan2.2 (Wan et al., 2025) on different prompts. Results are generated using UniPC solver with 30 and 20 steps, and with StableVS replacing UniPC in the low-variance regime , all under the same random seed. Compared to the standard 20-step solver, StableVS yields outputs that more closely resemble the 30-step results. Zoom in for details. 
+
+35

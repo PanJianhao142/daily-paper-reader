@@ -1,0 +1,537 @@
+Title: FastVMT: Eliminating Redundancy in Video Motion Transfer
+
+URL Source: https://arxiv.org/pdf/2602.05551v1
+
+Published Time: Fri, 06 Feb 2026 02:18:18 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# FastVMT : Eliminating Redundancy in Video Motion Transfer 
+
+## Yue Ma 2† , Zhikai Wang 1† , Tianhao Ren 1† , Mingzhe Zheng 2, Hongyu Liu 2, Jiayi Guo 3,Mark Fong, Yuxuan Xue 4, Zixiang Zhao 5, Konrad Schindler 5, Qifeng Chen 2, Linfeng Zhang 1B
+
+1 EPIC Lab, SJTU 2 HKUST 3 THU 4 Meta 5 ETH Z¨ urich 
+
+## Project: https://fastvmt.github.io/ A wolf is running on the snow 
+
+> Ref  video Output  video
+
+A firefighter is running on the street .
+
+> Output  video
+
+A rocket is standing at the launch site A Spider man is running in the garden             
+
+> Ref  video
+> Ours
+> DiTFlow *
+> MotionDirector
+> SMM
+> DeT
+> Ours
+> MotionClone
+> MOFT
+> DiTFlow
+> MotionInv
+> 0100 200 300 400 500 600 Latency(s)
+> 184
+> 397
+> 596
+> 627
+> 632
+> 0500 1000 1500 2000 2500 3000 Latency(s)
+> 184
+> 746
+> 807
+> 810
+> 2746
+> 3.43X 14.91X
+> 4.05X
+
+Figure 1. Efficient motion transfer with FastVMT: By eliminating redundant attention computations and reusing previously computed gradients, we achieve faster motion transfer for single- as well as multi-object motion, camera ego-motion, and complex articulations. 
+
+## Abstract 
+
+Video motion transfer aims to synthesize videos by generat-ing visual content according to a text prompt while transfer-ring the motion pattern observed in a reference video. Re-cent methods predominantly use the Diffusion Transformer (DiT) architecture. To achieve satisfactory runtime, several methods attempt to accelerate the computations in the DiT, but fail to address structural sources of inefficiency. In this work, we identify and remove two types of computational redundancy in earlier work: motion redundancy arises because the generic DiT architecture does not reflect the fact that frame-to-frame motion is small and smooth; gradient redundancy occurs if one ignores that gradients change slowly along the diffusion trajectory. To mitigate motion redundancy, we mask the corresponding attention layers to a local neighborhood such that interaction weights are not computed unnecessarily distant image regions. To exploit 
+
+1
+
+> arXiv:2602.05551v1 [cs.CV] 5 Feb 2026
+
+gradient redundancy, we design an optimization scheme that reuses gradients from previous diffusion steps and skips un-warranted gradient computations. On average, FastVMT achieves a 3.43 × speedup without degrading the visual fi-delity or the temporal consistency of the generated videos. 
+
+## 1. Introduction 
+
+With the rapid advancement of AI-generated content (AIGC), a wide range of downstream visual synthesis applications have been significantly empowered [ 3 , 4, 7, 21 , 22 , 25 – 27 ,32 , 37 – 41 , 62 ], among which motion transfer has emerged as a particularly important and intuitive paradigm. Motion transfer aims to generate a novel video by transferring the dynamics of a reference video sequence to a target sequence, while preserving the target’s appearance and semantics. For instance, the reference video might show an action sequence performed by an actor, which shall be transferred to a target subject while preserving their identity; or the reference might prescribe a particular camera path through the scene, which one would like to replicate for the target scene (see Fig. 1). In other words, motion transfer offers an intuitive interface for controllable motion synthesis, with applications ranging from movie productions and game development to digital advertising and content creation on social media platforms. Recent advances in video motion transfer increasingly leverage large, foundational generative video models [ 28 ]. These models typically employ the DiT architecture within a denoising diffusion loop 1. They are not only capable of synthesizing high-quality videos from noise, but can also be conditioned with text or image prompts to control the video style and content. A variety of motion transfer approaches have emerged that leverage these powerful visual priors, in ei-ther training-based and training-free fashion. Training-based methods ( e.g. , MotionDirector [ 85 ], MOFT [ 81 ], DeT [ 45 ]) extract the motion patterns of a specific reference video by fine-tuning the parameters of the diffusion backbone. For example, MotionDirector [ 85 ] and DreamMotion [ 14 ] adopt dual-path versions of low-rank adaptation [ 10 ] to disentangle the representations of motion and appearance in the diffu-sion DiT. Although they are capable of generating videos whose motion follows the reference, they suffer from practi-cal limitations: overfitting to every new reference video is time-consuming ( e.g. , up to 2 hours on an A100 GPU) and therefore unsuitable for open-domain and real-time settings. To achieve efficient and generally applicable motion trans-fer, attention has shifted to training-free frameworks [ 35 , 63 ,69 ]. They obviate the need for per-video fine-tuning and thus    
+
+> † Equal contribution.
+> BCorresponding author.
+> 1In this paper, the term “diffusion” includes flow-based interpolants [ 18 ,20].
+
+enable significantly faster synthesis ( e.g. , ≈10 minutes on an A100 GPU). The training-free approach also exploits the gradual, iterative denoising process of contemporary video foundation models: The reference video is first inverted into the embedding space of the DiT to extract features that en-code the motion. Then the output video is synthesized by denoising diffusion, guided by both a text prompt and the gradient between the motion embeddings of the source and target video. Our work is motivated by the observation that, in exist-ing implementations of this pipeline, both the extraction of motion embedding from DiT backbone and the computa-tion of motion gradients introduce considerable redundancy. Rather elementary properties of videos, and of the associated generative process, suggest that the computational cost of training-free motion transfer can be reduced considerably. 
+
+(i) Motion redundancy : To extract the motion embeddings from latents [ 68 ] or attention maps [ 35 ] in the inversion stage, it is not necessary to calculate pairwise similarities between all tokens of consecutive frames. Frame-to-frame motion has limited magnitude and is locally smooth, hence motion features can be computed more efficiently, see Fig. 2(a). 
+
+(ii) Gradient redundancy : In the denoising stage, there is no need to recalculate all gradients at each timestep. We find that motion transfer is a case of “ stable gradient optimiza-tion ”. Motivated by the idea of deterministic sampling to upgrade DDPM [ 9 ] to DDIM [ 46 ], we examine the gradi-ent updates in consecutive optimization steps and observe that they tend to be similar, see Fig. 2(b). Consequently, gradients can be reused over multiple iterations. Based on these observations, FastVMT makes two contri-butions to achieve efficient motion transfer. (1) Instead of extracting motion embeddings token by token, as in DiTFlow [ 36 ], we design a sliding-window strategy that operates on downsampled attention maps and an associated corresponding window loss, to perform a more reliable and more efficient local search for motion correspondence. (2) We address gradient redundancy with a step-skipping gradient computation. Gradients are recalculated only at selected iteration steps, between those steps, the most recent values are reused so as to reduce the total number of gradient calculations and amortize them better. These two tricks enable high-fidelity video generation with camera trajectories and/or object motions according to the source video, see Fig. 1. Extensive experiments and user studies confirm that FastVMT achieves state-of-the-art performance both qualitatively and quantitatively, with up to 14.91 × lower latency. Furthermore, FastVMT delivers a 3.43 × speedup with minimal performance degradation, preserving near-lossless quality across various evaluation metrics when compared to the original training-free video motion transfer pipeline. 2Each token need to be                        
+
+> matched with all tokens
+> in attention i+1, which
+> is redundant .
+> Calculating the gradient in each
+> optimization step is not necessary
+> Corresponded token will
+> only appear in a window -
+> based area, making the
+> matching efficient .
+> Calculating area
+> Previous token
+> Corresponded token
+> Motion redundancy
+> Attn i
+> Ours  Previous
+> Attn i+1
+> Gradient redundancy
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> PCA value
+> 12345Denoising step
+> step -skipping calculation reuses
+> the previous gradient at specific
+> timesteps, making it efficient .
+> …
+> …
+> …
+> …
+> ……
+> …
+> PCA -1
+> PCA -2
+> PCA -3
+> (a) (b)
+> All opt steps
+> Key opt steps
+> 10 opt steps
+
+Figure 2. Motivation of our method . Training-free video motion transfer can benefit from redundancies, both at the level of the DiT architecture and of the iterative diffusion process. (a) Motion redundancy : Video motion is small and locally consistent, so a motion token in one frame will only ever match tokens in the next frame within a local neighborhood. (b) Gradient redundancy : Gradient updates in consecutive optimization steps are mostly similar (visualized here with PCA). There is no need to recompute them at every single step. 
+
+## 2. Related work 
+
+Text-to-video generation. Text-to-video generation aims to synthesize realistic videos by precisely matching both the visual content and motion dynamics described in the input prompt. Previous works [ 1, 6 , 8, 24 , 54 , 56 –59 , 66 , 73 –76 , 79 ] introduce temporal modules in UNet architectures to generate coherent videos. To generate complex video motion, the advancement of Diffusion Transformer-based methods for text-to-video generation exhibits superior per-formance in both spatial quality and temporal consistency. These models [ 2, 16 , 23 , 29 , 52 , 65 , 67 , 71 , 72 , 77 , 78 , 80 ]demonstrate the power of scaling transformers to produce highly realistic video clips from detailed prompts, unlocking potential for diverse downstream video generation tasks. 
+
+Video motion transfer. Motion transfer focuses on generat-ing novel videos while transferring motion from reference videos, differing from video-to-video translation [ 19 , 31 , 84 ]by decoupling spatial appearance and temporal motion. Early approaches rely on explicit control signals such as poses [ 25 , 84 ], depths [ 44 , 64 ], and bounding boxes [ 60 ]. Training-based methods [ 14 , 30 , 31 , 43 , 48 , 49 , 82 , 83 , 85 ]employ spatial-temporal decoupled attention mechanisms by a dual-path LoRA architecture. Recent works [ 43 , 61 ]improving motion-appearance disentanglement, though they remain time-consuming and non-reusable. Training-free methods [ 5 , 11 , 12 , 17 , 35 , 47 , 50 , 63 , 70 ] extract motion embeddings during inference, with DiTFlow [ 35 ] propos-ing attention motion flow optimization. However, existing methods suffer from computational redundancy in both the architectural and diffusion process perspectives. In contrast, we first analyze the redundancy in training-free motion trans-fer and design the sliding-window motion extraction and step-skipping optimization to improve efficiency. 
+
+## 3. Method 
+
+Given an input video I = [ I1, ..., In], and the prompt P
+
+describing the target video content, we aim to design an efficient training-free framework to generate a novel video 
+
+J = [ J1, ..., Jn] following the input prompt P, while pre-serving the same camera pose changes and object motion. To achieve this, we propose FastVMT, an efficient framework using DiT-based video generative model [ 52 ] to transfer mo-tion efficiently. The pipeline of our method is shown in Fig. 4. We first analyze the existing redundancy in previous works and introduce our motivation in Sec. 3.1. The sliding-window motion extraction strategy is present in Sec. 3.2. To improve the motion consistency, we design the correspond-ing window loss in Sec. 3.3. Finally, in Sec. 3.4, we propose the step-skipping gradient optimization to ensure gradient efficiency. 
+
+3.1. Motivation 
+
+We summarize the two observed redundancies of state-of-the-art approaches in the training-free video motion transfer task and propose the modules to address them. 
+
+Motion redundancy. In the inversion stage, existing training-free video motion transfer approaches [ 35 , 63 , 69 ]utilize the global token similarity to obtain the reference motion flow. Specifically, for every optimization step, each token requires calculating the similarity with all tokens in the next attention map. However, we note that every motion token will only correspond with a token in nearby regions in the next attention map. As shown in Fig. 2(a), the corre-sponding token in the dog’s nose would only appear around nearby regions rather than on the road. Therefore, such a property about temporal consistency makes it unreasonable to extract the motion flow by calculating token-by-token similarity globally. To address this, we introduce the sliding-3Time / Motion Fid.      
+
+> Original 1-step  skip. 2-step  skip. 3-step  skip.
+> 284.3s /92.4
+> 186.7s 34% ↓/92.3 1% ↓
+> 173.9s 39% ↓/92.2 1% ↓
+> 160.6 s43% ↓/71.8 22% ↓
+> ↑↓
+
+Figure 3. Illustration of step-skipping gradient optimization .We observe that skipping some steps in the gradient optimization step does not degrade the motion transfer performance. 
+
+window motion extraction strategy. Only the regional tokens are calculated for efficient motion extraction. Meanwhile, such a design enables correcting the mismatch during the motion extraction, as shown in Fig. 5, ensuring the motion consistency of generated results. 
+
+Gradient redundancy. During the optimization process of training-free motion transfer methods, a significant compu-tational bottleneck emerges from the repetitive gradient cal-culations performed at each inner optimization step. Specif-ically, for every denoising timestep, the optimization loop performs gradient computation across all inner optimization steps to update the latent representation. However, we ob-serve that the gradient updates exhibit high similarity across consecutive optimization steps within the same denoising timestep. As shown in Fig. 2(b), the PCA analysis reveals that gradient patterns remain relatively stable across adja-cent optimization steps. Therefore, such “ stable gradient optimization ” makes it unnecessary to compute gradients at every optimization step. To address this, we introduce the step-skipping gradient optimization strategy. Only spe-cific optimization steps require gradient computation, while intermediate steps reuse cached gradients for efficient opti-mization (in Fig. 3). 
+
+3.2. Efficient attention window 
+
+Attention acquisition. We leverage the inherent attention mechanism within video Diffusion Transformers (DiTs) to extract fine-grained motion patterns, based on the premise that correlated content across video frames is naturally cap-tured by the self-attention layer’s query-key interactions. Given an input video I = [ I1, ..., In], and the prompt P
+
+of target video content, we utilize the 3D VAE encoder [ 52 ]to obtain its latent representation zref = E(xref ). To obtain a clean motion signal, this latent is passed through a specific DiT block at a low denoising step, typically t = 0 . For our tile-based approach, we first partition the spatial dimensions into tiles of size (th, t w). For each tile, we select a represen-tative query at the tile center and compute its attention with all keys in the target frame. For any pair of frames (i, j ) in the video, the representative cross-frame attention map Arep 
+
+> ij
+
+is computed as: 
+
+Arep  
+
+> ij
+
+= softmax Q(i)
+
+> rep
+
+(K(j))T
+
+√Dh
+
+· τ
+
+!
+
+∈ RNtiles ×S (1) where Ntiles = Hth × Wtw is the number of tiles, S = H × W
+
+is the spatial token length, and τ is the temperature parame-ter. From this representative attention map, we estimate the window center for each tile as: 
+
+c(ij ) 
+
+> uv
+
+=
+
+> S
+
+X
+
+> s=1
+
+Arep  
+
+> ij
+
+[s] · pos (s) (2) where pos (s) denotes the spatial position of token s. This estimated center guides the subsequent window-constrained Attention Motion Flow (AMF) computation, enabling effi-cient motion extraction while maintaining spatial precision. 
+
+Sliding-window motion extraction. To enhance the com-putational efficiency and precision of AMF extraction, we propose a novel sliding window strategy that mitigates the redundant computations inherent in prior methods. Our ap-proach leverages the observation that long-range query-key interactions in self-attention layers yield diminished motion information, and the most relevant keys for an object are typically confined to a local spatial window due to finite motion speeds. We extract AMF from query Q and key K, both of shape 
+
+(N, H, W, D ), where H and W denote the height and width of the latent representation, and N is the number of frames. Here, Q = {q1, . . . , q N }, with qi, i ∈ { 1, . . . , N } represent-ing the query tensor for a specific frame, and K follows a similar notation. Unlike prior methods that compute AMF across all q-k pairs while attending to the entire spatial di-mension, our approach employs a sliding window to con-strain computations both temporally and spatially: 
+
+Twindow (qi) = {qj : j ∈ [i, min( i + sf , N )] },
+
+Swindow (kh,w ) = {kh′,w ′ : ( h′, w ′) ∈ W lh,w } (3) where sf represents the temporal span and Wlh,w denotes a spatial window of size l × l centered at position (h, w ).To determine the optimal window center, we partition each frame into spatial blocks and select representative queries. The window center for each block is computed as: 
+
+c(ij ) 
+
+> block
+
+= Pblock + argmax (h,w )
+
+
+
+Q(i) 
+
+> rep
+
+· (K(j))T 
+
+> h,w
+
+(4) where Pblock is the block center position and the argmax operation yields the displacement vector from representative query-key interactions. 4❄ 3D  VAE 
+
+> ❄
+> 3D  VAE
+> FFN
+> Cross  attn
+> Patchify
+
+Q K
+
+V
+
+🔥 Loss (Sec 3.3 )                   
+
+> ❄Sliding window motion extraction (Sec 3.2 )Step -skipping gradient
+> optimization (Sec 3.4 )Input video
+> Generated video
+> ZiZi-1
+> Adog is running
+> on the grass
+> Acar is driving
+> on the road
+> …
+> …
+> …
+
+Z0 Zt
+
+Z*tZ*t-1Z*1Z*0
+
+Zt-1Z1                  
+
+> …
+> Inversion Denoising
+> Gradient optimization Ref motion embedding Predicted motion embedding Each optimzation step Skip step 🔥 Trainable part ❄ Frozen weight
+> …
+> Correspondence Loss (Sec 3.3 )
+> Attn i
+> Attn i+1
+> Attn i+2
+> W2i
+> W1i
+> W1i+1
+> W2i+1
+> W2i+2
+> W1i+2
+> Lc=(avg( )-avg( )) 2
+> +(avg( )-avg( )) 2
+> Opt step
+
+Figure 4. Overview of our method . Left : Given a reference video, we first leverage the sliding window to extract motion embedding from attention during the inversion stage. At the denoising stage, we calculate the total loss and leverage the step-skipping gradient optimization to guide the video generation. Right: The Step-skipping gradient optimization is proposed to improve gradient redundancy. Additionally, we introduce the corresponding-window loss to boost the motion consistency of generated videos. 
+
+Our approach significantly enhances efficiency. Tempo-rally, it reduces the time complexity from O(F 2) to O(F ),where F is the number of frames, enabling scalable video generation. Spatially, by constraining computations to a local window containing the most relevant keys, we elimi-nate redundant calculations, thereby achieving precise AMF extraction with minimal quality loss. 
+
+3.3. Corresponding-window Loss 
+
+Motivated by the observation that motion information is pre-dominantly captured by closely adjacent query-key pairs, we design a weighted AMF loss and a corresponding-window loss to enhance motion transfer accuracy with temporal sta-bility. The weighted AMF loss aligns the motion patterns between reference and generated videos by computing the 
+
+L2 distance between their respective displacement matrices, which is formulated as: 
+
+LAMF = 1
+
+|F| 
+
+X
+
+> (i,j )∈F
+
+w|j−i| · ∥ ∆ref  
+
+> ij
+
+− ∆gen  
+
+> ij
+
+∥22 (5) where F represents all frame pairs within the temporal span 
+
+sf , and the weights are defined as: 
+
+wd =
+
+(1.0 − α · d−1  
+
+> sf−1
+
+if d ≤ sf
+
+0 otherwise (6) where α is set as 0.2 to provide linear decay, and d = |j − i|
+
+represents the frame distance. To enhance temporal consistency, we introduce acorresponding-window loss that penalizes inconsistencies in key representations across adjacent frames within the sliding windows: 
+
+Lwindow = 1
+
+F 
+
+> F−1
+
+X
+
+> i=0
+
+1
+
+P
+
+> P
+
+X
+
+> p=1
+
+1
+
+Ni − 1
+
+> Ni−1
+
+X
+
+> t=1
+
+¯K(p) 
+
+> i→jt+1
+
+− ¯K(p)
+
+> i→jt
+> 22
+
+,
+
+(7) where ¯K(p) 
+
+> i→j
+
+denotes the mean key representation within the sliding window W (p) 
+
+> i→j
+
+for tile p when anchoring at frame i
+
+and comparing with target frame j.The total loss combines both components with appropri-ate weighting: 
+
+Ltotal = λAMF · L AMF + λwindow · L window , (8) where λAMF is set to 5 to emphasize motion alignment, and λtrack is set to 1 to balance the corresponding-window loss. This dual-component loss ensures both accurate motion transfer and temporal stability, effectively addressing motion consistency challenges in video generation. 
+
+3.4. Step-Skipping Gradient Optimization 
+
+Despite the computational efficiency introduced by our slid-ing window strategy, optimizing the latent representation remains computationally intensive due to the high cost of back propagation through multiple DiT blocks. Through empirical analysis, we observe a high degree of similarity in the gradients of the latent representation across consecutive 5Ours Attn i W/o sliding window     
+
+> Wrong correspond. Right correspond. ✅❌Figure 5. Illustration of attention motion flow extraction with sliding window .Without the sliding window, attention tokens are prone to incorrect correspondences (middle). Incorporating a sliding window improves alignment, leading to better motion consistency (right).
+
+optimization steps. Leveraging this insight, we propose an interval-based gradient reuse strategy that selectively com-putes gradients while maintaining optimization effective-ness. Our step-skipping optimization operates with a fixed in-terval ∆ during the inner optimization loop. For a total of J optimization steps, gradient computation occurs only when the current step j satisfies the condition j mod ∆ = 0 ,or when using the full AMF mode. The algorithm can be formalized as: 
+
+Lj =
+
+(
+
+∇xLtotal (xj ) if j mod ∆ = 0 or mode = AMF 
+
+xj · gcached otherwise (9) where gcached represents the gradient from the most recent computation step. This strategy reduces gradient compu-tations from J to approximately ⌈J/ ∆⌉ per guidance step, achieving a theoretical speedup of ∆/⌈J/ ∆⌉× in the opti-mization phase. The cached gradient gcached is updated after each actual gradient computation: 
+
+gcached = gj when j mod ∆ = 0 (10) This approach significantly reduces computational overhead while maintaining motion transfer quality, as the gradient similarity across consecutive steps ensures that cached gra-dients remain effective for optimization guidance. 
+
+## 4. Experiments 
+
+4.1. Implementation details 
+
+In our experiment, we employ the open-sourced video gen-eration model WAN-2.1 [ 51 ] as the base text-to-video gen-eration model. The denoising steps are employed for 50 for all experiments. Unless stated, the output resolution is 480 × 832 with F = 81 frames (internally rounded to 
+
+4k+1 ). Latents are initialized as Gaussian noise of shape  1, 16 , F −14 + 1 , H 
+
+> 8
+
+, W
+
+> 8
+
+. Latent tiling is enabled with 
+
+tile size =(30, 52) and tile stride =(15, 26) in VAE space; this yields a per-frame token grid of h = H 
+
+> 8
+
+by 
+
+w = W 
+
+> 8
+
+for the DiT. During motion transfer, as Pondaven et al. [34] , we enable our sliding-window based AMF guid-ance at the first 20% outer denoising steps; each guided step runs a 10-step latent-only inner optimization with AdamW and a linear learning-rate decay 0.003 → 0.002 . At each guided diffusion step t, we form a reference latent by adding step-consistent noise to cached clean latents and perform a forward pass with null text to extract queries/keys from the 15th DiT block. 
+
+Qualitative comparison. We compare our approach with the state-of-the-art video motion transfer methods visu-ally: MOFT [ 63 ], MotionInversion [ 55 ], MotionClone [ 17 ], SMM [ 69 ], MotionDirector [ 85 ], DiTFlow [34 ], and DeT [ 45 ]. For fair comparison, we adapt the Wan-2.1 as the same backbone. Our experimental results demonstrate that FastVMT achieves superior performance and greater versatility across a wide range of motion transfer scenarios. As illustrated in Fig. 9, these works [ 35 , 45 , 63 , 69 ] have the challenge of handling complicated interaction motion. In contrast, our method enables generating videos with aligned movement patterns, preserving the spatial relationships be-tween moving subjects. 
+
+Quantitative comparison. We compare our method with the state-of-the-art video motion transfer on on 50 high-quality videos selected from the DAVIS dataset [ 33 ]. For fair comparison, we employ Wan-2.1 as the same backbone. Previous works are constrained by the limited video length, with evaluations conducted using only 32 frames at a reso-lution of 830 × 480 . In this context, we classify the state-of-the-art (SOTA) methods into two categories: training-free and tuning-based, based on whether they leverage spa-tial/temporal LoRA for optimizing complex motion patterns. (a) Time : We record the total time required for completing the motion transfer process, including any inference-time op-timization. Leveraging proposed sliding-window motion ex-traction and step-skipping gradient optimization, FastVMT is the fastest method. Its runtime is faster than training-free methods, while delivering better performance. (b) Motion Fidelity: As in Yatim et al. [69] , we use motion fidelity to assess the similarity of tracklets between reference and generated videos. (c) Temporal Consistency: We measure frame-to-frame coherence by calculating the average feature similarity of consecutive video frames using CLIP [ 42 ]. (d) 
+
+Text Similarity: CLIP is used to extract features from the target video, and the average cosine similarity between the input prompt and video frames is computed. (f) User Study: To account for the limitations of automatic metrics in capturing real-world preferences, we conducted a user study with 20 volunteers. They ranked methods based on motion preservation, appearance diversity, text alignment, and overall quality, using a 1 (best) to 8 (worst) scale. Our 6Ref  video Output  video Ref  video Output  video Ref  video Output  video                       
+
+> Arover is driving on the moon .Ablue train is moving on the tracks .
+> Aleopard is running in the snow .
+> An astronaut is walking in front of the magma .Adragon is flying over the snow -capped mountains .
+> Two mountaineers are high -fiving in the snow .
+> ab
+> d
+> f
+> c
+> e
+
+Figure 6. Gallery of our method. Given a reference video, our FastVMT is capable of generating high-quality video clips that faithfully preserve diverse motion patterns. 
+
+method outperforms others in both automated metrics and user preferences. In addition, we collect 40 real-world videos and 40 high-quality generated videos by advanced text-to-video genera-tive models [ 16 , 53 ]. For each video, we generate 5 different prompts. Four metrics in VBench [ 13 ] are employed for a more accurate evaluation (in Tab. 1). (1) Subject Consis-tency: We assess whether the identity of the subject is pre-served across frames. (2) Motion Smoothness: The metric evaluates inter-frame continuity using learned motion priors. (3) Aesthetic Quality uses a LAION-trained aesthetic pre-dictor to score visual appeal. (4) Background Consistency: 
+
+We evaluate the coherence of the background. Our proposed method significantly outperforms all baseline approaches across every video quality metric, thereby showcasing the state-of-the-art performance in novel video. 
+
+4.2. Ablation study 
+
+Effectiveness of sliding-window based motion extraction. 
+
+As shown in Tab. 2 and Fig. 10, removing the sliding win-dow mechanism results in performance degradation across multiple metrics and increased computational overhead and Right correspondance Wrong correspondance              
+
+> Ref video 10 th /30 Layer 15 th /30 Layer 20 th /30 Layer
+> Time
+
+Figure 7. Illustration of token correspondence performance across different attention layers of DiT . We extract correspon-dence maps from multiple attention layers. The middle layers exhibit stronger matching quality. 
+
+inference time. In Fig. 8, we present the visual results with-out sliding windows. It is clear to observe a light reduction in motion fidelity and temporal consistency, confirming that our approach effectively balances computational efficiency with motion transfer quality. Additionally, we also show the visual comparison of attention motion extraction in various attention layers in DiT (see Fig. 7). The motion extraction is more accurate in the middle layer of DiT. 7Table 1. Comparison with state-of-the-art video motion transfer methods . Red and Blue denote the best and second best results, respectively.                                                                                
+
+> Method Quantitative Metrics Vbench Metrics Text Sim. ↑Motion Fid. ↑Temp. Cons. ↑Time (s) ↓Sub. Cons. ↑Back. Cons. ↑Aes. Qual. ↑Motion Smooth. ↑
+> Training-Based Methods
+> MotionInversion [15] 0.2388 0.6515 0.9605 632.41 0.9339 0.9372 0.4062 0.9532 MotionDirector [85] 0.2336 0.4524 0.9531 806.64 0.9173 0.9379 0.3443 0.9633 DeT [45] 0.2187 0.6116 0.9818 2745.60 0.9787 0.9654 0.3559 0.9598
+> Training-Free Methods
+> MOFT [63] 0.2297 0.6511 0.9797 595.81 0.9593 0.9413 0.4581 0.9716 MotionClone [17] 0.2304 0.7315 0.9722 397.05 0.9601 0.9545 0.4615 0.9616 SMM [69] 0.2374 0.7353 0.9366 809.70 0.8907 0.9352 0.5770 0.9702 DiTFlow [35] 0.2091 0.4062 0.9822 626.83 0.9557 0.9678 0.5310 0.9801
+> Ours 0.2422 0.7471 0.9865 184.18 0.9809 0.9684 0.5778 0.9891 Time  w/o step skipping w/o corr. loss w/o sliding window Ours
+> 302s 183s 227s 184s
+
+Figure 8. Qualitative ablation of the proposed modules . The reference video is shown at the top-left. The prompt is “A white cat is running on the ground”. Table 2. Quantitative ablation . Red and Blue denote best and second best.                     
+
+> Method Text Sim. ↑Motion Fid. ↑Temp. Cons. ↑Time(s) ↓
+> w/o Sliding Wind. 0.2352 0.6912 0.9654 227 w/o Cor. Loss 0.2345 0.5942 0.9762 183
+> w/o Step Skip. 0.2317 0.7044 0.9881 302 Ours 0.2422 0.7471 0.9865 184
+
+Effectiveness of corresponding-window loss. Tab. 2 and Fig. 10 reveal that excluding the corresponding-window loss leads to substantial degradation in motion fidelity, highlight-ing its essential role in maintaining accurate motion transfer. As shown in Fig. 8, equipping with this loss function effec-tively constrains temporal inconsistencies to ensure robust motion alignment, while introducing minimal computational overhead (less than 1% increase in processing time), thus preserving both accuracy and efficiency. 
+
+Effectiveness of step skipping gradient upgrading. The step-skipping strategy significantly reduces computational time while preserving video generation quality. As demon-strated in Tab. 2 and Fig. 10, this optimization achieves substantial time savings with negligible impact on motion fi-delity and temporal consistency, validating the effectiveness of gradient reuse in our framework. 
+
+## 5. Conclusion 
+
+In this work, we introduced FastVMT, a training-free video motion transfer framework that explicitly addresses motion redundancy in diffusion transformer architectures and gradi-ent redundancy along the diffusion trajectory. To eliminate the motion redundancy, we propose the sliding-window strat-egy associated with corresponding window loss to achieve a more reliable and more efficient local search for motion cor-respondence. To migrate gradient redundancy, We introduce a step-skipping gradient computation to ensure computa-tional efficiency. By incorporating the proposed strategies, our method achieves a 3.43 × average speedup without com-promising either visual fidelity or temporal consistency. We believe this line of work opens new opportunities for building more efficient and practical generative video motion transfer. 
+
+## Reproducibility Statement 
+
+All quantitative tables, qualitative images, and video results in this work are reproducible and correspond to raw model outputs without manual editing or post-hoc alteration, except for minimal format conversion and compression. After the review process, we will release a partial public repository to support reproduction, including inference scripts, example data, and example videos. The datasets, configurations, and procedures used for training and evaluation are documented in Section 4.1. We will also provide fixed configuration files and random seeds so that independent runs can reproduce the visual results within expected stochastic variation. 
+
+## Ethics Statement 
+
+Our work studies motion-transfer video editing. The pro-posed dataset contains videos of people, vehicles, and land-scape camera motions. To mitigate representational bias in demonstrations, we curated and display examples span-ning different races, genders, and styles in the main text and appendix. All illustrative videos shown in this paper are 8Ref video smm MOFT Motion Director DeT Motion Inversion DitFlow Ours Motion Clone            
+
+> Aspacecraft is moving in the Space base.
+> Aknight on horseback is galloping outside the castle .
+
+Figure 9. Qualitative comparison with baselines. We perform the visual comparison with various baselines using various kinds of motions. Our method obtains better performance in various motions. Motion Fid.   
+
+> Motion Smooth.
+> Background
+> Cons.
+> Temp. Cons.
+> Text -Frame
+> Sim .
+> Aesthetic Subject Cons.
+> Ours
+> w/o step skipping
+> w/o cor skipping
+> w/o sliding wind.
+
+Figure 10. Quantitative ablation comparison on VBench metrics .We select seven metrics to evaluate the effectiveness of the proposed strategy. 
+
+sourced from publicly available web content; we respect the original licenses and terms of service and use the content solely for research purposes. We will not publicly release the dataset prior to completing the insertion of AI-generated watermarks and an ethics/content-safety audit. We explicitly prohibit harmful or deceptive uses of our methods and data, including deepfake attacks and other malicious generative behaviors. When any portion of our code is made public, we will enforce visible and/or machine-detectable watermarking during inference to help deter misuse. Any future releases will be accompanied by usage terms that forbid imperson-ation, harassment, or other malicious applications, and we will remove or restrict content that raises privacy, legal, or safety concerns. 
+
+## Acknowledgment 
+
+This research was supported by the Shanghai Science and Technology Program (Grant No. 25ZR1402278). Part of the compute is supported by the SwissAI Compute Grant a144 and a154. 
+
+## References 
+
+[1] Siran Chen, Yue Ma, Yu Qiao, and Yali Wang. M-bev: Masked bev perception for robust autonomous driving. In 
+
+Proceedings of the AAAI Conference on Artificial Intelligence ,pages 1183–1191, 2024. 3 [2] Yiyang Chen, Xuanhua He, Xiujun Ma, and Yue Ma. Con-textflow: Training-free video object editing via adaptive con-text enrichment. arXiv preprint arXiv:2509.17818 , 2025. 3 [3] Chengyu Fang, Chunming He, Fengyang Xiao, Yulun Zhang, Longxiang Tang, Yuelin Zhang, Kai Li, and Xiu Li. Real-world image dehazing with coherence-based pseudo labeling and cooperative unfolding network. Advances in Neural In-formation Processing Systems , 37:97859–97883, 2024. 2 [4] Kunyu Feng, Yue Ma, Bingyuan Wang, Chenyang Qi, Haozhe Chen, Qifeng Chen, and Zeyu Wang. Dit4edit: Diffusion transformer for image editing. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 2969–2977, 2025. 2[5] Hailong Guo, Bohan Zeng, Yiren Song, Wentao Zhang, Chuang Zhang, and Jiaming Liu. Any2anytryon: Leveraging adaptive position embeddings for versatile virtual clothing tasks. arXiv preprint arXiv:2501.15891 , 2025. 3 [6] Yuwei Guo, Ceyuan Yang, Anyi Rao, Yaohui Wang, Yu Qiao, Dahua Lin, and Bo Dai. Animatediff: Animate your person-alized text-to-image diffusion models without specific tuning. 
+
+arXiv preprint arXiv:2307.04725 , 2023. 3 [7] Chunming He, Chengyu Fang, Yulun Zhang, Tian Ye, Kai Li, Longxiang Tang, Zhenhua Guo, Xiu Li, and Sina Farsiu. Reti-diff: Illumination degradation image restoration with retinex-based latent diffusion model, 2024. 2 
+
+9[8] Yin-Yin He, Tianyu Yang, Yong Zhang, Ying Shan, and Qifeng Chen. Latent video diffusion models for high-fidelity long video generation. In arXiv preprint arXiv:2211.13221 ,2022. 3 [9] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffu-sion probabilistic models. Advances in neural information processing systems , 33:6840–6851, 2020. 2 [10] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. ICLR , 1(2):3, 2022. 2 [11] Teng Hu, Jiangning Zhang, Ran Yi, Yating Wang, Hongrui Huang, Jieyu Weng, Yabiao Wang, and Lizhuang Ma. Mo-tionmaster: Training-free camera motion transfer for video generation. arXiv preprint arXiv:2404.15789 , 2024. 3 [12] Shijie Huang, Yiren Song, Yuxuan Zhang, Hailong Guo, Xueyin Wang, Mike Zheng Shou, and Jiaming Liu. Photodoo-dle: Learning artistic image editing from few-shot pairwise data. arXiv preprint arXiv:2502.14397 , 2025. 3 [13] Ziqi Huang, Yinan He, Jiashuo Yu, Fan Zhang, Chenyang Si, Yuming Jiang, Yuanhan Zhang, Tianxing Wu, Qingyang Jin, Nattapol Chanpaisit, Yaohui Wang, Xinyuan Chen, Limin Wang, Dahua Lin, Yu Qiao, and Ziwei Liu. Vbench: Com-prehensive benchmark suite for video generative models. 
+
+2024 IEEE/CVF Conference on Computer Vision and Pat-tern Recognition (CVPR) , pages 21807–21818, 2023. 7 [14] Hyeonho Jeong, Jinho Chang, Geon Yeong Park, and Jong Chul Ye. Dreammotion: Space-time self-similarity score distillation for zero-shot video editing. arXiv preprint arXiv:2403.12002 , 2024. 2, 3 [15] Hyeonho Jeong, Geon Yeong Park, and Jong Chul Ye. Vmc: Video motion customization using temporal attention adap-tion for text-to-video diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 9212–9221, 2024. 8 [16] Weijie Kong, Qi Tian, Zijian Zhang, Rox Min, Zuozhuo Dai, Jin Zhou, Jiangfeng Xiong, Xin Li, Bo Wu, Jianwei Zhang, et al. Hunyuanvideo: A systematic framework for large video generative models. arXiv preprint arXiv:2412.03603 , 2024. 3, 7 [17] Pengyang Ling, Jiazi Bu, Pan Zhang, Xiaoyi Dong, Yuhang Zang, Tong Wu, Huaian Chen, Jiaqi Wang, and Yi Jin. Mo-tionclone: Training-free motion cloning for controllable video generation. arXiv preprint arXiv:2406.05338 , 2024. 3, 6, 8 [18] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. 
+
+arXiv preprint arXiv:2210.02747 , 2022. 2 [19] Hongyu Liu, Xintong Han, Chengbin Jin, Lihui Qian, Huawei Wei, Zhe Lin, Faqiang Wang, Haoye Dong, Yibing Song, Jia Xu, et al. Human motionformer: Transferring human motions with vision transformers. arXiv preprint arXiv:2302.11306 ,2023. 3 [20] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 , 2022. 2 [21] Xvyuan Liu, Xiangfei Qiu, Hanyin Cheng, Xingjian Wu, Chenjuan Guo, Bin Yang, and Jilin Hu. Astgi: Adaptive spatio-temporal graph interactions for irregular multivariate time series forecasting. In ICLR , 2026. 2 [22] Xvyuan Liu, Xiangfei Qiu, Xingjian Wu, Zhengyu Li, Chen-juan Guo, Jilin Hu, and Bin Yang. Rethinking irregular time series forecasting: A simple yet effective baseline. In AAAI ,2026. 2 [23] Yixin Liu, Kai Zhang, Yuan Li, Zhiling Yan, Chujie Gao, Ruoxi Chen, Zhengqing Yuan, Yue Huang, Hanchi Sun, Jian-feng Gao, Lifang He, and Lichao Sun. Sora: A review on background, technology, limitations, and opportunities of large vision models. ArXiv , abs/2402.17177, 2024. 3 [24] Zeqian Long, Mingzhe Zheng, Kunyu Feng, Xinhua Zhang, Hongyu Liu, Harry Yang, Linfeng Zhang, Qifeng Chen, and Yue Ma. Follow-your-shape: Shape-aware image edit-ing via trajectory-guided region control. arXiv preprint arXiv:2508.08134 , 2025. 3 [25] Yue Ma, Yingqing He, Xiaodong Cun, Xintao Wang, Siran Chen, Xiu Li, and Qifeng Chen. Follow your pose: Pose-guided text-to-video generation using pose-free videos. In 
+
+Proceedings of the AAAI Conference on Artificial Intelligence ,pages 4117–4125, 2024. 2, 3 [26] Yue Ma, Yingqing He, Hongfa Wang, Andong Wang, Chenyang Qi, Chengfei Cai, Xiu Li, Zhifeng Li, Heung-Yeung Shum, Wei Liu, et al. Follow-your-click: Open-domain regional image animation via short prompts. arXiv preprint arXiv:2403.08268 , 2024. [27] Yue Ma, Hongyu Liu, Hongfa Wang, Heng Pan, Yingqing He, Junkun Yuan, Ailing Zeng, Chengfei Cai, Heung-Yeung Shum, Wei Liu, et al. Follow-your-emoji: Fine-controllable and expressive freestyle portrait animation. In SIGGRAPH Asia 2024 Conference Papers , pages 1–12, 2024. 2 [28] Yue Ma, Kunyu Feng, Zhongyuan Hu, Xinyu Wang, Yucheng Wang, Mingzhe Zheng, Xuanhua He, Chenyang Zhu, Hongyu Liu, Yingqing He, et al. Controllable video generation: A survey. arXiv preprint arXiv:2507.16869 , 2025. 2 [29] Yue Ma, Kunyu Feng, Xinhua Zhang, Hongyu Liu, David Jun-hao Zhang, Jinbo Xing, Yinhan Zhang, Ayden Yang, Zeyu Wang, and Qifeng Chen. Follow-your-creation: Empower-ing 4d creation through video inpainting. arXiv preprint arXiv:2506.04590 , 2025. 3 [30] Yue Ma, Yingqing He, Hongfa Wang, Andong Wang, Leqi Shen, Chenyang Qi, Jixuan Ying, Chengfei Cai, Zhifeng Li, Heung-Yeung Shum, et al. Follow-your-click: Open-domain regional image animation via motion prompts. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 6018– 6026, 2025. 3 [31] Yue Ma, Yulong Liu, Qiyuan Zhu, Ayden Yang, Kunyu Feng, Xinhua Zhang, Zhifeng Li, Sirui Han, Chenyang Qi, and Qifeng Chen. Follow-your-motion: Video motion transfer via efficient spatial-temporal decoupled finetuning. arXiv preprint arXiv:2506.05207 , 2025. 3 [32] Yue Ma, Zexuan Yan, Hongyu Liu, Hongfa Wang, Heng Pan, Yingqing He, Junkun Yuan, Ailing Zeng, Chengfei Cai, Heung-Yeung Shum, et al. Follow-your-emoji-faster: To-wards efficient, fine-controllable, and expressive freestyle portrait animation. arXiv preprint arXiv:2509.16630 , 2025. 2 [33] Federico Perazzi, Jordi Pont-Tuset, Brian McWilliams, and Van Gool et al. A benchmark dataset and evaluation method-
+
+10 ology for video object segmentation. In Proceedings of the IEEE conference on computer vision and pattern recognition ,pages 724–732, 2016. 6 [34] Alexander Pondaven, Aliaksandr Siarohin, Sergey Tulyakov, Philip Torr, and Fabio Pizzati. Video motion transfer with diffusion transformers. arXiv preprint arXiv:2412.07776 ,2024. 6 [35] Alexander Pondaven, Aliaksandr Siarohin, Sergey Tulyakov, Philip Torr, and Fabio Pizzati. Video motion transfer with diffusion transformers. In CVPR , 2025. 2, 3, 6, 8 [36] Alexander Pondaven, Aliaksandr Siarohin, Sergey Tulyakov, Philip Torr, and Fabio Pizzati. Video motion transfer with diffusion transformers. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 22911–22921, 2025. 2 [37] Xiangfei Qiu, Jilin Hu, Lekui Zhou, Xingjian Wu, Junyang Du, Buang Zhang, Chenjuan Guo, Aoying Zhou, Christian S. Jensen, Zhenli Sheng, and Bin Yang. TFB: Towards com-prehensive and fair benchmarking of time series forecasting methods. In Proc. VLDB Endow. , pages 2363–2377, 2024. 2 [38] Xiangfei Qiu, Zhe Li, Wanghui Qiu, Shiyan Hu, Lekui Zhou, Xingjian Wu, Zhengyu Li, Chenjuan Guo, Aoying Zhou, Zhenli Sheng, Jilin Hu, Christian S. Jensen, and Bin Yang. Tab: Unified benchmarking of time series anomaly detection methods. In Proc. VLDB Endow. , pages 2775–2789, 2025. [39] Xiangfei Qiu, Xingjian Wu, Hanyin Cheng, Xvyuan Liu, Chenjuan Guo, Jilin Hu, and Bin Yang. Dbloss: Decomposition-based loss function for time series forecasting. In NeurIPS , 2025. [40] Xiangfei Qiu, Xingjian Wu, Yan Lin, Chenjuan Guo, Jilin Hu, and Bin Yang. DUET: Dual clustering enhanced multivariate time series forecasting. In SIGKDD , pages 1185–1196, 2025. [41] Xiangfei Qiu, Yuhan Zhu, Zhengyu Li, Hanyin Cheng, Xingjian Wu, Chenjuan Guo, Bin Yang, and Jilin Hu. Dag: A dual causal network for time series forecasting with ex-ogenous variables. arXiv preprint arXiv:2509.14933 , 2025. 2[42] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervi-sion. In International conference on machine learning , pages 8748–8763. PMLR, 2021. 6 [43] Yixuan Ren, Yang Zhou, Jimei Yang, Jing Shi, Difan Liu, Feng Liu, Mingi Kwon, and Abhinav Shrivastava. Customize-a-video: One-shot motion customization of text-to-video dif-fusion models. In European Conference on Computer Vision ,pages 332–349. Springer, 2024. 3 [44] Runway. Gen-1: Structure and content-guided video syn-thesis with diffusion models. https://runwayml.com/ research/gen-1 , 2023. 3 [45] Qingyu Shi, Jianzong Wu, Jinbin Bai, Jiangning Zhang, Lu Qi, Xiangtai Li, and Yunhai Tong. Decouple and track: Bench-marking and improving video diffusion transformers for mo-tion transfer. arXiv preprint arXiv:2503.17350 , 2025. 2, 6, 8[46] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denoising diffusion implicit models. arXiv preprint arXiv:2010.02502 ,2020. 2 [47] Yiren Song, Xiaokang Liu, and Mike Zheng Shou. Diff-sim: Taming diffusion models for evaluating visual similarity. 
+
+arXiv preprint arXiv:2412.14580 , 2024. 3 [48] Yiren Song, Danze Chen, and Mike Zheng Shou. Layer-tracer: Cognitive-aligned layered svg synthesis via diffusion transformer. arXiv preprint arXiv:2502.01105 , 2025. 3 [49] Yiren Song, Cheng Liu, and Mike Zheng Shou. Makeany-thing: Harnessing diffusion transformers for multi-domain procedural sequence generation. arXiv preprint arXiv:2502.01572 , 2025. 3 [50] Yiren Song, Cheng Liu, and Mike Zheng Shou. Omnicon-sistency: Learning style-agnostic consistency from paired stylization data. arXiv preprint arXiv:2505.18445 , 2025. 3 [51] Team Wan, Ang Wang, and et.al. Wan: Open and advanced large-scale video generative models, 2025. 6 [52] Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianxiao Yang, Jianyuan Zeng, Jiayu Wang, Jingfeng Zhang, Jingren Zhou, Jinkai Wang, Jixuan Chen, Kai Zhu, Kang Zhao, Keyu Yan, Lianghua Huang, Mengyang Feng, Ningyi Zhang, Pandeng Li, Pingyu Wu, Ruihang Chu, Ruili Feng, Shiwei Zhang, Siyang Sun, Tao Fang, Tianxing Wang, Tianyi Gui, Tingyu Weng, Tong Shen, Wei Lin, Wei Wang, Wei Wang, Wen-meng Zhou, Wente Wang, Wenting Shen, Wenyuan Yu, Xi-anzhong Shi, Xiaoming Huang, Xin Xu, Yan Kou, Yangyu Lv, Yifei Li, Yijing Liu, Yiming Wang, Yingya Zhang, Yi-tong Huang, Yong Li, You Wu, Yu Liu, Yulin Pan, Yun Zheng, Yuntao Hong, Yupeng Shi, Yutong Feng, Zeyinzi Jiang, Zhen Han, Zhi-Fan Wu, and Ziyu Liu. Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 , 2025. 3, 4 [53] Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianxiao Yang, Jianyuan Zeng, Jiayu Wang, Jingfeng Zhang, Jingren Zhou, Jinkai Wang, Jixuan Chen, Kai Zhu, Kang Zhao, Keyu Yan, Lianghua Huang, Xiaofeng Meng, Ningying Zhang, Pan-deng Li, Pingyu Wu, Ruihang Chu, Rui Feng, Shiwei Zhang, Siyang Sun, Tao Fang, Tianxing Wang, Tianyi Gui, Tingyu Weng, Tong Shen, Wei Lin, Wei Wang, Wei Wang, Wen-Chao Zhou, Wente Wang, Wen Shen, Wenyuan Yu, Xianzhong Shi, Xiaomin Huang, Xin Xu, Yan Kou, Yan-Mei Lv, Yifei Li, Yijing Liu, Yiming Wang, Yingya Zhang, Yitong Huang, Yong Li, You Wu, Yu Liu, Yulin Pan, Yun Zheng, Yuntao Hong, Yupeng Shi, Yutong Feng, Zeyinzi Jiang, Zhengbin Han, Zhigang Wu, and Ziyu Liu. Wan: Open and advanced large-scale video generative models. ArXiv , abs/2503.20314, 2025. 7 [54] Jiuniu Wang, Hangjie Yuan, Dayou Chen, Yingya Zhang, Xiang Wang, and Shiwei Zhang. Modelscope text-to-video technical report. arXiv preprint arXiv:2308.06571 , 2023. 3 [55] Luozhou Wang, Ziyang Mai, Guibao Shen, Yixun Liang, Xin Tao, Pengfei Wan, Di Zhang, Yijun Li, and Yingcong Chen. Motion inversion for video customization. arXiv preprint arXiv:2403.20193 , 2024. 6 
+
+11 [56] Qinghe Wang, Xu Jia, Xiaomin Li, Taiqing Li, Liqian Ma, Yunzhi Zhuge, and Huchuan Lu. Stableidentity: Inserting anybody into anywhere at first sight. IEEE Transactions on Multimedia , 2025. 3 [57] Qinghe Wang, Baolu Li, Xiaomin Li, Bing Cao, Liqian Ma, Huchuan Lu, and Xu Jia. Characterfactory: Sampling consis-tent characters with gans for diffusion models. IEEE Trans-actions on Image Processing , 2025. [58] Qinghe Wang, Yawen Luo, Xiaoyu Shi, Xu Jia, Huchuan Lu, Tianfan Xue, Xintao Wang, Pengfei Wan, Di Zhang, and Kun Gai. Cinemaster: A 3d-aware and controllable framework for cinematic text-to-video generation. In Proceedings of the Special Interest Group on Computer Graphics and Interac-tive Techniques Conference Conference Papers , pages 1–10, 2025. [59] Qinghe Wang, Xiaoyu Shi, Baolu Li, Weikang Bian, Quande Liu, Huchuan Lu, Xintao Wang, Pengfei Wan, Kun Gai, and Xu Jia. Multishotmaster: A controllable multi-shot video generation framework. arXiv preprint arXiv:2512.03041 ,2025. 3 [60] Zhouxia Wang, Ziyang Yuan, Xintao Wang, Yaowei Li, Tian-shui Chen, Menghan Xia, Ping Luo, and Ying Shan. Mo-tionctrl: A unified and flexible motion controller for video generation. In ACM SIGGRAPH 2024 Conference Proceed-ings , 2024. 3 [61] Jianzong Wu, Xiangtai Li, Yanhong Zeng, Jiangning Zhang, Qianyu Zhou, Yining Li, Yunhai Tong, and Kai Chen. Mo-tionbooth: Motion-aware customized text-to-video generation. 
+
+NeurIPS , 2024. 3 [62] Xingjian Wu, Xiangfei Qiu, Hongfan Gao, Jilin Hu, Bin Yang, and Chenjuan Guo. K 2VAE: A koopman-kalman enhanced variational autoencoder for probabilistic time series forecast-ing. In ICML , 2025. 2 [63] Zeqi Xiao, Yifan Zhou, Shuai Yang, and Xingang Pan. Video diffusion models are training-free motion interpreter and con-troller. In Advances in Neural Information Processing Systems (NeurIPS) , 2024. 2, 3, 6, 8 [64] Jinbo Xing, Menghan Xia, Yuxin Liu, Yuechen Zhang, Yong Zhang, Yingqing He, Hanyuan Liu, Haoxin Chen, Xiaodong Cun, Xintao Wang, et al. Make-your-video: Customized video generation using textual and structural guidance. IEEE Transactions on Visualization and Computer Graphics , 2024. 3[65] Jiaqi Xu, Xinyi Zou, Kunzhe Huang, Yunkuo Chen, Bo Liu, MengLi Cheng, Xing Shi, and Jun Huang. Easyanimate: A high-performance long video generation method based on transformer architecture. arXiv preprint arXiv:2405.18991 ,2024. 3 [66] Xiangpeng Yang, Linchao Zhu, Xiaohan Wang, and Yi Yang. Dgl: Dynamic global-local prompt tuning for text-video re-trieval. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 6540–6548, 2024. 3 [67] Zhuoyi Yang, Jiayan Teng, Wendi Zheng, Ming Ding, Shiyu Huang, Jiazheng Xu, Yuanming Yang, Wenyi Hong, Xiaohan Zhang, Guanyu Feng, Da Yin, Xiaotao Gu, Yuxuan Zhang, Weihan Wang, Yean Cheng, Ting Liu, Bin Xu, Yuxiao Dong, and Jie Tang. Cogvideox: Text-to-video diffusion models with an expert transformer. ArXiv , abs/2408.06072, 2024. 3 [68] Danah Yatim, Rafail Fridman, Omer Bar-Tal, Yoni Kasten, and Tali Dekel. Space-time diffusion features for zero-shot text-driven motion transfer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 8466–8476, 2024. 2 [69] Danah Yatim, Rafail Fridman, Omer Bar-Tal, Yoni Kasten, and Tali Dekel. Space-time diffusion features for zero-shot text-driven motion transfer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 8466–8476, 2024. 2, 3, 6, 8 [70] Hidir Yesiltepe, Tuna Han Salih Meral, Connor Dunlop, and Pinar Yanardag. Motionshop: Zero-shot motion transfer in video diffusion models with mixture of score guidance. arXiv preprint arXiv:2412.05355 , 2024. 3 [71] Jusheng Zhang, Kaitong Cai, Yijia Fan, Ningyuan Liu, and Keze Wang. MAT-agent: Adaptive multi-agent training opti-mization. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. 3 [72] Jusheng Zhang, Kaitong Cai, Yijia Fan, Jian Wang, and Keze Wang. Cf-vlm:counterfactual vision-language fine-tuning, 2025. 3 [73] Jusheng Zhang, Kaitong Cai, Xiaoyang Guo, Sidi Liu, Qinhan Lv, Ruiqi Chen, Jing Yang, Yijia Fan, Xiaofei Sun, Jian Wang, Ziliang Chen, Liang Lin, and Keze Wang. Mm-cot:a benchmark for probing visual chain-of-thought reasoning in multimodal models, 2025. 3 [74] Jusheng Zhang, Kaitong Cai, Jing Yang, and Keze Wang. Learning dynamics of vlm finetuning, 2025. [75] Jusheng Zhang, Yijia Fan, Kaitong Cai, Zimeng Huang, Xi-aofei Sun, Jian Wang, Chengpei Tang, and Keze Wang. Drdiff: Dynamic routing diffusion with hierarchical attention for breaking the efficiency-quality trade-off, 2025. [76] Jusheng Zhang, Yijia Fan, Kaitong Cai, and Keze Wang. Kolmogorov-arnold fourier networks, 2025. 3 [77] Jusheng Zhang, Yijia Fan, Wenjun Lin, Ruiqi Chen, Haoyi Jiang, Wenhao Chai, Jian Wang, and Keze Wang. GAM-agent: Game-theoretic and uncertainty-aware collaboration for complex visual reasoning. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. 3[78] Jusheng Zhang, Yijia Fan, Zimo Wen, Jian Wang, and Keze Wang. Tri-MARF: A tri-modal multi-agent responsive frame-work for comprehensive 3d object annotation. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. 3 [79] Jusheng Zhang, Xiaoyang Guo, Kaitong Cai, Qinhan Lv, Yijia Fan, Wenhao Chai, Jian Wang, and Keze Wang. Hybridtoken-vlm: Hybrid token compression for vision-language models, 2025. 3 [80] Jusheng Zhang, Zimeng Huang, Yijia Fan, Ningyuan Liu, Mingyan Li, Zhuojie Yang, Jiawei Yao, Jian Wang, and Keze Wang. KABB: Knowledge-aware bayesian bandits for dy-namic expert coordination in multi-agent systems. In Forty-second International Conference on Machine Learning , 2025. 3[81] Yuxin Zhang, Fan Tang, Nisha Huang, Haibin Huang, Chongyang Ma, Weiming Dong, and Changsheng Xu. Mo-
+
+12 tioncrafter: One-shot motion customization of diffusion mod-els. arXiv preprint arXiv:2312.05288 , 2023. 2 [82] Yuxuan Zhang, Yiren Song, Jiaming Liu, Rui Wang, Jinpeng Yu, Hao Tang, Huaxia Li, Xu Tang, Yao Hu, Han Pan, et al. Ssr-encoder: Encoding selective subject representation for subject-driven generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 8069–8078, 2024. 3 [83] Yuxuan Zhang, Yirui Yuan, Yiren Song, Haofan Wang, and Ji-aming Liu. Easycontrol: Adding efficient and flexible control for diffusion transformer. arXiv preprint arXiv:2503.07027 ,2025. 3 [84] Min Zhao, Rongzhen Wang, Fan Bao, Chongxuan Li, and Jun Zhu. Controlvideo: Adding conditional control for one shot text-to-video editing. arXiv preprint arXiv:2305.17098 , 2023. 3[85] Rui Zhao, Yuchao Gu, Jay Zhangjie Wu, David Junhao Zhang, Jiawei Liu, Weijia Wu, Jussi Keppo, and Mike Zheng Shou. Motiondirector: Motion customization of text-to-video diffu-sion models. arXiv preprint arXiv:2310.08465 , 2023. 2, 3, 6, 8
+
+13

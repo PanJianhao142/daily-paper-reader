@@ -1,0 +1,476 @@
+Title: FMPose3D: monocular 3D pose estimation via flow matching
+
+URL Source: https://arxiv.org/pdf/2602.05755v1
+
+Published Time: Fri, 06 Feb 2026 02:23:32 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# FMPose3D: monocular 3D pose estimation via flow matching 
+
+## Ti Wang, Xiaohang Yu, Mackenzie Weygandt Mathis 
+
+## ´Ecole Polytechnique F´ ed´ erale de Lausanne (EPFL) 
+
+> mackenzie.mathis@epfl.ch
+
+## Abstract 
+
+Monocular 3D pose estimation is fundamentally ill-posed due to depth ambiguity and occlusions, thereby motivating probabilistic methods that generate multiple plausible 3D pose hypotheses. In particular, diffusion-based models have recently demonstrated strong performance, but their iterative denoising process typically requires many timesteps for each prediction, making inference computationally expensive. In contrast, we leverage Flow Matching (FM) to learn a velocity field defined by an Ordinary Differential Equation (ODE), enabling efficient generation of 3D pose samples with only a few integration steps. We propose a novel generative pose estimation framework, FMPose3D, that formulates 3D pose estimation as a conditional distribution transport problem. It continuously transports samples from a standard Gaussian prior to the distribution of plausible 3D poses conditioned only on 2D inputs. Although ODE trajectories are determin-istic, FMPose3D naturally generates various pose hypotheses by sampling different noise seeds. To obtain a single accu-rate prediction from those hypotheses, we further introduce a Reprojection-based Posterior Expectation Aggregation (RPEA) module, which approximates the Bayesian posterior expectation over 3D hypotheses. FMPose3D surpasses ex-isting methods on the widely used human pose estimation benchmarks Human3.6M and MPI-INF-3DHP, and further achieves state-of-the-art performance on the 3D animal pose datasets Animal3D and CtrlAni3D, demonstrating strong per-formance across both 3D pose domains. The code is available at https://github.com/AdaptiveMotorControlLab/FMPose3D. 
+
+## 1. Introduction 
+
+Monocular 3D pose estimation aims to recover 3D body joint locations from a single image or video. This task is funda-mental to a wide range of applications, including computer animation, human–computer interaction, and action recogni-tion. Most recent works adopt a 2D-to-3D lifting paradigm [ 32 , 44 , 49 , 69 , 71 , 73 ] that decomposes the problem into two stages: (i) detecting 2D joint locations with off-the-shelf keypoint detectors [ 8 , 54 ], and (ii) lifting these 2D joints to their corresponding 3D coordinates. This formulation decouples the challenging 3D pose estimation problem from the more mature 2D keypoint detection stage, mitigating appearance and background variations and yielding stable inputs for 3D lifting. Lifting a 2D pose to 3D from a single view is inherently ambiguous, as multiple 3D configurations can produce the same 2D projection. This ambiguity makes deterministic models that learn a single mapping from 2D to 3D insuffi-cient, as they tend to regress to an averaged prediction. To mitigate this issue, some works [ 25 , 32 , 46 , 50 ] adopt a multi-hypothesis strategy, producing a set of plausible 3D poses for each 2D input. This formulation allows the model to capture uncertainty and represent multiple valid interpretations of the same 2D pose. Early probabilistic works based on Mixture Density Network (MDN) [ 32 , 46 ] generate a fixed number of candidate poses with limited diversity. Recent diffusion-based approaches [ 16 , 21 , 49 , 61 ] reformulate 3D pose lifting as a reverse diffusion process that progressively denoises random noise conditioned on 2D inputs to sample diverse and 2D-consistent 3D poses. Despite their effectiveness, diffusion-based methods remain computationally expensive: their iterative denoising process requires many sequential sampling steps for each hypothesis, resulting in substantial inference overhead. Even with accelerated samplers such as Denoising Diffusion Implicit Models (DDIM) [ 52 ], achiev-ing strong accuracy typically still requires 10-15 steps. This unfavorable trade-off between accuracy and inference speed severely limits their applicability in real-time scenarios. On the other hand, Flow Matching (FM) [ 39 , 42 ] has recently emerged as a powerful class of generative models, capable of capturing complex data distributions while main-taining efficient and deterministic sampling. Rather than learning a stochastic denoising process governed by a Stochas-tic Differential Equation (SDE), FM learns a deterministic velocity field governed by an Ordinary Differential Equation (ODE), which continuously transports samples from a simple noise distribution to the target data distribution. In practice, Flow Matching enables fast and stable sampling, requiring only a few ODE integration steps, or even a single step with properly learned velocity fields [18, 60]. 1
+
+> arXiv:2602.05755v1 [cs.CV] 5 Feb 2026
+
+Building upon this insight, we propose FMPose3D , a new paradigm for 3D pose estimation via flow matching. Instead of treating pose lifting as a deterministic regression task, we formulate it as a conditional distribution transport problem, where the 2D pose serves as a guiding signal. The model learns a deterministic velocity field, governed by an ODE, that transports samples from a simple Gaussian prior to a distribution of plausible 3D poses conditioned on a 2D input. While each ODE trajectory is deterministic for a given noise seed and 2D input, sampling different seeds yields diverse 3D pose hypotheses for the same 2D input, enabling multi-hypothesis modeling within our framework. To effectively distill these hypotheses into a single, more robust prediction, we further propose a novel Reprojection-based Posterior Expectation Aggregation (RPEA) module. RPEA aims to compute the posterior expectation of the 3D pose, which corresponds to the Bayes-optimal estimator un-der squared-error loss. Since the true posterior probability is intractable, we introduce a principled approximation: a plausible 3D pose must be consistent with its 2D observation. Therefore, we use the 2D re-projection error as an intuitive and effective proxy for the likelihood of each hypothesis. Ag-gregation can be performed joint-wise or pose-wise, and the resulting joints are assembled into the final 3D pose. Com-pared with uniform averaging across hypotheses or per-joint selection of the single best candidate, RPEA is theoretically closer to the Bayes-optimal solution and empirically yields superior accuracy. Our contributions can be summarized as follows: 
+
+• We propose FMPose3D , a new generative framework that formulates 3D pose estimation as a conditional distribution transport problem, efficiently transporting Gaussian noise to plausible 3D poses conditioned on 2D inputs. To our knowledge, FMPose3D is the first work to successfully leverage flow matching for lifting 2D-to-3D poses. 
+
+• We propose a new aggregation module, RPEA , which is motivated by Bayesian decision theory and fuses multi-ple 3D pose hypotheses into a single, robust prediction. 
+
+• Extensive experiments on both human and non-human animal 3D pose datasets demonstrate the effectiveness of the proposed framework. 
+
+## 2. Related Work 
+
+2.1. Monocular 3D Pose Estimation 
+
+Recent 3D pose estimation works adopt a 2D-to-3D lifting pipeline [ 32 , 44 , 49 , 69 , 71 , 73 ]. Existing methods fall into two families: deterministic methods (single estimate) and probabilistic methods (multi-hypothesis). 
+
+Deterministic methods [ 44 , 69 , 71 , 73 ] predict a single definitive 3D pose for each input, which is straightforward and practical for real-world applications. Early works like SimpleBaseline [ 44 ] employ fully-connected layers with residual connections to directly predict 3D joints from 2D detections. Since the human skeleton can be naturally repre-sented as a graph, various methods [ 7, 64 , 71 , 75 ] based on Graph Convolutional Network (GCN) have been proposed. Inspired by the success of Transformers [ 56 ], some work [35 , 36 , 69 , 73 ] focuses on model long-range dependencies and captures global correlations among joints. In contrast, probabilistic methods [ 25 , 32 , 46 , 50 ] explic-itly model the ambiguity of monocular 3D pose estimation by generating multiple plausible hypotheses. The early work of Jahangiri and Yuille [ 25 ] produces multiple 3D pose hy-potheses using a hand-crafted anatomical generative model conditioned only on 2D joints. Li and Lee [ 32 ] introduced MDN [ 6] to generate pose hypotheses, while Oikarinen et al. [46 ] further enhanced this framework by integrating MDN with GCN to exploit the inherent graph structure of the human skeleton. Sharma et al. [ 50 ] used a Conditional Variational AutoEncoder (CVAE) [ 51 ] to obtain diverse 3D pose samples. Wehrbein et al. [ 62 ] explored normalizing flows, and Li et al. [33 ] leveraged generative adversarial network (GAN) [17] to model the distribution of 3D poses. Recently, diffusion-based models [ 16 , 49 , 68 ] have been explored for 3D human pose estimation, leveraging their iter-ative denoising process to generate diverse and plausible 3D pose samples. Representative works include DiffPose [ 16 ], D3DP [ 49 ], and CHAMP [ 68 ]. Given that multiple 3D poses can correspond to the same 2D observation, probabilistic modeling is particularly well suited for this task, and we adopt it in this work. Although monocular 3D pose estimation has been ex-tensively studied for humans [ 41 , 74 ], its counterpart for animals remains far less explored. The limited availability of 3D annotations [ 26 ] has driven most existing methods toward model-based formulations. These approaches fit the Skinned Multi-Animal Linear (SMAL) model [ 76 ] to images to reconstruct the 3D shape of the animal [ 5 , 29 , 37 , 43 , 77 ], from which the 3D pose is obtained by joint regression from the fitted mesh. The problem is further compounded by substantial morphological variation between species, making monocular 3D animal pose estimation considerably more challenging than its human counterpart. 
+
+2.2. Flow Matching in Generative Modeling 
+
+Diffusion models [ 20 , 52 ] have achieved significant success in tasks such as image [ 11 , 48 ], sound [ 23 , 40 ], and video generation [ 12 ]. They are typically formulated via SDEs and require multiple denoising steps for inference. Recently, several works [ 16 , 49 , 68 ] have leveraged diffusion mod-els for 3D human pose estimation, where sampling from noise enables the generation of diverse and plausible pose hypotheses. However, diffusion-based inference is slow, as the inference stage requires many iterative denoising steps, 2Figure 1. Overview of the training process. The process starts from a noise sample 𝑥 0 ∼ N ( 0, 𝐼 ) and a ground-truth 3D pose 𝑥 1 from the training set. An intermediate sample 𝑥 𝑡 is obtained by linear interpolation between 𝑥 0 and 𝑥 1. The red region illustrates the valid 3D pose data manifold. The network 𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ), conditioned on the 2D pose 𝑐 = 𝑥 2𝐷 , is trained to predict the true velocity 𝑣 𝑡 . The Flow Matching loss LCFM = ∥𝑣 𝜃 − 𝑣 𝑡 ∥22 minimizes the discrepancy between the predicted and ground-truth velocities. 
+
+making these methods impractical for real-time applications. Recently, Flow Matching [ 39 , 42 ] was used to model the velocity field that transports a simple base distribution to the data distribution via ODEs. FM has shown strong results on various other tasks [ 18 , 58 , 60 ] while enabling faster sampling with much fewer steps. Its deterministic ODE trajectories allow for fewer sampling steps and yield lower latency, making it suitable for real-time applications. In this work, we adopt conditional FM for 3D pose estimation, enabling efficient inference and multi-hypothesis generation via different noise initializations. 
+
+## 3. Methods 
+
+3.1. 3D Pose Estimation via Flow Matching 
+
+In this work, we propose FMPose3D , a generative framework for 3D pose estimation built upon flow matching. Instead of directly regressing a 3D pose from a 2D input, we cast 3D pose estimation as a conditional distribution transport problem, where the 2D pose serves as the conditioning signal. The model learns a conditional velocity field that transports samples from a simple Gaussian base distribution to the target conditional distribution of plausible 3D poses given a 2D observation. 
+
+Problem setup. Let 𝑥 2𝐷 ∈ R𝐽 ×2 and 𝑥 1 ∈ R𝐽 ×3 denote a paired 2D and 3D pose with 𝐽 joints, and let the 2D pose serve as the condition 𝑐 = 𝑥 2𝐷 . Let 𝑝 0 = N ( 0, 𝐼 )
+
+be a standard Gaussian base distribution over R𝐽 ×3, and sample 𝑥 0 ∼ 𝑝 0. FMPose3D learns a conditional velocity field that deterministically transports samples from 𝑝 0 to the conditional data distribution 𝑝 data (𝑥 1 | 𝑐 ).
+
+Linear interpolation path. Given a noise sample 𝑥 0 ∼ 𝑝 0
+
+and a target 3D pose 𝑥 1, we define the linear interpolation: 
+
+𝑥 𝑡 = (1 − 𝑡 ) 𝑥 0 + 𝑡 𝑥 1, 𝑡 ∈ [ 0, 1). (1) During training, we sample 𝑡 ∼ U [ 0, 1] and use the corre-sponding 𝑥 𝑡 as an intermediate state, so that the velocity field 
+
+𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ) learns to move points along this path toward the target pose 𝑥 1.
+
+Target velocity. Differentiating Eq. (1) with respect to 
+
+𝑡 yields the instantaneous velocity along the interpolation path: 
+
+𝑣 𝑡 = 𝑑𝑥 𝑡 
+
+𝑑𝑡 = 𝑥 1 − 𝑥 0. (2) This path-constant vector serves as the ground-truth target used to supervise the conditional velocity field 𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ) at each intermediate state 𝑥 𝑡 .
+
+Conditional flow matching loss. A neural network 
+
+𝑣 𝜃 (𝑥, 𝑡, 𝑐 ) is trained to approximate the target velocity 𝑣 𝑡 
+
+defined above, where 𝑐 = 𝑥 2𝐷 . The Conditional Flow Matching (CFM) objective minimizes the expected squared error between the predicted and target velocities: 
+
+LCFM (𝜃 ) = E𝑥 0∼ 𝑝 0 , 𝑡 ∼U [ 0,1)
+
+h
+
+𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ) − ( 𝑥 1 − 𝑥 0) 22
+
+i
+
+.
+
+(3) 
+
+Overview of the training process. The training pipeline is illustrated in Figure 1. At each iteration, a paired sample 
+
+(𝑥 2𝐷 , 𝑥 1) is drawn from the dataset, while Gaussian noise 𝑥 0 ∼N ( 0, 𝐼 ) and a time 𝑡 ∼ U [ 0, 1) are sampled. The intermediate state 𝑥 𝑡 is then constructed by linear interpolation as in Eq. (1) .Given the current state (𝑥 𝑡 , 𝑡, 𝑐 ), the network predicts the instantaneous velocity 𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ), and the target velocity is the path-constant vector 𝑣 𝑡 = 𝑥 1 − 𝑥 0. The per-sample loss 
+
+LCFM = ∥𝑣 𝜃 − 𝑣 𝑡 ∥22 penalizes the discrepancy between the predicted and target velocities. Intuitively, training learns a conditional velocity field that transports samples from Gaussian noise toward the 3D pose distribution under the 2D condition. 
+
+Sampling (inference). After training, the learned condi-tional velocity field 𝑣 𝜃 (𝑥, 𝑡, 𝑐 ) defines the ODE: 
+
+𝑑𝑥 𝑡 
+
+𝑑𝑡 = 𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ), 𝑥 0 ∼ 𝑝 0 = N ( 0, 𝐼 ), (4) whose deterministic flow transports samples from the source distribution 𝑝 0 to the conditional distribution 𝑝 𝜃 (𝑥 | 𝑐 ).At inference time, given a 2D pose 𝑐 = 𝑥 2𝐷 , we predict a 3D pose ˆ𝑥 3𝐷 by solving this ODE. Sampling an initial noise 
+
+𝑥 0 ∼ N ( 0, 𝐼 ) and integrating the velocity field from 𝑡 = 0 to 1, we obtain the following integral expression: ˆ𝑥 3𝐷 = 𝑥 0 +
+
+∫ 10
+
+𝑣 𝜃 
+
+ 𝑥 𝑡 , 𝑡, 𝑐  𝑑𝑡. (5) 3Figure 2. Illustration of multi-hypothesis generation and aggregation during inference. 
+
+In practice, the integral is approximated with 𝑆 discrete steps (step size ℎ = 1/𝑆 ). Using explicit Euler, the update is 
+
+𝑥 𝑡 + 1
+
+> 𝑆
+
+= 𝑥 𝑡 + 1
+
+𝑆 𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ), 𝑡 ∈
+
+n
+
+0, 1 
+
+> 𝑆
+
+, . . . , 1 − 1
+
+> 𝑆
+
+o
+
+.
+
+(6) This process transports the noisy initialization 𝑥 0 toward a plausible 3D pose ˆ𝑥 3𝐷 that is consistent with the given 2D observation. Algorithm 1 summarizes the complete training and single-hypothesis inference procedure of our FMPose3D. 
+
+3.2. Reprojection-based Posterior Expectation Ag-gregation (RPEA) 
+
+As shown in Figure 2, at inference time, given a 2D pose 𝑋 2𝐷 ,we can draw 𝑁 noise samples to generate 𝑁 3D pose hypothe-ses. To obtain a single accurate prediction, we introduce a new aggregation framework, Reprojection-based Posterior Expectation Aggregation (RPEA) . Our method is moti-vated by Bayesian decision theory [ 4] and aims to provide a more robust solution to the multi-hypothesis aggregation problem. During training, the model implicitly approximates the uncertainty over the 3D pose, which is described by the pos-terior distribution 𝑝 (𝑋 3𝐷 |𝑋 2𝐷 ). Our objective is to derive a single, unique 3D pose estimate ˆ𝑋 3𝐷 from this distribution. According to Bayesian decision theory, a rational objective is to select an estimate ˆ𝑋 3𝐷 that minimizes the Expected Loss. With Mean Squared Error (MSE) as the decision loss function, the corresponding risk is defined as: 
+
+𝑅 ( ˆ𝑋 3𝐷 ) = E || ˆ𝑋 3𝐷 − 𝑋 3𝐷 || 2 . (7) Our goal is to find the estimator that minimizes this risk, known as the Minimum Mean Squared Error (MMSE) estimator: ˆ𝑋 𝑀 𝑀𝑆𝐸 = arg min 
+
+> ˆ𝑋 3𝐷
+
+𝑅 ( ˆ𝑋 3𝐷 ). (8) According to Bayesian decision theory, the MMSE estima-
+
+Algorithm 1: Training and inference of FMPose3D 
+
+Input: Training set D = {( 𝑥 2𝐷 , 𝑥 3𝐷 )} with 
+
+𝑥 2𝐷 ∈ R𝐽 ×2 and 𝑥 3𝐷 ∈ R𝐽 ×3; number of training iterations 𝑇 train ; number of Euler steps 𝑆 used at inference. 
+
+Output: Trained FMPose3D parameters 𝜃 (velocity field 𝑣 𝜃 ); at inference time, the predicted 3D pose ˆ 𝑥 3𝐷 for a given 2D pose. 
+
+Training phase: for 𝑖𝑡𝑒𝑟 = 1 to 𝑇 train do 
+
+Sample a mini-batch of data pairs (𝑥 2𝐷 , 𝑥 3𝐷 )
+
+from D;Set 𝑥 1 ← 𝑥 3𝐷 and condition 𝑐 ← 𝑥 2𝐷 ;Sample 𝑥 0 ∼ N ( 0, 𝐼 ) and 𝑡 ∼ U [ 0, 1);Compute interpolated states 
+
+𝑥 𝑡 ← ( 1 − 𝑡 ) 𝑥 0 + 𝑡 𝑥 1;Predict velocities 𝑣 pred ← 𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 );Set target velocities 𝑣 target ← 𝑥 1 − 𝑥 0;Compute the CFM loss on the batch 
+
+LCFM ← ∥ 𝑣 pred − 𝑣 target ∥22;Update parameters 𝜃 ← Adam (𝜃, ∇𝜃 LCFM );
+
+Inference phase (given trained 𝜃 ): 
+
+Given a 2D pose 𝑥 2𝐷 and the number of Euler steps 𝑆 
+
+;Set condition 𝑐 ← 𝑥 2𝐷 and sample 𝑥 0 ∼ N ( 0, 𝐼 );Initialize 𝑥 ← 𝑥 0;
+
+for 𝑘 = 0 to 𝑆 − 1 do 
+
+𝑡 ← 𝑘 /𝑆 ;
+
+𝑥 ← 𝑥 + 1 
+
+> 𝑆
+
+𝑣 𝜃 (𝑥, 𝑡, 𝑐 );
+
+return ˆ𝑥 3𝐷 ← 𝑥 ;tor is precisely the expectation of the posterior distribution: ˆ𝑋 𝑀 𝑀𝑆𝐸 = 𝐸 [𝑋 3𝐷 |𝑋 2𝐷 ] =
+
+∫
+
+> R𝑑
+
+𝑋 3𝐷 · 𝑝 (𝑋 3𝐷 |𝑋 2𝐷 ) 𝑑𝑋 3𝐷 .
+
+(9) 4However, the analytical form of the posterior distribution 
+
+𝑝 (𝑋 3𝐷 |𝑋 2𝐷 ) is unknown, making it impossible to compute the above integral directly. To approximate this distribution, we make a reasonable assumption that the posterior proba-bility of a 3D hypothesis is proportional to the exponential of its negative 2D re-projection loss 𝐿 :
+
+𝑝 (𝐻 𝑖 |𝑋 2𝐷 ) ∝ exp (− 𝛼 · 𝐿 (𝐻 𝑖 , 𝑋 2𝐷 )) , (10) where 𝛼 is a fixed temperature hyperparameter. Under this assumption, we can approximate the posterior expectation using a weighted Monte Carlo estimator, where the weights are determined by the above pseudo-likelihood. Here we show how the joint-wise RPEA performs. First, we use the pre-trained model to draw 𝑁 samples from the learned conditional distribution 𝑝 𝜃 (𝑋 3𝐷 | 𝑋 2𝐷 ), yielding 𝑁 
+
+3D pose hypotheses {𝐻 1, 𝐻 2, ..., 𝐻 𝑁 }. Our RPEA method applies the principle of posterior expectation estimation independently to each joint. Specifically, the final position of each joint is robustly estimated via the following two steps: 1. Filtering: For the 𝑗 -th joint, we consider its 𝑁 candidate positions {𝐻 1, 𝑗 , ..., 𝐻 𝑁 , 𝑗 } from the 𝑁 hypotheses. Let 
+
+𝐿 𝑖, 𝑗 denote the re-projection loss associated with the 𝑗 -th joint of hypothesis 𝐻 𝑖 . We rank these candidates by their losses {𝐿 1, 𝑗 , ..., 𝐿 𝑁 , 𝑗 } and select the Top-K candidates with the lowest losses to form a high-likelihood candidate set H𝐾 , 𝑗 .2. Weighted Aggregation: We then compute the weighted average over this high-quality candidate set to approximate the posterior expectation of the joint’s position. The final estimated position of the 𝑗 -th joint, ˆ𝑋 𝑅𝑃𝐸 𝐴 𝑗 , is given by: ˆ𝑋 𝑅𝑃𝐸 𝐴 𝑗 =∑︁  
+
+> 𝐻 𝑖, 𝑗 ∈ H 𝐾, 𝑗
+
+𝑤 𝑖, 𝑗 · 𝐻 𝑖, 𝑗 ,
+
+where 𝑤 𝑖, 𝑗 = exp (− 𝛼𝐿 𝑖, 𝑗 )
+
+Í𝐻 𝑘, 𝑗 ∈ H 𝐾, 𝑗 exp (− 𝛼𝐿 𝑘, 𝑗 ) .
+
+(11) The final 3D pose ˆ𝑋 𝑅𝑃𝐸 𝐴 is then constructed by assembling the estimated positions of all joints 
+
+{ ˆ𝑋 𝑅𝑃𝐸 𝐴  
+
+> 1
+
+, ..., ˆ𝑋 𝑅𝑃𝐸 𝐴 𝐽 }.
+
+3.3. Architecture 
+
+FMPose3D parameterizes the conditional velocity field 
+
+𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ) used in the ODE of Sec. 3, where 𝑥 𝑡 ∈ R𝐽 ×3
+
+is the current 3D pose state (with 𝑥 0 initialized from Gaus-sian noise at 𝑡 = 0), 𝑐 = 𝑥 2𝐷 ∈ R𝐽 ×2 is the 2D pose condition, and 𝑡 ∈ [ 0, 1] is the integration time. At each ODE step, FMPose3D takes (𝑥 𝑡 , 𝑥 2𝐷 , 𝑡 ) as input and predicts the instan-taneous velocity 𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ).As shown in Figure 2, we first apply three embedding layers: a 3D skeleton embedding layer that maps the current 3D pose state 𝑥 𝑡 to per-joint features, a 2D skeleton embed-ding layer for the 2D pose 𝑥 2𝐷 , and a time embedding layer for the time 𝑡 . These embeddings transform the inputs into latent feature space. All three embedding layers are imple-mented as lightweight MLPs. The three embeddings are then concatenated to form a joint-wise feature tensor 𝐹 𝑡 ∈ R𝐽 ×𝐷 ,which serves as the input to the backbone. The backbone of FMPose3D mainly consists of two parallel branches: a local GCN branch and a global self-attention branch, designed to capture complementary spatial relationships among hu-man joints. The local branch, implemented with the GCN [ 31 ] layer in the upper path, treats the human skeleton as a graph with joints as nodes, effectively encoding topological information and modeling short-range dependencies between neighboring joints. The global branch, implemented with the attention [ 56 ] layer in the lower path, captures long-range contextual interactions between non-adjacent joints, provid-ing a holistic structural understanding of the 3D pose. The outputs of the two branches are concatenated and passed through a LayerNorm [2] and an MLP. Finally, a regression head (an MLP applied per joint) maps the backbone features to the predicted velocity 𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ) ∈ R𝐽 ×3.
+
+## 4. Experiments 
+
+4.1. Datasets and Evaluation Metrics 
+
+Here, we provide a more detailed description of the datasets and evaluation metrics. 
+
+Human3.6M [ 24 ] is the most representative benchmark for the estimation of 3D human poses. It contains 3.6 million video frames captured from four synchronized cameras at 50Hz in an indoor environment. There are 11 professional actors performing 15 actions, such as greeting, phoning, and sitting. Following previous works [ 7, 47 ], we train our model on five subjects (S1, S5, S6, S7, S8) and test it on two subjects (S9 and S11). The performance is evaluated by two common metrics: MPJPE (Mean Per-Joint Position Error) is the mean Euclidean distance between the predicted joints and the ground truth in millimeters. P-MPJPE is the MPJPE after rigid alignment with the ground truth in translation, rotation, and scale. 
+
+MPI-INF-3DHP [ 45 ] is a more challenging 3D pose dataset that contains both complex indoor and outdoor scenes. There are 8 actors performing 8 actions from 14 camera views, which cover a greater diversity of poses. Its test set consists of three different scenes: studio with green screen (GS), studio without green screen (noGS), and outdoor scene (Outdoor). Following [ 47 , 67 , 75 ], we use Percentage of Correct Keypoints (PCK) with a threshold of 150mm and the Area Under Curve (AUC) for a range of PCK thresholds for evaluation. 
+
+Animal3D [ 63 ] is built on a set of images adapted from Im-ageNet [10] and COCO [38] datasets. Annotators manually labeled 2D keypoints and silhouettes to aid an optimization-based fitting process, producing pseudo SMAL [ 76 ] labels. 5Table 1. Quantitative comparison with the state-of-the-art methods on Human3.6M under MPJPE. The detected 2D pose is used as input. 𝑁 
+
+denotes the number of hypotheses. Red: Best. Blue: Second Best. Grey : our method.                                                                                                                                                                                                                                                                                                                                  
+
+> Deterministic Method Dire. Disc. Eat Greet Phone Photo Pose Purch. Sit SitD. Smoke Wait WalkD. Walk WalkT. Avg ↓
+> SimpleBaseline [44] ICCV’17 51.8 56.2 58.1 59.0 69.5 78.4 55.2 58.1 74.0 94.6 62.3 59.1 65.1 49.5 52.4 62.9 VideoPose3D [47] CVPR’19 47.1 50.6 49.0 51.8 53.6 61.4 49.4 47.4 59.3 67.4 52.4 49.5 55.3 39.5 42.7 51.8 LCN [9] ICCV’21 46.8 52.3 44.7 50.4 52.9 68.9 49.6 46.4 60.2 78.9 51.2 50.0 54.8 40.4 43.3 52.7 SRNet [66] ECCV’20 44.5 48.2 47.1 47.8 51.2 56.8 50.1 45.6 59.9 66.4 52.1 45.3 54.2 39.1 40.3 49.9 GraphSH [64] CVPR’21 45.2 49.9 47.5 50.9 54.9 66.1 48.5 46.3 59.7 71.5 51.4 48.6 53.9 39.9 44.1 51.9 GraFormer [72] CVPR’22 45.2 50.8 48.0 50.0 54.9 65.0 48.2 47.1 60.2 70.0 51.6 48.7 54.1 39.7 43.1 51.8 UGRN [34] AAAI’23 47.9 50.0 47.1 51.3 51.2 59.5 48.7 46.9 56.0 61.9 51.1 48.9 54.3 40.0 42.9 50.5 MLP-JCG [55] TMM’23 43.8 46.7 46.9 48.9 50.3 60.1 45.7 43.9 56.0 73.7 48.9 48.2 50.9 39.9 41.5 49.7 PerturbPE [1] ECCV’24 ---------------50.8
+> Probabilistic Method Dire. Disc. Eat Greet Phone Photo Pose Purch. Sit SitD. Smoke Wait WalkD. Walk WalkT. Avg ↓
+> CVAE ( 𝑁 =200) [50] ICCV’19 48.6 54.5 54.2 55.7 62.6 72.0 50.5 54.3 70.0 78.3 58.1 55.4 61.4 45.2 49.7 58.0 GAN ( 𝑁 =10) [33] BMVC’20 66.0 74.7 71.1 80.6 81.1 93.0 73.2 83.7 90.0 117.4 75.8 79.3 82.1 74.4 77.8 80.9 GraphMDN ( 𝑁 =5) [46] IJCNN’21 51.9 56.1 55.3 58.0 63.5 75.1 53.3 56.5 69.4 92.7 60.1 58.0 65.5 49.8 53.6 61.3 NF ( 𝑁 =1) [62] ICCV’21 52.4 60.2 57.8 57.4 65.7 74.1 56.2 59.1 69.3 78.0 61.2 63.7 67.0 50.0 54.9 61.8 DiffPose ( 𝑁 =5) [16] CVPR’23 42.8 49.1 45.2 48.7 52.1 63.5 46.3 45.2 58.6 66.3 50.4 47.6 52.0 37.6 40.2 49.7 ProPose ( 𝑁 =1) [19] AAAI’25 ---------------51.9 FMPose3D ( 𝑁 =2) (Ours) 45.7 49.2 46.0 49.4 50.9 57.3 47.2 45.0 57.9 61.5 49.8 46.8 52.1 38.9 41.6 49.3 FMPose3D ( 𝑁 =40) (Ours) 43.5 47.2 44.4 47.7 48.9 55.1 45.5 42.7 55.7 59.4 47.9 45.1 49.8 37.1 39.6 47.3
+
+Table 2. Quantitative comparisons with state-of-the-art methods on MPI-INF-3DHP.                                                            
+
+> Method GS ↑noGS ↑Outdoor ↑All PCK ↑All AUC ↑
+> SimpleBaseline [44] 49.8 42.5 31.2 42.5 17.0 GraphSH [64] 81.5 81.7 75.2 80.1 45.8 Zeng et al. [67] --84.6 82.1 46.2 GraFormer [72] 80.1 77.9 74.1 79.0 43.8 UGRN [34] 86.2 84.7 81.9 84.1 53.7 PerturbPE [1] 80.0 79.0 84.0 82.0 -ProPose [19] 83.9 85.5 83.4 84.4 52.1 FMPose3D ( 𝑁 =2) (Ours) 85.7 86.4 85.6 85.9 53.7 FMPose3D ( 𝑁 =20) (Ours) 86.1 87.1 86.5 86.4 54.6
+
+The dataset includes 3.4k instances with 40 species. In this study, we used 3D keypoints derived from SMAL mod-els along with reprojected 2D keypoints for training and evaluation purposes. 
+
+CtrlAni3D [43 ] is a synthetic 3D animal dataset generated using ControlNet [ 70 ] by conditioning textual descriptions of animal behaviors on SMAL structures and rendering them into photorealistic images. The dataset comprises 9.7k images spanning 10 species, with each image annotated with pixel-aligned SMAL meshes, enabling precise 3D shape and pose analysis. 
+
+4.2. Implementation Details 
+
+During evaluation, we employ horizontal flip augmentation, following prior works [ 7, 47 , 67 ]. Instead of simply averaging the predictions from the original and flipped inputs, we treat the two as separate hypotheses and feed them into our RPEA module to obtain the final 3D pose. We refer to this strategy as Flipped-Hypothesis Aggregation (FHA). Following [ 7, 47 , 64 , 67 ], we use 2D pose detected by CPN [ 8] for Human3.6M, and ground truth 2D pose for MPI-INF-3DHP. During inference, we set the number of ODE steps to 𝑆 = 3 .More details are provided in Suppl. Sec B. 
+
+Table 3. Quantitative comparisons with state-of-the-art methods on Animal3D and CtrlAni3D. 
+
+Dataset Animal3D CtrlAni3D Metric P-MPJPE ↓ P-MPJPE ↓
+
+HMR [28] 123.5 123.5 WLDO [5] 112.3 71.5 HMR2.0 [15] 94.1 60.9 AniMer [43] 80.4 44.1 Ours 61.5 44.0 
+
+4.3. Comparison with State-of-the-Art Methods 
+
+Human3.6M. Table 1 presents the MPJPE comparison on Human3.6M between our FMPose3D and prior state-of-the-art deterministic (Table 1, top) and probabilistic (Table 1, bottom) methods. Our baseline FMPose3D already achieves competitive accuracy at 49.3 mm MPJPE. Leveraging its generative capability, we apply FHA and sample 40 hypothe-ses per pose, with 20 drawn from the original 2D input and 20 from its horizontally flipped counterpart. These hypotheses are then aggregated using the proposed RPEA 
+
+module (joint-wise), which further improves performance: 
+
+MPJPE decreases from 49.3 mm to 47.3 mm , surpassing DiffPose [ 16 ] (49.7 mm) by a notable margin (approximately 4.8% relative improvement). For P-MPJPE, we also achieve the best overall performance (see Suppl. Sec. C). 
+
+MPI-INF-3DHP. To evaluate the generalization capability of the proposed FMPose3D, we further compare our approach with previous state-of-the-art methods in a cross-dataset setting. Specifically, we train our model solely on the Human3.6M dataset and directly test it on MPI-INF-3DHP without any fine-tuning. As shown in Table 2, FMPose3D achieves the best overall performance in both PCK and AUC, consistently surpassing existing methods. These results demonstrate the strong generalization ability of our approach 6Table 4. Ablation study on different model designs. Serial : GCN followed by Attention (GCN →Attn). Parallel : GCN and Attention are computed in two branches and fused.               
+
+> Attention GCN Connection MPJPE ↓
+> ✓-50.9
+> ✓-50.1
+> ✓✓Serial 50.5
+> ✓✓Parallel 49.3
+> Figure 3. Comparison of different aggregation strategies on the Human3.6M test set. The top plot reports MPJPE, while the bottom plot shows P-MPJPE.
+
+to unseen scenarios. See Suppl. Sec. G for results on another challenging in-the-wild dataset, 3DPW [57]. 
+
+Animal3D and CtrlAni3D. We further evaluate our method on two animal pose datasets. Our model is trained jointly on Animal3D and CtrlAni3D and evaluated on each dataset separately. As shown in Table 3, it achieves the best overall accuracy on both datasets. Despite not using the RPEA module here, our model still surpasses shape-based baselines, demonstrating the robustness and adaptability of our framework. 
+
+4.4. Ablation Study 
+
+Impact of Model Design. We ablate backbone variants on Human3.6M using detected 2D poses (Table 4). Aserial composition of the local GCN branch followed by the global self-attention branch (GCN →Attention) yields limited improvement, as the sequential structure limits the ability to explore complementarity between local and global cues. In contrast, the parallel design that processes the two branches separately and fuses them at the feature level achieves the best performance, demonstrating the effectiveness of jointly leveraging local and global representations. 
+
+Comparison with Different Aggregation Strategies.                   
+
+> Table 5. Inference speed. Frames per second (FPS) were measured on a single GeForce RTX 4090 GPU. 𝑁 denotes the number of hypothesis. For DiffPose [ 16 ], we follow the setting in the original paper with 50 reverse diffusion steps at inference.
+> Method Steps 𝑁 FPS DiffPose [16] (w/o DDIM) 50 53.36 DiffPose [16] (DDIM) 5527.15 FMPose3D (Ours) 31160.11 FMPose3D (Ours) 340 145.59
+
+We compare the proposed RPEA with two alternative aggre-gation strategies: (i) Mean, which computes the average of all hypotheses, as adopted in DiffPose [ 16 ]; and (ii) JPMA [ 49 ], which selects either (a) the best 3D point for each joint independently (joint-wise) or (b) the best entire pose hypoth-esis (pose-wise), based on the minimum 2D reprojection loss in each case. We apply FHA and evaluate on Human3.6M with different numbers 𝑁 of generated hypotheses. Due to FHA, 𝑁 is always even. The comparison results for MPJPE are shown in Figure 3 (top). We observe that the Mean strategy yields only marginal improvements as the number of hypotheses increases, indicating that simple averaging cannot effectively exploit the diversity among samples. Joint-wise JPMA yields improvements at small 𝑁 , however, its performance quickly saturates beyond 𝑁 = 12 , reflecting its limited capacity to further exploit additional hypotheses. In contrast, our RPEA consistently achieves lower MPJPE and demonstrates a much stronger ability to utilize additional hypotheses for performance gains. To further assess pose structure up to Procrustes alignment, we report P-MPJPE results in Figure 3 (bottom). We find that joint-wise JPMA fails to improve P-MPJPE, as assembling joints from differ-ent pose hypotheses may disrupt body structure and lead to anatomically inconsistent poses. In contrast, our joint-wise RPEA maintains structural coherence and achieves P-MPJPE comparable to Mean, confirming that it generates anatom-ically consistent and plausible 3D poses. Moreover, our pose-wise RPEA achieves the best P-MPJPE with slightly worse MPJPE. The impact of integration steps and intermediate-state visualizations are provided in Suppl. Sec. D and Sec. E. 
+
+4.5. Inference Speed 
+
+Table 5 reports the inference speed measured on a single GeForce RTX 4090 GPU. With 𝑆 = 3 ODE steps, FMPose3D runs at 160.11 FPS for a single hypothesis ( 𝑁 = 1). Thanks to its parallel design, generating 40 hypotheses still achieves 145.59 FPS with only a minor drop. To compare our method with diffusion-based models, we reproduce DiffPose [ 16 ]and measure its FPS in a single-frame setting. Without using DDIM, DiffPose attains only 3.36 FPS, while using DDIM with 5 sampling steps improves the speed to 27.15 FPS. 7Figure 4. Qualitative comparison of DiffPose [ 16 ] and FMPose3D on Human3.6M. The blue pose represents the predicted results, while the red pose represents the ground truth. 
+
+> Figure 5. Qualitative comparison of AniMer [43] and FMPose3D on Animal3D (left column) and CtrlAni3D (right column).
+
+These results show that FMPose3D is substantially faster: even with 𝑁 = 40 hypotheses, FMPose3D is still about 5.4×
+
+faster than DiffPose. For additional results on uncertainty estimation see Suppl. Sec. F, and for the effect of training set size Suppl. Sec. H. 
+
+4.6. Qualitative Results 
+
+Figure 4 compares our method with DiffPose [ 16 ] on Hu-man3.6M. Across diverse poses, our model produces more accurate and plausible 3D poses. Figure 5 shows the qualita-tive results on animal datasets. Our FMPose3D successfully estimates the 3D pose for both real (Animal3D, left column) and synthetic (CtrlAni3D, right column) inputs. Our method demonstrates that, despite variations in species, poses, and viewing angles, it consistently produces accurate 3D pose estimates. For more qualitative results, see Suppl. Sec. I. 
+
+## 5. Conclusions 
+
+We present FMPose3D , a flow-matching–based generative framework for monocular 3D pose estimation. By learning a conditional ODE-driven velocity field, FMPose3D transports samples from Gaussian noise to the distribution of plausi-ble 3D poses conditioned on 2D inputs. This formulation enables fast inference with only a few ODE integration steps and naturally supports multi-hypothesis generation through different noise initializations. To exploit this generative ca-pability and obtain a single accurate prediction, we further propose Reprojection-based Posterior Expectation Aggre-gation (RPEA), which approximates the Bayesian posterior using re-projection error as a likelihood proxy. Experimen-tal results on both human and animal datasets validate the superior performance of FMPose3D across domains. 8Acknowledgments 
+
+We thank the Swiss National Science Foundation Grant No. 320030-227871 and the Kavli Foundation for funding. We thank members of the M-Lab of Adaptive Intelligence for comments throughout the project. 
+
+## References 
+
+[1] Niloofar Azizi, Mohsen Fayyaz, and Horst Bischof. Occlu-sion handling in 3d human pose estimation with perturbed positional encoding. In ECCV , pages 441–458, 2024. 6 [2] Jimmy Lei Ba, Jamie Ryan Kiros, and Geoffrey E Hinton. Layer normalization. arXiv preprint arXiv:1607.06450 , 2016. 5[3] Fabien Baradel, Matthieu Armando, Salma Galaaoui, Romain Br ´egier, Philippe Weinzaepfel, Gr ´egory Rogez, and Thomas Lucas. Multi-hmr: Multi-person whole-body human mesh recovery in a single shot. In ECCV , pages 202–218, 2024. 3 [4] James O Berger. Statistical decision theory and Bayesian analysis . 2013. 4 [5] Benjamin Biggs, Oliver Boyne, James Charles, Andrew Fitzgibbon, and Roberto Cipolla. Who left the dogs out? 3d animal reconstruction with expectation maximization in the loop. In ECCV , pages 195–211, 2020. 2, 6 [6] Christopher M Bishop. Mixture density networks. 1994. 2 [7] Yujun Cai, Liuhao Ge, Jun Liu, Jianfei Cai, Tat-Jen Cham, Junsong Yuan, and Nadia Magnenat Thalmann. Exploiting spatial-temporal relationships for 3D pose estimation via graph convolutional networks. In ICCV , pages 2272–2281, 2019. 2, 5, 6, 1 [8] Yilun Chen, Zhicheng Wang, Yuxiang Peng, Zhiqiang Zhang, Gang Yu, and Jian Sun. Cascaded pyramid network for multi-person pose estimation. In CVPR , pages 7103–7112, 2018. 1, 6, 3 [9] Hai Ci, Chunyu Wang, Xiaoxuan Ma, and Yizhou Wang. Optimizing network structure for 3D human pose estimation. In ICCV , pages 2262–2271, 2019. 6, 2 [10] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. Imagenet: A large-scale hierarchical image database. In CVPR , pages 248–255, 2009. 5 [11] Prafulla Dhariwal and Alexander Nichol. Diffusion models beat gans on image synthesis. In NeurIPS , pages 8780–8794, 2021. 2 [12] Hao Fei, Shengqiong Wu, Wei Ji, Hanwang Zhang, and Tat-Seng Chua. Dysen-vdm: Empowering dynamics-aware text-to-video diffusion with llms. In CVPR , pages 7641–7653, 2024. 2 [13] Mohsen Gholami, Bastian Wandt, Helge Rhodin, Rabab Ward, and Z Jane Wang. Adaptpose: Cross-dataset adaptation for 3D human pose estimation by learnable motion generation. In CVPR , pages 13075–13085, 2022. 3 [14] Xavier Glorot, Antoine Bordes, and Yoshua Bengio. Deep sparse rectifier neural networks. In Proceedings of the four-teenth international conference on artificial intelligence and statistics , pages 315–323, 2011. 1 [15] Shubham Goel, Georgios Pavlakos, Jathushan Rajasegaran, Angjoo Kanazawa, and Jitendra Malik. Humans in 4d: Recon-structing and tracking humans with transformers. In ICCV ,pages 14783–14794, 2023. 6, 3 [16] Jia Gong, Lin Geng Foo, Zhipeng Fan, Qiuhong Ke, Hossein Rahmani, and Jun Liu. Diffpose: Toward more reliable 3D pose estimation. In CVPR , pages 13041–13051, 2023. 1, 2, 6, 7, 8 [17] Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio. Generative adversarial networks. Communi-cations of the ACM , 63(11):139–144, 2020. 2 [18] Ming Gui, Johannes Schusterbauer, Ulrich Prestel, Pingchuan Ma, Dmytro Kotovenko, Olga Grebenkova, Stefan Andreas Baumann, Vincent Tao Hu, and Bj ¨orn Ommer. Depthfm: Fast generative monocular depth estimation with flow matching. In AAAI , pages 3203–3211, 2025. 1, 3 [19] Jumin Han, Jun-Hee Kim, and Seong-Whan Lee. Propose: Probabilistic 3d human pose estimation with instance-level distribution and normalizing flow. In AAAI , pages 3338–3346, 2025. 6, 2 [20] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising dif-fusion probabilistic models. In NeurIPS , pages 6840–6851, 2020. 2 [21] Karl Holmquist and Bastian Wandt. Diffpose: Multi-hypothesis human pose estimation using diffusion models. In 
+
+ICCV , pages 15977–15987, 2023. 1 [22] Mengxian Hu, Chengju Liu, Shu Li, Qingqing Yan, Qin Fang, and Qijun Chen. A geometric knowledge oriented single-frame 2D-to-3D human absolute pose estimation method. IEEE Transactions on Circuits and Systems for Video Technology ,2023. 2 [23] Qingqing Huang, Daniel S Park, Tao Wang, Timo I Denk, Andy Ly, Nanxin Chen, Zhengdong Zhang, Zhishuai Zhang, Jiahui Yu, Christian Frank, et al. Noise2music: Text-conditioned music generation with diffusion models. arXiv preprint arXiv:2302.03917 , 2023. 2 [24] Catalin Ionescu, Dragos Papava, Vlad Olaru, and Cristian Sminchisescu. Human3.6m: Large scale datasets and predic-tive methods for 3D human sensing in natural environments. 
+
+IEEE Transactions on Pattern Analysis and Machine Intelli-gence , 36(7):1325–1339, 2013. 5, 1 [25] Ehsan Jahangiri and Alan L Yuille. Generating multiple diverse hypotheses for human 3d pose consistent with 2d joint detections. In ICCV Workshops , pages 805–814, 2017. 1, 2 [26] Le Jiang, Caleb Lee, Divyang Teotia, and Sarah Ostadabbas. Animal pose estimation: A closer look at the state-of-the-art, existing gaps and opportunities. Computer Vision and Image Understanding , 222:103483, 2022. 2 [27] Zhongyu Jiang, Zhuoran Zhou, Lei Li, Wenhao Chai, Cheng-Yen Yang, and Jenq-Neng Hwang. Back to optimization: Diffusion-based zero-shot 3d human pose estimation. In 
+
+WACV , pages 6142–6152, 2024. 2 [28] Angjoo Kanazawa, Michael J Black, David W Jacobs, and Jitendra Malik. End-to-end recovery of human shape and pose. In CVPR , pages 7122–7131, 2018. 6 [29] Ben Kaye, Tomas Jakab, Shangzhe Wu, Christian Ruprecht, and Andrea Vedaldi. Dualpm: dual posed-canonical point 
+
+9maps for 3d shape and pose reconstruction. In CVPR , pages 6425–6435, 2025. 2 [30] Thomas N Kipf and Max Welling. Semi-supervised classi-fication with graph convolutional networks. arXiv preprint arXiv:1609.02907 , 2016. 1 [31] Thomas N. Kipf and Max Welling. Semi-supervised classifi-cation with graph convolutional networks. In International Conference on Learning Representations , 2017. 5 [32] Chen Li and Gim Hee Lee. Generating multiple hypotheses for 3d human pose estimation with mixture density network. In CVPR , pages 9887–9895, 2019. 1, 2 [33] Chen Li and Gim Hee Lee. Weakly supervised generative network for multiple 3d human pose hypotheses. In BMVC ,2020. 2, 6 [34] Han Li, Bowen Shi, Wenrui Dai, Hongwei Zheng, Botao Wang, Yu Sun, Min Guo, Chenglin Li, Junni Zou, and Hongkai Xiong. Pose-oriented transformer with uncertainty-guided refinement for 2D-to-3D human pose estimation. In AAAI ,pages 1296–1304, 2023. 6 [35] Wenhao Li, Hong Liu, Runwei Ding, Mengyuan Liu, Pichao Wang, and Wenming Yang. Exploiting temporal contexts with strided transformer for 3D human pose estimation. IEEE Transactions on Multimedia , pages 1282–1293, 2022. 2 [36] Wenhao Li, Hong Liu, Hao Tang, Pichao Wang, and Luc Van Gool. MHFormer: Multi-hypothesis transformer for 3D human pose estimation. In CVPR , pages 13147–13156, 2022. 2[37] Zizhang Li, Dor Litvak, Ruining Li, Yunzhi Zhang, Tomas Jakab, Christian Rupprecht, Shangzhe Wu, Andrea Vedaldi, and Jiajun Wu. Learning the 3d fauna of the web. In CVPR ,pages 9752–9762, 2024. 2 [38] Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Doll ´ar, and C Lawrence Zitnick. Microsoft coco: Common objects in context. In 
+
+ECCV , pages 740–755, 2014. 5 [39] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. In ICLR , 2023. 1, 3 [40] Haohe Liu, Zehua Chen, Yi Yuan, Xinhao Mei, Xubo Liu, Danilo Mandic, Wenwu Wang, and Mark D Plumbley. Audi-oldm: Text-to-audio generation with latent diffusion models. 
+
+arXiv preprint arXiv:2301.12503 , 2023. 2 [41] Wu Liu, Qian Bao, Yu Sun, and Tao Mei. Recent advances of monocular 2d and 3d human pose estimation: A deep learning perspective. ACM Computing Surveys , 55(4):1–41, 2022. 2 [42] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. In ICLR , 2023. 1, 3 [43] Jin Lyu, Tianyi Zhu, Yi Gu, Li Lin, Pujin Cheng, Yebin Liu, Xiaoying Tang, and Liang An. Animer: Animal pose and shape estimation using family aware transformer. In CVPR ,pages 17486–17496, 2025. 2, 6, 8, 1 [44] Julieta Martinez, Rayat Hossain, Javier Romero, and James J Little. A simple yet effective baseline for 3D human pose estimation. In ICCV , pages 2640–2649, 2017. 1, 2, 6 [45] Dushyant Mehta, Helge Rhodin, Dan Casas, Pascal Fua, Oleksandr Sotnychenko, Weipeng Xu, and Christian Theobalt. Monocular 3D human pose estimation in the wild using improved cnn supervision. In 3DV , pages 506–516, 2017. 5, 1[46] Tuomas Oikarinen, Daniel Hannah, and Sohrob Kazerounian. Graphmdn: Leveraging graph structure and deep learning to solve inverse problems. In IJCNN , pages 1–9, 2021. 1, 2, 6 [47] Dario Pavllo, Christoph Feichtenhofer, David Grangier, and Michael Auli. 3D human pose estimation in video with temporal convolutions and semi-supervised training. In CVPR ,pages 7753–7762, 2019. 5, 6, 1, 2 [48] Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey Chu, and Mark Chen. Hierarchical text-conditional image genera-tion with clip latents. arXiv preprint arXiv:2204.06125 , 1(2): 3, 2022. 2 [49] Wenkang Shan, Zhenhua Liu, Xinfeng Zhang, Zhao Wang, Kai Han, Shanshe Wang, Siwei Ma, and Wen Gao. Diffusion-based 3d human pose estimation with multi-hypothesis aggregation. In ICCV , pages 14761–14771, 2023. 1, 2, 7 [50] Saurabh Sharma, Pavan Teja Varigonda, Prashast Bindal, Abhishek Sharma, and Arjun Jain. Monocular 3d human pose estimation by generation and ordinal ranking. In ICCV , pages 2325–2334, 2019. 1, 2, 6 [51] Kihyuk Sohn, Honglak Lee, and Xinchen Yan. Learning struc-tured output representation using deep conditional generative models. In NeurIPS , 2015. 2 [52] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denoising diffusion implicit models. In ICLR , 2021. 1, 2 [53] Anastasis Stathopoulos, Ligong Han, and Dimitris Metaxas. Score-guided diffusion for 3d human recovery. In CVPR ,pages 906–915, 2024. 3 [54] Ke Sun, Bin Xiao, Dong Liu, and Jingdong Wang. Deep high-resolution representation learning for human pose estimation. In CVPR , pages 5693–5703, 2019. 1 [55] Zhenhua Tang, Jia Li, Yanbin Hao, and Richang Hong. Mlp-jcg: Multi-layer perceptron with joint-coordinate gating for efficient 3d human pose estimation. IEEE Transactions on Multimedia , 2023. 6, 2 [56] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-reit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. In NeurIPS , pages 5998–6008, 2017. 2, 5, 1 [57] Timo von Marcard, Roberto Henschel, Michael J Black, Bodo Rosenhahn, and Gerard Pons-Moll. Recovering accurate 3D human pose in the wild using IMUs and a moving camera. In 
+
+ECCV , pages 601–617, 2018. 7, 3, 6 [58] Chaoyang Wang, Xiangtai Li, Lu Qi, Henghui Ding, Yunhai Tong, and Ming-Hsuan Yang. Semflow: Binding seman-tic segmentation and image synthesis via rectified flow. In 
+
+NeurIPS , pages 138981–139001, 2024. 3 [59] Jingdong Wang, Ke Sun, Tianheng Cheng, Borui Jiang, Chaorui Deng, Yang Zhao, Dong Liu, Yadong Mu, Mingkui Tan, Xinggang Wang, et al. Deep high-resolution repre-sentation learning for visual recognition. TPAMI , 43(10): 3349–3364, 2020. 5, 6 [60] JiYuan Wang, Chunyu Lin, Lei Sun, Rongying Liu, Lang Nie, Mingxing Li, Kang Liao, Xiangxiang Chu, and Yao Zhao. From editor to dense geometry estimator. arXiv preprint arXiv:2509.04338 , 2025. 1, 3 
+
+10 [61] Weiquan Wang, Jun Xiao, Chunping Wang, Wei Liu, Zhao Wang, and Long Chen. Di 2pose: Discrete diffusion model for occluded 3d human pose estimation. In NeurIPS , pages 98717–98741, 2024. 1 [62] Tom Wehrbein, Marco Rudolph, Bodo Rosenhahn, and Bastian Wandt. Probabilistic monocular 3d human pose estimation with normalizing flows. In ICCV , pages 11199–11208, 2021. 2, 6 [63] Jiacong Xu, Yi Zhang, Jiawei Peng, Wufei Ma, Artur Jesslen, Pengliang Ji, Qixin Hu, Jiehua Zhang, Qihao Liu, Jiahao Wang, et al. Animal3d: A comprehensive dataset of 3d animal pose and shape. In ICCV , pages 9099–9109, 2023. 5, 1 [64] Tianhan Xu and Wataru Takano. Graph stacked hourglass networks for 3D human pose estimation. In CVPR , pages 16105–16114, 2021. 2, 6, 1 [65] Yingxuan You, Hong Liu, Ti Wang, Wenhao Li, Runwei Ding, and Xia Li. Co-evolution of pose and mesh for 3d human body estimation from video. In ICCV , pages 14963–14973, 2023. 3 [66] Ailing Zeng, Xiao Sun, Fuyang Huang, Minhao Liu, Qiang Xu, and Stephen Lin. SRNet: Improving generalization in 3D human pose estimation with a split-and-recombine approach. In ECCV , pages 507–523, 2020. 6, 2 [67] Ailing Zeng, Xiao Sun, Lei Yang, Nanxuan Zhao, Minhao Liu, and Qiang Xu. Learning skeletal graph neural networks for hard 3D pose estimation. In ICCV , pages 11436–11445, 2021. 5, 6, 1 [68] Harry Zhang and Luca Carlone. Champ: Conformalized 3d human multi-hypothesis pose estimators. In ICLR , 2025. 2 [69] Jinlu Zhang, Zhigang Tu, Jianyu Yang, Yujin Chen, and Junsong Yuan. MixSTE: Seq2seq mixed spatio-temporal encoder for 3D human pose estimation in video. In CVPR ,pages 13232–13242, 2022. 1, 2 [70] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. Adding conditional control to text-to-image diffusion models. In 
+
+ICCV , pages 3836–3847, 2023. 6 [71] Long Zhao, Xi Peng, Yu Tian, Mubbasir Kapadia, and Dim-itris N Metaxas. Semantic graph convolutional networks for 3D human pose regression. In CVPR , pages 3425–3435, 2019. 1, 2 [72] Weixi Zhao, Weiqiang Wang, and Yunjie Tian. GraFormer: Graph-oriented transformer for 3D pose estimation. In CVPR ,pages 20438–20447, 2022. 6 [73] Ce Zheng, Sijie Zhu, Matias Mendieta, Taojiannan Yang, Chen Chen, and Zhengming Ding. 3D human pose estimation with spatial and temporal transformers. In ICCV , pages 11656–11665, 2021. 1, 2 [74] Ce Zheng, Wenhan Wu, Chen Chen, Taojiannan Yang, Sijie Zhu, Ju Shen, Nasser Kehtarnavaz, and Mubarak Shah. Deep learning-based human pose estimation: A survey. ACM computing surveys , 56(1):1–37, 2023. 2 [75] Zhiming Zou and Wei Tang. Modulated graph convolutional network for 3d human pose estimation. In ICCV , pages 11477–11487, 2021. 2, 5 [76] Silvia Zuffi, Angjoo Kanazawa, David W Jacobs, and Michael J Black. 3d menagerie: Modeling the 3d shape and pose of animals. In CVPR , pages 6365–6373, 2017. 2, 5 [77] Silvia Zuffi, Angjoo Kanazawa, Tanya Berger-Wolf, and Michael J Black. Three-d safari: Learning to estimate zebra pose, shape, and texture from images” in the wild”. In ICCV ,pages 5359–5368, 2019. 2 
+
+11 FMPose3D: monocular 3D pose estimation via flow matching 
+
+# Supplementary Material 
+
+## A. Background on Attention and GCN 
+
+Attention. The input tokens 𝑋 ∈R𝐽 ×𝐷 are first projected to queries 𝑄 ∈R𝐽 ×𝑑 , keys 𝐾 ∈R𝐽 ×𝑑 , and values 𝑉 ∈R𝐽 ×𝑑 , and then 𝑄, 𝐾, 𝑉 are fed to a scaled dot-product attention [56]: Attention (𝑄, 𝐾, 𝑉 ) = Softmax (𝑄𝐾 𝑇 /√𝑑 )𝑉, (L) where 𝑑 is the dimension of 𝑄, 𝐾, 𝑉 . Multi-head self-attention (MSA) [ 56 ] splits 𝑄 , 𝐾 , 𝑉 into multiple heads, each of which applies scaled dot-product attention in parallel. This enables the model to efficiently utilize information from various representation subspaces with different locations. 
+
+Graph Convolutional Network. Graph Convolutional Net-work (GCN) [ 30 ] is capable of capturing intricate relation-ships and structures within graph-structured data. Consider an undirected graph 𝐺 ={𝑉, 𝐸 }, where 𝑉 is the set of nodes and 𝐸 is the set of edges. The edges can be encoded in an adjacency matrix 𝐴 ∈{ 0, 1}𝑁 × 𝑁 . For the input 𝑋 𝑙 of the 𝑙 𝑡 ℎ 
+
+layer, the vanilla graph convolution aggregates the features of the neighboring nodes. The output 𝑋 𝑙 +1 of the 𝑙 𝑡 ℎ GCN layer can be formulated as: 
+
+𝑋 𝑙 +1 = 𝜎 
+
+ ˜𝐷 − 12 ˜𝐴 ˜𝐷 − 12 𝑋 𝑙 𝑊 
+
+
+
+, (M) where 𝜎 is the ReLU activation function [ 14 ], 𝑊 𝑙 ∈R𝑑 1 ×𝑑 is the layer-specific trainable weight matrix. ˜𝐴 =𝐴 +𝐼 𝑁 is the adjacency matrix of the graph with added self-connections, where 𝐼 𝑁 is the identity matrix. Additionally, ˜𝐷 is the diagonal node degree matrix. By stacking multiple GCN layers, it iteratively transforms and aggregates neighboring nodes, thereby obtaining enhanced feature representations. 
+
+## B. Additional Implementation Details 
+
+Humans. For Human3.6M [ 24 ] and MPI-INF-3DHP [ 45 ], each sample contains 𝐽 = 17 joints. For the model architec-ture described in Sec. 3.3, each block takes the embedding as input, feeds it into a parallel structure with a GCN branch and an attention branch, concatenates the resulting features, and then processes them with an MLP layer, as illustrated in Fig-ure 2 of the main paper. This block is repeated 𝐿 = 5 times. The dimensionality of the concatenated feature embedding is set to 𝐷 = 512 . The learning rate is initialized at 0.001 and is multiplied by 0.98 at each epoch, with the factor replaced by 0.8 every 5 epochs. During inference, we set the number of ODE integration steps to 𝑆 = 3 . We employ horizontal flip augmentation, following prior works [ 7, 47 , 67 ]. Rather than averaging the predictions from the original and flipped inputs, we treat them as two separate hypotheses and feed both into our RPEA module to obtain the final 3D pose. We refer to this strategy as Flipped Hypothesis Aggregation (FHA) . Following common practice [ 7 , 47 , 64 , 67 ], we use 2D poses detected by the cascaded pyramid network (CPN) [8] for Human3.6M, and the dataset-provided 2D poses for MPI-INF-3DHP. 
+
+Animals. For Animal3D [ 63 ] and CtrlAni3D [ 43 ], each sample contains 𝐽 = 26 joints. We train a single model jointly on the two datasets and evaluate it on each dataset individually. The network architecture follows the same design as in the human setting, with the block repeated for 
+
+𝐿 = 5 layers. The dimensionality of the concatenated feature embedding is set to 𝐷 = 512 . The model is trained for 300 epochs with a batch size of 13 . The learning rate is initialized at 0.001 and is multiplied by 0.95 at each epoch, with the factor replaced by 0.75 every 15 epochs. During inference, we set the number of ODE integration steps to 𝑆 = 3. For the results reported in Table 3 of the main paper, we generate a single prediction per input and do not use flip augmentation or any multi-hypothesis strategy. 
+
+## C. Additional Quantitative Results 
+
+Human3.6M. Table 6 reports the P-MPJPE results on Hu-man3.6M, comparing our FMPose3D with prior state-of-the-art deterministic methods (top) and probabilistic methods (bottom). Our baseline model achieves 38.7 mm. When we increase the number of hypotheses and applying our RPEA module, the error is further reduced to 38.3 mm, demonstrat-ing the effectiveness of multi-hypothesis modeling.        
+
+> Figure 6. Effect of the number of integration steps 𝑆 on inference accuracy. The blue curve shows MPJPE (read from the left vertical axis), and the orange curve shows P-MPJPE (read from the right vertical axis); the shaded region marks the range 𝑆 ∈ { 3,4,5}where both metrics attain their optimal or near-optimal values.
+
+1Table 6. Quantitative comparison with the state-of-the-art methods on Human3.6M under P-MPJPE. The detected 2D pose is used as input. 
+
+𝑁 denotes the number of hypotheses. Red: Best. Blue: Second Best. Grey : our method. 
+
+Deterministic Method Dire. Disc. Eat Greet Phone Photo Pose Purch. Sit SitD. Smoke Wait WalkD. Walk WalkT. Avg ↓
+
+SimpleBaseline [44] ICCV’17 39.5 43.2 46.4 47.0 51.0 56.0 41.4 40.6 56.5 69.4 49.2 45.0 49.5 38.0 43.1 47.7 VideoPose3D [47] CVPR’19 36.0 38.7 38.0 41.7 40.1 45.9 37.1 35.4 46.8 53.4 41.4 36.9 43.1 30.3 34.8 40.0 STGCN [7] ICCV’19 36.8 38.7 38.2 41.7 40.7 46.8 37.9 35.6 47.6 51.7 41.3 36.8 42.7 31.0 34.7 40.2 SRNet [66] ECCV’20 35.8 39.2 36.6 36.9 39.8 45.1 38.4 36.9 47.7 54.4 38.6 36.3 39.4 30.3 35.4 39.4 LCN [9] ICCV’21 36.9 41.6 38.0 41.0 41.9 51.1 38.2 37.6 49.1 62.1 43.1 39.9 43.5 32.2 37.0 42.2 MLP-JCG [55] TMM’23 33.7 37.4 37.3 39.6 39.8 47.1 33.7 33.8 45.7 60.5 39.7 37.7 40.1 30.1 33.8 39.3 GKONet [22] TCSVT’23 35.4 38.8 35.9 40.4 39.6 44.0 36.7 35.4 46.8 53.7 40.9 36.6 42.0 30.6 33.9 39.4 ZEDO [27] WACV’24 - - - - - - - - - - - - - - - 42.1 
+
+Probabilistic Method Dire. Disc. Eat Greet Phone Photo Pose Purch. Sit SitD. Smoke Wait WalkD. Walk WalkT. Avg ↓
+
+CVAE ( 𝑁 =200) [50] ICCV’19 35.3 35.9 45.8 42.0 40.9 52.6 36.9 35.8 43.5 51.9 44.3 38.8 45.5 29.4 34.3 40.9 GAN ( 𝑁 =10) [33] BMVC’20 41.4 44.3 44.6 50.2 49.3 51.8 40.1 46.2 57.7 72.7 48.7 45.4 49.6 43.8 43.3 48.7 GraphMDN ( 𝑁 =5) [46] IJCNN’21 39.7 43.4 44.0 46.2 48.8 54.5 39.4 41.1 55.0 69.0 48.0 43.7 49.6 38.4 42.4 46.9 NF ( 𝑁 =1) [62] ICCV’21 37.8 41.7 42.1 41.8 46.5 50.2 38.0 39.2 51.7 61.8 45.4 42.6 45.7 33.7 38.5 43.8 DiffPose ( 𝑁 =5) [16] CVPR’23 33.9 38.2 36.0 39.2 40.2 46.5 35.8 34.8 48.0 52.5 41.2 36.5 40.9 30.3 33.8 39.2 ProPose ( 𝑁 =1) [19] AAAI’25 - - - - - - - - - - - - - - - 40.4 FMPose3D ( 𝑁 =2) (Ours) 35.4 38.3 36.0 39.8 39.2 43.5 36.5 34.7 46.3 48.4 40.4 35.9 41.0 31.0 34.2 38.7 FMPose3D ( 𝑁 =40) (Ours) 35.0 37.7 35.7 39.4 38.8 43.0 36.1 34.2 45.7 48.1 40.1 35.5 40.6 30.6 33.7 38.3 
+
+Figure 7. Visualization of intermediate 3D pose predictions during inference with 𝑆 = 23 integration steps. The blue pose represents the predicted results, while the red pose represents the ground truth. 
+
+2Right Hip 
+
+> Right Knee
+> Right Foot
+> Left Hip
+> Left Knee
+> Left Foot
+> Spine
+> Thorax
+> Neck
+> Head
+> Left Shoulder
+> Left Elbow
+> Left Wrist
+> Right Shoulder
+> Right Elbow
+> Right Wrist
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> MPJPE (mm)
+> Per-Joint MPJPE Error (Bar) and Uncertainty (Line)
+> MPJPE Error
+> Uncertainty (Std)
+> 6
+> 7
+> 8
+> 9
+> 10
+> 11
+> Uncertainty - Std (mm)
+
+Figure 8. Per-joint uncertainty versus per-joint error on Human3.6M. Uncertainty is measured as the standard deviation (Std) across hypotheses, and error is measured by MPJPE (mm). 
+
+Figure 9. Uncertainty visualization. Left: highest uncertainty at the left elbow. Right: highest uncertainty at the left wrist. 
+
+## D. Intermediate Integration States 
+
+To better understand how the learned velocity field transports a noise sample toward the target 3D pose, we select one example, set the number of integration steps to 𝑆 = 23 , and visualize the intermediate predictions along the trajectory. As illustrated in Figure 7, the poses start from random noise and progressively become more structured, gradually converging to a plausible human configuration that closely matches the final target pose. 
+
+## E. Impact of Integration Steps 
+
+During inference, our FMPose3D generates 3D poses by solving the underlying ODE from noise, conditioned on 2D inputs, using 𝑆 integration steps. Figure 6 reports MPJPE and P-MPJPE on the Human3.6M dataset with 2D poses detected by CPN [ 8] for different choices of 𝑆 . With a single integration step, the errors of both metrics are relatively large. As 𝑆 increases, the errors first decrease, reach the minimum at 
+
+𝑆 = 4, and then gradually increase. The results indicate that steps in the range 𝑆 ∈ { 3, 4, 5} yield comparable accuracy, whereas larger 𝑆 does not provide additional gains. To strike a balance between estimation accuracy and computational efficiency, we set 𝑆 = 3 in all experiments. 
+
+## F. Uncertainty Estimation 
+
+Our multi-hypothesis predictions also enable uncertainty estimation. On the Human3.6M test set, we generate 𝑁 =40 hypotheses per input and estimate uncertainty as the per-joint standard deviation across these hypotheses. As shown in Figure 8, the average uncertainty is positively correlated with the per-joint error, supporting the validity of this uncertainty 
+
+Table 7. Results on 3DPW. Top: methods trained on 3DPW. Bottom: methods without 3DPW training (zero-shot evaluation). 
+
+Method P-MPJPE MPJPE HMR2.0a [15] (ICCV23) 44.5 70.0 Multi-HMR [3] (ECCV24) 41.7 61.4 AdaptPose [13] (CVPR22) 46.5 81.2 PMCE [65] (ICCV23) 52.3 81.6 ScoreHMR [53] (CVPR24) 50.5 -FMPose3D ( 𝑁 =40) (Ours) 42.4 70.9 
+
+Table 8. Effect of training set size. For each dataset, the model is trained from scratch on randomly subsampled training subsets of 10%, 20%, 40%, and 80%. We run each setting three times with different random seeds and report the mean and the standard deviation. Full training and test set sizes in frames (train, test): Human3.6M (3,119k, 543k), Animal3D (3k, 0.3k), CtrlAni3D (8k, 1.4k). 
+
+Data (%) Human3.6M Animal3D CtrlAni3D P-MPJPE MPJPE P-MPJPE P-MPJPE 10 43 .5±0.85 53 .9±0.71 120 .7±1.88 83 .5±0.95 
+
+20 41 .8±0.62 52 .2±0.64 98 .3±0.89 69 .5±0.30 
+
+40 40 .4±0.33 50 .7±0.32 81 .6±0.28 57 .8±0.24 
+
+80 39 .3±0.15 49 .7±0.09 67 .2±1.33 47 .9±1.02 
+
+measure. Such single-view uncertainty can serve as a confi-dence signal for unsupervised multi-view fusion and as an intermediate representation to guide mesh reconstruction. For visualization, we represent uncertainty using spheres centered at the predicted joint locations, with radii propor-tional to the per-joint variance. Larger spheres indicate higher uncertainty, as illustrated in Figure 9. 
+
+## G. Results on an Additional Benchmark: 3DPW 
+
+In the main paper, we follow common practice in monoc-ular 3D pose estimation and primarily report results on Human3.6M and MPI-INF-3DHP for fair comparison with prior work. We now additionally evaluate on 3DPW [ 57 ]with our Human3.6M pretrained model, the results are re-ported in Table 7. Since 3DPW is more commonly used in human mesh reconstruction, the methods listed in Table 7 are primarily mesh-based approaches, and thus the comparison should be interpreted with this difference in mind. Our model achieves the best zero-shot performance, comparable even to models pretrained on this dataset. 
+
+## H. Effect of training set size 
+
+To evaluate the sensitivity to training data size, we train our model from scratch on randomly subsampled subsets comprising 10%, 20%, 40%, and 80% of the training set. For each fraction, we run three independent trainings with different random seeds and report the mean performance on 3Figure 10. Qualitative results on Human3.6M (top three rows) and MPI-INF-3DHP (bottom three rows). The blue pose represents the predicted results, while the red pose represents the ground truth. 
+
+the full test set. Table 8 shows consistent improvements as the training set size increases across all datasets. The gains are modest on Human3.6M, but much larger on Animal3D and CtrlAni3D, as these animal datasets are relatively small and thus more sensitive to reduced training data. 
+
+## I. Additional Qualitative Results 
+
+Figure 10 presents qualitative results of the proposed FM-Pose3D on the Human3.6M and MPI-INF-3DHP datasets. The model is trained solely on Human3.6M. Human3.6M consists of indoor scenes (top three rows), while the MPI-INF-3DHP test set includes three scenarios: studio with 4Figure 11. Qualitative results on 3DPW. The 2D pose is detected by HRNet [59]. 
+
+Figure 12. Qualitative results on CtrlAni3D (top three rows) and Animal3D (bottom three rows). The blue pose represents the predicted results, while the red pose represents the ground truth. 
+
+5green screen (GS, fourth row), studio without green screen (noGS, fifth row), and outdoor scenes (Outdoor, sixth row). To further assess the generalization ability of our model to outdoor scenarios, we evaluate the model pre-trained on Human3.6M using samples from the 3DPW [ 57 ] dataset. Figure 11 presents the qualitative results. The 2D poses are obtained using HRNet [ 59 ]. The results indicate that our model generalizes well to unconstrained in-the-wild environments. Figure 12 further shows qualitative results on animal datasets, including synthetic samples from CtrlAni3D (top three rows) and real-world samples from Animal3D (bottom three rows). Across these challenging cases, our approach consistently produces reliable and anatomically plausible 3D pose predictions. 6

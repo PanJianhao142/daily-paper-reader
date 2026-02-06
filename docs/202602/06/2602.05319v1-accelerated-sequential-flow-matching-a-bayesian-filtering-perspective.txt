@@ -1,0 +1,761 @@
+Title: Accelerated Sequential Flow Matching: A Bayesian Filtering Perspective
+
+URL Source: https://arxiv.org/pdf/2602.05319v1
+
+Published Time: Fri, 06 Feb 2026 01:31:25 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+Preprint 
+
+# ACCELERATED SEQUENTIAL FLOW MATCHING :A B AYESIAN FILTERING PERSPECTIVE 
+
+Yinan Huang 
+
+Georgia Institute of Technology 
+
+yhuang903@gatech.edu 
+
+Hans Hao-Hsun Hsu 
+
+Georgia Institute of Technology 
+
+hhsu72@gatech.edu 
+
+Junran Wang 
+
+Georgia Institute of Technology 
+
+jwang3668@gatech.edu 
+
+Bo Dai 
+
+Georgia Institute of Technology 
+
+bodai@cc.gatech.edu 
+
+Pan Li 
+
+Georgia Institute of Technology 
+
+panli@gatech.edu 
+
+## ABSTRACT 
+
+Sequential prediction from streaming observations is a fundamental problem in stochastic dynamical systems, where inherent uncertainty often leads to multiple plausible futures. While diffusion and flow-matching models are capable of mod-eling complex, multi-modal trajectories, their deployment in real-time streaming environments typically relies on repeated sampling from a non-informative initial distribution, incurring substantial inference latency and potential system backlogs. In this work, we introduce Sequential Flow Matching , a principled framework grounded in Bayesian filtering. By treating streaming inference as learning a probability flow that transports the predictive distribution from one time step to the next, our approach naturally aligns with the recursive structure of Bayesian belief updates. We provide theoretical justification that initializing generation from the previous posterior offers a principled warm start that can accelerate sampling com-pared to na ¨ıve re-sampling. Across a wide range of forecasting, decision-making and state estimation tasks, our method achieves performance competitive with full-step diffusion while requiring only one or very few sampling steps, therefore with faster sampling. It suggests that framing sequential inference via Bayesian filtering provides a new and principled perspective towards efficient real-time deployment of flow-based models. 
+
+## 1 INTRODUCTION 
+
+Making predictions of evolving real-world systems from streaming observations is a fundamental problem, spanning diverse applications from weather forecasting (Lorenz, 2017), future video frame anticipation for decision making in autonomous systems (Yang et al., 2024), state estimation and control of complex physical systems such as fluid flows or magnetic plasma (Kalnay, 2003; Bewley, 2001; Degrave et al., 2022). A critical characteristic of these streaming environments is their inherent stochasticity: a single history of observations often admits multiple plausible futures. Deterministic predictions (such as simple regression) are often insufficient as they tend to average out distinct possibilities, leading to physically invalid states or blurred predictions. Moreover, many applications require long-horizon prediction, where the system anticipates future trajectories spanning multiple steps ahead for planning and monitoring. Ultimately, reliable decision-making requires moving beyond point estimation to maintain a probabilistic belief over the system’s future trajectories. Probability flow-based models, such as diffusion models (Sohl-Dickstein et al., 2015; Song & Ermon, 2019; Ho et al., 2020) and flow matching (Lipman et al., 2023; Liu et al., 2023), have emerged as compelling data-driven frameworks for modeling high-dimensional, multi-modal distributions. Their 1
+
+> arXiv:2602.05319v1 [cs.LG] 5 Feb 2026
+
+Preprint Table 1: Examples of sequential probabilistic inference p(xt|z≤t).Task Predictive Variable Observation Inference Goal Forecasting xt = st+1: t+H zt = st p(st+1: t+H |s≤t)              
+
+> Planning (imitation learning) xt= ( st+1: t+H, a t:t+H−1)zt= ( st, a t−1)p(st+1: t+H, a t:t+H−1|s≤t, a ≤t−1)
+> State Estimation xt=stzt∼p(zt|st)p(st|z≤t)
+
+capacity to capture complex uncertainty and generate high-fidelity samples makes them particu-larly effective for modeling system dynamics and synthesizing coherent long-horizon trajectories. Consequently, there is growing interest in applying these models to sequential tasks, ranging from forecasting and state estimation to planning and control (Chen et al., 2024; Gao et al., 2023; Janner et al., 2022; Wei et al., 2024). However, real-time deployment of these models for streaming environments remains a challenge. Continuously integrating streaming observations demands rapid processing to avoid delayed esti-mations, which typically involves a trade-off between accuracy and latency. Existing approaches either operate in an open-loop manner, generating a long-horizon future trajectory once from initial observations, thereby ignoring streaming data and accumulating errors over time; or they re-predict future trajectories by incorporating new observations, which requires tens to hundreds of network evaluations per update and incurs prohibitive inference latency (Janner et al., 2022; Chen et al., 2024; Zhou et al., 2025). Some recent work attempts to mitigate this cost by asynchronous denoising and reuse of historical predictions (Janner et al., 2022; Wei et al., 2025; Høeg et al., 2025). However, these methods fail to fully exploit the information encoded in prior predictions and to yield accurate long-horizon estimation (see more discussion in Section 4). In this article, we formulate sequential prediction from streaming observations as a sequential probabilistic inference problem, and study how to accelerate flow-based models from a principled perspective grounded in Bayesian filtering . We argue that streaming tasks exhibit strong temporal correlation : the distribution of the system state at time t − 1 is coherent with that of time t, and therefore constitutes a natural prior for subsequent inference. Rather than discarding past predictions, we propose Sequential Flow Matching , which explicitly learns the probability flow that transports the predictive distribution from one time step to the next. This recursive belief update naturally aligns with the Bayesian filtering framework and provides a principled warm start for generation. Our theoretical result further supports this intuition, showing that initializing generation from the previous belief reduces sampling error compared to restarting from a non-informative Gaussian distribution. To learn the belief-to-belief probability flow, we propose a flow matching objective function that can be used to effectively finetune a pretrained flow-based model. We evaluate the proposed approach on a diverse set of streaming tasks, including forecasting, planning and control, and state estimation. Our results show that belief-update-based inference achieves a compelling trade-off between fidelity and efficiency: competitive performance to full-step diffusion with only one or a few sampling steps. 
+
+## 2 PRELIMINARY 
+
+Flow matching and diffusion models. The idea of flow matching is to define an ordinary differential equation (ODE) ddτ x(τ ) = v(x(τ ), τ ) that transports between the source distribution x(1) ∼ p1 and the target distribution x(0) ∼ p0 (Lipman et al., 2023; Liu et al., 2023). To avoid confusion with physical time t, throughout the paper we use the symbol τ to denote the virtual time variable (or noise level) in flow matching. By defining an interpolation path x(τ ) = α(τ )x(0) + σ(τ )x(1) and conditional velocity ˙x(τ ) = ˙ α(τ )x(0) + ˙ σ(τ )x(1) , the marginal velocity v(x(τ ), τ ) can be expressed by v(x(τ ), τ ) = E( ˙ x(τ )|x(τ )) . The marginal velocity is learned by a neural network vθ (x(τ ), τ )
+
+through optimization: 
+
+min  
+
+> θ
+
+E(x(0) ,x (1)) ∼π,τ ∼Uniform (0 ,1) ∥vθ (x(τ ), τ ) − ˙x(τ )∥2, (1) where π is a coupling of p0, p 1, i.e., π represents a joint distribution of x(0) , x (1) whose marginals are p0, p 1. To sample from target distribution p0, we solve the ODE dx (τ )/dτ = vθ (x(τ ), τ ) starting from source distribution x(1) ∼ p1 that is easy to sample from. The probability flow ODE counterpart of Diffusion models can be viewed as a special case of flow matching with p1 = N (0 , I ) (Song et al., 2021b). 2Preprint Sequential Inference Problem                                                                        
+
+> 𝑝 (𝑥 𝑡 |𝑧 ≤𝑡 )for 𝑡 =1,2,3,…,𝑇
+> 𝑠 1…𝑠 𝑡 𝑠 𝑡 +1…𝑠 𝑡 +1+𝐻
+> 𝒙 𝒕 𝒛 ≤𝒕
+> Bayesian Filtering
+> 𝑝 𝑥 𝑡 −1𝑧 ≤𝑡 −1→𝑝 (𝑥 𝑡 |𝑧 ≤𝑡 )
+> 𝑠 1𝑠 2𝑠 3𝑠 4
+> 𝒙 𝟏 𝒛 ≤𝟏
+> 𝑠 1𝑠 3𝑠 4𝑠 5𝑠 2
+> 𝒛 ≤𝟐 𝒙 𝟐
+> 𝑠 1𝑠 2𝑠 3𝑠 4𝑠 5𝑠 6
+> Physical
+> Time 𝑡
+> 𝒛 ≤𝟑 𝒙 𝟑
+> BA
+> Bayesian
+> Filtering
+> Sequential Flow Matching
+> Bayesian Filtering Perspective
+> Physical
+> Time 𝑡
+> C
+> 𝑠 1𝑠 2𝑠 3𝑠 4
+> 𝒛 ≤𝟏
+> 𝑠 1𝑠 3𝑠 4𝑠 5𝑠 2
+> 𝒛 ≤𝟐
+> 𝑠 1𝑠 2𝑠 3𝑠 4𝑠 5𝑠 6
+> 𝒛 ≤𝟑
+> 𝒩 (0,𝐼 )
+> 𝑑 𝑥 1𝜏 =𝑣 𝑥 1𝜏 ,𝜏 ;𝒛 ≤𝟏 𝑑 𝜏
+> 𝑑 𝑥 2𝜏 =𝑣 𝑥 2𝜏 ,𝜏 ;𝒛 ≤𝟐 𝑑 𝜏
+> 𝑑 𝑥 3𝜏 =𝑣 𝑥 3𝜏 ,𝜏 ;𝒛 ≤𝟑 𝑑 𝜏
+> 𝑝 (𝒙 𝟏 |𝒛 ≤𝟏 )
+> 𝑝 (𝒙 𝟐 |𝒛 ≤𝟐 )
+> 𝑝 (𝒙 𝟑 |𝒛 ≤𝟑 )
+> Bayesian
+> Filtering
+> Observation Prediction
+
+Figure 1: Illustration of the sequential inference problems using streaming forecasting as examples. 
+
+A: The sequential inference problem p(xt|z≤t) that predicts future states given historical observations over time t = 1 , 2, ..., T . B: Bayesian filtering framework refines previous predictions based on latest observations to obtain new estimations. C: Following the idea of Bayesian filtering, sequential flow matching leverages a probability flow to recursively transport from previous belief p(xt−1|z≤t−1) to current belief p(xt|z≤t).
+
+## 3 BAYESIAN SEQUENTIAL FLOW MATCHING 
+
+3.1 PROBLEM SETUP AND BAYESIAN FILTERING 
+
+Sequential probabilistic inference. We study a sequential probabilistic inference problem, i.e., performing probabilistic inference online over multiple rounds as new data arrives, which can cover a wide range of streaming tasks. Let xt be a random variable to be predicted at time t, and zt be the arrived observation at time t. Given streaming observations z≤t := ( z1, z 2, ..., z t), the goal is to infer the posterior distribution p(xt|z≤t), over physical time t = 1 , 2, ..., T .Many streaming tasks can be viewed as special instances of this formulation. Let st, a t denote the real system state and action at time t. For example, in streaming forecasting, the task is to infer H-step future states xt = st+1: t+H with historical states z≤t where zi = si. In planning via imitation learning (Janner et al., 2022), the goal is to infer future expert actions and states 
+
+xt = ( st+1: t+H , a t:t+H−1) conditioned on historical states and actions z≤t where zi = ( si, a i−1).Note that the variable xt in this formulation typically represents a long-horizon future trajectory. Table 1 summarizes these representative examples. 
+
+Bayesian filtering. Sequential probabilistic inference involves repeatedly performing inference about future system states as new observations arrive. Bayesian filtering provides a principled framework to recursively update estimations p(xt|z≤t) over time based on previous estimation p(xt−1|z≤t−1).By Bayesian rule, the posterior belief of current state p(xt|z≤t) satisfies the key recursive formula: 
+
+p(xt|z≤t) ∝ p(zt|xt, z ≤t−1)p(xt|z≤t−1), (2) 
+
+p(xt|z≤t−1) = 
+
+Z
+
+p(xt|xt−1, z ≤t−1)p(xt−1|z≤t−1)dx t−1.
+
+(Note that the process may not be Markovian.) (3) Equations 2,3 highlight a key structural property of sequential inference: the current belief p(xt|z≤t)
+
+can be obtained by propagating the previous belief p(xt−1|z≤t−1) via the dynamics p(xt|xt−1, z ≤t−1)
+
+and a correction using new observation zt. Although this exact formulation is often intractable due to unknown system dynamics, Bayesian filtering can be interpreted abstractly as an operator: 
+
+p(xt|z≤t) = Bayesian filtering (p(xt−1|zt−1); z≤t), (4) which maps the previous belief to the current posterior. 3.2 SEQUENTIAL INFERENCE WITH FLOW -BASED MODELS : E XISTING PRACTICES 
+
+At each fixed time t, the goal is to sample from the target distribution p(xt|z≤t). This distribution can be modeled using a conditional flow-based generative model, which incorporates the latest observations z≤t and transports from a fixed base distribution (e.g., N (0 , I )) to the target p(xt|z≤t).Concretely, we consider the following ODE: 
+
+ddτ xt(τ ) = v(xt(τ ), τ ; z≤t), xt(0) ∼ p(xt|z≤t), xt(1) ∼ N (0 , I ), (5) 3Preprint where τ ∈ [0 , 1] denotes the flow matching time and t denotes the physical time step. Ideally, learning a parameterized velocity field vθ (xt|z≤t) ≈ v(xt|z≤t) allows to sample from p(xt|z≤t) by solving the ODE. To deploy such a model in sequential inference, a common practice is to repeatedly apply the conditional prediction model over time t. This receding-horizon practice is widely adopted in time-series forecasting (Box et al., 2015) and decision-making systems such as model predictive control (Garcia et al., 1989). For flow-based models, this na ¨ıve practice requires restarting a fresh sampling process and solving ODE Eq. 5 from scratch to incorporate any new observation (Janner et al., 2022). Consequently, this pipeline suffers from high inference latency for real-time systems: solving ODE Eq. 5 from the non-informative Gaussian demands tens or hundreds of numerical solver iterations and often fails to match the observation arrival frequency, producing potential delayed predictions. This problem becomes more severe when it comes to long-horizon prediction, as each round of estimation is more expensive to compute. Fundamentally, the restarting-sampling paradigm discards historical estimations and, by initializing each update from an independent Gaussian prior, treats temporally correlated physical processes as independent across time. 3.3 SEQUENTIAL FLOW MATCHING 
+
+From the perspective of Bayesian filtering (Eqs. 2-3), inference over future states should proceed recursively: the belief at time t is obtained by refining the previous belief using new observations. This structure suggests that historical estimations should serve as prior information rather than being discarded. For example, consider a forecasting task where xt = st+1: t+H . The prediction 
+
+xt−1 = st:t+H−1 at time t − 1 already provides a coarse estimate of future states and naturally approximates xt = st:t+H . Ignoring such information results in “redundant” computation and unnecessary sampling overhead. Motivated by the recursive structure, we propose to directly parameterize and learn the filtering operator in Eq. 4 via a probability flow. We introduce Sequential Flow Matching model, which learns a probability flow of predictive distribution from time t − 1 to time t, conditioned on newly arrived observations z<t → z≤t. The key step is to replace the non-informative Gaussian distribution with the previous estimation p(xt−1|z≤t−1) as the source distribution in flow ODE: 
+
+ddτ xt(τ ) = v(xt(τ ), τ ; z≤t), xt(0) ∼ p(xt|z≤t), xt(1) ∼ p(xt−1|z≤t−1). (6) The process of solving this ODE can be viewed as performing Bayesian filtering in Eq. 4. Figure 1 C illustrates the inference pipeline of sequential flow matching. Intuitively, physical process xt naturally exhibits temporal correlation, and using successive xt−1, x t
+
+as the source and target distribution allows flow matching to exploit this natural temporal coupling, yielding a more regular velocity field and reduced sampling error. This aligns with findings that im-proved source-target coupling leads to straighter transport paths (Liu et al., 2023). While our method shares conceptual roots with warm-start heuristics in diffusion models (Janner et al., 2022; Scholz & Turner, 2025), it provides a principled Bayesian filtering formulation of warm-starting tailored to streaming environments. Moreover, the use of the previous Bayesian posterior is information-theoretically optimal: The posterior is the distribution that maximally preserves historical information for the recursive update. The following result formally justifies this advantage by showing that temporal correlation induced by the underlying physical process provides a natural and informative coupling to reduce sampling error compared to a non-informative, independent Gaussian source. 
+
+Proposition 3.1 (One-step Sampling Error) . Denote the short hand for distribution p(xt|z≤t) by p.Consider flow matching with straight interpolation xt(τ ) = (1 − τ )xt(0) + τ x t(1) and two different couplings of (xt(0) , x t(1)) :
+
+(A) independent Gaussian coupling . Suppose xt(0) ∼ p(xt|z≤t) and xt(1) ∼ N (0 , I ) are indepen-dently sampled. Let pGaussian be the distribution of ˆxt(0) = xt(1) − v(xt(1) , 1; z≤t) using one-step sampling by ODE Eq. 5. Then, W22 (pGaussian , p ) = Var( xt|z≤t), where W2(p, q ) is the 2-Wasserstein distance. 
+
+(B) temporally-correlated coupling . Suppose (xt−1, x t) ∼ p(xt−1|z≤t−1)p(xt|xt−1, z ≤t), and 
+
+xt(0) = xt, x t(1) = xt−1. Let pBayes be the distribution of one-step sampling by ODE Eq. 6. Then 
+
+W22 (pBayes , p ) ≤ Ext−1|z≤t−1 Var( xt|z≤t, x t−1), (7) 4Preprint 
+
+which implies W2(pGaussian , p ) − W 2(pBayes , p ) = Var xt−1|z≤t−1 E(xt|z≤t, x t−1) ≥ 0 by law of total variance. 
+
+The proof is deferred to Appendix A. While Proposition 3.1 focuses on the one-step case, the same advantage extends to multi-step sampling under mild regularity conditions (e.g., Lipschitz continuity of the velocity field), where the total error can be decomposed into a sum of single-step errors via the triangle inequality, similar to the analysis of Proposition 3.5 in Hu et al. (2024). The key observation is that the one-step sampling error under temporal coupling reduces to a conditional variance Ext−1|z≤t−1 Var (xt|z≤t, x t−1), rather than the unconditional variance from the independent Gaussian coupling. The gap of sampling error is strictly greater than zero unless 
+
+E(xt|z≤t, x t−1) = E(xt|z≤t), i.e., unless xt−1 carries no information about xt. In particular, if the physical process is a deterministic process xt = f (xt−1) given xt−1, then the conditional variance vanishes and one-step sampling exactly recovers the target distribution of xt.A natural question is if we can construct an artificial coupling, e.g., by pairing samples from N (0 , I )
+
+and p(xt|z≤t) using mini-batch optimal transport (Tong et al., 2023), to accelerate the sampling process. However, such a method requires multi-sampling from p(xt|z≤t) via controlled rollouts with identical history, which is infeasible in real-world dynamic physical systems. In contrast, temporal coupling arises naturally from the sequential structure of the data, where the temporal pairs (xt−1, x t)
+
+are inherently jointly observed given the history z≤t.3.4 PRACTICAL IMPLEMENTATION 
+
+In order to learn sequential flow matching (Eq. 6), the key ingredient is to draw samples of xt−1, x t
+
+and construct a training dataset. In this section, we discuss practical considerations for dataset construction to train a parameterized velocity vθ for sequential flow matching. A natural approach is to draw ground truth pairs from an offline dataset. In practice, however, na ¨ıvely constructing such pairs from ground-truth trajectories leads to a mismatch between training and test time: the source distribution is the ground truth distribution p(xt−1|z≤t−1), but at test time only model predictive distribution pθ (xt−1|z≤t−1) is available. This discrepancy becomes crucial in long-horizon settings, where predictions of later physical time are inherently more inaccurate. 
+
+Distribution alignment via pretrained model rollouts. To reduce train-test mismatch, we leverage a pretrained flow-based model which better approximates xt−1 encountered at test time. Concretely, we first pretrain a flow matching vθ0 to learn pθ0 (xt|z≤t) ≈ p(xt|z≤t) in a standard sampling-from-Gaussian manner (Eq. 5). By letting the neural architecture of vθ0 be the same as vθ , we can expect 
+
+pθ0 (xt−1|z≤t−1) better capture the test-time source distribution pθ (xt−1|z≤t−1). In practice, we construct pairs (xt−1, x t) where xt−1 comes from pretrained model and xt comes from ground truth. This construction aligns the source distribution with the model predictive distribution encountered at test time, while avoiding compounding errors that would arise from fully synthetic trajectories. The constructed dataset is used to finetune θ initialized from θ0. We found this hybrid construction effectively reduce train-test mismatch and adopt it throughout our experiments. 
+
+Re-noising mechanism. While using generated data from pretrained model reduces train-test mismatch, the small deviations in model prediction at test-time can still accumulate and lead to compounding errors over multiple rounds of belief update. To mitigate the error accumulation, we adopt a re-noising mechanism that injects noise into the previous estimation of xt−1 at both training and test time, before applying the flow. Concretely, in flow ODE Eq. 6, we replace source distribution p(xt−1|z≤t−1) with a noisy version ˜xt−1 := α(τrenoise )xt−1 +σ(τrenoise )·N (0 , I ), where 
+
+α(τrenoise ), σ (τrenoise ) are the coefficients of the probability flow path at noise level (flow time) τrenoise .We treat τrenoise as a hyperparameter that can be tuned in practice. The re-noise level τrenoise controls the trade-offs between preserving historical prediction information for sampling acceleration and accommodating uncertainty during belief refinement. If τrenoise = 1 ,we have ˜xt−1 ∼ N (0 , I ), which reduces to the restarting-sampling paradigm that requires a large number of sampling steps. If τrenoise = 0 , it relies on a precise modeling of xt−1 ∼ p(xt−1|z≤t−1),which might induce error accumulation for long-horizon prediction. In Appendix C.4 we study the impact of τrenoise , and we observe that a suitable re-noise level varies with the level of environmental stochasticity. 5Preprint 
+
+Algorithm 1 Sequential Flow Matching Finetuning 
+
+Require: Ground-truth xt, context z≤t, renoise level τrenoise , and fixed pretrained model vθ0 (from Eq. 5)  
+
+> 1:
+
+Generate xt−1 ∼ pθ0 (xt−1|z≤t−1) using vθ0 
+
+> 2:
+
+Renoise ˜xt−1 = α(τrenoise ) · xt−1 + σ(τrenoise ) · N (0 , I ) 
+
+> 3:
+
+Sample interpolation time τ ∼ Uniform (0 , 1)  
+
+> 4:
+
+Compute xt(τ ) = α(τ )xt + σ(τ )˜ xt−1 
+
+> 5:
+
+return loss L(θ) = ∥vθ (xt(τ ), τ ; z≤t) − ˙xt(τ )∥2
+
+Algorithm 2 Sequential Flow Matching Inference 
+
+Require: Pretrained model vθ0 (from Eq. 5), sequential flow matching model vθ finetuned by Algorithm 1, initial observation z1 
+
+> 1:
+
+initialize x1 ∼ pθ0 (x1|z1) 
+
+> 2:
+
+for t = 2 to T do  
+
+> 3:
+
+Receive observation zt 
+
+> 4:
+
+˜xt−1 = α(τrenoise ) · xt−1 + σ(τrenoise ) · N (0 , I ) 
+
+> 5:
+
+Solve dx t(τ )/dτ = vθ (xt(τ ), τ ; z≤t), x t(1) = ˜ xt−1 and obtain xt = xt(0)  
+
+> 6:
+
+end for  
+
+> 7:
+
+return x1, x 2, . . . , x T
+
+We present the finetuning algorithm (Algorithm 1) and the inference algorithm (Algorithm 2). 
+
+## 4 RELATED WORKS 
+
+Flow-based models for sequence generation. Diffusion and flow matching models have been widely used for sequence generation in an offline setting. Existing approaches mainly differ in how denoising is scheduled across the prediction horizon. Broadly, prior work can be categorized into three classes: (1) full-sequence denoising: all variables are denoised synchronously to clean sequence (Li et al., 2022; Ho et al., 2022); (2) autoregressive denoising: denoise variables one at a time in temporal order (Hoogeboom et al., 2021; Rasul et al., 2021); (3) asynchronous denoising: allows assigning and denoising variables of different noise levels along the time axis (Ruhe et al., 2024; Wu et al., 2023; Chen et al., 2024). However, these methods are primarily designed for static or offline sequence generation and do not account for streaming data. When applied in streaming settings, they rely on repeated sampling from scratch. 
+
+Flow-based models for streaming tasks. Recent work has begun to explicitly study the efficient deployment of flow-based models in streaming settings, primarily in control and decision-making applications. Diffuser (Janner et al., 2022) uses a warm-start heuristic that perturbs a previously generated plan with noise and denoises it using the original diffusion model. While this reduces re-planning cost, denoising perturbed previous predictions does not guarantee that the resulting samples follow the posterior distribution at the next time step. In contrast, our method directly learns the flow that transports the posterior distribution across time steps. Wei et al. (2025); Høeg et al. (2025) independently develop asynchronous denoising to amortize computation in streaming settings. They maintain a partially denoised future action sequence with increasing noise levels along the time axis, and progressively denoise the sequence as new observations arrive. Though with improved efficiency, denoising over the prediction horizon is intentionally left incomplete, leaving long-horizon predictions noisy, and later predictions cannot fully leverage information from these partially denoised variables. Overall, existing methods fall short of the optimal long-horizon estimation offered by principled Bayesian filtering. 
+
+Efficient sampling of flow-based models. Prior work accelerates sampling along three main direc-tions. One line of work applies advanced numerical solvers to the flow ODE to reduce the sampling steps (Lu et al., 2022; Zhang & Chen, 2023). Distillation-based methods learn a student model by compressing multi-step sampling trajectories from a teacher model into fewer steps (Salimans & Ho, 2022; Yin et al., 2024; Geng et al., 2023). More recently, flow map matching methods modify the training objective to directly learn the solution operator of the flow ODE and enable few-step 6Preprint generation (Song et al., 2023; Boffi et al., 2025; Geng et al., 2025a). However, the training objective is known to be unstable to optimize (Lu & Song, 2025; Geng et al., 2025b). In our experiment of streaming settings, we observe that training of consistency models (Geng et al., 2025c) and Mean-Flow (Geng et al., 2025a) is difficult to converge and they generalize poorly. Extending such one-step generative models to streaming tasks is a nontrivial direction, and could potentially be combined with our framework in future work. 
+
+Bayesian inference of diffusion models. Bayesian inference with diffusion priors has been widely studied, with early work motivated by inverse problems such as image inpainting (Cardoso et al., 2024; Chung et al., 2023; Dou & Song, 2024). The problem is to sample from the posterior p(x|y) given measurements y = f (x) and a diffusion model p(x). See Daras et al. (2024) for a comprehensive review. A natural question is whether Bayesian filtering update (Eqs. 2-3) can be implemented directly for flow-based models based on these approaches. On one hand, these approaches mainly study static inference, while our work focuses on sequential inference in streaming settings under latency constraints. Extending these approaches to streaming settings remains relatively underexplored. Crucially, most existing approaches rely on likelihood-based guidance, requiring explicit, often linear, observation models and system dynamics that are often unavailable in the real world. 
+
+## 5 EXPERIMENT 
+
+We extensively evaluate Sequential Flow Matching across diverse streaming tasks to assess its effectiveness in streaming settings. Specifically, we study: (1) Physical system forecasting (Moro & Chamon, 2025; Rasp et al., 2024): we demonstrate the model’s ability to predict long-horizon trajectories over time; (2) Decision-making (Fu et al., 2020; Holl et al., 2020): we test model’s performance on long-horizon planning and control problems; (3) State estimation (He et al., 2025): we evaluate the model’s performance in state estimation with different levels of environmental uncertainty. The proposed sequential flow models are obtained by fine-tuning a pretrained model on a small dataset. Details of dataset statistics, model implementation are deferred to Appendix B. 
+
+Pretrained Model. We mainly adopt Diffusion Forcing (Chen et al., 2024) and Rectified flow (Liu et al., 2023) as the pretrained model. For Rectified flow, we apply the asynchronous denoising idea of Diffusion Forcing to the flow time scheduling (Appendix B.3). Note that the sequential flow matching is compatible with general flow-based models, though we evaluate it using these two representative models for demonstration. 
+
+Baselines. We consider several classes of efficient flow-based baselines: (1) One-step diffusion : We evaluate consistency models (Song et al., 2023) and MeanFlow (Geng et al., 2025a). For consistency models, we adopt ECT (Geng et al., 2025c), an efficient fine-tuning method for consistency distillation. (2) Warm-start diffusion : Following Diffuser (Janner et al., 2022), we add a controlled amount of noise to the previous prediction xt−1 and denoise it under the updated condition zt using the same pretrained diffusion model. For direct comparison, we set the noise level to τrenoise , matching our re-noise level. This warm-start heuristic can be viewed as an ablation of Sequential Flow Matching, where fine-tuning is removed and the pretrained model is used directly. (3) Asynchronous denoising diffusion : We adopt partial denoising and reuse strategies from CL-Diffusion (Wei et al., 2025). 
+
+Metrics of inference latency. In the main tables, we report the Number of Function Evaluations (NFE) for measuring sampling efficiency. We uniformly use first-order forward Euler as the ODE solver (equivalent to DDIM (Song et al., 2021a) for diffusion models). Additionally, we study the trade-offs between wall-clock latency and prediction fidelity in Section 5.4. Experiments are conducted on a single NVIDIA RTX 6000 Ada Generation (48 GB memory). 5.1 PHYSICAL SYSTEM FORECASTING 
+
+Datasets. We consider streaming forecasting on two physical systems: (a) fluid dynamic system governed by the 1D Burgers’ equation, adapted from Wei et al. (2025). (b) real-world weather forecasting adapted from WeatherBench2 (Rasp et al., 2024). The model takes historical states 
+
+z≤t := s≤t as conditions and predicts H-step future states xt := st+1: t+H over t. The prediction horizon is H = 10 for fluid system and H = 12 for weather forecasting. 
+
+RMSE v.s. Energy Score. We adopt root mean squared error (RMSE) and energy score Gneit-ing & Raftery (2007) as evaluation metrics, both of which are lower the better. RMSE is a 7Preprint Table 2: Results of physical system forecasting. Prediction horizon H = 10 for Burgers’equation and H = 12 for weather forecasting.                                                                              
+
+> Method Burgers’ Equation Weather Forecasting
+> NFE RMSE ↓Energy Score ↓NFE Temperature RMSE ↓Temperature Energy Score ↓
+> Autoregressive prediction horizon 0.253 ±0.022 0.133 ±0.009 prediction horizon 3.764 ±0.042 2.583 ±0.026
+> Diffusion Forcing 10 0.258 ±0.005 0.100 ±0.001 20 4.249 ±0.162 2.173 ±0.084
+> Rectified Flow 50.262 ±0.001 0.103 ±0.001 10 3.990 ±0.146 2.030 ±0.080
+> Diffusion Forcing 10.247 ±0.006 0.108 ±0.002 14.974 ±0.279 2.849 ±0.197
+> Rectified Flow 10.250 ±0.006 0.114 ±0.002 14.509 ±0.228 2.608 ±0.157
+> MeanFlow 10.418 ±0.070 0.234 ±0.047 18.632 ±0.030 5.700 ±0.017
+> Consistency Model 10.252 ±0.004 0.107 ±0.003 16.269 ±0.067 2.610 ±0.033
+> CL-Diffusion 10.559 ±0.011 0.264 ±0.015 16.248 ±0.086 3.368 ±0.124
+> Warm-start Heuristic
+> Warm-start Diffusion Forcing 10.487 ±0.033 0.231 ±0.013 17.072 ±0.014 4.064 ±0.065
+> Warm-start Rectified Flow 10.475 ±0.004 0.218 ±0.009 16.236 ±0.108 3.209 ±0.003
+> Ours
+> Sequential Rectified Flow 10.239 ±0.005 0.101 ±0.002 13.660 ±0.061 2.353 ±0.032
+
+point-wise metric that quantifies prediction error, and the energy score is a distributional metric widely used in probabilistic time-series forecasting to evaluate predictive distributions, defined by 
+
+Eˆxt∼pθ ∥ˆxt − xt∥1 − 12 Eˆxt,ˆx′ 
+
+> t∼pθ
+
+∥ˆxt − ˆx′
+
+> t
+
+∥1. Basically, the energy score measure the absolute error but with a penalty of over-deterministic prediction. It is known that the expected energy score is minimized if and only if the model prediction exactly recovers the ground-truth distribution (Gneiting & Raftery, 2007). Together, RMSE and the energy score offer complementary perspectives on model performance. Table 2 reports the RMSE and energy scores of different methods. We observe that a deterministic auto-regressive model (using the same backbone as others) attains RMSE comparable to or better than diffusion and flow matching models. However, it fails to capture the underlying predictive uncertainty, as evidenced by substantially worse energy scores. Asynchronous denoising approaches such as CL-Diffusion intentionally maintain partially denoised future trajectories. For evaluation, we fully denoise these trajectories into clean samples using one-step DDIM. Despite this, their performance remains inferior. Warm-start heuristic exhibits similar behavior, as the generated samples are not guaranteed to align with the target predictive distribution. In contrast, sequential flow models attain both strong point-wise accuracy and well-calibrated predictive distributions using one sampling step. 
+
+Long-horizon behavior. In appendix C we study the RMSE of different models as a function of the forecast lead time h = 1 , 2, ..., H . We find the sequential flow model with one sampling step performs competitively to the full-step pretrained model across the entire forecast window. 5.2 PLANNING AND CONTROL 
+
+Datasets. We evaluate planning and control on: (a) maze planning from the D4RL benchmark (Fu et al., 2020), where an agent navigates in a maze with obstacles to reach a goal; (b) smoke control (Holl et al., 2020; Wei et al., 2025), which steers smoke toward a target exit in a 2D incompressible fluid governed by the Navier–Stokes equations. For smoke control, we consider fixed maps (identical obstacle layouts at training and test time) and random maps (perturbed obstacle positions at test time). The model conditions on the current state and previous action z≤t := ( st, a t−1) and predicts 
+
+H-step future states and actions xt := ( st+1: t+H , a t:t+H−1). The planning horizon is H = 600 for Maze-Medium, H = 800 for Maze-Large, and H = 10 for smoke control. The model re-plans every 50 steps for maze planning and at every step for smoke control. Except for flow-based models, we also present the results of other classic baselines: MPPI (Williams et al., 2015), CQL (Kumar et al., 2020), IQL (Kostrikov et al., 2022) in maze planning, and BC (Pomer-leau, 1988) and BPPO (Zhuang et al., 2023) in smoke control. The performance numbers are directly from Chen et al. (2024) and Wei et al. (2025) under the same benchmark settings. 
+
+Diffusion guidance. Maze planning task requires diffusion guidance based on rewards, which relies on modifying local score/velocity function during sampling. The consistency model and MeanFlow baselines lack a well-defined score/velocity function, and therefore we omit these baselines on maze planning. On the other hand, the sequential flow models are finetuned on the imitation learning dataset of trajectories produced by guided pretrained models (see Appendix B). Therefore, the finetuned sequential flow model learns the transportation between guided trajectories, thus removing the need for explicit guidance in our implementation. 8Preprint Table 3: Results of maze planning. The reported numbers are the accumulated reward over the en-tire episode. Planning horizon is H = 600 for Maze Medium and H = 800 for Maze Large.                                             
+
+> Method NFE Maze Medium ↑Maze Large ↑
+> MPPI N/A 10 .25.1
+> CQL N/A 5.012 .5
+> IQL N/A 34 .958 .6
+> Diffuser 256 121 .5±2.7123 .0±6.4
+> Diffusion Forcing 50 149 .4±7.5159 .0±2.7
+> Diffusion Forcing 3110 .4±11 .667 .3±27 .1
+> Diffusion Forcing 122 .1±12 .32.2±1.9
+> CL-Diffusion 174 .2±2.496 .1±3.6
+> CL-Diffusion 378 .3±0.7103 .9±4.1
+> Warm-start Heuristic
+> Warm-start Diffusion Forcing 185 .1±12 .661 .9±22 .1
+> Warm-start Diffusion Forcing 381 .8±8.262 .3±20 .7
+> Ours
+> Sequential Diffusion Forcing 157 .5±29 .3114 .6±49 .0
+> Sequential Diffusion Forcing 3168.6 ±11 .9233.9 ±8.8
+
+Table 4: Results of smoke control. The reported numbers are the percentage of smoke that is not leaking via the desired bucket at the end of the entire episode (60 steps). Planning horizon is 
+
+H = 10 .                                            
+
+> Method NFE Fixed Map ↓Random Map ↓
+> BC N/A 0.672 0.705
+> BPPO N/A 0.634 0.652
+> DiffPhyCon 600 0.545 0.375
+> CL-Diffusion 60 0.337 0.346
+> Diffusion Forcing 10 0.166 ±0.036 0.291 ±0.042
+> Rectified Flow 10 0.173 ±0.078 0.190 ±0.020
+> Diffusion Forcing 10.362 ±0.068 0.280 ±0.019
+> Rectified Flow 10.432 ±0.009 0.260 ±0.020
+> MeanFlow 10.369 ±0.117 0.462 ±0.166
+> Consistency Model 10.295 ±0.013 0.293 ±0.002
+> Warm-start Heuristic
+> Warm-start Diffusion Forcing 10.547 ±0.026 0.268 ±0.016
+> warm-start Rectified Flow 10.291 ±0.039 0.286 ±0.017
+> Ours
+> Sequential Diffusion Forcing 10.097 ±0.012 0.231 ±0.006
+
+Results. Tables 3 and 4 report results on maze planning and smoke control respectively. In maze planning, we observe that sequential flow models require more than one sampling step to achieve strong performance. We hypothesize that this arises from the substantial changes in plans across successive time steps (i.e., p(xt−1|zt−1), p (xt|z≤t) differs significantly), which makes single-step sampling challenging. Nevertheless, our method still consistently achieves highly competitive performance compared to full-step diffusion on both tasks with a small number of sampling steps. 5.3 STATE ESTIMATION 
+
+We additionally evaluate Sequential Flow Matching on state estimation of the Lorenz system, a simplified mathematical model used to capture chaotic behavior and to understand atmospheric convection (Lorenz, 2017). We find Sequential Flow Matching achieves competitive performance across different system stochasticity levels with one single sampling step. Detailed results are provided in Appendix C. 5.4 PERFORMANCE AND LATENCY TRADEOFFS 10 1 10 2 10 3
+
+> Computation Time (ms)
+> 25
+> 50
+> 75
+> 100
+> 125
+> 150
+> 175
+> 200
+> 225
+> Reward (  )
+> Sequential DF
+> DF: Pyramid
+> DF: Full sequence
+> CL-Diff
+
+Figure 2: Inference latency v.s. perfor-mance for maze planning under varying sampling steps (1, 2, 3, 4, 5, 8, 10, 20 and 50 steps). DF: Pyramid and DF: Full-sequence refer to two denoising schedules of diffusion forcing. Sequential DF uses full sequence denoising. We study the trade-off between model performance and real-time inference latency, defined as the wall-clock time required to produce a prediction for a single in-stance upon receiving a new observation. Figure 2 illus-trates the latency–performance trade-off on maze plan-ning by varying the number of sampling steps. Pre-trained diffusion models typically require at least ten steps (latency > 100 ms) to achieve strong performance, whereas the fine-tuned sequential diffusion model per-forms comparably or better within two to three steps (latency ∼ 30 ms). Similar trends are observed on other datasets (Appendix C). 5.5 ABLATION STUDY 
+
+The warm-start heuristic can be viewed as an ablation of Sequential Flow Matching, where fine-tuning stage is removed and the pretrained model is used directly. We also conduct an ablation study on the renoising mechanism and the choice of ground-truth versus model-rollout finetuning. Detailed results are provided in Appendix C.4. 
+
+## 6 CONCLUSION AND LIMITATIONS 
+
+This work studies the efficient deployment of flow-based models in streaming settings, where models are required to perform long-horizon prediction and continuously assimilate streaming observations 9Preprint under latency constraints. We propose Sequential Flow Matching, which transports the predictive distribution across time steps and can be viewed as learning the Bayesian belief update. Experiments show that it achieves performance comparable to full-step diffusion using only a few sampling steps. This suggests a principled perspective for real-time deployment of flow-based models through Bayesian filtering. A limitation of our work is that the current implementation relies on a pretraining-generation-finetuning pipeline. Exploring simulation-free training from scratch is a promising future direction. ACKNOWLEDGMENTS 
+
+We would like to thank Prof. Tailin Wu, as well as Long Wei and Haodong Feng for their insightful discussions and feedback on earlier versions of this work. This work is primarily supported by NSF awards PHY-2117997, IIS-2239565, and IIS-2428777, as well as Meta Research Award and Nvidia Academic Award. Prof. Bo Dai would like to acknowledge support from NSF ECCS-2401391, NSF IIS-2403240, and ONR N000142512173. 
+
+## REFERENCES 
+
+Thomas R Bewley. Flow control: new challenges for a new renaissance. Progress in Aerospace sciences , 37(1):21–58, 2001. Nicholas Matthew Boffi, Michael Samuel Albergo, and Eric Vanden-Eijnden. Flow map matching with stochastic interpolants: A mathematical framework for consistency models. Transactions on Machine Learning Research , 2025. George EP Box, Gwilym M Jenkins, Gregory C Reinsel, and Greta M Ljung. Time series analysis: forecasting and control . John Wiley & Sons, 2015. Gabriel Cardoso, Yazid Janati el idrissi, Sylvain Le Corff, and Eric Moulines. Monte carlo guided denoising diffusion models for bayesian linear inverse problems. In The Twelfth International Conference on Learning Representations , 2024. URL https://openreview.net/forum? id=nHESwXvxWK .Boyuan Chen, Diego Mart ´ı Mons ´o, Yilun Du, Max Simchowitz, Russ Tedrake, and Vincent Sitzmann. Diffusion forcing: Next-token prediction meets full-sequence diffusion. Advances in Neural Information Processing Systems , 37:24081–24125, 2024. Hyungjin Chung, Jeongsol Kim, Michael Thompson Mccann, Marc Louis Klasky, and Jong Chul Ye. Diffusion posterior sampling for general noisy inverse problems. In The Eleventh International Conference on Learning Representations , 2023. URL https://openreview.net/forum? id=OnD9zGAGT0k .Giannis Daras, Hyungjin Chung, Chieh-Hsin Lai, Yuki Mitsufuji, Jong Chul Ye, Peyman Milanfar, Alexandros G Dimakis, and Mauricio Delbracio. A survey on diffusion models for inverse problems. 
+
+CoRR , 2024. Jonas Degrave, Federico Felici, Jonas Buchli, Michael Neunert, Brendan Tracey, Francesco Carpanese, Timo Ewalds, Roland Hafner, Abbas Abdolmaleki, Diego de Las Casas, et al. Magnetic control of tokamak plasmas through deep reinforcement learning. Nature , 602(7897):414–419, 2022. Pierre Del Moral. Nonlinear filtering: Interacting particle resolution. Comptes Rendus de l’Acad ´emie des Sciences-Series I-Mathematics , 325(6):653–658, 1997. Zehao Dou and Yang Song. Diffusion posterior sampling for linear inverse problem solving: A filtering perspective. In The Twelfth International Conference on Learning Representations , 2024. Justin Fu, Aviral Kumar, Ofir Nachum, George Tucker, and Sergey Levine. D4rl: Datasets for deep data-driven reinforcement learning. arXiv preprint arXiv:2004.07219 , 2020. Zhihan Gao, Xingjian Shi, Boran Han, Hao Wang, Xiaoyong Jin, Danielle Maddix, Yi Zhu, Mu Li, and Yuyang Bernie Wang. Prediff: Precipitation nowcasting with latent diffusion models. Advances in Neural Information Processing Systems , 36:78621–78656, 2023. 10 Preprint Carlos E Garcia, David M Prett, and Manfred Morari. Model predictive control: Theory and practice—a survey. Automatica , 25(3):335–348, 1989. Zhengyang Geng, Ashwini Pokle, and J Zico Kolter. One-step diffusion distillation via deep equilibrium models. Advances in Neural Information Processing Systems , 36:41914–41931, 2023. Zhengyang Geng, Mingyang Deng, Xingjian Bai, J Zico Kolter, and Kaiming He. Mean flows for one-step generative modeling. arXiv preprint arXiv:2505.13447 , 2025a. Zhengyang Geng, Yiyang Lu, Zongze Wu, Eli Shechtman, J Zico Kolter, and Kaiming He. Improved mean flows: On the challenges of fastforward generative models. arXiv preprint arXiv:2512.02012 ,2025b. Zhengyang Geng, Ashwini Pokle, Weijian Luo, Justin Lin, and J Zico Kolter. Consistency models made easy. In The Thirteenth International Conference on Learning Representations , 2025c. URL 
+
+https://openreview.net/forum?id=xQVxo9dSID .Tilmann Gneiting and Adrian E Raftery. Strictly proper scoring rules, prediction, and estimation. 
+
+Journal of the American statistical Association , 102(477):359–378, 2007. Yangguang He, Wenhao Li, Minzhe Li, Juan Zhang, Xiangfeng Wang, and Bo Jin. Trackdiffuser: Nearly model-free bayesian filtering with diffusion model. arXiv preprint arXiv:2502.05629 , 2025. Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. Advances in neural information processing systems , 33:6840–6851, 2020. Jonathan Ho, Tim Salimans, Alexey Gritsenko, William Chan, Mohammad Norouzi, and David J Fleet. Video diffusion models. Advances in neural information processing systems , 35:8633–8646, 2022. Sigmund H Høeg, Yilun Du, and Olav Egeland. Fast policy synthesis with variable noise diffusion models. In 2025 IEEE International Conference on Robotics and Automation (ICRA) , pp. 4821– 4828. IEEE, 2025. Philipp Holl, Nils Thuerey, and Vladlen Koltun. Learning to control pdes with differentiable physics. In International Conference on Learning Representations , 2020. URL https://openreview. net/forum?id=HyeSin4FPB .Emiel Hoogeboom, Alexey A Gritsenko, Jasmijn Bastings, Ben Poole, Rianne van den Berg, and Tim Salimans. Autoregressive diffusion models. arXiv preprint arXiv:2110.02037 , 2021. Xixi Hu, Qiang Liu, Xingchao Liu, and Bo Liu. Adaflow: Imitation learning with variance-adaptive flow-based policies. Advances in Neural Information Processing Systems , 37:138836–138858, 2024. Michael Janner, Yilun Du, Joshua Tenenbaum, and Sergey Levine. Planning with diffusion for flexible behavior synthesis. In International Conference on Machine Learning , pp. 9902–9915. PMLR, 2022. Simon J Julier and Jeffrey K Uhlmann. New extension of the kalman filter to nonlinear systems. In 
+
+Signal processing, sensor fusion, and target recognition VI , volume 3068, pp. 182–193. Spie, 1997. Eugenia Kalnay. Atmospheric modeling, data assimilation and predictability . Cambridge university press, 2003. Ilya Kostrikov, Ashvin Nair, and Sergey Levine. Offline reinforcement learning with implicit q-learning. In International Conference on Learning Representations , 2022. URL https: //openreview.net/forum?id=68n2s9ZJWF8 .Aviral Kumar, Aurick Zhou, George Tucker, and Sergey Levine. Conservative q-learning for offline reinforcement learning. Advances in neural information processing systems , 33:1179–1191, 2020. H Kushner. Approximations to optimal nonlinear filters. IEEE Transactions on Automatic Control ,12(5):546–556, 1967. 11 Preprint Xiang Li, John Thickstun, Ishaan Gulrajani, Percy S Liang, and Tatsunori B Hashimoto. Diffusion-lm improves controllable text generation. Advances in neural information processing systems , 35: 4328–4343, 2022. Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. In 11th International Conference on Learning Representations, ICLR 2023 , 2023. Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. In The Eleventh International Conference on Learning Representations (ICLR) , 2023. Edward N Lorenz. Deterministic nonperiodic flow 1. In Universality in Chaos, 2nd edition , pp. 367–378. Routledge, 2017. Cheng Lu and Yang Song. Simplifying, stabilizing and scaling continuous-time consistency models. In The Thirteenth International Conference on Learning Representations , 2025. URL https: //openreview.net/forum?id=LyJi5ugyJx .Cheng Lu, Yuhao Zhou, Fan Bao, Jianfei Chen, Chongxuan Li, and Jun Zhu. Dpm-solver: A fast ode solver for diffusion probabilistic model sampling in around 10 steps. Advances in neural information processing systems , 35:5775–5787, 2022. Viggo Moro and Luiz F. O. Chamon. Solving differential equations with constrained learning. In The Thirteenth International Conference on Learning Representations , 2025. URL https: //openreview.net/forum?id=5KqveQdXiZ .Dean A Pomerleau. Alvinn: An autonomous land vehicle in a neural network. Advances in neural information processing systems , 1, 1988. Stephan Rasp, Stephan Hoyer, Alexander Merose, Ian Langmore, Peter Battaglia, Tyler Russell, Alvaro Sanchez-Gonzalez, Vivian Yang, Rob Carver, Shreya Agrawal, et al. Weatherbench 2: A benchmark for the next generation of data-driven global weather models. Journal of Advances in Modeling Earth Systems , 16(6):e2023MS004019, 2024. Kashif Rasul, Calvin Seward, Ingmar Schuster, and Roland Vollgraf. Autoregressive denoising diffusion models for multivariate probabilistic time series forecasting. In International conference on machine learning , pp. 8857–8868. PMLR, 2021. David Ruhe, Jonathan Heek, Tim Salimans, and Emiel Hoogeboom. Rolling diffusion models. In Ruslan Salakhutdinov, Zico Kolter, Katherine Heller, Adrian Weller, Nuria Oliver, Jonathan Scarlett, and Felix Berkenkamp (eds.), Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , pp. 42818–42835. PMLR, 21–27 Jul 2024. URL https://proceedings.mlr.press/v235/ruhe24a.html .Tim Salimans and Jonathan Ho. Progressive distillation for fast sampling of diffusion models. In 
+
+International Conference on Learning Representations , 2022. URL https://openreview. net/forum?id=TIdIXIpzhoI .Jonas Scholz and Richard E Turner. Warm starts accelerate conditional diffusion. arXiv preprint arXiv:2507.09212 , 2025. Jascha Sohl-Dickstein, Eric Weiss, Niru Maheswaranathan, and Surya Ganguli. Deep unsupervised learning using nonequilibrium thermodynamics. In International conference on machine learning ,pp. 2256–2265. pmlr, 2015. Jiaming Song, Chenlin Meng, and Stefano Ermon. Denoising diffusion implicit models. In Interna-tional Conference on Learning Representations , 2021a. URL https://openreview.net/ forum?id=St1giarCHLP .Yang Song and Stefano Ermon. Generative modeling by estimating gradients of the data distribution. 
+
+Advances in neural information processing systems , 32, 2019. 12 Preprint Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equations. In International Conference on Learning Representations , 2021b. URL https://openreview.net/forum? id=PxTIG12RRHS .Yang Song, Prafulla Dhariwal, Mark Chen, and Ilya Sutskever. Consistency models. In Proceedings of the 40th International Conference on Machine Learning , pp. 32211–32252, 2023. Alexander Tong, Nikolay Malkin, Guillaume Huguet, Yanlei Zhang, Jarrid Rector-Brooks, Kilian FATRAS, Guy Wolf, and Yoshua Bengio. Improving and generalizing flow-based generative models with minibatch optimal transport. In ICML Workshop on New Frontiers in Learning, Control, and Dynamical Systems , 2023. URL https://openreview.net/forum?id=HgDwiZrpVq .Long Wei, Peiyan Hu, Ruiqi Feng, Haodong Feng, Yixuan Du, Tao Zhang, Rui Wang, Yue Wang, Zhi-Ming Ma, and Tailin Wu. Diffphycon: A generative approach to control complex physical systems. Advances in Neural Information Processing Systems , 37:4090–4147, 2024. Long Wei, Haodong Feng, Yuchen Yang, Ruiqi Feng, Peiyan Hu, Xiang Zheng, Tao Zhang, Dixia Fan, and Tailin Wu. CL-diffphycon: Closed-loop diffusion control of complex physical systems. In The Thirteenth International Conference on Learning Representations , 2025. Grady Williams, Andrew Aldrich, and Evangelos Theodorou. Model predictive path integral control using covariance variable importance sampling. arXiv preprint arXiv:1509.01149 , 2015. Tong Wu, Zhihao Fan, Xiao Liu, Hai-Tao Zheng, Yeyun Gong, Jian Jiao, Juntao Li, Jian Guo, Nan Duan, Weizhu Chen, et al. Ar-diffusion: Auto-regressive diffusion model for text generation. 
+
+Advances in Neural Information Processing Systems , 36:39957–39974, 2023. Jiazhi Yang, Shenyuan Gao, Yihang Qiu, Li Chen, Tianyu Li, Bo Dai, Kashyap Chitta, Penghao Wu, Jia Zeng, Ping Luo, et al. Generalized predictive model for autonomous driving. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 14662–14672, 2024. Tianwei Yin, Micha ¨el Gharbi, Richard Zhang, Eli Shechtman, Fredo Durand, William T Freeman, and Taesung Park. One-step diffusion with distribution matching distillation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 6613–6623, 2024. Qinsheng Zhang and Yongxin Chen. Fast sampling of diffusion models with exponential integrator. In The Eleventh International Conference on Learning Representations , 2023. URL https: //openreview.net/forum?id=Loek7hfb46P .Guangyao Zhou, Sivaramakrishnan Swaminathan, Rajkumar Vasudeva Raju, J Swaroop Guntupalli, Wolfgang Lehrach, Joseph Ortiz, Antoine Dedieu, Miguel Lazaro-Gredilla, and Kevin Patrick Murphy. Diffusion model predictive control. Transactions on Machine Learning Research , 2025. ISSN 2835-8856. URL https://openreview.net/forum?id=pvtgffHtJm .Zifeng Zhuang, Kun LEI, Jinxin Liu, Donglin Wang, and Yilang Guo. Behavior proximal policy optimization. In The Eleventh International Conference on Learning Representations , 2023. URL 
+
+https://openreview.net/forum?id=3c13LptpIph .13 Preprint 
+
+## A DEFERRED PROOF AND DERIVATION 
+
+Lemma A.1 (One-step Sampling Distribution) . Let π be a coupling of p1, p 0 and x(1) ∼ p1, x (0) ∼
+
+p0. Define a straight interpolation path x(τ ) = (1 − τ )x(0) + τ x (1) . Consider the flow ODE 
+
+ddτ x(τ ) = v(x(τ ), τ ), x(0) ∼ p0, x (1) ∼ p1, (8) 
+
+where v(x(τ ), τ ) = E[x(1) − x(0) |x(τ )] . Then the marginal distribution ˆp0 of one-step sampling 
+
+ˆx(0) := x(1) − v(x(1) , 1) is 
+
+ˆp0 =
+
+Z
+
+δE[x(0) |x(1)] dp 1(x(1)) , (9) 
+
+where δa is a Dirac delta measure at a, and 
+
+W22 (p0, ˆp0) ≤ Ex(1) ∼p1 Ex(0) |x(1) [x(0) − E[x(0) |x(1)]] = Ex(1) ∼p1 Var( x(0) |x(1)) . (10) 
+
+In particular, if x(0) , x (1) are independent, then the upper bound is tight and becomes 
+
+W22 (p0, ˆp0) = Var( x(0)) . (11) 
+
+Proof. The velocity field at t = 1 is 
+
+v(x(1) , 1) = E[x(1) − x(0) |x(1)] = x(1) − E[x(0) |x(1)] . (12) Therefore, the one-step sampling yields ˆx(0) = x(1) − v(x(1) , 1) = E[x(0) |x(1)] given initial condition x(1) . The marginal distribution of ˆx(0) is therefore 
+
+ˆp0 =
+
+Z
+
+δE[x(0) |x(1)] dp 1(x(1)) . (13) The 2-Wasserstein distance W22 (p0, ˆp0), by definition, is 
+
+W22 (p0, ˆp0) = inf   
+
+> γ∈Π( p0,ˆp0)
+
+E(a,b )∼γ ∥a − b∥2, (14) where γ ∈ Γ( p0, ˆp0) is a coupling between p0, ˆp0. Let us take a := x(0) ∼ p0 and b := ˆ x(0) ∼ ˆp0,which is a valid coupling, then 
+
+W22 (p0, ˆp0) ≤ Ex(0) ,ˆx(0) ∥x(0) − ˆx(0) ∥2 = Ex(0) ,x (1) ∥x(0) − E[x(0) |x(1)] ∥ = Ex(1) ∼p1 Var( x(0) |x(1)) .
+
+(15) Now consider a special case that x(0) , x (1) are independent, i.e., π(x(0) , x (1)) = p0(x(0)) p1(x(1)) .The one-step sampling ˆx(0) becomes Ex(0) , and ˆp0 = δEx(0) , a Dirac delta measure. Since there is only one coupling between a Dirac delta measure and any other distribution, we have 
+
+W22 (p0, ˆp0) = W22 (p0, δ Ex(0) ) = Ex(0) ∥x(0) − Ex(0) ∥2 = Var( x(0)) , (16) which concludes the proof. A.1 PROOF OF PROPOSITION 3.1 
+
+Proposition 3.1 (restated). Denote the short hand for distribution p(xt|z≤t) by p. Consider flow matching with straight interpolation xt(τ ) = (1 − τ )xt(0) + τ x t(1) and two different couplings of 
+
+(xt(0) , x t(1)) :
+
+(A) independent Gaussian coupling . Suppose xt(0) ∼ p(xt|z≤t) and xt(1) ∼ N (0 , I ) are indepen-dently sampled. Let pGaussian be the distribution of ˆxt(0) = xt(1) − v(xt(1) , 1; z≤t) using one-step sampling by ODE Eq. 5. Then, W22 (pGaussian , p ) = Var( xt|z≤t), where W2(p, q ) is the 2-Wasserstein distance. 
+
+(B) temporally-correlated coupling . Suppose (xt−1, x t) ∼ p(xt−1|z≤t−1)p(xt|xt−1, z ≤t), and 
+
+xt(0) = xt, x t(1) = xt−1. Let pBayes be the distribution of one-step sampling by ODE Eq. 6. Then 
+
+W22 (pBayes , p ) ≤ Ext−1|z≤t−1 Var( xt|z≤t, x t−1), (17) 
+
+which implies W2(pGaussian , p ) − W 2(pBayes , p ) = Var xt−1|z≤t−1 E(xt|z≤t, x t−1) ≥ 0 by law of total variance. Proof. We directly apply Lemma A.1, where p0 is replaced by p(xt|z≤t) and p1 is replaced by 
+
+p(xt−1|z≤t−1).14 Preprint 
+
+## B EXPERIMENTAL DETAILS 
+
+B.1 DATASET 
+
+Table 5: Dataset statistics. The trajectory length refers to the total length of prediction for a specific task, and the prediction horizon is the length of rolling prediction window per physical time. The prediction horizon = ”shrinking” means the task requires a shrinking prediction window whose length equals to the trajectory length at the beginning but decreases over time. #pretraining and #finetuning refer to the number of pretraining and finetuning trajectories. Task Dataset Trajectory length Prediction horizon Feature dim. #pretraining #finetuning Forecasting Burger’s Equation 16 10 64 90,000 10,000 WeatherBench2 28 12 32 ×32 ×16 73,112 5,000 State Estimation Lorentz Attractor 100 1 3 75,000 5,000 Planning&Control Maze Medium 600 600 (Shrinking) 2 1,999,400 16,384 Maze Large 800 800 (Shrinking) 2 3,999,200 32,768 Smoke Control 65 10 64 ×64 × 6 36,000 2,000 We present the dataset statistics in Table 5. The trajectory length refers to the total prediction duration (or episode) and prediction horizon is the length of prediction window at each time step. #pretrain and #finetuning refer to the number of trajectories we use for model pretraining and finetuning. We provide details data construction below. 
+
+Burgers’ equation. We adopt the dataset from Wei et al. (2025). The 1D Burgers’ equation follows: 
+
+
+
+∂s ∂t = −s · ∂s ∂x + ν ∂2s∂x 2 + a(x, t ), in [0 , T ] × Ω,s(x, t ) = 0 , in [0 , T ] × ∂Ω,s(x, 0) = s0(x), in {τ = 0 } × Ω.
+
+(18) Here state states s(x, t ) is a field over space x and time t, and input (action) a(x, t ) is also a function of space and time. This system dynamic is a deterministic process. To impose uncertainty, we introduce: (1) partial observation: only half of the space is observable, i.e., s(x, t ) for x ∈ Ωright is removed from model input; (2) agnostic input: the input a(x, t ) (which is randomly generated in training and test dataset) is also excluded from model input. 
+
+Weather forecasting. We adopt the WeatherBench2 (Rasp et al., 2024). The dataset consists of global weather data from year 1959 to 2023, measured with 6hours as interval. The data is a 2D/3D temporal data, including 2D features (sur-face variables) such as sea level pressure , 2m temperature , and 3D features such geopotential as a function as height (measured by Atmospheric pressure). Due to computational resources, we only choose partial features (2D: 2m temperature ,
+
+10m u component of wind , 10m v component of wind , mean sea level pressure ,3D: geopotential ,temperature ,u component of wind ,v component of wind , at height 500 , 850 , 1000 Pa.) as our system states. We also constraint the latitude from 37.25 to 45.0 and longitude from 115.0 to 122.75. We use the data from 1959 to 2011 for pretraining, 2011 to 2015 for finetning and 2021 to 2023 for testing. We report 2m temperature in our main table 2. 
+
+Maze planning. We adopt maze-medium and maze-large from D4RL benchmark (Fu et al., 2020). The offline dataset consists of random-walk trajectories and at test time the goal is to reach a target position. 
+
+Smoke Control. We adopt the dataset from Wei et al. (2025). The system state is a 2D incompressible fluid following the Navier-Stokes equations: 
+
+
+
+∂v
+
+∂t + v · ∇ v − ν∇2v + ∇p = f ,
+
+∇ · v = 0 ,
+
+v(x, 0) = v0(x).
+
+(19) Here the system state s consists of velocity field v and pressure field p, and external force field f is the action. The task is to generate f to guide an initial smoko in the field to avoid obstacles and reach 15 Preprint a target exit area. There are two settings in (Wei et al., 2025): large domain control and boundary control. We adopt large domain control setting, where force signals are applied to all peripheral regions outside the obstacles, consisting of 1,792 cells. 
+
+State Estimation. We adopt the Lorenz attractor simulator from (He et al., 2025) to generate data. The system state st is a 3D vector following an nonlinear state-space model: 
+
+st = F(st−1)st−1 + wt, (20) 
+
+F(st−1) = exp 
+
+
+
+−10 10 028 −1 −st−1,1
+
+0 st−1,1 − 83
+
+ ∆
+
+ , (21) where wt is a noise term (we use Gaussian noise wt ∼ N (0 , q 2I)) and ∆ is the time interval. The observation is zt = g(xt) + ηt, where g(xt) is a rotation operation and ηt ∼ N (0 , r 2I). The task is to estimation current state system st given historical observation z≤t (st cannot be directly observed). B.2 IMPLEMENTATION DETAILS OF ALGORITHMS 1,2 
+
+Forecasting. In forecasting task we have xt = st+1: t+H and zt = xt, where st is the real physical states we want to predict. To apply Algorithm 1, we take a small finetuning dataset 
+
+{s(i)1: T , z (i)1: T }i=1 ,2,...,n and leverage a pretrained Rectified Flow model vθ0 to generate some trajec-tories ˆs(i) 
+
+> t+1: t+H
+
+∼ pθ0 (st+1: t+H |z(i) 
+
+> ≤t
+
+). We could directly use ˆs(i) 
+
+> t:t+H−1
+
+as the source distribution and s(i) 
+
+> t+1: t+H
+
+as the target distribution in sequential flow ODE Eq. 6. In practice, to better align the prediction at the same physical time, we instead drop the first ˆs(i) 
+
+> t
+
+(as it is already observed at time 
+
+t) and pad a ˆs(i) 
+
+> t+H−1
+
+(can be seen as a moving average) and construct (ˆ s(i)
+
+> t+1: t+H−1
+
+, ˆs(i)
+
+> t+H−1
+
+) as the source distribution instead. 
+
+Planning and Control. In planning and control task we have xt = ( st+1: t+H , a t:t+H−1) and 
+
+zt = ( st, a t−1). To apply Algorithm 1, we require an imitation learning dataset consisting of expert state-action trajectories. We treat the pretrained flow model pθ0 as an expert policy and let it interact with the environment to collect a few state-action trajectories. Ultimately, we have model predicted trajectory ˆs(i) 
+
+> t+1: t+H
+
+, ˆa(i) 
+
+> t:t+H−1
+
+∼ pθ0 (st+1: t+H , a t:t+H−1|s(i)1: t, ˆa(i)1: t−1) at any time t
+
+and a resulting actual full trajectory (s(i)1: T , a (i)1: T ), where a(i) 
+
+> t
+
+is the actual executed action (i.e., the first predicted action at each time). We treat (ˆ s(i)
+
+> t:t+H−1
+
+, ˆa(i)
+
+> t−1: t+H−2
+
+) as the source distribution and 
+
+(s(i) 
+
+> t+1: t+H
+
+, a (i)
+
+> t:t+H−1
+
+) as the target distribution in sequential flow matching. Again, since at time t
+
+we observe z(i) 
+
+> t
+
+= ( s(i) 
+
+> t
+
+, a (i)
+
+> t−1
+
+), in practice we remove already-observed state-action ˆs(i) 
+
+> t
+
+, ˆa(i) 
+
+> t−1
+
+and instead adopt ((ˆ s(i)
+
+> t+1: t+H−1
+
+, ˆs(i)
+
+> t+H−1
+
+), (ˆ a(i)
+
+> t:t+H−2
+
+, ˆa(i)
+
+> t+H−2
+
+) as the source distribution. 
+
+State Estimation. In state estimation task we have xt = st. Similarly we call a pretrained model to generate ˆs(i) 
+
+> t
+
+∼ pθ0 (st|z(i) 
+
+> ≤t
+
+). We use ˆs(i) 
+
+> t
+
+as the source distribution and the actual physical state s(i)
+
+> t
+
+as the target distribution. B.3 IMPLEMENTATION DETAILS OF BASELINES 
+
+Pretraining. Diffusion forcing (Chen et al., 2024) proposes an asynchronous-noising training of diffusion models, which shows promising results for offline sequence generation. The key idea is to add independently random noise levels to different tokens in a sequence, and the score function takes this sequence of noise levels as its input for denoising. Adopting this idea, we train Rectified flow in a similar approach: we independently take random interpolation time for different tokens, and let the velocity function be aware of the interpolation time for each token. 
+
+Warm-start Diffusion. The warm-start diffusion is a heuristic that denoise a previously noisy xt−1,but conditioning on new observation zt, to obtain updated prediction of xt. In our implementation, warm-start diffusion share the exact pipeline as our sequential flow models, the only difference is that it use the pretrained model vθ0 for denoising, while sequential flow matching uses a finetuned flow 
+
+vθ for generation. 16 Preprint 
+
+CL-Diffusion (Wei et al., 2025). The original CL-Diffusion requires to train two diffusion models, a synchronous diffusion and an asynchronous diffusion that allows different denoising scheduling. In our implementation, since Diffusion Forcing (Chen et al., 2024) pretrained model allows to denoise in an arbitrary schedule, we use a single pretrained diffusion forcing to replace the two models in CL-Diffusion. 
+
+## C ADDITIONAL EXPERIMENTAL RESULTS 
+
+C.1 STATE ESTIMATION 
+
+Datasets. We consider state estimation of Lorenz attractor, a three-dimensional chaotic dynamical system following the nonlinear state-space model: st = f (st)st + N (0 , q 2I) and zt = g(st) + 
+
+N (0 , r 2I), where st ∈ R3, f (st) ∈ R3×3, g (st) ∈ R3. It is a simplified mathematical model used to capture chaotic behavior and to understand atmospheric convection (Lorenz, 2017). We follow He et al. (2025) to set g be a rotation matrix operation, q = r/ 10 and varies r to test the model performance under different environmental stochasticity. The model takes historical observations z≤t
+
+as conditions and predicts current state xt := st. The prediction horizon is H = 1 .Except for learning-based approaches, we also compare against model-based approaches, including Extended Kalman Filtering (Kushner, 1967), Unscented Kalman Filtering (Julier & Uhlmann, 1997), and Particle Filtering (Del Moral, 1997). These methods have explicit access to the underlying system dynamics f (xt) and measurement function g(xt), and therefore serve as oracle-style baselines. 
+
+Results. Table 6 reports performance measured by 10 log 10 (MSE ) under varying levels of environ-mental uncertainty (larger 1/r 2[dB ] indicates lower stochasticity). As expected, the performance of all methods degrades as environmental stochasticity increases. Notably, warm-start approaches per-form reasonably well when environmental stochasticity is low, but their performance becomes worse as uncertainty increases. This behavior is expected, since warm-start methods could approximate the correct predictive distribution when successive states xt−1, x t follow similar distributions, which is more likely to hold in near-deterministic system dynamics. In contrast, Sequential Flow Matching 
+
+explicitly learns the probability flow across successive time steps. It consistently achieves competitive performance across all uncertainty levels with one sampling step among the learning-based methods. Table 6: Results of state estimation. The reported numbers are the 10 log 10 (MSE ) (lower the better) with MSE averaged over the entire episode (100 steps). 1/r 2[dB ] = 10 log 10 (1 /r 2) represents different uncertainty levels of measurements (smaller the 1/r 2[dB ] larger the stochasticity).                                                                   
+
+> Method NFE Environment Stochasticity 1/r 2[dB]
+> -10 010 20
+> Model-based
+> Extended KF N/A 2.69 −6.19 −16 .49 −25 .18
+> Unscented KF N/A 9.05 2.58 −3.52 −16 .24
+> Particle Filtering N/A 3.76 −4.76 −14 .68 −22 .93
+> Diffusion Forcing 10 11 .74 ±0.01 0.68 ±0.02 −9.57 ±0.07 −17 .08 ±1.56
+> Rectified Flow 511 .93 ±0.02 0.57 ±0.02 −9.30 ±0.30 −18 .65 ±0.33
+> Diffusion Forcing 110 .59 ±0.07 1.15 ±0.17 −8.74 ±0.30 −15 .01 ±2.07
+> Rectified Flow 115 .39 ±0.10 4.90 ±1.04 −5.94 ±0.26 −13 .25 ±1.41
+> MeanFlow 112 .87 ±0.62 6.20 ±0.44 2.82 ±2.00 0.85 ±1.70
+> Consistency Model 110 .85 ±0.00 4.15 ±0.16 2.78 ±0.15 2.45 ±0.04
+> Warm-start Heuristic
+> Warm-start Diffusion Forcing 113 .52 ±0.03 1.39 ±0.17 −9.42 ±0.04 −17 .11 ±1.51
+> Warm-start Rectified Flow 116 .86 ±0.11 5.07 ±0.40 −7.66 ±0.42 −18 .45 ±0.48
+> Ours
+> Sequential Rectified Flow 110 .12 ±0.01 0.26 ±0.20 −9.79 ±0.06 −19 .58 ±0.09
+
+C.2 LONG -HORIZON BEHAVIOR 
+
+Figure 3 compares the RMSE as a function of the forecast lead time h = 1 , 2, ..., H . While the auto-regressive model performs better at short horizons, its error increases more rapidly with horizon than flow-based models. In contrast, the sequential flow model with one sampling step performs competitively to the full-step pretrained model across the entire forecast window. 17 Preprint 1 2 3 4 5 6 7 8 9 10 
+
+> Prediction Horizon (Lead Time)
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> RMSE (  )
+> Sequential Rectified Flow (NFE=1)
+> Rectified Flow (NFE=5)
+> CL-Diffusion (NFE=1)
+> Auto-regressive
+
+Figure 3: RMSE of Burgers’ equation as a function of forecast lead time. C.3 PERFORMANCE -L ATENCY TRADE -OFFS 
+
+We further show the performance-latency trade-off on smoke control in Figure 4. We find sequential flow models only require one step to achieve saturate performance. 50 100 150 200 250 
+
+> Computation Time (ms)
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Smoke Objective ( ↓)
+> Ours Diffusion Forcing
+
+Figure 4: Inference latency for smoke control under varying sampling timesteps (1, 2, 3, 5, 10, and 15 steps). Wall-clock time is computed per instance and averaged across both physical time steps and the test set. C.4 ABLATION STUDY 
+
+We conduct ablation study on re-noise mechanisms and training with model-generated trajectories. 
+
+Re-noise level. Figure 5 reports performance under different re-noise levels τrenoise . We observe that both using a fully clean previous estimate ( τrenoise = 0 ) and completely discarding the previous estimate ( τrenoise = 1 ) lead to degraded performance. In contrast, there exists an intermediate range of 
+
+τrenoise that yields consistently strong and robust results. Moreover, this optimal range shifts toward larger values as system uncertainty increases (e.g., the optimal renoise level is 0.4 ∼ 0.6 for high system uncertainty 1/r 2[dB]=-10, and is 0.2 ∼ 0.4 for low system uncertainty 1/r 2[dB]=10). This behavior is expected: higher system uncertainty induces greater uncertainty in the model predictions, which in turn requires a higher re-noise level to adequately accommodate this stochasticity. 
+
+Training with model generated trajectories. Table 7 compares the performance of Burgers’ equation forecasting and state estimation ( 1/r 2[dB]=-10) of using model-generated trajectories ((ˆ xt−1, x t)) against pure ground-truth trajectories (xt−1, x t) in sequential flow matching finetuning. We see a significant performance degrade when exclusively using ground-truth trajectories on forecasting task, while comparable performance on state tracking. We hypothesis for long-horizon task like Burgers’ equation forecasting, the model’s prediction will be largely deviated from ground truth, while for short-horizon task like state estimation ( H = 1 ), the model prediction is close to 18 Preprint 0.0 0.1 0.2 0.4 0.6 1.0      
+
+> Re-noise level
+> 3
+> 4
+> 5
+> 6
+> 7
+> 8
+> RMSE (  )
+> 1/ r2[dB]=-10 0.0 0.1 0.2 0.4 0.6 1.0
+> Re-noise level
+> 0.35
+> 0.40
+> 0.45
+> 0.50
+> 0.55
+> RMSE (  )
+> 1/ r2[dB]=10
+
+Figure 5: Performance as a function of re-noise level τrenoise on state estimation. Left and right figures are at different system uncertainty levels. ground truth. The different levels of train-test mismatch will decide if model-generated trajectories are necessary for finetuning sequential flow models. Table 7: Ablation study of the choice of finetuning on model-generated trajectories or ground-truth trajectories. 
+
+Method Burgers’ Equation State Estimation 
+
+NFE RMSE ↓ Energy Score ↓ 10 log 10 MSE ↓
+
+Sequential Flow Matching (finetuned from model-generated trajectories) 1 0.239 0.101 10 .12 
+
+Sequential Flow Matching (finetuned from ground-truth trajectories) 1 0.251 0.108 10 .11 
+
+## D VISUALIZATION 
+
+We provide a visualization of maze planning (Figure 7) and smoke control (Figure 6) using pretrained diffusion model and finetuned sequential diffusion model. Diffusion Forcing 
+
+> (1 NFE)  Ours
+> physical time
+
+Figure 6: Smoke Control. With the same NFE, Sequential Diffusion Forcing effectively controls the smoke to reach the target exit, whereas Diffusion Forcing fails to circumvent the bottom obstacle. start end   
+
+> Ours
+> (3 NFE)
+> Diffusion-Forcing
+> (3 NFE)
+> physical time physical time
+> Maze2d-medium-v1 Maze2d-large-v1
+
+Figure 7: Maze Planning. With the same NFE, Sequential Diffusion Forcing can utilize the previous plans to effectively reach the target, while Diffusion Forcing fails drastically with small NFE. 19
