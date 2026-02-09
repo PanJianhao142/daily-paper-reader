@@ -1,0 +1,856 @@
+Title: NECromancer: Breathing Life into Skeletons via BVH Animation
+
+URL Source: https://arxiv.org/pdf/2602.06548v1
+
+Published Time: Mon, 09 Feb 2026 01:47:23 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+Mingxi Xu 1 Qi Wang 1 Zhengyu Wen 1 Phong Dao Thien 1 Zhengyu Li 1 Ning Zhang 1 Xiaoyu He 1
+
+Wei Zhao 1 Kehong Gong 2 Mingyuan Zhang 1
+
+# Abstract 
+
+Motion tokenization is a key component of generalizable motion models, yet most exist-ing approaches are restricted to species-specific skeletons, limiting their applicability across diverse morphologies. We propose NECro-mancer (NEC) , a universal motion tokenizer that operates directly on arbitrary BVH skele-tons. NEC consists of three components: (1) an Ontology-aware Skeletal Graph Encoder (OwO) that encodes structural priors from BVH files—including joint semantics, rest-pose offsets, and skeletal topology—into skeletal embeddings; (2) a Topology-Agnostic Tokenizer (TAT) that compresses motion sequences into a universal, topology-invariant discrete representation; and (3) the Unified BVH Universe (UvU) , a large-scale dataset aggregating BVH motions across hetero-geneous skeletons. Experiments show that NEC achieves high-fidelity reconstruction under sub-stantial compression and effectively disentangles motion from skeletal structure. The resulting to-ken space supports cross-species motion transfer, composition, denoising, generation with token-based models, and text-motion retrieval, establish-ing a unified framework for motion analysis and synthesis across diverse morphologies. Demo page: https://animotionlab.github. io/NECromancer/ 
+
+# 1. Introduction 
+
+Generating dynamic 4D content is a core capability of world models operating in complex environments. While deformation-field methods extend static 3D representations with temporal dynamics, they often suffer from geometric inconsistency, high computational cost, and limited con-trollability (Li et al., 2024). Moreover, many pipelines reconstruct 4D content from videos or video generative pri-ors (Cao et al., 2024; Ren et al., 2024), which limits the     
+
+> 1Huawei Central Media Technology Institute 2Huawei Tech-nologies Co., Ltd.. Correspondence to: Mingyuan Zhang
+> <zhangmy718@gmail.com >.
+> Preprint. February 9, 2026.
+
+learning of structured and generalizable motion representa-tions. Skeleton-based modeling instead provides an interpretable, compact, and controllable abstraction for motion and has driven strong progress in human-centric 4D content (Hong et al., 2022; Tevet et al., 2023). However, most existing methods do not generalize well across embodiments. Ap-proaches based on fixed human templates (Tevet et al., 2023; Zhang et al., 2024) or canonical skeleton retargeting (Wang et al., 2025) restrict expressivity for diverse body plans, while keypoint-only representations remain misaligned with modern CG pipelines (Guo et al., 2022a; Plappert et al., 2016). These assumptions of near-static skeletal topology fundamentally limit multi-species animation and universal motion understanding. We therefore target topology-invariant yet semantics-preserving motion representations that can accommodate diverse joint hierarchies and spatio-temporal relations. To this end, we introduce an Ontology-aware Skeletal Graph Encoder (OwO) that maps rest-pose skeletons to per-joint structural embeddings capturing topological, postural, and semantic cues. Conditioned on these embeddings, we de-velop a Topology-Agnostic Tokenizer that converts BVH motion sequences on arbitrary skeletons into compact, dis-crete tokens compatible with token-based generators. To support learning and evaluation under diverse morpholo-gies, we curate a BVH-centric benchmark by consolidating HumanML3D (Guo et al., 2022a), Objaverse-XL (Deitke et al., 2023), and Truebones Zoo (Truebones, n.d.) through extensive cleaning and normalization. The resulting dataset, Unified BVH Universe, contains 47,807 high-quality text-annotated motion sequences spanning humans, quadrupeds, and other species. Under a unified evaluation protocol, our tokenizer achieves strong reconstruction with substantial compression and out-performs RVQVAE baselines in retrieval accuracy, genera-tion fidelity, and joint-space error. Beyond reconstruction, the learned token space natively supports any-skeleton mo-tion generation, transfer, and retrieval, while the OwO struc-tural prior further enables topology-agnostic Motion–Text alignment. Our contributions are threefold: 1
+
+> arXiv:2602.06548v1 [cs.CV] 6 Feb 2026 NECromancer: Breathing Life into Skeletons via BVH Animation
+
+1. Ontology-aware Skeletal Graph Encoder. We in-troduce a graph-based skeleton embedder with self-supervised objectives that capture topological, postural, and semantic structure, producing reusable joint-level representations for BVH-format data. 2. Topology-Agnostic Tokenizer. To operate on arbitrary BVH skeletons and produces compact, token-level, skeleton-agnostic representations, we develop a graph-conditioned motion tokenizer. This design enables a variety of additional appealing applications once the tokenizer has been trained. 3. BVH-centric Benchmark. We establish a large-scale curated BVH benchmark (47,807 sequences) spanning heterogeneous species and skeletal structures, support-ing standardized evaluation of topology generalization for reconstruction, retrieval (R-Precision@K), and dis-tributional quality (FID). 
+
+# 2. Related Works 
+
+Skeleton-based Motion Generation. Skeletons provide a compact, interpretable, and controllable abstraction for motion and have seen rapid progress under text-, audio-, and scene-conditioned settings. Text-to-motion methods evolved from embedding or variational alignment (e.g., MotionCLIP, TEMOS) to diffusion-based backbones en-abling higher fidelity and local editing (Tevet et al., 2022; Petrovich et al., 2022; Tevet et al., 2023; Kim et al., 2023). Controllability and efficiency were further improved via multi-level conditioning and retrieval augmentation (MotionDiffuse, ReMoDiffuse), parameter-efficient adapta-tion (LoRA-MDM), and latent or autoregressive decoding (MLD, DART) (Zhang et al., 2024; 2023b; Chen et al., 2023; Zhao et al., 2025). Audio-conditioned gesture and dance generation followed a similar trajectory, progressing from deterministic or VAE-based mappings to diffusion- or transformer-based models with rhythm or key-pose guid-ance (Li et al., 2021; Ao et al., 2023; Siyao et al., 2022; Huang et al., 2025). Despite strong performance, most systems assume a fixed human topology, limiting transfer, retargeting, and generalization to non-human embodiments. 
+
+Discrete Motion Tokenization. A parallel line of work discretizes motion into compact token sequences to en-able LLM-style generation, editing, and retrieval. Vector-quantized autoencoders (Van Den Oord et al., 2017), includ-ing residual and hierarchical variants, as well as masked modeling, have been widely used to build motion code-books (Guo et al., 2023) and unify multiple tasks within a single interface (Jiang et al., 2024). Compared to purely continuous diffusion models, discrete representations better support long-horizon reasoning, scalable data mixing, and plug-and-play conditioning with language or audio. How-ever, existing tokenizers are typically tied to a canonical human skeleton and fixed joint definitions, limiting their use as a universal motion representation (Guo et al., 2022b). In contrast, we condition tokenization on an ontology-aware skeletal graph derived from the rest pose, enabling topology-agnostic BVH motion codes that generalize across arbitrary skeleton templates. 
+
+Cross-Embodiment, Retargeting, and BVH-centric Cor-pora. Cross-embodiment motion is commonly addressed by mapping motions to canonical templates (e.g., SMPL, GHUM) or via skeleton-aware retargeting networks (Loper et al., 2015; Xu et al., 2020; Aberman et al., 2020). While effective for human avatars, such normalization reduces ex-pressivity for disparate body plans and bone-length statistics. Recent work has begun exploring arbitrary-topology and animal motion generation (Gat et al., 2025; Wang et al., 2025), yet a universal tokenizer that natively supports arbi-trary BVH templates remains underexplored. Given BVH’s prevalence in motion capture and digital content creation pipelines, adopting BVH as a unifying representation facil-itates large-scale aggregation and standardized evaluation. Accordingly, we release a BVH-centric corpus that consoli-dates heterogeneous sources (Guo et al., 2022a; Deitke et al., 2022; 2023; Truebones, n.d.) and evaluate generalization under seen and unseen topologies and species. 
+
+# 3. UvU: Unified BVH Universe 
+
+3.1. Dataset Overview 
+
+The Unified BVH Universe dataset is designed to enable gen-eralized motion understanding and synthesis across varying skeletal topologies. Unlike existing datasets that focus on a single skeletal structure or similar structures (e.g., human-only (Loper et al., 2015) or species-specific motions (Biggs et al., 2020)), our dataset introduces highly divergent skele-tons like fantasy creatures, enabling generative models with the ability to drive a variety of skeletons. The data format we are using within Unified BVH Universe, as shown in Fig. 1, (2) representation part, consists of 4 parts: 
+
+BVH Motion Data for temporal joint rotations, Base Mesh 
+
+for 3D mesh template, Skin Weights for mesh deformation and Text Annotations . In summary, our dataset consists of 47,807 animations. 
+
+3.2. Data Preprocessing 
+
+As shown in Fig. 1, to construct the Unified BVH Universe dataset, we unify motion data from three heterogeneous sources: HumanML3D (Guo et al., 2022a), Objaverse-XL (Deitke et al., 2023), and Truebones Zoo (Truebones, n.d.). For HumanML3D, we reconstruct animations from SM-PLX (Pavlakos et al., 2019) parameters, standardize skele-2NECromancer: Breathing Life into Skeletons via BVH Animation  
+
+> Figure 1. Overview of the Unified BVH Universe dataset pipeline. Motion data from three existing datasets are unified into a standardized representation, including BVH files, base-pose meshes, skinning weights, and text annotations. Data filtering and smoothing are applied to ensure physical plausibility. During training, on-the-fly augmentations are used to further increase data diversity.
+
+ton structures, and convert them into BVH format. For Objaverse-XL, extensive filtering and correction are con-ducted to acquire high quality BVH animations. Through such preprocessing, we ensure that all animation data have only a single skeleton tree, global translations are aggregated on the root joint, and remove redundant or meaningless joints. Finally, Qwen2.5-VL (Bai et al., 2025) is utilized to further filter semantically acceptable motions and generate text annotations for them. Truebones Zoo provides diverse artist-animated FBX motions; we extract skeletal structures and animations, apply standardization, and supplement with human-annotated text descriptions. Data filtering and cor-rections are applied to improve consistency and quality. After preprocessing, we split each dataset separately. For HumanML3D, we use the original split (Guo et al., 2022a). For Objaverse-XL, we randomly divide the sequences into 85% train and 15% test. For Truebones Zoo, we ensure that at least one animal per category (e.g. biped, quadruped) is included, with 15% of sequences as test and the rest as train. Detailed preprocessing procedures are provided in the supplementary material. 
+
+# 4. Methods 
+
+To support arbitrary skeletal topologies, we introduce a stan-dalone Graph Embedder that encodes the rest-pose skeleton into joint-level identity embeddings. These embeddings condition both the encoder and decoder, enabling topology-aware tokenization with minimal overhead, as the graph is encoded once per skeleton. An overview of the tokenizer structure is shown in Fig. 2. We next describe the architecture of the Graph Embedder and its integration into the encoder and decoder. 
+
+4.1. Problem Definition 
+
+We unify all animation data into the BVH motion format during preprocessing. An animation sequence with J joints and T frames is represented as Θ ∈ RT ×J×9.For the root joint ( j = 0 ), the representation is 
+
+Θt, 0 =
+
+h
+
+∆xt ∆yt ∆zt rot6D (0) 
+
+> t
+
+i
+
+, (1) where (∆ xt, ∆yt, ∆zt) denotes the displacement relative to the previous frame along the three coordinate axes, and rot6D (0)  
+
+> t
+
+denotes the global orientation in rot6D for-mat (Zhou et al., 2019). For non-root joints ( j̸ = 0 ), the representation is 
+
+Θt,j =
+
+h
+
+0 0 0 rot6D (j)
+
+> t
+
+i
+
+, (2) where rot6D (j) 
+
+> t
+
+represents the rotation relative to the parent joint in the BVH kinematic tree, also expressed in rot6D format. All joint rotations are defined relative to the BVH rest pose. Consequently, encoding and decoding BVH motions require access to the corresponding rest pose, which specifies a kine-matic tree S = ( J , E) encoding parent–child relationships among joints, fixed joint offsets oi→j ∈ R3 from parent joint i to joint j, as well as the name of each joint. 
+
+4.2. OwO: Ontology-aware Skeletal Graph Encoder 
+
+Since our tokenizer needs to handle different skeletal struc-tures with varying numbers of joints, we aim to design a 3NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+unified modeling scheme. Specifically, we require the tok-enizer to transform the BVH motion Θ into a latent code 
+
+z ∈ { 1, 2, . . . , K }⌊ Tr ⌋× R,
+
+where r denotes the temporal compression ratio, R is the number of residual tokens used in Residual Vector Quantiza-tion (RVQ) to represent the same continuous latent feature, and K is the size of the codebook. This formulation implies that, in the encoder stage of the tokenizer, spatial information across all joints within each frame must be effectively fused. In the decoder stage, the latent features must be able to accurately reconstruct the motion information of each joint. Therefore, we design a encoder that leverages the full information of the rest pose to extract a unique feature for each joint, serving as its identity embedding. To effectively model the topological structure among joints in the BVH, we construct a graph based on the rest pose information, and build several graph attention blocks on top of it for feature extraction. The detailed computational formulas are provided in the appendix. Since 4D data is extremely scarce, we design a pre-training stage to better train the graph encoder, which can be applied to arbitrary rigged 3D models. Specifically, we design a set of self-supervised objectives to guide the training of the Graph Embedder. These tasks are crafted to encourage the node and global features to encode three critical aspects of skeletal structure: geometric , topological , and semantic 
+
+information. The module is pretrained independently and frozen during downstream motion generation to serve as a transferable structural prior. For the extracted node features, we design the following three types of loss functions to encourage them to capture different aspects of information: • Geometric Loss. This loss focuses on the recovery ability of the rest pose. For any pair of joints (i, j )
+
+information and their corresponding node features, a task-specific prediction head is required to output the offset of joint j relative to joint i. If the model can accurately solve this task, then the relative positions of all joints in the rest pose can be recovered. • Topological Loss. This loss targets the connectivity information encoded in the kinematic tree of the origi-nal BVH. Leveraging the tree structure, we require the model to correctly identify the lowest common ances-tor (LCA) of any joint pair (i, j ) after the task-specific prediction head. 
+
+Theorem. If a model can correctly determine the LCA for any pair of nodes (i, j ) in a tree, then the entire tree topology can be uniquely reconstructed. 
+
+• Semantic Loss. This loss encourages alignment be-tween node features and semantic information. We extract textual features of each joint name using CLIP, and apply a contrastive learning objective such that each joint’s node feature is pulled closer to its own name embedding, while being pushed away from those of other joints. The detailed loss calculation and the proof of theorem are thoroughly introduced in the appendix. 
+
+Role of OwO within the Tokenizer. OwO is not an auxiliary component but the structural prior that enables topology-agnostic motion tokenization. Given a skeleton, OwO produces a set of joint-level identity embeddings 
+
+Fnode = {hj ∈ Rd}Jj=1 ,
+
+which encode the semantic, geometric, and topological roles of all joints. During TAT encoding, these structural embeddings are fused with the per-joint motion features: 
+
+Xt,j = MLP(Θ t,j ) + Proj( hj ),
+
+ensuring that the tokenizer interprets motions with respect to the correct anatomical meanings. This fusion allows the model to consistently understand motion patterns such as 
+
+arm lifting , spine bending , or wing flapping , even when applied to skeletons with different numbers of joints or distinct hierarchical structures. Importantly, OwO also plays a crucial role during decoding. Given a target skeleton, its OwO embeddings Fnode are repeated across the temporal dimension and concatenated to the quantized latent sequence: 
+
+˜Zt,j = [ zt ∥ hj ],
+
+where zt is the virtual-joint latent token at timestep t. This provides the decoder with a skeleton-specific template , en-abling it to reconstruct per-joint rotations consistent with the target morphology while preserving the motion dynamics encoded in the token sequence. Since OwO is computed once per skeleton and reused throughout the entire TAT pipeline, it serves as a lightweight yet expressive structural descriptor for universal motion reconstruction. 
+
+4.3. TAT: Topology-Agnostic Tokenizer Motivation: Why Topology-Agnostic Tokenization Is Challenging. Conventional VQ-based motion tokenizers quantize the feature at every joint and timestep, which im-plicitly assumes a fixed skeleton layout. This requirement fundamentally prevents them from handling heterogeneous skeletons with different joint counts and joint orderings, 4NECromancer: Breathing Life into Skeletons via BVH Animation   
+
+> Figure 2. Overview of NECromancer (NEC). NEC consists of two main components: (a) Ontology-aware Skeletal Graph Encoder (OwO), which encodes static skeletal information (topology, joint names, rest pose) into structured graph-based joint features;(b) Topology-Agnostic Tokenizer (TAT), including Spatio-Temporal Encoder and Decoder, which maps motion sequences into a unified feature space, appends virtual joints, and converts them into discrete motion tokens.
+
+such as humans (22 joints), dogs (87 joints), birds (with folding wings), or dragons (over 120 joints). To support motion tokenization across arbitrary skeletons, the quantization stage must be decoupled from the num-ber of joints. Therefore, instead of quantizing joint-wise features, we introduce a virtual joint that summarizes all joint features at each timestep into a topology-invariant rep-resentation. This design removes the dependence on the underlying kinematic structure and enables a truly universal discrete motion space. 
+
+Virtual Joint for Topology-Invariant Quantization. In-stead of aggregating joint features via pooling, we introduce a learnable virtual joint token, analogous to a classification token in Transformer encoders. At each (downsampled) timestep t, we augment the set of joint features {Xt,j }Jj=1 
+
+with a virtual joint embedding v(0)  
+
+> t
+
+∈ Rd:
+
+˜Xt = {Xt, 1, . . . , X t,J , v (0)  
+
+> t
+
+}.
+
+This extended sequence is processed by L stacked spatio-temporal blocks. Through the spatial attention, the virtual joint attends to all real joints and gradually accumulates a global summary of the motion at timestep t. We denote the virtual joint after the last block as v(L) 
+
+> t
+
+.Crucially, only the virtual joint is fed into the RVQ quan-tizer: 
+
+zt = RVQ( v(L) 
+
+> t
+
+),
+
+which yields a fixed-size discrete latent code independently of the number of real joints. During decoding, the quan-tized latent zt is injected back as the virtual joint token and combined with the OwO-conditioned joint features of the target skeleton to reconstruct per-joint rotations. This CLS-style virtual joint design enables topology-invariant motion tokenization without ever requiring a fixed joint grid. Thanks to the explicitly extracted skeletal structure informa-tion from the Graph Embedder, we can simplify the motion reconstruction process under arbitrary topologies. Specifi-cally, the inputs to this reconstruction step include: • The node-level structural embeddings from the Graph Embedder, denoted as Fnode = {hj ∈ Rd}Jj=1 , where 
+
+J is the number of joints and d is the embedding di-mension; • A motion sequence in our defined format, represented as Θ ∈ RT ×J×9, where T is the number of frames and each 9D vector encodes joint translation/rotation information as defined in Section 4.1. By combining Fnode with the per-frame motion features in 
+
+Θ, we can reconstruct motion tokens in a topology-agnostic manner without requiring explicit graph traversal during generation. 
+
+Difference from Prior Spatio-Temporal Transformers. 
+
+Unlike prior motion Transformers that operate on fixed hu-man skeletons, the proposed TAT introduces three key inno-vations: 5NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+• Graph-conditioned spatial attention. Each joint fea-ture is modulated by its OwO embedding, allowing the spatial attention module to reason over anatomical semantics rather than relying solely on joint indices. • Topology-invariant quantization via the virtual joint. Only the virtual joint is quantized, enabling a dis-crete representation that is independent of the number or ordering of joints. • Decoupled structure–motion representation. The motion tokens contain no structural information; the structure is injected only through OwO at encode and decode time. This makes the latent motion code uni-versally applicable to any skeleton. Together, these innovations make TAT the first spatio-temporal tokenizer capable of reconstruction, transfer, and generation across arbitrary skeletal topologies. 
+
+Spatio-temporal Modeling. As shown in Figure 2, the encoder contains L spatio-temporal blocks. Each block consists of: A temporal module , comprising a 1D convo-lution (with stride s) and a ResNet1D block for temporal abstraction; A spatial transformer , which models joint in-teractions at each timestep using multi-head self-attention. At each layer, temporal downsampling reduces the sequence length by a factor of s, resulting in an overall downsam-pling rate r = sL. The final feature is reshaped and passed through a 1 × 1 convolution to produce quantized features 
+
+Zfeat ∈ RT /r ×J×W , from which token quantization is per-formed. The virtual joint token is extracted separately and used as a global summary feature. The decoder mirrors the encoder structure in reverse. Given a quantized token sequence and the corresponding joint features, it performs: Concatenation of per-joint features and the global token; Spatial transformer operations for joint-wise refinement; Upsampling and reverse-dilated temporal convolutions to restore full temporal resolution. The virtual joint token is removed before output. The de-coder maps the output back to the original motion space 
+
+RT ×J×9 using a linear projection. This design allows the tokenizer to encode complex spatio-temporal patterns in a structure-aware yet data-efficient manner, and produce dis-crete tokens suitable for downstream generative modeling. Details can be found in the supplementary materials. 
+
+4.4. Data Augmentation 
+
+To enhance topological generalization, we propose a base pose randomization technique that preserves semantic con-tent while expanding motion diversity. The method involves: (1) selecting a random frame as new rest pose, (2) comput-ing global rotations and positions, (3) deriving new rest pose offsets, and (4) recalculating local rotations using key equa-tions (see Appendix C.1). Our data augmentation generates physically plausible animations with semantically consis-tent motions, encouraging the model to prioritize semantic meaning and physical correctness. 
+
+# 5. Experiments 
+
+Baselines. We compare against three types of baselines. (1) Human-centric text-to-motion models , including T2M-GPT(Zhang et al., 2023a), Motion Streamer(Xiao et al., 2025), and TM2T(Guo et al., 2022b). Since these meth-ods are originally designed for fixed human skeletons, we minimally adapt their input and output interfaces to support BVH motions with varying joint sets, while keeping their core model architectures and training objectives unchanged. Specifically, all motions are zero-padded to the required joint layout of each model. (2) Padding-based tokenizers . We evaluate RVQ-VAE trained on zero-padded BVH sequences under a single canonical skeleton. We do not include a separate zero-padded VQ baseline, as it is functionally equivalent to T2M-GPT. (3) Our variants , including NEC w/ VQ and NEC w/ RVQ, which share the same architecture and differ only in the quantization scheme. All baselines are trained and evaluated under the same unified protocol unless otherwise specified. 
+
+Implementation details. Unless stated, OwO uses 8 graph attention blocks with 512 latent dimension while TAT uses 3 spatio-temporal blocks. Each spatio-temporal block contains 2 convolution layers and 2 spatial transformer en-coder layers. The used quantizer is a 6-layer codebooks (size 1024). We train with AdamW, cosine LR, gradient clipping, and random rest-pose augmentation (Sec. 4). The tokenizer is trained with 32 Ascend 910. The whole training process contains around 24k iterations. Initial learning rate is 2e-4 and is decreased to 2e-5 during the last 4k iterations. 
+
+Metrics. We report four metrics throughout: MPJPE 
+
+↓ (root-aligned, joint-set-agnostic), FID ↓ (computed on the same retrieval backbone as prior work), GeoDist 
+
+↓ (mean geodesic distance of joint rotations), and R-Precision@ {1, 2, 3} ↑ for text–motion retrieval. 
+
+Other applications of Graph Embedder. For understand-ing BVH motion, accurately extracting features for each joint is crucial. Beyond the tokenizer, we also experi-mented with two contrastive learning models—PoseVAE and Text–Motion Evaluator—to validate the effectiveness of our proposed Graph Embedder. Both models share a similar overall structure with the tokenizer, but with key dif-6NECromancer: Breathing Life into Skeletons via BVH Animation                                                                                                                                                                                                                         
+
+> Table 1. Reconstruction results on three datasets. Lower is better. Method MPJPE ↓MPJPE (no trans.) ↓GeoDist ↓
+> H3D Obj-XL Zoo H3D Obj-XL Zoo H3D Obj-XL Zoo T2M-GPT (Zhang et al., 2023a) 0.4203 0.2583 0.2271 0.1376 0.2128 0.0843 6.84 ◦28.66 ◦18.76 ◦
+> Motion Streamer (Xiao et al., 2025) 0.1961 0.2456 0.2261 0.0972 0.1963 0.0842 5.37 ◦26.17 ◦18.73 ◦
+> TM2T (Guo et al., 2022b) 0.1411 0.1918 0.1434 0.0873 0.1565 0.0757 5.34 ◦21.49 ◦17.28 ◦
+> RVQ-VAE (zero pad) 0.4729 0.2228 0.1762 0.2688 0.1817 0.1143 27.95 ◦22.72 ◦18.76 ◦
+> NEC w/ VQ 0.3960 0.1840 0.1657 0.1395 0.1343 0.0828 7.78 ◦17.40 ◦16.19 ◦
+> NEC w/ RVQ 0.1084 0.0983 0.1008 0.0588 0.0787 0.0635 3.96 ◦12.12 ◦13.88 ◦
+> Table 2. Ablation study on pretraining and loss configurations. We report results on three tasks across three datasets. Lower is better for MPJPE, higher is better for R-Precision@1. Pretrain Loss Setting Pose VAE (MPJPE) Motion VQ-VAE (MPJPE) Evaluator (R-Precision@1) Offset LCA Dist. Con. H3D Obj-XL Zoo H3D Obj-XL Zoo H3D Obj-XL Zoo No 00000.0940 0.0618 0.0599 0.1458 0.1034 0.0995 0.5355 0.1655 0.2756 Yes 10000.0443 0.0442 0.0485 0.1151 0.1028 0.1122 0.4052 0.1310 0.2677 Yes 01000.0530 0.0514 0.0585 0.1300 0.1051 0.1529 0.3913 0.1448 0.2913 Yes 00100.0623 0.0412 0.0466 0.1138 0.1024 0.1146 0.3731 0.1793 0.3150
+> Yes 00010.0399 0.0502 0.0433 0.1126 0.1050 0.1006 0.5215 0.1172 0.2913 Yes 01110.0822 0.0409 0.0485 0.1084 0.0983 0.1008 0.5713 0.2207 0.2992 Yes 10110.0627 0.0424 0.0475 0.1073 0.1017 0.1359 0.5604 0.1586 0.3071 Yes 11010.0780 0.0410 0.0460 0.1343 0.1098 0.1058 0.5580 0.1586 0.2283 Yes 11100.0363 0.0411 0.0521 0.1567 0.1074 0.1003 0.5434 0.1793 0.2835 Yes 11110.1009 0.0516 0.0661 0.1147 0.1088 0.1144 0.4976 0.1793 0.2992
+
+ferences: PoseVAE operates on single frames and employs a VAE for modeling, whereas the Evaluator applies a trans-former along the temporal dimension to extract a unified feature from the motion sequence, which is then used to compute similarity with textual representations. 
+
+5.1. Main Results: Reconstruction 5.2. Ablations Summary. Table 1 summarizes reconstruction per-formance across three heterogeneous datasets: Hu-manML3D (Guo et al., 2022a), Objaverse-XL (Deitke et al., 2023), and Truebones Zoo (Truebones, n.d.). For T2M-GPT, Motion Streamer, TM2T, and the traditional RVQVAE baseline, we pad all skeletons to the fixed joint layout re-quired by these models, ensuring compatibility with their human-centric architectures. Across all three datasets, a consistent trend emerges. Human-centric models (T2M-GPT (Zhang et al., 2023a), Motion Streamer (Xiao et al., 2025), TM2T (Guo et al., 2022b)) perform reasonably on HumanML3D but degrade significantly on Objaverse-XL and Zoo, where joint counts, limb structures, and bone-length statistics differ widely. This shows that models assuming fixed human topology cannot generalize to heterogeneous skeletons. Padding-based RVQ-VAE baselines perform even worse, with high MPJPE(no-trans) and GeoDist indicating that zero-padding introduces structural ambiguity and prevents accurate rota-tional reconstruction. By contrast, NEC overcomes these limitations through an ontology-aware structural prior (OwO) and topology-invariant quantization (TAT). Even NEC w/ VQ surpasses all padding-based VQ baselines, showing the benefits of structure-aware encoding. The full NEC w/ RVQ achieves the strongest results across all datasets and metrics, reducing MPJPE on HumanML3D by nearly 2× compared to TM2T, and delivering large improvements on Obj-XL and Zoo. Its consistently lowest GeoDist further confirms superior rotational accuracy and cross-topology fidelity. Overall, the results demonstrate that topology-aware condi-tioning combined with residual quantization is crucial for precise and structurally consistent motion reconstruction across diverse skeletal morphologies. 
+
+OwO pretraining: reconstruction + retrieval (Table 2). 
+
+We ablate the effect of OwO pretraining by toggling its auxiliary objectives: Adjacent Offset regression (Offset), LCA/topology prediction (LCA), Distance regression on any pairs (Dist.), and name-text contrastive learning (Con.). Here Offset is a special case of Dist. 
+
+Findings. (1) Overall, combining the three loss functions— 
+
+LCA , Dist. , and Con. —achieves the best performance across all tasks. (2) The Offset task, which predicts offsets between 7NECromancer: Breathing Life into Skeletons via BVH Animation                                            
+
+> Table 3. OwO structural ablation on reconstruction accuracy. Lower is better. Method MPJPE ↓MPJPE (no trans.) ↓GeoDist ↓
+> H3D Obj-XL Zoo H3D Obj-XL Zoo H3D Obj-XL Zoo Learnable Query 0.1475 0.1585 0.1149 0.0751 0.1295 0.0737 5.04 ◦19.44 ◦16.37 ◦
+> + Joint Name 0.1759 0.1434 0.1324 0.0755 0.1005 0.0645 4.93 ◦15.80 ◦15.15 ◦
+> Full OwO (ours) 0.1084 0.0983 0.1008 0.0588 0.0787 0.0635 3.96 ◦12.12 ◦13.88 ◦
+> Figure 3. Qualitative reconstruction results comparing NEC with ground truth on Objaverse-XL and Truebones.
+
+neighboring joints, is relatively simple and provides limited benefit for representation learning; in fact, it may even have a negative effect. (3) The LCA task substantially improves performance on the Zoo dataset, likely due to its highly diverse skeletal structures, indicating that learning topology enhances cross-skeleton generalization. 
+
+OwO structural ablation. We compare: (i) a single learn-able query without joint semantics or graph attention, (ii) a variant augmented with joint-name semantics only, and (iii) the full OwO with ontology-aware graph attention. Table 3 shows that removing graph reasoning consistently degrades performance across datasets and metrics. Joint-name seman-tics alone offer limited gains, whereas full OwO performs best, indicating that both factors are crucial for topology-agnostic motion representation. 
+
+5.3. Qualitative Results 
+
+Fig. 3 shows reconstruction results from NEC. The species including a standard SMPL body mesh, a humanoid charac-ter, a quadruped mammal and a bird, which covers a large range of species used in our benchmark. Our tokenizer can basically recover the motion tendency with sufficient mo-tion details. Admittedly, certain fine-grained pose details cannot yet be reproduced with high precision, leaving room for further improvement. Benefiting from the design that uses the skeleton as an ad-ditional conditioning signal, our method can be applied to motion transfer. Specifically, we feed motion sequence from species A into the encoder to obtain a set of discrete tokens, and then pass these tokens to the decoder together with the conditioning signal of species B, thereby enabling cross-species motion transfer. Another use case is to combine our approach with classic discrete-token-based motion gener-ation methods, enabling text-driven motion generation for any species. Please refer to the supplementary material for detailed experiments on both parts. 
+
+# 6. Conclusions 
+
+We presented a unified framework for topology-generalized motion representation learning. Our approach integrates an 
+
+Ontology-aware Skeletal Graph Encoder for learning struc-tural and semantic priors from rigged 3D data, a Topology-Agnostic Tokenizer that converts arbitrary BVH skeletons into compact discrete tokens, and a large-scale BVH-centric benchmark (47,807 sequences) covering heterogeneous species and skeletons. Together, these components establish a practical foundation for reconstruction, retrieval, and gen-eration across diverse skeletal topologies in BVH format. 8NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+# Impact Statement 
+
+This paper presents work whose goal is to advance the field of machine learning. There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. 
+
+# References 
+
+Aberman, K., Li, P., Lischinski, D., Sorkine-Hornung, O., Cohen-Or, D., and Chen, B. Skeleton-aware networks for deep motion retargeting. ACM Transactions on Graphics (TOG) , 39(4):62–1, 2020. Ao, T., Zhang, Z., and Liu, L. Gesturediffuclip: Gesture diffusion model with clip latents. ACM Transactions on Graphics (TOG) , 42(4):42:1–42:18, 2023. doi: 10.1145/ 3592097. Bai, S., Chen, K., Liu, X., Wang, J., Ge, W., Song, S., Dang, K., Wang, P., Wang, S., Tang, J., Zhong, H., Zhu, Y., Yang, M., Li, Z., Wan, J., Wang, P., Ding, W., Fu, Z., Xu, Y., Ye, J., Zhang, X., Xie, T., Cheng, Z., Zhang, H., Yang, Z., Xu, H., and Lin, J. Qwen2.5-vl technical report, 2025. URL https://arxiv.org/abs/2502.13923 .Biggs, B., Boyne, O., Charles, J., Fitzgibbon, A., and Cipolla, R. Who left the dogs out?: 3D animal recon-struction with expectation maximization in the loop. In 
+
+ECCV , 2020. Cao, Y., Pan, L., Han, K., Wong, K.-Y. K., and Liu, Z. Avatargo: Zero-shot 4d human-object interaction gener-ation and animation. arXiv preprint arXiv:2410.07164 ,2024. Chen, X., Jiang, B., Liu, W., Huang, Z., Fu, B., Chen, T., and Yu, G. Executing your commands via motion diffusion in latent space. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 18000– 18010, 2023. Deitke, M., Schwenk, D., Salvador, J., Weihs, L., Michel, O., VanderBilt, E., Schmidt, L., Ehsani, K., Kembhavi, A., and Farhadi, A. Objaverse: A universe of annotated 3d objects. arXiv preprint arXiv:2212.08051 , 2022. Deitke, M., Liu, R., Wallingford, M., Ngo, H., Michel, O., Kusupati, A., Fan, A., Laforte, C., Voleti, V., Gadre, S. Y., et al. Objaverse-xl: A universe of 10m+ 3d objects. 
+
+Advances in Neural Information Processing Systems , 36: 35799–35813, 2023. Gat, I., Raab, S., Tevet, G., Reshef, Y., Bermano, A. H., and Cohen-Or, D. Anytop: Character animation diffusion with any topology. arXiv preprint arXiv:2502.17327 ,2025. Guo, C., Zou, S., Zuo, X., Wang, S., Ji, W., Li, X., and Cheng, L. Generating diverse and natural 3d human motions from text. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pp. 5152–5161, 2022a. Guo, C., Zuo, X., Wang, S., and Cheng, L. Tm2t: Stochastic and tokenized modeling for the reciprocal generation of 3d human motions and texts. In European Conference on Computer Vision , pp. 580–597. Springer, 2022b. Guo, C., Mu, Y., Javed, M. G., Wang, S., and Cheng, L. Momask: Generative masked modeling of 3d human motions. arXiv preprint arXiv:2312.00063 , 2023. Hong, F., Zhang, M., Pan, L., Cai, Z., Yang, L., and Liu, Z. Avatarclip: zero-shot text-driven generation and an-imation of 3d avatars. ACM Transactions on Graphics (TOG) , 41(4):1–19, 2022. Huang, Z., Xu, X., Xu, C., Zhang, H., Zheng, C., Qin, J., and He, S. Beat-it: Beat-synchronized multi-condition 3d dance generation. In Com-puter Vision – ECCV 2024 , volume 15077 of 
+
+Lecture Notes in Computer Science , pp. 273–290. Springer, 2025. doi: 10.1007/978-3-031-72655-2 \ 16. URL https://link.springer.com/chapter/ 10.1007/978-3-031-72655-2_16 .Jiang, B., Chen, X., Liu, W., Yu, J., Yu, G., and Chen, T. Motiongpt: Human motion as a foreign language. 
+
+Advances in Neural Information Processing Systems , 36, 2024. Kim, J., Kim, J., and Choi, S. Flame: Free-form language-based motion synthesis & editing. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 37, pp. 8255–8263, 2023. Li, J., Kang, D., Pei, W., Zhe, X., Zhang, Y., He, Z., and Bao, L. Audio2gestures: Generating diverse gestures from speech audio with conditional variational autoen-coders. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 11293–11302, 2021. Li, Z., Chen, Y., and Liu, P. Dreammesh4d: Video-to-4d generation with sparse-controlled gaussian-mesh hybrid representation. In Advances in Neural Information Pro-cessing Systems (NeurIPS) , 2024. Loper, M., Mahmood, N., Romero, J., Pons-Moll, G., and Black, M. J. Smpl: a skinned multi-person linear model. 
+
+ACM Trans. Graph. , 34(6), October 2015. ISSN 0730-0301. doi: 10.1145/2816795.2818013. URL https: //doi.org/10.1145/2816795.2818013 .9NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+Pavlakos, G., Choutas, V., Ghorbani, N., Bolkart, T., Osman, A. A. A., Tzionas, D., and Black, M. J. Expressive body capture: 3d hands, face, and body from a single image. In 
+
+Proceedings IEEE Conf. on Computer Vision and Pattern Recognition (CVPR) , 2019. Petrovich, M., Black, M. J., and Varol, G. Temos: Generat-ing diverse human motions from textual descriptions. In 
+
+European Conference on Computer Vision , pp. 480–497. Springer, 2022. Plappert, M., Mandery, C., and Asfour, T. The kit motion-language dataset. Big data , 4(4):236–252, 2016. Ren, J., Xie, K., Mirzaei, A., Liang, H., Zeng, X., Kreis, K., Liu, Z., Torralba, A., Fidler, S., Kim, S. W., and Ling, H. L4gm: Large 4d gaussian reconstruction model. In Advances in Neural Information Processing Systems ,December 2024. Siyao, L., Yu, W., Gu, T., Lin, C., Wang, Q., Qian, C., Loy, C. C., and Liu, Z. Bailando: 3d dance generation by actor-critic gpt with choreographic memory. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 11050–11059, 2022. Tevet, G., Gordon, B., Hertz, A., Bermano, A. H., and Cohen-Or, D. Motionclip: Exposing human motion gener-ation to clip space. In European Conference on Computer Vision , pp. 358–374. Springer, 2022. Tevet, G., Raab, S., Gordon, B., Shafir, Y., Cohen-or, D., and Bermano, A. H. Human motion diffusion model. In The Eleventh International Conference on Learning Representations , 2023. URL https://openreview. net/forum?id=SJ1kSyO2jwu .Truebones. Truebones motion capture – mocap files, n.d. URL https://truebones.gumroad.com/ l/skZMC . Accessed: 2025-05-22. Van Den Oord, A., Vinyals, O., et al. Neural discrete rep-resentation learning. Advances in neural information processing systems , 30, 2017. Wang, X., Ruan, K., Zhang, X., and Wang, G. Animo: Species-aware model for text-driven animal motion gener-ation. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 1929–1939, 2025. Wang, Y., Huang, D., Zhang, Y., Ouyang, W., Jiao, J., Feng, X., Zhou, Y., Wan, P., Tang, S., and Xu, D. Motiongpt-2: A general-purpose motion-language model for motion generation and understanding, 2024. URL https:// arxiv.org/abs/2410.21747 .Xiao, L., Lu, S., Pi, H., Fan, K., Pan, L., Zhou, Y., Feng, Z., Zhou, X., Peng, S., and Wang, J. Motionstreamer: Streaming motion generation via diffusion-based autore-gressive model in causal latent space. arXiv preprint arXiv:2503.15451 , 2025. Xu, H., Bazavan, E. G., Zanfir, A., Freeman, W. T., Suk-thankar, R., and Sminchisescu, C. Ghum & ghuml: Gen-erative 3d human shape and articulated pose models. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 6184–6193, 2020. Zhang, J., Zhang, Y., Cun, X., Huang, S., Zhang, Y., Zhao, H., Lu, H., and Shen, X. T2m-gpt: Generating human motion from textual descriptions with discrete representa-tions. arXiv preprint arXiv:2301.06052 , 2023a. Zhang, M., Guo, X., Pan, L., Cai, Z., Hong, F., Li, H., Yang, L., and Liu, Z. Remodiffuse: Retrieval-augmented motion diffusion model. In IEEE/CVF International Con-ference on Computer Vision, ICCV 2023, Paris, France, October 1-6, 2023 , pp. 364–373, 2023b. Zhang, M., Cai, Z., Pan, L., Hong, F., Guo, X., Yang, L., and Liu, Z. Motiondiffuse: Text-driven human motion generation with diffusion model. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2024. Zhao, K., Li, G., and Tang, S. DartControl: A diffusion-based autoregressive motion model for real-time text-driven motion control. In The Thirteenth International Conference on Learning Representations (ICLR) , 2025. Zhou, Y., Barnes, C., Lu, J., Yang, J., and Li, H. On the con-tinuity of rotation representations in neural networks. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 5745–5753, 2019. Zhu, B., Jiang, B., Wang, S., Tang, S., Chen, T., Luo, L., Zheng, Y., and Chen, X. Motiongpt3: Human motion as a second modality, 2025. URL https://arxiv.org/ abs/2506.24086 .10 NECromancer: Breathing Life into Skeletons via BVH Animation      
+
+> Figure 4. Overview of the BVH motion format. BVH encodes a skeleton as a joint hierarchy with fixed rest-pose offsets ( OFFSET ), and represents motion as per-frame channels ( TRANSLATION for the root and ROTATION for all joints) applied in hierarchical order.
+
+# APPENDIX FOR NEC ROMANCER 
+
+# LLM Usage 
+
+A large language model was used as a writing assistant to improve the clarity and readability of the manuscript. In addition, a vision-language model was employed to assist in data preprocessing and filtering. All final research decisions, data selection criteria, and methodological contributions were made and verified by the authors. 
+
+# A. Details of BVH Representation 
+
+To enable motion generation across diverse skeletal structures, we adopt BVH (Biovision Hierarchy) as the unified representation format for all skeleton-based animations in our framework. BVH is a widely used hierarchical motion representation format that encodes both the skeletal topology (rest pose) and temporal motion trajectories in a compact and interpretable structure, as shown in Fig. 4. Its compatibility with commercial animation software and motion datasets makes it an ideal choice for bridging learning-based motion generation with practical deployment. In this section, we provide a detailed explanation of the two critical components of the BVH format: the rest pose, which defines the static skeleton configuration, and the motion representation, which captures dynamic joint transformations over time. 
+
+A.1. Rest Pose 
+
+The rest pose in a BVH file encodes the skeleton hierarchy, which defines the parent-child relationship between joints, as well as the offset vectors between them. Each joint is represented by its name, position relative to its parent, and its degrees of freedom (DOF), such as rotation along the X, Y, and Z axes. The hierarchy is generally rooted at the Hips joint or an equivalent base (e.g., the Pelvis joint), and traverses downward through limbs and extremities. Importantly, the rest pose serves as the topological and spatial reference for interpreting all subsequent motion data. In our framework, we treat the rest pose as a graph, where nodes correspond to joints and edges reflect the skeletal hierarchy. This representation allows us to extract structural embeddings for each skeleton, facilitating the generalization of motion 11 NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+generation across arbitrary topologies. To ensure consistency across heterogeneous sources, we standardize joint naming under a consistent convention. 
+
+A.2. Motion Representation 
+
+The motion section of a BVH file records the transformations per frame applied to each joint over time. Each frame typically contains a set of scalar values corresponding to the DOF specified in the rest pose, usually in the form of Euler angles and root joint translations. These values are organized in a flat sequence for each time step, but semantically correspond to articulated motion governed by the skeletal hierarchy. To handle skeletons of varying topology and DOF, we dynamically build the hierarchy graph for each BVH file based on its rest pose. This ensures that all motion sequences, regardless of their original structure, can be consistently represented and processed under a unified format. 
+
+# B. Details of Data Preprocessing 
+
+To ensure a consistent and physically meaningful skeletal representation across the heterogeneous HumanML3D, Truebones Zoo and Objaverse-XL datasets, we apply a unified and carefully designed preprocessing pipeline. 
+
+(1) Correction of invalid or awkward root joint definitions. Several skeletons in both datasets adopt unconventional root placements (e.g., a dummy root joint set outside of the subject body, or root incorrectly set to a shoulder or spine joint). Such configurations violate common skeletal conventions and introduce instability for models relying on hierarchical transformations. We identify these problematic cases and relocate the root to an anatomically meaningful position (typically the pelvis), reconstructing the hierarchy so that all parent–child relationships follow consistent human and animal body kinematics. 
+
+(2) Reassignment of global translations to the root joint. In the raw data, some sequences embed joint-level translations on intermediate nodes, leading to frame-dependent bone-length drift and violating rigid-body kinematic constraints. To restore physical consistency, we transfer all global motion to the root joint and remove per-joint translations from all other nodes. This guarantees that bone lengths remain constant across frames and that only the root carries global displacement, while the rest of the skeleton expresses purely rotational motion. 
+
+(3) Removal of sequences with abnormal bone lengths. A subset of sequences contains extremely elongated or corrupted bones due to tracking errors or incorrect parameter export. Since such cases break kinematic plausibility and cannot be reliably corrected without strong assumptions, we exclude sequences whose bone lengths exceed a dataset-dependent threshold relative to their normalized diameter, effectively filtering out physically invalid examples. 
+
+(4) Semantic standardization of joint names using a vision-language model. Joint names provided in these datasets are highly inconsistent and often ambiguous (e.g., “joint1”, “bone 02”, “arm.L”, or dataset-specific conventions). To achieve semantic uniformity, we employ a vision-language model (VLM) to map raw joint names to a canonical semantic vocabulary (including non-human anatomical terms when applicable). This step not only harmonizes naming across datasets, but also ensures consistent semantic interpretation for downstream tasks such as retargeting, pose comparison, and learned conditioning. 
+
+(5) Scale normalization based on skeletal diameter. The raw datasets contain skeletons defined at widely different scales, resulting in inconsistent geometry and bone-length statistics. For each sequence, we compute the skeleton diameter, defined as the length of the longest kinematic chain from the root to any leaf joint. This measure offers a robust scale descriptor that is less sensitive to local bone-length noise. We uniformly scale the entire sequence using this diameter, ensuring that all skeletons across datasets share comparable global scale while preserving their relative proportions. After applying the above stages, every sequence is represented by a single, coherent skeletal tree with fixed bone lengths, a unified joint naming scheme, and global motion encoded exclusively at the root. All redundant, duplicated, or semantically meaningless joints are removed. This preprocessing ensures topological and geometric consistency across datasets and enables fair and stable learning for all subsequent modules. 12 NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+# C. Implementation Details 
+
+C.1. Data Augmentation: Mathematical Formulations 
+
+The proposed data augmentation method follows these mathematical formulations: 1. Global rotation calculation: 
+
+rglobal  
+
+> t0,i
+
+= rglobal  
+
+> t0,parent [i]
+
+· rlocal  
+
+> t0,i
+
+(1) 2. Global position calculation: 
+
+pglobal  
+
+> t0,i
+
+= pglobal  
+
+> t0,parent [i]
+
++ rglobal  
+
+> t0,parent [i]
+
+· oi (2) 3. Rest pose offset derivation: 
+
+¯oi = pglobal  
+
+> t,i
+
+− pglobal  
+
+> t, parent [i]
+
+(3) 4. Local rotation re-calculation: 
+
+¯rlocal  
+
+> t,i
+
+= ( ¯rglobal 
+
+> t, parent [i]
+
+)−1 · rglobal  
+
+> t,i
+
+· (rglobal  
+
+> t0,i
+
+)−1 (4) With such data augmentation process, we synthesize a large amount of animations with reasonable base poses, which is more physically plausible compared to random rotation jittering. By training on many animations that are different in numeric representations but the same on semantic meanings, the model is strongly encouraged to focus more on the semantic meaning and physical correctness of the animations. 
+
+C.2. Graph Embedder 
+
+C.2.1. G RAPH INITIALIZATION 
+
+Given a rest pose skeleton S = ( J , E), where J is the set of joints and E ⊆ J × J represents parent-child edges, we construct a directed graph where each joint is treated as a node. To enable graph-based message passing, we initialize three types of features: node features, edge features, and a special global node. C.2.2. N ODE FEATURE INITIALIZATION 
+
+Each joint j ∈ J is annotated with a semantic name. We use a pretrained CLIP text encoder to extract a 512-dimensional embedding etext  
+
+> j
+
+∈ R512 , which is projected to the graph dimension: 
+
+h(0)  
+
+> j
+
+= FC  etext 
+
+> j
+
+ ∈ Rd. (3) C.2.3. G LOBAL NODE INITIALIZATION 
+
+We introduce a special node with name ”global” and extract its CLIP embedding in the same manner: 
+
+h(0)  
+
+> global
+
+= FC  etext global 
+
+ ∈ Rd. (4) The global node is connected bidirectionally to all other joints: 
+
+Eglobal = {(global → j), (j → global ) | j ∈ J } .
+
+These edges are treated identically to regular edges during attention, allowing the global node to gather holistic context from the graph while also distributing high-level signals. C.2.4. E DGE FEATURE INITIALIZATION 
+
+For each directed edge (i → j) ∈ E ∪ E global , we define a bidirectional edge feature. 
+
+Forward edge: 
+
+e(0)  
+
+> i→j
+
+= FC 
+
+h 
+
+h(0)  
+
+> i
+
+∥ h(0)  
+
+> j
+
+∥ ϕ(oi→j )
+
+i 
+
+, (5) 13 NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+Table 4. Ablation study of pretraining and loss configurations on motion–text transfer retrieval (top-K R-Precision). Pretrain Loss Setting R-Precision@1 ↑ R-Precision@2 ↑ R-Precision@3 ↑
+
+Offset LCA Dist. Con. H3D Obj-XL Zoo H3D Obj-XL Zoo H3D Obj-XL Zoo No 0 0 0 0 0.1973 0.1211 0.0840 0.3125 0.2012 0.1484 0.3906 0.2617 0.2070 Yes 1 0 0 0 0.4688 0.1563 0.0801 0.6699 0.2441 0.1660 0.7500 0.3184 0.2129 
+
+Yes 0 1 0 0 0.2637 0.1406 0.0781 0.4063 0.2324 0.1406 0.5020 0.3203 0.1934 Yes 0 0 1 0 0.0645 0.1406 0.0586 0.1230 0.2324 0.0938 0.1758 0.3203 0.1367 Yes 0 0 0 1 0.0879 0.0762 0723 0.1523 0.1426 0.1348 0.2207 0.2070 0.1797 Yes 0 1 1 1 0.4727 0.1523 0.0898 0.6484 0.2539 0.1504 0.7520 0.3320 0.1934 Yes 1 0 1 1 0.4902 0.1465 0.0684 0.6387 0.2480 0.1191 0.7246 0.3281 0.1797 Yes 1 1 0 1 0.2363 0.1172 0.0801 0.3633 0.2051 0.1270 0.4355 0.2852 0.1660 Yes 1 1 1 0 0.2266 0.1406 0.0820 0.3809 0.1934 0.1465 0.4746 0.2656 0.1992 Yes 1 1 1 1 0.4824 0.2012 0.0840 0.6348 0.3242 0.1406 0.7246 0.3945 0.2070 
+
+Backward edge: 
+
+e(0)  
+
+> j→i
+
+= FC 
+
+h 
+
+h(0)  
+
+> j
+
+∥ h(0)  
+
+> i
+
+∥ ϕ(−oi→j )
+
+i 
+
+, (6) where oi→j ∈ R3 is the offset from joint i to joint j, ∥ denotes the concatenation operation, and ϕ(·) ∈ R3d is a sinusoidal embedding per dimension. For global-to-joint edges, we set oi→j = 0, but retain the learned joint names for each endpoint. C.2.5. G RAPH ENCODER BLOCK 
+
+The graph is processed by L stacked Graph Encoder Blocks, each consisting of a Graph Attention Layer and a Feed-Forward Network (FFN). C.2.6. G RAPH ATTENTION LAYER 
+
+Let h(l) 
+
+> j
+
+be the feature of node j at layer l. We compute: 
+
+˜h(l+1)  
+
+> j
+
+= X 
+
+> k∈N (j)
+
+α(l) 
+
+> k→j
+
+· v(l) 
+
+> k→j
+
+, (7) where α(l) 
+
+> k→j
+
+∈ [0 , 1] is the attention weight, and v(l) 
+
+> k→j
+
+∈ Rd is the edge-conditioned message: 
+
+α(l) 
+
+> k→j
+
+=exp 
+
+
+
+LeakyReLU 
+
+
+
+a⊤
+
+h
+
+Wnode h(l) 
+
+> j
+
+∥ Wnode h(l) 
+
+> k
+
+∥ e(l)
+
+> k→j
+
+i P  
+
+> k′∈N (j)
+
+exp 
+
+
+
+LeakyReLU 
+
+
+
+a⊤
+
+h
+
+Wnode h(l) 
+
+> j
+
+∥ Wnode h(l) 
+
+> k′
+
+∥ e(l)
+
+> k′→j
+
+i , (8) 
+
+v(l) 
+
+> k→j
+
+= Wv
+
+h
+
+h(l) 
+
+> k
+
+∥ e(l)
+
+> k→j
+
+i
+
+. (9) 
+
+˜e(l+1)  
+
+> k→j
+
+= e(l) 
+
+> k→j
+
++ Wsrc Wnode h(l) 
+
+> j
+
++ Wtgt Wnode h(l) 
+
+> k
+
+. (10) C.2.7. F EED -F ORWARD NETWORK 
+
+We apply an FFN to each node independently: 
+
+z(l+1)  
+
+> j
+
+= ReLU 
+
+
+
+W2 · ReLU (W1 · ˜h(l+1)  
+
+> j
+
++ b1) + b2
+
+
+
+, (11) 
+
+h(l+1)  
+
+> j
+
+= LayerNorm 
+
+
+
+h(l) 
+
+> j
+
++ z(l+1) 
+
+> j
+
+
+
+, (12) where W1 ∈ Rd×dff , W2 ∈ Rdff ×d.We perform similar transformations to obtain the updated edge feature e(l+1)  
+
+> k→j
+
+from ˜e(l+1)  
+
+> k→j
+
+.14 NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+C.3. Training Objectives of Graph Embedder 
+
+The detail of our proposed three categories of self-supervision tasks are listed as below: • Geometric Task — Distance Regression. For each pair of joints (j, k ), we regress the offset vector from joint j to joint k. Let hj ∈ Rd and hk ∈ Rd be the node embeddings after the final graph encoder layer. We predict: 
+
+ˆojk = Wgeo · ReLU (FFN geo ([ hj ∥hk])) ∈ R3, (13) where [hj ∥hk] denotes the concatenation of embeddings from joint j and joint k. We apply an ℓ2 loss to the ground-truth offset vector ojk = pk − pj :
+
+Lgeo = X
+
+> (j,k )∈P
+
+∥ˆojk − ojk ∥22 , (14) where P is the set of joint pairs for which offset regression is performed. • Topological Task — LCA Prediction. Given two nodes (j1, j 2), the model predicts their Least Common Ancestor (LCA) in the skeletal tree. Due to symmetry LCA (j1, j 2) = LCA (j2, j 1), we first compute: 
+
+qj1j2 = FFN query (hj1 + hj2 ) ∈ Rd, (15) 
+
+kj = FFN key (hj ) ∈ Rd, ∀j ∈ J . (16) We compute LCA probabilities using dot-product attention: 
+
+pj = exp( q⊤ 
+
+> j1j2
+
+kj )
+
+P 
+
+> j′∈J
+
+exp( q⊤ 
+
+> j1j2
+
+kj′ ) , (17) and apply a cross-entropy loss with the ground-truth LCA label j⋆:
+
+Llca = − log pj⋆ . (18) • Semantic Task — Contrastive Joint Name Matching. We encourage node features to retain semantic consistency with their joint names. Let hj ∈ Rd be the node embedding, and let etext  
+
+> j
+
+∈ R512 be the CLIP-encoded joint name. We pass both through learnable projections: 
+
+znode  
+
+> j
+
+= FFN node (hj ) ∈ Rd, (19) 
+
+ztext  
+
+> j
+
+= FFN text (CLIP (j-name )) ∈ Rd. (20) Then we compute the InfoNCE loss across all joints in a batch: 
+
+Lsem = − X
+
+> j
+
+log exp( sim (znode  
+
+> j
+
+, ztext  
+
+> j
+
+)/τ )
+
+P 
+
+> j′
+
+exp( sim (znode  
+
+> j
+
+, ztext  
+
+> j′
+
+)/τ ) , (21) where sim (·, ·) is cosine similarity and τ is the temperature. 
+
+Final Loss. The overall training loss is the weighted sum: 
+
+Lgraph = λgeo Lgeo + λlca Llca + λsem Lsem , (22) where λgeo , λ lca , λ sem are tunable hyperparameters. 
+
+C.4. Proof of Theorem Theorem. If a model can correctly determine the LCA for any pair of nodes (i, j ) in a tree, then the entire tree topology can be uniquely reconstructed. 
+
+15 NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+Constructive proof. We describe an explicit reconstruction procedure that uses only LCA queries. 
+
+Step 1: Find the root. Scan all nodes and pick the unique node r such that for every other node v, LCA( r, v ) = r. A non-root node u fails this check because LCA( u, parent (u)) = parent (u)̸ = u. Thus r is identified. 
+
+Step 2: Split into the root’s child subtrees. Consider all nodes except r. Place two nodes u and v into the same group iff 
+
+LCA( u, v )̸ = r. Nodes from different child subtrees of r have LCA = r, so they fall into different groups; nodes from the same child subtree never produce r as their LCA, so they fall into the same group. Hence each group is exactly one child subtree of r.
+
+Step 3: Identify each child of the root. In each group C, find the unique node c ∈ C such that for all v ∈ C, LCA( c, v ) = c.This c is the root of that group’s subtree, i.e., a direct child of r. Add edge (r, c ).
+
+Step 4: Recurse. Now treat each group C as an independent problem: use the same two tests inside C (with LCA restricted to pairs in C) to find the local root c of C, split C \ { c} by whether the LCA equals c, identify c’s children, add edges, and recurse until all groups are singletons. This procedure terminates after assigning a unique parent to every non-root node, thereby reconstructing all edges. Because every step is determined solely by LCA answers and yields a unique outcome (unique root, unique grouping, unique local roots), the recovered tree is unique. 
+
+C.5. Residual VQ-VAE 
+
+To convert continuous motion features into discrete tokens, we adopt a Residual Vector Quantized Variational Autoencoder (RVQVAE) as the tokenization backend. Compared to single-level VQ-VAE, the residual formulation improves expres-siveness without increasing token sequence length, which is essential for high-fidelity motion reconstruction and efficient generation. Given the encoder output Zjoint ∈ RB×T /r ×J×W , we apply residual quantization in R stages. Each stage learns a separate codebook C(r) = {c(r) 
+
+> k
+
+}Kk=1 ⊂ Rd, where r = 1 , . . . , R and K is the number of codewords. The quantization is performed sequentially: 
+
+z(0) = Zjoint , z(r) = z(r−1) − Quantize 
+
+
+
+z(r−1) ; C(r)
+
+. (23) The final quantized feature is reconstructed as: 
+
+ˆZjoint =
+
+> R
+
+X
+
+> r=1
+
+Quantize 
+
+
+
+z(r−1) ; C(r)
+
+. (24) We apply the same process to the global token ztoken in parallel. Each quantized codeword index z(r) 
+
+> t,j
+
+∈ { 1, . . . , K } is stored as part of the discrete token matrix Z ∈ NT /r ×R for downstream modeling. 
+
+C.6. Ablation on RVQ Depth 
+
+Table 5 studies the effect of RVQ depth R. Shallow RVQ (1–2 codebooks) has insufficient capacity, leading to large MPJPE and GeoDist. Increasing depth to 4–6 substantially improves reconstruction across all datasets. While RVQ-8 yields slightly lower GeoDist on some splits, it degrades MPJPE on HumanML3D and Zoo, suggesting diminishing returns and reduced robustness. We therefore use RVQ-6 as a balanced default throughout the paper. 
+
+# D. Evaluation Metrics 
+
+For Text-to-Motion (T2M) , follow existing works (Guo et al., 2022b; 2023; Jiang et al., 2024; Wang et al., 2024; Zhu et al., 2025), we evaluate motion quality and text–motion alignment. Motion realism is measured by Fr ´echet Inception Distance (FID), while R-Precision (R@1/2/3) assess semantic consistency between motion and text. 
+
+R-Precision. R-Precision measures retrieval performance by computing the fraction of relevant items within the top-R
+
+16 NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+Table 5. Ablation on RVQ Tokenizer Depth.                                                            
+
+> Method MPJPE ↓MPJPE (no trans) ↓GeoDist ↓
+> H3D Obj-XL Zoo H3D Obj-XL Zoo H3D Obj-XL Zoo RVQ-1 0.3663 0.1910 0.2200 0.1328 0.1439 0.0799 6.41 ◦21.89 ◦16.71 ◦
+> RVQ-2 0.2232 0.1586 0.3503 0.1066 0.1237 0.0785 6.03 ◦18.30 ◦16.00 ◦
+> RVQ-4 0.1052 0.1053 0.1157 0.0647 0.0869 0.0612 4.23 ◦13.88 ◦14.12 ◦
+> RVQ-6 0.1084 0.0983 0.1008 0.0588 0.0787 0.0635 3.96 ◦12.12 ◦13.88 ◦
+> RVQ-8 0.1229 0.0904 0.1526 0.0579 0.0684 0.0581 3.84 ◦11.49 ◦13.04 ◦
+
+Figure 5. Cross-skeleton motion distance correlation under topology transfer. Each dot corresponds to a pairwise motion distance computed on the source skeleton (x-axis) and the corresponding distance after retargeting to a target skeleton (y-axis). Strong positive correlations (Pearson r) indicate that NEC preserves motion semantics under cross-topology transfer. 
+
+retrieved results. In text-to-motion, this means retrieving the correct motion from a database given a text query, or vice versa. 
+
+R-Prec = |Rel ∩ Top-R|
+
+R (25) where Rel is the set of relevant items (ground-truth matches) and Top-R is the set of retrieved items at rank R. The metric ranges from 0 to 1, with higher values indicating better retrieval accuracy. 
+
+Fr ´echet Inception Distance (FID). FID (Guo et al., 2022a) measures the distributional distance between real and generated samples in a feature space, capturing both mean and covariance statistics. Lower FID indicates that generated samples are closer to real samples in distribution. FID = ∥μr − μg ∥22 + Tr  Σr + Σ g − 2(Σ r Σg )1/2 (26) where μr , Σr are the mean and covariance of real samples in the feature space, and μg , Σg are the corresponding statistics of generated samples. The first term measures the distance between means, while the second term accounts for differences in covariance structure. 
+
+MPJPE. Mean Per Joint Position Error (MPJPE) is a widely used metric to evaluate the accuracy of reconstructed 3D skeletons against ground-truth skeletons. It computes the average Euclidean distance between corresponding joints. MPJPE = 1
+
+T · J
+
+> T
+
+X
+
+> t=1
+> J
+
+X
+
+> j=1
+
+∥ˆxt,j − xt,j ∥2 , (27) where ˆxt,j ∈ R3 denotes the predicted 3D position of joint j at frame t, and xt,j ∈ R3 is the corresponding ground-truth joint position. T is the number of frames and J is the number of joints. The Euclidean norm ∥·∥ 2 measures the spatial error per joint, and MPJPE averages this over all joints and frames. 17 NECromancer: Breathing Life into Skeletons via BVH Animation  
+
+> Figure 6. Qualitative motion transfer results across different skeletons and object categories.
+
+Geodesic Distance. Geodesic distance is a metric to evaluate the difference between two 3D rotation matrices, often used for skeletal joint rotations. It measures the shortest distance along the manifold of the special orthogonal group SO (3) .Geo ( ˆR, R ) = arccos trace ( ˆRR ⊤) − 12
+
+!
+
+, (28) where ˆR, R ∈ SO (3) denote the predicted and ground-truth 3 × 3 rotation matrices, and trace (·) is the matrix trace operator. This formula computes the geodesic angular distance in radians between the two rotations. When averaged across joints and frames, this metric captures how well the predicted rotations align with the ground truth. 
+
+# E. Motion Transfer Results 
+
+Qualitative Results 
+
+We demonstrate motion transfer (source tokens + target OwO) across arbitrary topologies (Fig. 6). Crucially, this requires no task-specific fine-tuning or auxiliary heads : because NEC produces topology-agnostic tokens and the decoder is OwO-conditioned , a single trained model supports zero-shot transfer by decoding source token sequences under different target OwOs (morphology swap). This enables direct motion transfer between species with diverse skeletons while maintaining temporal coherence. 
+
+Quantitative Results 
+
+Table 4 quantitatively validates the qualitative transfer results in Fig. 6. By transferring 512 randomly sampled motions to target skeletons from different datasets while preserving their original text annotations, we evaluate motion–text transfer retrieval using R-Precision. Overall, configurations with structural objectives, particularly 0111 (LCA+Dist.+Con.) and 1111, achieve the best transfer performance across datasets and retrieval depths. These trends closely match the main ablation results in Table 2, indicating that improvements from structural learning generalize beyond reconstruction to cross-skeleton semantic alignment. We note that retrieval performance on Zoo is consistently lower, as its text annotations explicitly include species-specific descriptors, making correct retrieval inherently more challenging after cross-species transfer. 18 NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+The results confirm that topology-agnostic tokens combined with OwO-conditioned decoding enable zero-shot motion transfer that preserves sufficient semantic information for text retrieval, making cross-species motion transfer feasible in practice. 
+
+# F. Additional Analysis on Topology Invariance 
+
+To evaluate whether NEC truly learns a topology-agnostic motion representation—rather than relying on joint-index alignment—we analyze the preservation of pairwise motion distances under cross-skeleton transfer. For a given source skeleton, we compute pairwise distances between its motion sequences in the learned latent space. We then retarget the same motions to a different skeleton and recompute the corresponding distances. Fig. 5 plots the original distances against the transferred distances. If the representation were tied to a fixed joint ordering or topology, the correlation would collapse. Instead, we observe strong positive correlations across diverse morphological gaps, including quadruped →human, bipedal dinosaur →human, and bipedal dinosaur →multi-leg insect transfers. These results indicate that NEC preserves relative motion semantics independently of skeletal topology, providing quantitative evidence for topology-invariant motion encoding without explicit supervision for cross-species transfer. 
+
+# G. Limitations and Future Directions 
+
+Limitations 
+
+• Transfer and Generate Performance : The experimental results on cross-skeleton transfer and motion generation tasks are not particularly impressive. This is primarily because our current work focuses on constructing a unified BVH representation framework and learning topology-agnostic motion representations, while the transfer and generation functionalities serve only as application examples of the proposed framework. Therefore, these limitations should not be overinterpreted as core defects of the entire method, but rather reflect areas for improvement in the specific application implementation. • Data Dependency : Like many data-driven approaches, the performance of NECromancer is influenced by the quality and diversity of the training data. While our dataset is carefully constructed to cover a wide range of motions and skeletal configurations, it still provides limited coverage of rare or highly complex topologies, which may affect generalization in these cases. • Robustness to Skeletal Structure Changes : Although this method claims to achieve topology-agnostic motion generation, practical applications show that when there are significant differences between source and target skeletons (e.g., quadruped to human conversion), the model may produce inaccurate retargeting results. This indicates that the adaptability to extreme topology variations still needs improvement. • High Computational Complexity : The model employs complex graph neural network architectures and multi-stage variational autoencoders (VQ-VAE) for modeling, resulting in lengthy training and inference times, especially when processing large-scale animation sequences. This poses challenges for real-time application scenarios. • Lack of Explicit Physical Constraint Modeling : Although unreasonable physical cases are eliminated through preprocessing steps, the model itself does not explicitly incorporate rigid body dynamics or other physical rules to ensure the authenticity and stability of generated motions. • Semantic Consistency in Text-to-Motion Generation : In text-driven tasks, despite employing contrastive learning techniques to enhance semantic consistency, the model may still generate actions that do not align with the input text due to the ambiguity and polysemy of natural language descriptions. 
+
+Future Directions 
+
+• Enhanced Cross-Species/Topology Generalization : Further exploration can be conducted to enable the model to better understand common structural features (such as joint degrees of freedom and movement patterns) across different organisms, thereby improving performance in extreme topology conversions. This could involve incorporating richer prior knowledge, such as skeletal structure classification systems based on evolutionary biology. 19 NECromancer: Breathing Life into Skeletons via BVH Animation 
+
+• Efficiency and Scalability Optimization : To address the high computational overhead of the current model, future work can explore lightweight graph neural network architectures and combine knowledge distillation and model compression techniques to reduce deployment costs. Additionally, distributed training strategies can be investigated to support larger-scale datasets. • Integration of Physics Simulation Mechanisms : Introducing physics engines as post-processing modules to validate and correct generated motions can ensure compliance with real-world motion laws, thereby enhancing generation quality and credibility. • Improved Text Understanding Accuracy : Incorporating more advanced language models (such as GPT-4 or Qwen series) can improve text parsing capabilities, enabling more precise capture of user intentions and contextual information. Furthermore, integrating visual information (such as images or videos) can facilitate multimodal joint modeling. • Extension to More Animation Content Types : Future work can expand to other domains such as robot control, and virtual character interactions. This would require customized modeling approaches and evaluation metrics for specific scenarios. • Introduction of Dynamic Environment Awareness : The current model primarily focuses on motion generation under static skeletons. Future work can incorporate environmental factors (such as terrain or obstacles) to make generated motions more contextually adaptive, suitable for virtual reality and game development applications. 20

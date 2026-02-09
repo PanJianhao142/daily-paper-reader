@@ -1,0 +1,376 @@
+Title: AEGPO: Adaptive Entropy-Guided Policy Optimization for Diffusion Models
+
+URL Source: https://arxiv.org/pdf/2602.06825v1
+
+Published Time: Mon, 09 Feb 2026 02:14:22 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# AEGPO: Adaptive Entropy-Guided Policy Optimization for Diffusion Models 
+
+## Yuming Li 1,2*, Qingyu Li 2*, Chengyu Bai 1*, Xiangyang Luo 2, Zeyue Xue 3, Wenyu Qin 2,Meng Wang 2, Yikai Wang 4‡, Shanghang Zhang 1‡
+
+> 1
+
+## Peking University, Beijing, China 2Kling Team, Kuaishou Technology, Beijing, China 
+
+> 3
+
+## The University of Hong Kong, Hong Kong 4Beijing Normal University, Beijing, China 
+
+> *
+
+Equal contribution. †This work was conducted during the author’s internship at Kling Team, Kuaishou Technology. ‡Corresponding author. 
+
+## Abstract 
+
+Reinforcement learning from human feedback (RLHF) shows promise for aligning diffusion and flow models, yet policy optimization methods like GRPO suffer from ineffi-cient, static sampling strategies. These methods treat all prompts and denoising steps uniformly, overlooking signif-icant variations in sample learning value and the dynamic nature of critical exploration moments . To address this, we first conducted a detailed analysis of the internal at-tention dynamics during GRPO training, unveiling a crit-ical insight: Attention Entropy serves as a powerful, dual-signal proxy. (1) Across different samples, we found that the relative Attention Entropy change ( ∆Entropy), the di-vergence between the current and base policy, acts as a robust proxy for sample learning value. (2) During the de-noising process, we find that the peaks of the absolute Atten-tion Entropy ( Entropy (t))—which quantifies attention dis-persion—effectively identify critical, high-value exploration timesteps. Based on this core discovery, we propose Adap-tive Entropy-Guided Policy Optimization (AEGPO), a novel dual-signal, dual-level adaptive strategy. AEGPO lever-ages these intrinsic signals: (1) Globally, it uses ∆Entropy to dynamically allocate rollout budgets, prioritizing high-value prompts. (2) Locally, it uses the peaks of Entropy (t)
+
+to guide exploration only at these critical high-dispersion timesteps . By concentrating computation on the most infor-mative samples and moments, AEGPO enables more effec-tive policy optimization. Experiments on text-to-image gen-eration demonstrate that AEGPO significantly accelerates convergence and achieves superior alignment compared to standard GRPO variants. 
+
+## 1. Introduction 
+
+Diffusion models and flow-matching models have achieved state-of-the-art performance in visual synthesis [9, 15, 18]. To align these powerful models with human pref-erences, Reinforcement Learning from Human Feedback AEGPO on DanceGRPO AEGPO on DiffusionNFT  
+
+> ≈2×efficiency
+> ≈5×efficiency
+
+Figure 1. AEGPO significantly accelerates policy optimization. Compared to standard GRPO variants, AEGPO achieves 2 × faster convergence on DanceGRPO (left) and 5 × faster convergence on DiffusionNFT (right), while also reaching a superior final reward. 
+
+(RLHF), and in particular Group Relative Policy Optimiza-tion (GRPO), has emerged as a stable and scalable opti-mization paradigm [20]. Recent extensions have applied GRPO to diverse domains—text-to-image generation, video synthesis, aesthetic alignment, and preference optimiza-tion [6, 8, 12–14, 16, 25, 28–31]. Despite the rapid adoption of GRPO variants, existing approaches exhibit two fundamental inefficiencies. First, static rollout allocation treats all prompts equally, assign-ing a uniform number of rollouts per sample. This ignores the substantial variation in how much different prompts contribute to policy improvement. Second, timestep-level exploration is often governed by fixed, predefined sched-ules or expensive reward-based attribution. Such methods cannot adapt to the highly dynamic nature of the denois-ing process and policy optimization process, where critical denoising steps are varying for different prompts. These limitations raise two essential questions for effi-cient policy optimization: (1) How can rollout budgets be allocated dynamically according to each prompt’s learning value? (2) How can we identify critical timesteps for explo-ration using an intrinsic signal, without relying on costly reward attribution? 
+
+> arXiv:2602.06825v1 [cs.LG] 6 Feb 2026 Album cover featuring artwork from various artists including Salvador, Dali, Alex
+> A low poly character design inspired by 1960s advertising art
+> High
+> 𝜟𝑬𝒏𝒕𝒓𝒐𝒑𝒚
+> Lo w
+> 𝜟𝑬𝒏𝒕𝒓𝒐𝒑𝒚
+
+Figure 2. Illustration of varied Attention Entropy dynamics during GRPO training. (Left Panels): Generated images evolving across training steps. The top prompt shows minor visual changes, while the bottom prompt undergoes significant improvement. (Right Panels): The corresponding Absolute Attention Entropy ( Entropy (t)) trajectories over the denoising steps t. The entropy curves for the top prompt remain clustered, indicating a low overall Relative Entropy Change ( ∆Entropy). Conversely, those for the bottom prompt show substantial divergence (indicating a high overall ∆Entropy), which correlates with the degree of visual change. We provide additional qualitative visualizations, as well as a detailed analysis of the impact of different reward models on entropy dynamics, in the Appendix. 
+
+To answer these questions, we perform a detailed study of attention entropy during GRPO training. Our analysis reveals two intrinsic signals that naturally address the chal-lenges above. At the sample level, changes in attention be-havior between the current policy and the base policy pro-vide a strong indicator of a sample’s learning value. At the timestep level, the magnitude of attention dispersion highlights the most informative decision points within each rollout. These insights indicate that both sample value and critical exploration timestep vary dramatically across differ-ent prompts and different policy optimization stage, making static heuristics incapable of adapting to them. Building on the analysis of attention entropy, we propose Adaptive Entropy-Guided Policy Optimization (AEGPO) , a plug-and-play framework for improving roll-out efficiency. AEGPO introduces two complementary adaptive strategies: (1) Global Adaptive Allocation , which assigns rollout budgets based on sample learning value, concentrating computation on high-impact prompts; (2) Lo-cal Adaptive Exploration , which identifies critical timesteps by detecting peaks in the model’s attention dispersion. We validate AEGPO across diverse policy optimiza-tion frameworks, including DanceGRPO [28], Branch-GRPO [14], FlowGRPO [16], and DiffusionNFT [30], and across multiple base models such as FLUX.1-dev [2] and SD3.5-M [5]. AEGPO consistently accelerates convergence (up to 5× faster) and improves final reward. Our contributions are as follows: • We establish Attention Entropy as a dual-signal intrinsic proxy, where relative entropy change ( ∆Entropy) indi-cates sample learning value and absolute entropy peaks (Entropy (t)) identify critical exploration timesteps. • We introduce AEGPO, a dual-level adaptive framework that improves sample selection and timestep exploration using lightweight entropy-guided mechanisms. • We demonstrate that AEGPO is general, efficient, and broadly applicable, achieving significant improvements across multiple policy optimization methods and diffu-sion backbones. 
+
+## 2. Related Work 
+
+Aligning diffusion and flow models with human preferences is an active area of research . Early approaches adapted existing RL paradigms. Diffusion-DPO [21, 24] extends DPO to diffusion models, directly optimizing on prefer-ence pairs. Policy gradient methods like DDPO [1] ap-ply REINFORCE-like algorithms but often face high vari-ance. Another line leverages differentiable reward models to backpropagate reward signals, but these methods can be computationally intensive and sensitive to the choice of op-timization steps . Our work builds on the RLHF framework, but instead of proposing a new loss, we focus on improving the sampling efficiency of policy optimization algorithms like GRPO. Group Relative Policy Optimization (GRPO) [16, 28] offers a stable and effective RLHF framework well-suited for large generative models. Several works have adapted it for diffusion models: Flow-GRPO [16] and DanceGRPO [28] pioneered its application to visual generation, but typ-ically employ uniform sampling. TempFlow-GRPO [8] in-High vs. Low 𝜟 Entropy Training Reward and 𝜟 Entropy Progression Figure 3. Validation of relative Attention Entropy change (∆Entropy) as a robust proxy for sample learning value. (Left): 
+
+In early training, both ∆Reward and ∆Entropy rise, indicating ac-tive policy improvement accompanied by large adjustments in at-tention behavior. In later stages, ∆Reward plateaus and ∆Entropy correspondingly stabilizes or slightly decreases, reflecting that the model has reached a confident and stable attention configuration and no longer requires large policy deviations to obtain reward gains. (Right): Reward convergence comparison. The red line shows a model trained only on high-∆Entropy data, while the blue line shows a model trained only on low-∆Entropy data. Train-ing on high-value samples leads to significantly faster convergence and a superior final reward, confirming their greater learning value. 
+
+troduced noise-aware weighting [8], and BranchGRPO [14] used structured branching with shared prefixes. SRPO [23] proposed aligning the full trajectory using interpolation. While these variants improve upon vanilla GRPO, they of-ten rely on external heuristics (like noise schedules) or uni-form exploration strategies that do not fully adapt to the model’s internal state. AEGPO differentiates itself by using an intrinsic signal —attention entropy—to adaptively guide 
+
+both sample allocation and exploration. Leveraging intrinsic properties of transformer models, such as entropy, to guide learning has shown promise, par-ticularly in LLMs [22]. For instance, works have used en-tropy to quantify uncertainty (SEED-GRPO [3]), balance rollouts (ARPO [19], AEPO [4]), or identify critical steps for branching (AttnRL [17]) . These studies highlight the potential of using internal signals for efficiency. AEGPO 
+
+draws inspiration from this line of research , adapting the concept of using intrinsic signals to the domain of diffusion model alignment. 
+
+## 3. Unveiling the Attention Entropy 
+
+In this section, we define the core intrinsic signals used in AEGPO : relative Attention Entropy change ( ∆Entropy) and absolute Attention Entropy ( Entropy (t)). We detail their calculation and analyze their dynamics during GRPO training, providing the empirical foundation for our dual-level adaptive method. 
+
+3.1. Defining Attention Entropy 
+
+We begin by formalizing the attention entropy signals used throughout our empirical analysis. At each timestep t, the model produces an attention map At that captures how N
+
+image features qi attend to the T text tokens τ . This map is computed as: 
+
+At = softmax 
+
+ QK ⊤
+
+√dk
+
+
+
+, (1) where Q and K are the query and key representations. We average At across the selected layers and heads to obtain 
+
+¯At. For each image feature qi, its attention weights across text tokens are normalized into a probability distribution: 
+
+Prob t[qi, τ ] = ¯At[i, τ ]
+
+PTτ ′=1 ¯At[i, τ ′] . (2) The per-feature attention entropy is then defined using the Shannon entropy: 
+
+Entropy t[qi] = −
+
+> T
+
+X 
+
+> τ=1
+
+Prob t[qi, τ ] · log 2 (Prob t[qi, τ ]) .
+
+(3) To characterize the model’s average attention dispersion at timestep t, we take the mean across all N image features: 
+
+Entropy( t) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+Entropy t[qi]. (4) A higher Entropy( t) indicates more dispersed attention over the text tokens, while a lower value indicates a more 
+
+focused distribution. To compare how the attention behavior shifts dur-ing training, we define the per-timestep Relative Entropy Change between the current policy θ and the base policy 
+
+θbase :
+
+∆Entropy( t) = |Entropy θ (t) − Entropy base (t)| . (5) Finally, we summarize the overall sample-level deviation by averaging over all denoising steps T :
+
+∆Entropy = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+∆Entropy( t). (6) In the following sections, we analyze ∆Entropy as a 
+
+sample-level signal (Sec. 3.2) and Entropy( t) as a timestep-level signal (Sec. 3.3). 
+
+3.2. ∆Entropy as an Indicator of Sample Value 
+
+As defined in Sec. 3.1, ∆Entropy measures the magnitude of change in attention dispersion between the current policy and its base counterpart. Empirically, we find that this quan-tity reliably reflects how much a sample forces the model to adjust its internal attention strategy during GRPO updates, Figure 4. Distribution of Top-K Absolute Attention Entropy (Entropy (t)) peaks across denoising steps t. The y-axis shows the probability that a given step t contains one of the Top-K high-est entropy peaks. The distribution is distinctly U-shaped, with high-dispersion peaks clustering in the very early (e.g., t ≈ 1) and late (e.g., t ≈ 13 − 15) stages of the denoising process. 
+
+and therefore serves as an intrinsic indicator of its learning value. This change is highly non-uniform across prompts. As illustrated in Figure 2, prompts that induce only mi-nor visual improvement (top row) show tightly clustered 
+
+Entropy (t) trajectories, indicating that the model’s atten-tion pattern remains almost unchanged from the base pol-icy. This suggests that the model already handles these prompts with high confidence, requiring little additional learning, and consequently yields a low ∆Entropy. In con-trast, prompts that trigger substantial visual improvement (bottom row) exhibit noticeably diverging Entropy (t) tra-jectories. Here the model must meaningfully reorganize its attention allocation, signaling lower prior competence and thus a higher learning demand—captured as a large 
+
+∆Entropy. This phenomenon appears consistently at scale. In Fig-ure 3 (Left), we observe a strong positive correlation be-tween the average ∆reward and the average ∆Entropy across samples, indicating that larger reward gains tend to coincide with larger shifts in attention behavior. In other words, effective GRPO updates are tightly coupled with how much the policy deviates from the base model. We further verify this by training on subsets stratified by ∆Entropy (Figure 3, Right). Models trained exclusively on high-∆Entropy samples converge substantially faster and reach a higher final reward than those trained on low-
+
+∆Entropy samples. This confirms that samples inducing larger attention adjustments contribute disproportionately to policy improvement. Taken together, these findings show that ∆Entropy pro-vides a stable and informative measure of sample-level learning value, capturing how strongly a sample compels                         
+
+> Table 1. Comparison of exploration value (Avg. Reward Std) and generative diversity (LPIPS MPD, TCE) achieved by fixed branching schedules versus our dynamic entropy-guided strategy, averaged over 1000 prompts from HPDv2.1. LPIPS MPD [10] measures intra-prompt diversity , while TCE [10] measures global diversity based on CLIP features. Higher values are better for all metrics. Branching Strategy Reward Std ↑LPIPS MPD ↑TCE ↑
+> Fixed Schedules
+> steps (0, 2, 4, 8) 17.04 0.719 4.44 steps (0, 3, 6, 9) 16.97 0.713 4.42 steps (0, 4, 8, 12) 16.82 0.698 4.39 steps (0, 5, 10, 15) 16.93 0.704 4.38
+> Dynamic Strategy (Ours)
+> Entropy-Guided 17.35 0.727 4.47
+
+the model to revise its attention strategy during training. 
+
+3.3. Entropy (t) Peaks as Indicators of Critical Timesteps 
+
+Complementing the sample-level analysis in Sec. 3.2, we examine the timestep-level behavior of the absolute entropy 
+
+Entropy (t). Large values of Entropy (t) represent mo-ments where the model distributes attention broadly across the text tokens, suggesting the need to integrate multiple se-mantic cues. As illustrated in Figure 2, different prompts exhibit noticeably distinct entropy trajectories and peak patterns, indicating that the attention-dispersion behavior varies substantially across samples. As shown in Figure 4, the distribution of peaks is not uniform; instead, they exhibit a consistent bimodal pattern. One cluster appears early, corresponding to coarse struc-tural decisions, while another emerges late, during fine-grained refinement. Furthermore, the peak locations vary across prompts and differ across the Top 1, 2, and 3 peaks, revealing that the most uncertain timesteps are both sample-dependent and stage-dependent. This variability suggests that any fixed exploration schedule is fundamentally mis-matched to the underlying dynamics. We then evaluate whether these high-dispersion mo-ments provide higher exploration value. Using metrics such as reward variability (Avg. Reward Std) and intra-/inter-prompt diversity (LPIPS MPD, TCE) [10], we compare ex-ploration strategies centered on the Top-K entropy peaks. As shown in Table 1, peak-based exploration consistently achieves higher reward variance and greater generative di-versity, outperforming fixed schedules. These results indi-cate that the Entropy (t) peaks mark timesteps where the denoising trajectory is most sensitive to perturbations and thus most amenable to meaningful exploration. Overall, these findings demonstrate that Entropy (t)
+
+peaks serve as reliable indicators of critical timesteps where 𝑟 !
+
+> 𝑟 "
+> 𝑟 #$"
+> 𝑟 #
+
+## …
+
+> 𝑟 !
+> 𝑟 "
+> 𝑟 #$"
+> 𝑟 #
+> Advantages
+
+AEGPO 
+
+Global Adaptive Allocation Local Adaptive Exploration     
+
+> prompt 0
+> prompt 1
+> prompt N-1
+> prompt N
+
+## …    
+
+> NPrompts
+> Current
+> Policy
+> Base
+> Policy
+> 𝐸𝑛𝑡𝑟𝑜𝑝𝑦
+> Global Adaptive Allocation
+> Local Adaptive Exploration
+> 𝑟 !
+> 𝑟 "
+> 𝑟 #$"
+> 𝑟 #
+
+## …  
+
+> Rollout Module
+> Prompt 𝑖
+> Group
+> Computation
+> 𝐴 !
+> 𝐴 "
+> 𝐴 #$"
+> 𝐴 #
+
+## …            
+
+> Prompt 𝑖
+> AEGPO Adaptive Module
+> Rewards
+> prompt with
+> High Δ𝐸𝑛𝑡𝑟𝑜𝑝𝑦
+> prompt with
+> Low Δ𝐸𝑛𝑡𝑟𝑜𝑝𝑦
+> Rollout Less Rollout More
+> prompt Current
+> Policy
+> r!
+> 𝑟 "
+> 𝑟 %
+> 𝑟 &
+> 𝑟 '
+> Rewards
+> High 𝐸𝑛𝑡𝑟𝑜𝑝𝑦 (𝑡 )Step
+> Low 𝐸𝑛𝑡𝑟𝑜𝑝𝑦 (𝑡 )Step
+> Policy Optimization
+
+Figure 5. Overview of the AEGPO framework, illustrating our dual-level adaptive strategy. (Top) The central AEGPO Adaptive Module 
+
+(pink box) receives intrinsic signals derived from the model’s policies. It uses these signals to guide the GRPO rollout and computation process. (Bottom Left) Global Adaptive Allocation: The per-sample ∆Entropy (relative entropy change) is used as a proxy for sample value. High-value prompts are dynamically allocated a larger rollout budget (Rollout More), while low-value prompts receive fewer (Rollout Less). (Bottom Right) Local Adaptive Exploration: The per-timestep Entropy (t) (absolute entropy) is used as a proxy for model dispersion. Exploration is dynamically triggered only at high-dispersion timesteps (orange circles), focusing exploration on the most critical moments of the denoising process. 
+
+exploration is most beneficial. 
+
+## 4. AEGPO 
+
+Building upon the insights from Attention Entropy, we present AEGPO , a dual-level adaptive framework designed to improve rollout efficiency in GRPO training. AEGPO operates along two complementary dimensions: • Global Adaptive Allocation adjusts which samples 
+
+receive more rollouts, guided by their entropy-based learning value. • Local Adaptive Exploration determines where explo-ration should occur within each trajectory by identifying the timesteps with maximal attention dispersion. Together, these components reallocate computation both across samples and across timesteps, while keeping the overall rollout budget fixed. 
+
+4.1. Global Adaptive Allocation 
+
+Standard GRPO assigns a uniform number of rollouts to ev-ery prompt, ignoring the substantial variation in their learn-ing contribution. Motivated by the sample-dependent influ-ence observed in Sec. 3.2, we replace static allocation with an entropy-guided, value-based mechanism. For each sample i in a batch, we compute its learning value using the sample-level entropy shift: 
+
+vi = ∆Entropy i.
+
+A high vi indicates that the sample induces a large devia-tion in attention behavior and is therefore more informative, while a low vi implies diminishing returns. AEGPO divides the batch into two tiers according to the median of {vi}: a high-value tier and a low-value tier. Each tier receives a distinct rollout budget: 
+
+rhigh > r low , rhigh + rlow = 2 ravg ,
+
+keeping the total computation unchanged. In practice, for an average budget of 12 rollouts, we allocate (rlow , r high ) = (8 , 16) .
+
+Algorithmically , Global Adaptive Allocation can be summarized as: 1. Compute vi = ∆Entropy i for each sample. 2. Split samples by the batch median of vi.3. Assign rollout budgets {rlow , r high } accordingly. This adaptive redistribution focuses computation on the samples that drive the largest policy updates, improving sample efficiency without increasing training cost. Table 2. Main results on FLUX.1-dev , SD3.5-M . AEGPO consistently improves performance across diverse models and frameworks (e.g., GRPO variants and DiffusionNFT). For each metric within a model block, the highest score is bolded, and the second-highest score is underlined. 
+
+Base Model Method HPS-v2.1 ↑ Pick Score ↑ Image Reward ↑ GenEval ↑
+
+FLUX.1-dev 
+
+FLUX (Base) 0.313 0.227 1.112 —DanceGRPO 0.360 0.228 1.517 —
+
+DanceGRPO + AEGPO 0.367 0.230 1.532 —BranchGRPO 0.363 0.229 1.603 —
+
+BranchGRPO + AEGPO 0.374 0.232 1.624 —
+
+SD3.5-M 
+
+SD3.5-M (Base) 0.204 20.51 0.85 0.63 Flow-GRPO 0.316 23.50 1.29 0.88 
+
+Flow-GRPO + AEGPO 0.325 23.59 1.34 0.90 DiffusionNFT 0.331 23.80 1.49 0.94 
+
+DiffusionNFT + AEGPO 0.343 23.88 1.57 0.95 
+
+4.2. Local Adaptive Exploration 
+
+Beyond sample selection, tree-structured rollout methods require deciding when exploration should occur within each trajectory. Existing approaches rely on fixed branching schedules, implicitly assuming that informative timesteps are shared across prompts. However, Sec. 3.3 shows that the most uncertain timesteps correspond to peaks of 
+
+Entropy (t), and their locations vary significantly across samples and stages, often shifting between early structural steps and late refinement phases. To address this mismatch, AEGPO performs entropy-guided timestep selection . For each rollout, we compute the full entropy trajectory {Entropy( t)} across all denois-ing timesteps: 
+
+Tpeak = TopK  Entropy (t),
+
+where K = 4 in all experiments. Branching is then per-formed exclusively at Tpeak .
+
+The procedure is: 
+
+1. Compute Entropy (t) for all timesteps. 2. Identify Tpeak = TopK (Entropy (t)) .3. Apply branching only at timesteps in Tpeak .This approach is lightweight, model-agnostic, and dy-namically adapts exploration to each sample’s denoising structure. As validated in Table 1, entropy-peak selection yields higher reward variance and both intra- and inter-prompt diversity compared to any fixed scheduling rule. Overall, Global Adaptive Allocation identifies which samples deserve more computation, while Local Adaptive Exploration determines where exploration is most effective within each trajectory. Together, they form a unified, dual-level adaptive mechanism for efficient policy optimization. 
+
+## 5. Experiments 
+
+In this section, we conduct extensive experiments to val-idate the effectiveness and efficiency of our proposed 
+
+AEGPO framework. We first detail the experimental setup, including datasets, base models, and reward models (Sec. 5.1). Next, we present the main results (Sec. 5.2), comparing AEGPO against state-of-the-art baselines across multiple models to demonstrate its superior alignment and generalizability. We follow with a detailed ablation study (Sec. 5.3) to dissect the individual contributions of our global and local adaptive components. Finally, we provide an analysis of the computational overhead to evaluate the method’s practical efficiency (Sec. 5.4). 
+
+5.1. Setup 
+
+Base Models. Our primary experiments utilize FLUX.1-Dev [2] and SD3.5-Medium [5] as the main base models. 
+
+Datasets. We use the HPDv2.1 dataset [26] and the Pick-a-Pic dataset [11] for training. For evaluation, we use the 400-prompt balanced test set from HPDv2.1 and the pickscore test set. 
+
+Reward Models. We employ HPSv2.1 [26] as the primary reward model for training. To assess alignment across di-verse human preferences, we use a comprehensive suite of reward models for evaluation, including PickScore [11], Im-ageReward [27], GenEval [7]. 
+
+Baselines and Implementation. We apply AEGPO as a plug-and-play enhancement to multiple state-of-the-art frameworks, including DanceGRPO [28], BranchGRPO [14], FlowGRPO [16], and DiffusionNFT [30]. In our ex-periments, the selected layers to calculate attention entropy for FLUX.1-dev and SD3.5-M were 5, 10, 15. We employ a 20-step warmup period where uniform allocation is used, allowing the ∆Entropy signal to become informative be-fore activating the adaptive strategies. To ensure a fair com-An asian man in a         
+
+> suit holding a sign
+> with text "I eat
+> dog!"
+> Raw Photo,
+> masterpiece award
+> winning close up of
+> a massive timber
+> wolf standing in the
+> moonlight in the
+> dark in the darkness.
+> An incredibly cute
+> penguin wearing a
+> scarf and a hat with
+> pompon, pixar
+> movies style.
+> a tiny mouse on a
+> tunnel.
+> Prompt SD3.5 -MDiffusionNFT Flux BranchGRPO BranchGRPO
+> +
+> AEGPO
+> DiffusionNFT
+> +
+> AEGPO
+
+Figure 6. Qualitative comparison on challenging prompts across base models (SD3.5-M, FLUX.1-dev), baseline alignment methods (DiffusionNFT, BranchGRPO), and our AEGPO-enhanced variants. 
+
+parison, all AEGPO-enhanced experiments are conducted under identical settings as their respective baseline papers. All GRPO-related hyperparameters are kept identical across methods. 
+
+5.2. Main Result 
+
+We present our main comparative results in Table 2. The table evaluates all methods across two distinct base models (FLUX.1-dev, SD3.5-M) and multiple reward metrics. Our AEGPO framework is applied as an adaptive enhancement to DanceGRPO, BranchGRPO, and DiffusionNFT, clearly demonstrating its effectiveness and generalizability. 
+
+Quantitative Analysis. As shown in Table 2, applying AEGPO consistently yields significant performance gains across all tested models and frameworks. First, on the FLUX.1-dev model, BranchGRPO +AEGPO achieves state-of-the-art results, improving the HPS-v2.1 score from 0.363 to 0.374 and the Pick Score from 0.229 to 0.232 compared to the original Branch-GRPO. This pattern of improvement holds for DanceGRPO + AEGPO as well. Second, this superiority extends beyond GRPO-style frameworks. On the SD3.5-M model, Diffu-sionNFT + AEGPO demonstrates a clear and consistent per-formance boost over the standard DiffusionNFT baseline. These results highlight a key contribution of AEGPO: its versatility. The performance improvements are consistent across both base models (FLUX.1-dev, SD3.5-M), indicat-ing our entropy-guided approach is model-agnostic. Fur-thermore, its success on fundamentally different alignment frameworks—enhancing standard GRPO variants (Flow-GRPO, DanceGRPO, BranchGRPO) and DiffusionNFT alike—strongly suggests that our adaptive strategies trans-fer well across different policy optimization frameworks. 
+
+Qualitative Analysis. Beyond quantitative metrics, Fig-ure 6 provides a qualitative comparisons on challeng-ing prompts across SD3.5-M, Flux..-dev, DiffusionNFT, BranchGRPO, and their AEGPO-enhanced variants. The results show that AEGPO consistently produces genera-tions with stronger semantic alignment, improved stylistic fidelity, and more coherent visual composition. Overall, the adaptive mechanisms introduced by AEGPO lead to more reliable and prompt-faithful outputs compared to their re-spective baselines. 
+
+Reward-KL Trade-off Analysis. To further understand the optimization efficiency, we analyze the reward-KL trade-off in Figure 7. The plot shows that our AEGPO-enhanced Figure 7. Reward-KL Pareto Frontier. The plot visualizes the Pareto frontier of alignment reward vs. KL divergence. The AEGPO-enhanced model (blue) consistently dominates the base-line (red), achieving a significantly higher reward for any given level of policy deviation. This indicates that AEGPO’s adaptive strategy leads to a more efficient optimization path, pushing the alignment frontier to a superior ceiling. 
+
+model consistently gets a better frontier the DiffusionNFT baseline, forming a superior Pareto frontier. This indicates that for any given level of policy deviation (KL divergence), AEGPO achieves a significantly higher reward. This anal-ysis provides strong evidence that AEGPO’s adaptive strat-egy guides the model along a fundamentally more effective and efficient optimization path. 
+
+5.3. Ablation Study 
+
+To disentangle the contributions of our two adaptive components, we conduct a comprehensive ablation study on the FLUX.1-dev model. We use standard Branch-GRPO—featuring a fixed branching schedule and uniform sample allocation—as the baseline. We then independently activate our two modules: (1) Global Allocation (G), which reallocates rollouts based on ∆Entropy, and (2) Local Ex-ploration (L), which replaces the fixed branching schedule with our entropy-guided timestep selection. The quantitative results are reported in Table 3. Both variants that enable only G or only L achieve clear im-provements over the baseline, demonstrating that prioritiz-ing high-value samples ( G) and adaptively selecting critical timesteps ( L) each provide independent benefits. Notably, the full AEGPO configuration ( G + L) achieves the highest final reward, indicating that the two components are com-plementary. Jointly optimizing sample-level allocation and timestep-level exploration yields the strongest overall per-formance. 
+
+5.4. Computational Overhead Analysis 
+
+AEGPO introduces a modest computational overhead by extracting intermediate attention maps (from layers 5, 10, 15 ). On the FLUX.1-dev model, this adds 52 seconds to the 469 seconds baseline DanceGRPO step (an 11.1% time                      
+
+> Table 3. Ablation study of AEGPO components on FLUX.1-dev, using BranchGRPO as the baseline. Gdenotes Global Adaptive Sample Allocation (Sec. 4.1), and Ldenotes Local Adaptive Ex-ploration (Sec. 4.2), which replaces the fixed branching schedule of the baseline.
+> Method Global ( G)Local ( L)HPS-v2.1 ↑
+> BranchGRPO (Baseline) 0.363 BranchGRPO + L✓0.369 BranchGRPO + G✓0.371
+> AEGPO (Full, G+L)✓✓0.374
+
+increase) and raises peak VRAM from 33.5GB to 34.5GB, which is a negligible increment. However, this per-step cost is overwhelmingly justified by the dramatic improvement in overall training efficiency. As visualized in Figure 1, AEGPO functions as a power-ful convergence accelerator: it achieves the baseline’s final reward 2 × faster on DanceGRPO (in 150 steps) and 5 ×
+
+faster on DiffusionNFT. This demonstrates a superior time-to-performance trade-off. 
+
+## 6. Discussion 
+
+While AEGPO provides a lightweight and broadly appli-cable adaptive mechanism, it also has natural limitations. First, AEGPO introduces a small computational overhead due to extracting intermediate attention maps. Second, its dynamic allocation and branching strategies require a rea-sonably flexible and robust RL pipeline for diffusion/flow models; adopting AEGPO may therefore involve moderate engineering adjustments to existing infrastructures. We also examine whether other metrics could substitute attention entropy for guiding policy optimization. Global measures such as KL divergence quantify overall model drift but provide no prompt-specific learning signal, mak-ing them unsuitable for sample-level allocation. Stepwise proxies based on reward variance estimated via ODE/SDE solvers (e.g., TempFlow-GRPO) capture timestep sensitiv-ity but require heavy additional forward passes. In contrast, attention entropy remains both prompt-resolved and com-putationally lightweight, offering a indicator for identifying valuable samples and critical timesteps. 
+
+## 7. Conclusion 
+
+In this paper, we address inefficient static sampling in GRPO by identifying Attention Entropy as a dual-signal proxy for sample value ( ∆Entropy) and critical timesteps (Entropy (t)), proposing the adaptive AEGPO framework. Extensive experiments demonstrate AEGPO is a general-izable plug-and-play module that significantly accelerates convergence and achieves superior alignment across multi-ple models and policy optimization frameworks. References 
+
+[1] Kevin Black, Michael Janner, Yilun Du, Ilya Kostrikov, and Sergey Levine. Training diffusion models with reinforce-ment learning. arXiv preprint arXiv:2305.13301 , 2023. 2 [2] Black Forest Labs. Flux. https://github.com/ black-forest-labs/flux , 2024. 2, 6 [3] Minghan Chen, Guikun Chen, Wenguan Wang, and Yi Yang. Seed-grpo: Semantic entropy enhanced grpo for uncertainty-aware policy optimization. arXiv preprint arXiv:2505.12346 , 2025. 3 [4] Guanting Dong, Licheng Bao, Zhongyuan Wang, Kangzhi Zhao, Xiaoxi Li, Jiajie Jin, Jinghan Yang, Hangyu Mao, Fuzheng Zhang, Kun Gai, et al. Agentic entropy-balanced policy optimization. arXiv preprint arXiv:2510.14545 , 2025. 3[5] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas M¨ uller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, et al. Scaling recti-fied flow transformers for high-resolution image synthesis. In Forty-first international conference on machine learning ,2024. 2, 6 [6] Xiaolong Fu, Lichen Ma, Zipeng Guo, Gaojing Zhou, Chongxiao Wang, ShiPing Dong, Shizhe Zhou, Ximan Liu, Jingling Fu, Tan Lit Sin, et al. Dynamic-treerpo: Breaking the independent trajectory bottleneck with structured sam-pling. arXiv preprint arXiv:2509.23352 , 2025. 1 [7] Dhruba Ghosh, Hannaneh Hajishirzi, and Ludwig Schmidt. Geneval: An object-focused framework for evaluating text-to-image alignment. Advances in Neural Information Pro-cessing Systems , 36:52132–52152, 2023. 6 [8] Xiaoxuan He, Siming Fu, Yuke Zhao, Wanli Li, Jian Yang, Dacheng Yin, Fengyun Rao, and Bo Zhang. Tempflow-grpo: When timing matters for grpo in flow models. arXiv preprint arXiv:2508.04324 , 2025. 1, 2, 3 [9] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising dif-fusion probabilistic models. Advances in neural information processing systems , 33:6840–6851, 2020. 1 [10] Sunwoo Kim, Minkyu Kim, and Dongmin Park. Test-time alignment of diffusion models without reward over-optimization. arXiv preprint arXiv:2501.05803 , 2025. 4 [11] Yuval Kirstain, Adam Polyak, Uriel Singer, Shahbuland Ma-tiana, Joe Penna, and Omer Levy. Pick-a-pic: An open dataset of user preferences for text-to-image generation. 2023. 6 [12] Jeongjae Lee and Jong Chul Ye. Pcpo: Proportionate credit policy optimization for aligning image generation models. 
+
+arXiv preprint arXiv:2509.25774 , 2025. 1 [13] Junzhe Li, Yutao Cui, Tao Huang, Yinping Ma, Chun Fan, Miles Yang, and Zhao Zhong. Mixgrpo: Unlocking flow-based grpo efficiency with mixed ode-sde. arXiv preprint arXiv:2507.21802 , 2025. [14] Yuming Li, Yikai Wang, Yuying Zhu, Zhongyu Zhao, Ming Lu, Qi She, and Shanghang Zhang. Branchgrpo: Stable and efficient grpo with structured branching in diffusion models. 
+
+arXiv preprint arXiv:2509.06040 , 2025. 1, 2, 3, 6 [15] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximil-ian Nickel, and Matt Le. Flow matching for generative mod-eling. arXiv preprint arXiv:2210.02747 , 2022. 1 [16] Jie Liu, Gongye Liu, Jiajun Liang, Yangguang Li, Jiaheng Liu, Xintao Wang, Pengfei Wan, Di Zhang, and Wanli Ouyang. Flow-grpo: Training flow matching models via on-line rl. arXiv preprint arXiv:2505.05470 , 2025. 1, 2, 6 [17] Runze Liu, Jiakang Wang, Yuling Shi, Zhihui Xie, Chenxin An, Kaiyan Zhang, Jian Zhao, Xiaodong Gu, Lei Lin, Wen-ping Hu, et al. Attention as a compass: Efficient exploration for process-supervised rl in reasoning models. arXiv preprint arXiv:2509.26628 , 2025. 3 [18] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 , 2022. 1 [19] Fanbin Lu, Zhisheng Zhong, Shu Liu, Chi-Wing Fu, and Ji-aya Jia. Arpo: End-to-end policy optimization for gui agents with experience replay. arXiv preprint arXiv:2505.16282 ,2025. 3 [20] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Car-roll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. Ad-vances in neural information processing systems , 35:27730– 27744, 2022. 1 [21] Rafael Rafailov, Archit Sharma, Eric Mitchell, Christo-pher D Manning, Stefano Ermon, and Chelsea Finn. Direct preference optimization: Your language model is secretly a reward model. Advances in neural information processing systems , 36:53728–53741, 2023. 2 [22] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of math-ematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. 3 [23] Xiangwei Shen, Zhimin Li, Zhantao Yang, Shiyi Zhang, Yingfang Zhang, Donghao Li, Chunyu Wang, Qinglin Lu, and Yansong Tang. Directly aligning the full diffusion tra-jectory with fine-grained human preference. arXiv preprint arXiv:2509.06942 , 2025. 3 [24] Bram Wallace, Meihua Dang, Rafael Rafailov, Linqi Zhou, Aaron Lou, Senthil Purushwalkam, Stefano Ermon, Caiming Xiong, Shafiq Joty, and Nikhil Naik. Diffusion model align-ment using direct preference optimization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8228–8238, 2024. 2 [25] Jing Wang, Jiajun Liang, Jie Liu, Henglin Liu, Gongye Liu, Jun Zheng, Wanyuan Pang, Ao Ma, Zhenyu Xie, Xin-tao Wang, et al. Grpo-guard: Mitigating implicit over-optimization in flow matching via regulated clipping. arXiv preprint arXiv:2510.22319 , 2025. 1 [26] Xiaoshi Wu, Yiming Hao, Keqiang Sun, Yixiong Chen, Feng Zhu, Rui Zhao, and Hongsheng Li. Human preference score v2: A solid benchmark for evaluating human preferences of text-to-image synthesis, 2023. 6 [27] Jiazheng Xu, Xiao Liu, Yuchen Wu, Yuxuan Tong, Qinkai Li, Ming Ding, Jie Tang, and Yuxiao Dong. Imagereward: learning and evaluating human preferences for text-to-image generation. In Proceedings of the 37th International Con-ference on Neural Information Processing Systems , pages 15903–15935, 2023. 6 [28] Zeyue Xue, Jie Wu, Yu Gao, Fangyuan Kong, Lingting Zhu, Mengzhao Chen, Zhiheng Liu, Wei Liu, Qiushan Guo, Weilin Huang, et al. Dancegrpo: Unleashing grpo on visual generation. arXiv preprint arXiv:2505.07818 , 2025. 1, 2, 6 [29] Benjamin Yu, Jackie Liu, and Justin Cui. Smart-grpo: Smartly sampling noise for efficient rl of flow-matching models. arXiv preprint arXiv:2510.02654 , 2025. [30] Kaiwen Zheng, Huayu Chen, Haotian Ye, Haoxiang Wang, Qinsheng Zhang, Kai Jiang, Hang Su, Stefano Ermon, Jun Zhu, and Ming-Yu Liu. Diffusionnft: Online diffu-sion reinforcement with forward process. arXiv preprint arXiv:2509.16117 , 2025. 2, 6 [31] Yujie Zhou, Pengyang Ling, Jiazi Bu, Yibin Wang, Yuhang Zang, Jiaqi Wang, Li Niu, and Guangtao Zhai. Granu-lar grpo for precise reward in flow models. arXiv preprint arXiv:2510.01982 , 2025. 1

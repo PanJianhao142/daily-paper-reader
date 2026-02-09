@@ -1,0 +1,441 @@
+Title: DynaRetarget: Dynamically-Feasible Retargeting using Sampling-Based Trajectory Optimization
+
+URL Source: https://arxiv.org/pdf/2602.06827v1
+
+Published Time: Mon, 09 Feb 2026 02:14:29 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# DynaRetarget : Dynamically-Feasible Retargeting using Sampling-Based Trajectory Optimization 
+
+Victor Dh´ edin ∗, Ilyass Taouil ∗, Shafeef Omar ∗, Dian Yu, Kun Tao, Angela Dai, Majid Khadiv 
+
+Munich Institute of Robotics and Machine Intelligence (MIRMI), Technical University of Munich (TUM), Germany. Email: firstname.lastname@tum.de 
+
+∗Equal contribution Kick, Lift and Handover  Lift and Move around 
+
+Pushing with feet  Pushing with hands 
+
+Fig. 1: Real-world humanoid loco-manipulation behaviors enabled by DynaRetarget . Demonstrations retargeted using our framework are physically consistent and zero-shot transferable to the real robot, enabling diverse contact-rich tasks involving interactions using feet and hands, such as kicking, lifting, pushing, and object handover. 
+
+Abstract —In this paper, we introduce DynaRetarget , a com-plete pipeline for retargeting human motions to humanoid control policies. The core component of DynaRetarget is a novel Sampling-Based Trajectory Optimization (SBTO) framework that refines imperfect kinematic trajectories into dynamically feasible motions. SBTO incrementally advances the optimization horizon, enabling optimization over the entire trajectory for long-horizon tasks. We validate DynaRetarget by successfully retargeting hundreds of humanoid–object demonstrations and achieving higher success rates than the state of the art. The framework also generalizes across varying object properties, such as mass, size, and geometry, using the same tracking objective. This ability to robustly retarget diverse demonstrations opens the door to generating large-scale synthetic datasets of humanoid loco-manipulation trajectories, addressing a major bottleneck in real-world data collection. A supplementary video demonstrating the results is available here. 
+
+I. I NTRODUCTION 
+
+Generating feasible loco-manipulation behaviors is a highly complex problem, as it requires handling the underactuation of both the robot and the manipulated object, as well as complex contact interactions. Traditional frameworks mostly relied either on gradient-based optimization to generate opti-mal trajectories [1], or on deep reinforcement learning (RL) [2] to directly learn optimal policies. The main advantage of tra-jectory optimization (TO) lies in its efficiency at finding locally optimal trajectories; however, it often requires augmentation with search-based methods to enable sufficient exploration [3], [4], [5]. On the other hand, while RL is very effective at generating robust behaviors, exploration remains a major challenge, frequently leading to heavy reward shaping for each individual motion. One plausible remedy to the exploration problem is the use of demonstrations. In particular, thanks to the similarity be-tween human and humanoid morphology, this line of research has recently attracted significant attention and has led to many impressive results [6], [7], [8]. The main idea behind these works is to retarget human motions to humanoid robots and then use the resulting trajectories as inputs to an RL policy, using domain randomization for sim-to-real transfer. In this way, the exploration problem is largely alleviated, and the RL component requires only a small set of simple reward terms that are shared across motions. While the RL structure is largely standard among these approaches, the retargeting module differs substantially. Most methods solve a kinematic optimization problem for retargeting [8], [9], [10], [11], and are therefore susceptible to artifacts such as physical and geometric inconsistencies, particularly for loco-manipulation tasks. More recently, [7] proposed using sampling-based model predictive control (SBMPC) to improve retargeting quality. However, this approach solves only a short-horizon optimization problem at each iteration, making it difficult to handle long-horizon behaviors due to its inherently myopic nature. 
+
+> arXiv:2602.06827v1 [cs.RO] 6 Feb 2026
+
+In this paper, we introduce DynaRetarget , which combines inverse kinematic retargeting with a novel sampling-based trajectory optimization (SBTO) method that incrementally increases the optimization horizon to ultimately solve the original long-horizon problem (Fig. 1). The generated trajec-tories are then fed to an RL module to learn robust tracking policies using domain randomization during training. Through extensive ablation studies and comparisons, we show that 
+
+DynaRetarget significantly improves success rates. The main contributions of this work are as follows:  
+
+> •
+
+We introduce, to the best of our knowledge, the first sampling-based trajectory optimization method that retar-gets imperfect kinematic demonstrations into dynamically feasible humanoid loco-manipulation behaviors while considering the full problem horizon.  
+
+> •
+
+We validate our approach in simulation on hundreds of motions, demonstrating significantly higher retargeting success rates than prior methods, and show that the result-ing motions improve downstream RL policy learning and transfer robustly to a real humanoid robot across several loco-manipulation tasks. II. R ELATED WORKS 
+
+In computer graphics, motion retargeting has been exten-sively studied, demonstrating the effectiveness of data-driven approaches—particularly RL—for motion tracking in simu-lation across different morphologies using relatively simple reward structures [12], [13], [14]. Building on this line of work, [15], [16] extend motion imitation to loco-manipulation by incorporating human–object demonstrations and explicitly modeling object motion and contact information in the reward function. These methods have primarily been validated in simulation. When transferring human motions to humanoid robots, additional challenges arise from significant morphological differences, such as disparities in degrees of freedom, limb lengths, and mass distributions. PHC [11], a retargeting method commonly used in robotics [10], [17], addresses this issue by selecting corresponding keypoints between the human and the humanoid robot and formulates an inverse kinematics (IK) problem based on these 3D keypoints. This is followed by an unconstrained optimization step to enforce physical consistency. However, the resulting motions often remain dynamically infeasible, exhibiting artifacts such as foot skating and penetrations. GMR [18] extends this approach by incorporating both keypoint positions and rotations into the IK formulation, but it still suffers from similar limitations. More recently, [19] proposed a method that leverages text-to-image models to synthesize human–object interaction scenes, which are then retargeted via IK and used to warm-start a whole-body trajectory optimization. While this approach improves physical consistency, it requires extensive manual tuning of collision penalties for each robot–object interaction, limiting its scalability. Several works have explored RL-based motion tracking for humanoid robots. For example, [20] introduces an RL-based framework with a reward structure similar to [12] and demonstrates the first successful deployment of highly dynamic locomotion policies on real hardware using retar-geted human demonstrations. Extending this idea to loco-manipulation, [8] relies solely on proprioceptive observations and introduces a data augmentation technique to handle varia-tions in object shape. Similarly, [9] uses monocular videos to recover global human motion via [21], which is then used as demonstration data to train RL policies with contact-based rewards for robot–object interaction. Although RL has proven to be a robust and effective approach for generating dynamically feasible motions from retargeted kinematic tra-jectories, it typically requires long training times and high-quality demonstrations. For loco-manipulation, it also requires accurate contact information which has proven to improve the RL policy performance [6], [9], but are hard to accurately obtain from kinematic retargeting. The work most closely related to ours is [7], which employs an SBMPC framework [22], [23], [24] to improve the geo-metric and dynamic consistency of retargeted motions. Given a kinematically retargeted trajectory, SBMPC generates dy-namically consistent motions by repeatedly optimizing control trajectories over a short horizon in a receding horizon fashion. However, because the optimization considers only a limited horizon at each step, the method is sensitive to imperfections in the demonstration. Failures can occur during the retargeting phase, as full-horizon consistency is not explicitly enforced. III. M ETHOD 
+
+A. Optimal Control with Sampling-Based Optimization 
+
+Sampling-based (or zero-order ) optimization algorithms ad-dress the generic optimization problem min x∈Rn f (x) by only point-wise evaluating a known function f to be minimized. The gradient of f is not required, which makes it popular for non-smooth and non-convex optimization problems, such as optimal control of robots for contact-rich tasks. In optimal control, the objective is to find a control sequence 
+
+{u0, . . . , uT −1} minimizing a cost function J while satisfying the system’s dynamics xt+1 = fdyn (xt, ut), as formulated below: 
+
+min  
+
+> u0,u1,..., uT−1
+
+J(x0: T , u0: T −1)
+
+s.t. x0 = xini , xt+1 = fdyn (xt, ut).
+
+(1) 
+
+xt = ( qt, vt) ∈ Rnx and ut ∈ Rnu denote respectively the state (joint positions and velocities) and control of the system at time t. To satisfy the dynamics constraint, control sequences u0: T −1 are rolled-out in a single-shooting fashion from the initial state x0 using a simulator (treating it as a black box), which ultimately outputs state trajectories x0: T needed to evaluate the cost J(x0: T , u0: T −1).The most commonly used algorithms in robotics are Cross-Entropy Method (CEM) [25], a special case of Covariance Matrix Adaptation (CMA) [26], and Model Predictive Path Human -to -Humanoid Sim 2Real Pipeline       
+
+> From Motion Capture to Real -World Robot Deployment
+
+Human to Humanoid 
+
+Retargeting   
+
+> IK -based retargeting to humanoid
+
+Dynamic 
+
+Refinement    
+
+> Dynamic feasibility via SBTO
+
+RL Training   
+
+> DeepMimic style tracking controller
+
+Sim 2Real   
+
+> Real -world robot deployment Fig. 2: DynaRetarget overview . Given a human–object demonstration, we first perform IK-based retargeting to obtain a kinematically-feasible robot–object demonstration. Due to morphological differences between the human and the robot, this process can produce imperfections, for instance missing contacts (red circle). To address these issues, we use the kinematic trajectory as a reference for SBTO, which refines the trajectory and ensures its physical consistency, including removing missing contacts (green circle). The motion is then used to train an RL tracking policy in simulation with domain randomization. Finally, the learned policy is transferred zero-shot to our humanoid robot in the real world.
+
+Integral (MPPI) [23]. In general, these approaches are used in a receding horizon fashion [27], [28]. These algorithms rely on similar mechanisms, namely trying to approximate gradients at each iteration [29]; however, they differ in how the sampling distribution is updated, as outlined in algorithm 1. To reduce the size of the sampling space, it is common to sample interpolation knots k ∈ RK·nu instead of the full con-trol trajectory u0: T −1. Those knots are usually equally spread in time at steps τ ∈ NK , with τ0 = 0 and τK−1 = T − 1.
+
+Algorithm 1 FHTO , Sampling-Based Fixed Horizon Trajec-tory Optimization 
+
+Inputs μ ∈ RK·nu , Σ ∈ RK·nu×K·nu , τ ∈ NK , N
+
+samples, I iterations 
+
+for iteration i = 1 , 2, . . . , I do 
+
+Sample N interpolation knots {kj }Nj=1 ∼ N (μ, Σ)
+
+for each sample j do 
+
+Interpolate: uj  
+
+> 0: T−1
+
+= interp (kj , τ )
+
+Roll-out dynamics: xjt+1 = fdyn (xjt , ujt )
+
+Evaluate cost: Jj = J(xj 
+
+> 0: T
+
+, uj 
+
+> 0: T−1
+
+)
+
+end for 
+
+Update parameters (μ, Σ) using {Jj }Nj=1      
+
+> ▷CEM: from Neelites ▷MPPI: exponential average weights
+
+end for 
+
+Return best control sequence u∗ 
+
+> 0: T−1
+
+B. Issues with existing SBMPC-based retargeting methods 
+
+Successful works in the literature that use zero-order opti-mization for retargeting [7], [30], [31] solve a short-horizon problem in the form of (1) in an MPC fashion. However, such an approach suffers from three important issues: 1) As MPC repeatedly solves a short-horizon problem, it can exhibit myopic behavior in long-horizon tasks. This effect is further exacerbated when using imperfect references that are physically inconsistent. For instance, if the contact geometry in the reference trajectory is inaccurate, the resulting short-horizon optimal plans may also fail to establish the correct contacts, ultimately leading to task failure. 2) This is amplified as SBMPC-based retargeting behaves in a greedy fashion: once an action is executed, the sys-tem is simulated forward, and earlier actions cannot be re-optimized. For example, if SBMPC mistakenly drops the object during the early phases of a motion, recovery is highly unlikely, as doing so would require substantial deviation from the reference, which is penalized by the tracking cost. 3) The trajectories produced by SBMPC tend to be jerky, as they are generated through feedback control. This lack of smoothness can negatively affect both the training process and the performance of downstream RL policies. Considering the full horizon of the problem would avoid these pitfalls. However, humanoid loco-manipulation is a high-dimensional problem; optimizing all control variables simul-taneously with a single-shooting sampling-based optimizer is therefore likely to fail, as both the number of variables and the number of local minima increase with the horizon length. Our key observation is that the control variables toward the end of the trajectory strongly depend on those at the beginning. Updating the last control variables before the early ones are sufficiently optimized can lead to undesirable updates, making the optimization inefficient and potentially preventing convergence to desired behaviors. Based on this observation, in the next subsection, we introduce SBTO, a Algorithm 2 SBTO Inputs μ ∈ RK·nu , Σ ∈ RK·nu×K·nu , τ ∈ NK , N
+
+samples, I iterations, σmin 
+
+for k = 1 , 2, . . . , K − 1 do 
+
+κ ← (k + 1) nu − 1
+
+while max(diag( Σ0: κ, 0: κ)) > σ min do 
+
+u∗ 
+
+> 0: τk
+
+← FHTO (μ0: κ, Σ0: κ, 0: κ, τ 0: k, N, I = 1) 
+
+end while end for return u∗ 
+
+> 0: T−1
+
+trajectory optimization framework that incrementally increases the optimization horizon. 
+
+C. Sampling-Based Trajectory Optimization 
+
+SBTO optimizes control variables incrementally. First, con-trol knots k0 at time τ0 are optimized, then control knots 
+
+{k0, k1} at time {τ0, τ 1} (warm-starting with the previous solution k∗
+
+> 0
+
+), and so on, until all knots are being optimized. The algorithm contains two nested loops: the outer loop incrementally increases the number of decision variables being optimized, while the inner loop repeatedly refines all the currently active variables. A skeleton of the algorithm can be seen in Algorithm 2. To optimize knots {k0, . . . , kk}, we do not perform the full horizon roll-out until T , but a partial rollout until τk, with τk
+
+corresponding to the time step of the last knot being optimized. Also, the optimization horizon τk grows incrementally. At each increment k, this procedure is equivalent to solving the Fixed-Horizon Trajectory Optimization (FHTO) from Algorithm 1 with truncated parameters μ0: κ, Σ0: κ, 0: κ and knot time τ 0: k.
+
+κ = ( k + 1) nu − 1 denotes the index of the last variable associated with knot kk. Since τ0 = 0 , the process starts at 
+
+k = 1 in practice. Increments occur when the maximum diagonal value of the covariance matrix Σ is below a threshold σmin , indicating that the optimization has sufficiently converged. This adaptive criterion allows SBTO to adjust to the growing number of variables, as the convergence rate can change when more variables are being optimized. Intuitively, σmin plays an important role in the convergence of the algorithm. Setting σmin large enough ensures that 
+
+Σ0: κ, 0: κ has not fully converged before incrementing. This enables all variables in the current horizon window to be optimized, even after multiple increments, which prevents early convergence to local minima. However, a too small σmin 
+
+makes the sampling distribution shrink to a point distribution, which would prevent the first variables from escaping a poten-tially bad local minimum after incrementing. Conversely, a too large σmin would make the increment happen too early with the variables too far from the optimum, which would almost be equivalent to solving the full-horizon TO from scratch. We verify this empirically in Section IV-C2. Note that SBTO is tailored for problems having a dense cost 
+
+J where even a short-horizon window provides a meaningful estimate of the optimal solution. Retargeting tasks satisfy this property, which motivates our evaluation of the proposed method in this context. IV. E VALUATION 
+
+We evaluate SBTO on a trajectory refinement task using ref-erence motions from the OmniRetarget dataset [8]. As input, we use kinematically retargeted trajectories from this dataset; in fact, SBTO performs dynamic refinement , correcting kine-matically imperfect trajectories to produce dynamically fea-sible whole-body motions. The dataset contains hundreds of motions of a G1 humanoid robot interacting with a box, including pick-and-place, kicking, and pushing or dragging motions. Many of these trajectories exhibit missing contacts, penetrations, or discontinuities, making them challenging to refine. In subsection IV-A, we provide implementation details of SBTO. Subsection IV-B compares SBTO’s performance with a state-of-the-art SBMPC. In subsection IV-C, we analyze the optimization process to highlight SBTO’s key properties. Sec-tion IV-D demonstrates that SBTO can adapt to objects with properties (shape, etc.) different from the original demonstra-tions. Finally, section IV-E shows that the quality of SBTO’s output trajectories benefits the training and deployment of RL tracking policies. 
+
+A. Implementation details 
+
+We implemented SBTO using the MuJoCo simulator [32] and leveraged its newly introduced rollout function to perform parallel rollouts on the CPU. We used a simulation timestep of ∆t = 0 .01 s and considered the full collision model of the robot. The time interval between knots is independent of the reference and is set to 0.25 s. The control sequence u0: T corresponds to a PD target trajectory. In all experiments, we use CEM [33] to update the sampling distribution. Following [27], we additionally retain a subset of elite samples across iterations ( Nkeep = ⌈ρkρeN ⌉) and apply an exponentially weighted moving average (EWMA) with momentum parameters αμ and αΣ to prevent premature shrinking of the distribution [34]. The initial mean of the distribution is set to the joint positions at each knot time step from the reference, μ = qref  
+
+> 0: T
+
+[τ ], while the initial covariance is set to Σ = σ20 IK·nu . We observed that considering the full covariance matrix improved convergence. Hyperparameter values are reported in Table I. TABLE I: CEM hyperparameters              
+
+> Parameters Value Number of samples N1024 Elite set proportion ρe0.03 Keep elites proportion ρk0.04 Mean momentum αμ0.95 Covariance momentum αΣ0.2 Initial std. σ00.25
+
+The cost function penalizes deviations in the state position 
+
+q0: T and velocity v0: T . Additional task-space terms enforce tracking of desired torso, foot, and hand poses. Contact-related terms discourage undesired collisions. The cost weights are summarized in Table II. TABLE II: Cost terms and corresponding weights. ⊖ denotes the subtraction between quaternions in the tangent space. Collision costs are computed as the number of collision events, which can be easily obtained with MuJoCo. 
+
+Cost term Equation Weight 
+
+Motion Tracking 
+
+Joint position ∥qact − qref 
+
+> act
+
+∥2 0.25 Joint velocity ∥vact − vref 
+
+> act
+
+∥2 0.01 Base position ∥W pbase − W pref base ∥2 5.0 Base orientation W qbase ⊖ W qref base 1.0 Object position ∥W pobject − W pref object ∥2 40.0 Object orientation W qobject ⊖ W qref object 4.0 Object linear velocity ∥W vobject − W vref object ∥2 0.2 
+
+Motion Tracking (task space) 
+
+Torso position ∥W ptorso − W pref torso ∥2 30.0 Torso orientation W qtorso ⊖ W qref torso 3.0 Torso linear velocity ∥W vtorso − W vref torso ∥2 0.3 Torso angular velocity ∥W wtorso − W wref torso ∥2 0.1 Foot position P 
+
+> i∈F
+
+∥W pfoot i − W pref foot i ∥2 10.0 Hand position P 
+
+> j∈H
+
+∥W phand j − W pref hand j ∥2 5.0 
+
+Regularization 
+
+Robot–object collision P 
+
+> c∈C ro
+
+1 2.0 Self-collision P 
+
+> c∈C self
+
+1 1.0 
+
+B. Performance evaluation 
+
+We evaluate SBTO on all motions from the OmniRetarget dataset [8] that are shorter than 9 s (285 motions in total). SPIDER [7], a recently released SBMPC that achieves state-of-the-art results on many dynamic refinement tasks, serves as our baseline. In SPIDER, the cost terms are based solely on the configurations q0: T (and not their velocities). For a fair comparison, we also evaluate a variant of SBTO using a similar configuration - considering only the terms described in the first section of Table II and omitting the velocity terms — referred to as SBTO pos. We compare the methods using three metrics: algorithm success rate, computational efficiency, and smoothness of the resulting trajectories (all described below). The results are reported in Table III. We consider the refinement successful when the object trajectory has an average position error Epos < 10 cm and an average rotation error Erot < 25 ◦. The error terms are defined as below: 
+
+Epos = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+pobj ,t − pref obj ,t 2 (2) 
+
+Erot = 180 
+
+π
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+arccos  2⟨qobj ,t , qref obj ,t ⟩2 − 1 (3) We define computational efficiency ηeff as the total number of simulation steps required in the optimization, divided by the duration of the reference. This makes the metric independent of the machine or simulator, providing a more meaningful measure than one based on compute time. For SBTO, the computational cost depends on the number of knots being optimized at iteration i, denoted by k(i), as can be seen below: 
+
+ηeff = Nsim 
+
+T ∆t
+
+> SBT O
+
+= NT ∆t
+
+X
+
+> i∈I
+
+τk(i) (4) Finally, we define the trajectory smoothness S as the sum of accelerations of all actuated joints (obtained by finite differencing) over the full trajectory. For better interpretability, we normalize the result by the trajectory smoothness of its corresponding reference ˜S = SSref .
+
+S = 
+
+> T−1
+
+X
+
+> t=2
+
+∥¨qt∥1 , with ¨qt = qt+1 − 2qt + qt−1
+
+∆t2 (5) TABLE III: Algorithm performance comparison. The com-putational efficiency and smoothness are averaged over the successful trajectories only. For the compute, we provide absolute and relative values (separated by —).                    
+
+> Algorithm Success (%) ↑Smoothness ↓Compute ηeff ↓
+> SBTO 74.6 1.7 405529 — 3.3 SBTO pos 62.1 2.7 444924 — 3.6 SPIDER 37.9 3.4 123496 —1.
+
+As summarized in Table III, SBTO outperforms SPI-DER, achieving nearly twice the success rate and produc-ing smoother refined trajectories. Even SBTO pos shows a clear improvement over SPIDER, highlighting the algorithmic advantages of SBTO. This, however, comes at the cost of roughly three times more computation. The increased cost arises because SBTO requires rollouts from the initial state at each iteration, which entails a large number of simulation steps for the later increments. In practice, the refinement process takes roughly 1 minute per second of refined motion on a 112-core Intel(R) Xeon(R) Platinum 8480+ CPU. Failure cases typically occur when references are of poor quality, especially if they include sudden changes in hand–object contact or abrupt flips in object orientation. 
+
+C. Algorithm analysis 
+
+In this section, we analyze SBTO’s optimization process to highlight its core features. We identify two key properties that likely explain its superiority over both Fixed-Horizon TO (FHTO) and SBMPC.  
+
+> •
+
+SBTO incrementally optimizes the controls, warm-starting larger-horizon problems from shorter ones up to the full horizon. This approach mitigates the convergence and instability issues observed in FHTO.  
+
+> •
+
+SBTO optimizes decision variables over a horizon far longer than the SBMPC horizon, overcoming its inherent short-sightedness. To qualitatively highlight these properties, we considered a specific motion, i.e., sub_10_largebox_045 . In this 4.6(a) SBTO, k = 3 (b) SBTO, k = 4 (c) SBTO, k = 7                      
+
+> (d) FHTO ( 4.6s) (e) FHTO ( 1s) (f) SPIDER
+> Fig. 3: Trajectory snapshots at t0= 1 s for the different baselines. Top row: SBTO, the box position error decreases across successive increments. Bottom row: FHTO with different horizon and SPIDER baseline. The reference is depicted in transparent. 0
+> 2
+> 4
+> Horizon  τk (s)
+> t0= 1.0s
+> t1= 3.4s
+> 0100 200 300 400 500
+> Iterations
+> 0.04
+> 0.06
+> 0.08
+> 0.1
+> 0.12
+> 0.14
+> 0.16
+> Box position error (m)
+> SBTO FHTO (1.0s) FHTO (4.6s)
+> Fig. 4: Evolution of the object position error at time t0during the optimization. The object position error steadily decreases for about 200 iterations with SBTO. This shows that the first knots are still being optimized even after
+> 10 increments of the horizon, which corresponds to an effective horizon of around 3.4s (see vertical and horizontal red lines). Other baselines fails as the position error remains too high.
+
+s reference, a box is kicked forward at the very beginning of the trajectory. The box slides on the floor and finally stops at timestep t0 = 1 s. Only the first two knots at τ0 and τ1 are responsible for the kicking motion. Specifically, by tracking how the box position error at the fixed time t0 evolves across optimization iterations, we can measure how long the first decision variables remain actively optimized. Since only the first knots influence the box motion at t0, improvements in the box position at t0 directly indicate that the initial control variables are being refined over an extended horizon. The results are summarized in Fig. 4 (averaged over 10 
+
+seeds). The top plot demonstrates how the horizon length τk
+
+grows over optimization iterations. Note that the number of iterations per increment may vary, as it depends on the rate at which the covariance Σ shrinks. The bottom plot shows the box position error at time step t0
+
+as a function of the iterations. The position error is computed from the minimum cost state trajectory x∗ 
+
+> 0: τk
+
+at each iteration. We compare SBTO to FHTO with different fixed horizon lengths. For SBTO, the error can only be plotted when the growing horizon τk reaches t0 = 1 s, as before that, the trajectory at 
+
+t0 is not even being produced by the roll-outs. We note i0
+
+the first iteration at which t0 = 1 s is within the optimization window (see green lines) and plot the error for SBTO starting from iteration i0. In contrast, for FHTO, we only consider horizons larger than t0, therefore, the error can be computed for all optimization iterations. Snapshot of the trajectories at 
+
+t0 = 1 s for all baselines can be seen in Fig. 3. 
+
+1) SBTO, an incremental warm-starting process: SBTO succeeded for all 10 runs, whereas FHTO on the full motion length ( 4.6 s) systematically failed due to the robot falling and failing to kick the box correctly. This can be seen in Figure 3d. This shows two things. First, FHTO is unlikely to converge on such a complex contact-rich task. Second, SBTO warm-starts the full-horizon problem efficiently, as once done incrementing, the only difference between SBTO and 4.6 sFHTO is the state (μ, Σ) from which the sampling process starts. 
+
+2) SBTO’s effective horizon: The box position error of SBTO decreases steadily until iteration i1 ≃ 340 (vertical red line), corresponding to a total optimization horizon of t1 = 3 .4
+
+s (horizontal red line). This horizon is substantially longer than both the per-increment look-ahead increase ( 0.25 s) and the fixed horizon used in SPIDER ( 1.2 s). We refer to t1 as the 
+
+effective horizon of SBTO. This behavior indicates that early control variables con-tinue to be refined over many increments (approximately 10 ), meaning that the first decision variables are optimized with a tracking objective evaluated over 3 s of future motion. To emphasize that optimizing over a longer-horizon is beneficial, we compare SBTO with a t0 = 1 s FHTO, representative of an SBMPC-style setup. As one can see on the bottom plot of Figure 4, FHTO fails as the final box position error remains above 10 cm. SPIDER fails for the same reason on this task. Interestingly, the joint tracking with 1 sFHTO seems satisfying, as one can see in Fig. 3e. A plausible explanation for the failure could be that the object position cost is significant over such a short horizon. In contrast, over longer horizons, the cumulative box position cost can only grow (since the box is not being moved after t0), which effectively increases its weight in the objective. By performing a parameter sweep over the two main hyperparameters impacting the convergence dynamics ( σmin ,which controls when to increment, and αΣ, which controls the distribution shrinking rate), we show that the effective horizon is likely not an emergent property, but is primarily governed by σmin . Results of the experiment are shown in Fig. 5. 0.01 0.02 0.03 0.04 0.05 0.06 0.07 0.08 
+
+σmin         
+
+> 0.15 0.25 0.35 0.45 0.55
+> αΣ
+> 2.02.53.03.54.04.5
+> Effective horizon
+> Fig. 5: Effective horizon of SBTO for a parameter sweep over σmin and αΣ,averaged over 3runs. The effective horizon increases column by column, as
+> σmin increases, whereas it stays almost identical for different αΣvalues.
+
+D. Demonstration Augmentation   
+
+> Fig. 6: Trajectory snapshots of sub_10_largebox_084 with the original box geometry being replaced by a chair (left) and a shelf (right).
+
+SBTO produces trajectories that deviates from the kinematic reference to ensure dynamic feasibility. One way to quantify how much it could deviate is to evaluate refinement perfor-mance under changes in object properties, such as mass, size, and geometry. This evaluation is also important in practice, as collecting new demonstrations is expensive. We evaluate the success rate of SBTO on a box with different masses and sizes, and geometries. All experiments are based on a single motion reference (sub10_largebox_084_original ). The original object size is a cubic box of length 0.31 cm and 0.6kg mass. We use the same cost terms and optimization settings as in previous experiments. SBTO successfully handled boxes with masses ranging from 
+
+0.1 to 8kg and sizes ranging from 0.2m to 0.4m. Furthermore, the dynamic refinement process generalized beyond boxes and was also successful on a cylinder (diameter and height of 
+
+0.31 m), a chair, and a shelf (as can be seen on Figure 6). This shows that a single demonstration can be refined into dynamically feasible motions across a diverse set of object geometries and physical properties. 
+
+E. Motion Tracking using Reinforcement Learning 
+
+With access to physically consistent trajectories for humanoid-object loco-manipulation, we conduct extensive ex-periments on training RL tracking controllers using PPO [35], similar to [20], while using a residual action space as in [9]. We use additional observations to track the object trajectory throughout the episode. In addition to the one-step desired robot trajectory, the policy observes the one-step object pose error with respect to the desired pose, as well as the object pose expressed in the robot frame. As an additional objective to our controller, we also task the policy to track the object pose. We use contact rewards to incentivize contact for the different end-effectors with the object. The contact reward also gradually penalizing forces that exceed 10 N. Since we have access to physically consistent trajectories using our method, we can naturally extract accurate contacts from the same simulator, without relying on any heuristics. For all of our experiments, we used the same set of reward weights as illustrated in Table IV. TABLE IV: Reward terms used by the RL tracking controller. 
+
+Reward Term Equation Weight 
+
+Motion Tracking 
+
+Root Position exp  −5∥pt − pref  
+
+> t
+
+∥2 0.5 Root Orientation exp  −3∥qt − qref  
+
+> t
+
+∥2 0.5 Body Position exp  −5∥pbody ,t − pref body ,t ∥2 1.0 Body Orientation exp  −3∥θbody ,t − θref body ,t ∥2 1.0 Body Linear Velocity exp  −0.5∥vt − vref  
+
+> t
+
+∥2 1.0 Body Angular Velocity exp  −0.05 ∥ωt − ωref  
+
+> t
+
+∥2 1.0 Joint Pos Tracking exp  −5∥ut − uref  
+
+> t
+
+∥2 2.0 
+
+Object Tracking 
+
+Contact Match I(c = cref ) · exp( −0.1 ( ∥F t∥ − 10)) 1.25 Object Position exp  −8∥pobj ,t − pref obj ,t ∥2 1.0 Object Orientation exp  −5∥θobj ,t − θref obj ,t ∥2 1.0 Object Linear Velocity exp  −2∥vobj ,t − vref obj ,t ∥2 1.0 Object Angular Velocity exp  −0.2∥ωobj ,t − ωref obj ,t ∥2 1.0 
+
+Regularization 
+
+Action Rate −∥ at − at−1∥2 −0.1
+
+Joint Limit − P 
+
+> i
+
+ϕ(qi, q i, min , q i, max ) −10 .0
+
+Self-collisions P 
+
+> c∈C self
+
+1 −1.0
+
+To enable robust transfer of our loco-manipulation policies to the real robot, we employ additional domain randomization techniques apart from those used in [20] upon resetting the episode with adaptive sampling, which samples more difficult portions of the trajectory more frequently than others. Specif-ically, when the episode is reset during the initial frames, we randomize the object pose (pobj ,t , θobj ,t ) around the desired object pose (pref obj ,t , θref obj ,t ). When the reset occurs after the initial frames, we instead randomize the object velocities 
+
+(vobj ,t , ωobj ,t ) around their desired values (vref obj ,t , ωref obj ,t ). In addition, we apply random external pushes to the object at random intervals during the episode, randomize the object TABLE V: Downstream RL policy evaluation using different references to track                                     
+
+> Method Success Rate ↑MPKPE ↓Object Pos Error ↓Object Ori Error ↓
+> (%) (cm) (cm) (rad)
+> OmniRetarget [8] 79 .41 ±32 .57 3.67 ±0.33 12 .50 ±6.70 0.18 ±0.09
+> DynaRetarget (Ours) 97 .09 ±2.31 3.57 ±0.46 8.81 ±1.16 0.11 ±0.02
+
+friction parameters, and vary its mass around the nominal value. Crucially, we do not introduce any additional termina-tion conditions related to object tracking, as we found that such terminations consistently degrade performance and exacerbate the learning difficulty when combined with adaptive sampling during training from scratch. We use mjlab , which uses the GPU-optimized version of MuJoCo, with IsaacLab-style [36] API design for training our motion tracking controllers with 8192 envs for 10000 iterations on a single NVIDIA RTX 4090 GPU. To highlight the importance of physical consistency of the trajectories for downstream RL policy performance, we compare success rates and tracking metrics against policies trained with trajectories from OmniRetarget [8] in Table V. We left out comparisons with SBMPC-based methods since they do not succeed on diverse enough motions for reasons explicated in Section III-B and evaluated in Table III. Results are averaged over 1024 episodes spanning 8 distinct motions and diverse initial configurations. These motions cover a broad range of motions such as lifting, pushing with hands, pushing with legs etc. A policy rollout is deemed successful if the object pose remains within a predefined threshold of the desired object pose at every timestep of the trajectory, since the policy may continue to imitate the robot motion even when object tracking fails in the case of infeasible trajectories. In contrast to prior approaches that rely on artificial curriculum to mitigate such artifacts [6], our method enables the RL tracking controller to reliably learn even the most challenging behaviors such as object sliding and object manipulation using the robot’s legs without additional curriculum shaping as show in Figure 1. A major advantage of our method is its superior sample efficiency, as shown in Figure 7. RL tracking policies converge significantly faster to the desired solution when trained on perfectly dynamically consistent trajectories from SBTO using the same simulator (MuJoCo), without requiring additional tuning. In contrast, policies trained on kinematically retargeted data alone either take substantially longer to converge or fail to track the object entirely, as joints have to deviate more from the reference to close the dynamic feasibility gap. V. C ONCLUSION 
+
+In this work, we presented DynaRetarget , a complete pipeline for transferring human motion to real-world deployed control policies. The central contribution of this pipeline is SBTO, a sampling-based trajectory optimization framework that refines imperfect kinematic humanoid trajectories into dynamically feasible motions. SBTO incrementally grows the optimization horizon, ef-fectively warm-starting the full-horizon problem while still             
+
+> (a) Object position reward (b) Object orientation reward
+> Fig. 7: Comparison of object position and orientation tracking rewards throughout training using 3distinct references, from SBTO or OmniRetarget. This highlights superior performance and sample efficiency when training tracking policies on dynamically consistent trajectories.
+
+allowing early decision variables to be refined as the hori-zon grows. This strategy mitigates the convergence chal-lenges of sampling-based methods on long-horizon high-dimensional problems, while simultaneously overcoming the short-sightedness of SBMPC. We extensively evaluated SBTO on hundreds of motions and showed that it achieves a substantially higher success rate than a state-of-the-art SBMPC baseline, while producing smoother trajectories. We further demonstrated that SBTO-generated trajectories benefit downstream learning: RL track-ing controllers trained on them acquire more reliable object interaction behaviors without additional curriculum shaping and transfer successfully to real hardware. Finally, SBTO gen-eralizes across variations in object mass, size, and geometry for the same reference motion, highlighting its potential as a scalable approach for generating large-scale synthetic datasets of dynamically consistent humanoid loco-manipulation trajec-tories. VI. L IMITATIONS AND FUTURE WORK 
+
+The main limitation of SBTO lies in its scalability with respect to the duration of the trajectory. Unlike SBMPC, which operates over a fixed horizon, SBTO performs rollouts over an increasing number of steps, which can become computation-ally demanding for refining longer motions. Addressing this limitation is a key direction for future work. SBTO is also currently limited to tasks that provide a dense optimization cost. One potential way to further improve scalability is to employ a multi-modal sampling distribution instead of the cur-rent multivariate gaussian. This would enable the simultaneous optimization of multiple candidate trajectories within a single optimization process, potentially reducing the computational cost per refined trajectory. Another promising future direction is to use SBTO to track human keypoints directly, bypassing explicit kinematic retargeting. REFERENCES [1] P. M. Wensing, M. Posa, Y. Hu, A. Escande, N. Mansard, and A. D. Prete, “Optimization-based control for dynamic legged robots,” IEEE Transactions on Robotics , vol. 40, pp. 43–63, 2024. [2] S. Ha, J. Lee, M. van de Panne, Z. Xie, W. Yu, and M. Khadiv, “Learning-based legged locomotion: State of the art and future perspec-tives,” The International Journal of Robotics Research , vol. 44, no. 8, pp. 1396–1427, 2025. [3] M. A. Toussaint, K. R. Allen, K. A. Smith, and J. B. Tenenbaum, “Differentiable physics and stable modes for tool-use and manipulation planning,” 2018. [4] B. Ponton, M. Khadiv, A. Meduri, and L. Righetti, “Efficient multi-contact pattern generation with sequential convex approximations of the centroidal dynamics,” IEEE Transactions on Robotics , vol. 37, no. 5, pp. 1661–1679, 2021. [5] M. Ciebielski, V. Dh´ edin, and M. Khadiv, “Task and motion planning for humanoid loco-manipulation,” in 2025 IEEE-RAS 24th International Conference on Humanoid Robots (Humanoids) , pp. 1179–1186, IEEE, 2025. [6] S. Zhao, Y. Ze, Y. Wang, C. K. Liu, P. Abbeel, G. Shi, and R. Duan, “Resmimic: From general motion tracking to humanoid whole-body loco-manipulation via residual learning,” 2025. [7] C. Pan, C. Wang, H. Qi, Z. Liu, H. Bharadhwaj, A. Sharma, T. Wu, G. Shi, J. Malik, and F. Hogan, “Spider: Scalable physics-informed dexterous retargeting,” 2025. [8] L. Yang, X. Huang, Z. Wu, A. Kanazawa, P. Abbeel, C. Sferrazza, C. K. Liu, R. Duan, and G. Shi, “Omniretarget: Interaction-preserving data generation for humanoid whole-body loco-manipulation and scene interaction,” 2025. [9] H. Weng, Y. Li, N. Sobanbabu, Z. Wang, Z. Luo, T. He, D. Ramanan, and G. Shi, “Hdmi: Learning interactive humanoid whole-body control from human videos,” 2025. [10] T. He, J. Gao, W. Xiao, Y. Zhang, Z. Wang, J. Wang, Z. Luo, G. He, N. Sobanbab, C. Pan, Z. Yi, G. Qu, K. Kitani, J. Hodgins, L. J. Fan, Y. Zhu, C. Liu, and G. Shi, “Asap: Aligning simulation and real-world physics for learning agile humanoid whole-body skills,” 2025. [11] Z. Luo, J. Cao, A. Winkler, K. Kitani, and W. Xu, “Perpetual humanoid control for real-time simulated avatars,” 2023. [12] X. B. Peng, P. Abbeel, S. Levine, and M. Van de Panne, “Deepmimic: Example-guided deep reinforcement learning of physics-based character skills,” ACM Transactions On Graphics (TOG) , vol. 37, no. 4, pp. 1–14, 2018. [13] X. B. Peng, E. Coumans, T. Zhang, T.-W. Lee, J. Tan, and S. Levine, “Learning agile robotic locomotion skills by imitating animals,” arXiv preprint arXiv:2004.00784 , 2020. [14] X. B. Peng, Z. Ma, P. Abbeel, S. Levine, and A. Kanazawa, “Amp: Adversarial motion priors for stylized physics-based character control,” 
+
+ACM Transactions on Graphics (TOG) , vol. 40, no. 4, pp. 1–20, 2021. [15] Y. Wang, J. Lin, A. Zeng, Z. Luo, J. Zhang, and L. Zhang, “Physhoi: Physics-based imitation of dynamic human-object interaction,” 2023. [16] S. Xu, H. Y. Ling, Y.-X. Wang, and L.-Y. Gui, “Intermimic: Towards universal whole-body control for physics-based human-object interac-tions,” 2025. [17] T. He, Z. Luo, X. He, W. Xiao, C. Zhang, W. Zhang, K. Kitani, C. Liu, and G. Shi, “Omnih2o: Universal and dexterous human-to-humanoid whole-body teleoperation and learning,” 2024. [18] Y. Ze, J. P. Ara´ ujo, J. Wu, and C. K. Liu, “Gmr: General motion retargeting,” 2025. GitHub repository. [19] I. Taouil, H. Zhao, A. Dai, and M. Khadiv, “Physically consistent hu-manoid loco-manipulation using latent diffusion models,” in 2025 IEEE-RAS 24th International Conference on Humanoid Robots (Humanoids) ,pp. 1179–1186, IEEE, 2025. [20] Q. Liao, T. E. Truong, X. Huang, Y. Gao, G. Tevet, K. Sreenath, and C. K. Liu, “Beyondmimic: From motion tracking to versatile humanoid control via guided diffusion,” 2025. [21] Z. Shen, H. Pi, Y. Xia, Z. Cen, S. Peng, Z. Hu, H. Bao, R. Hu, and X. Zhou, “World-grounded human motion recovery via gravity-view coordinates,” in SIGGRAPH Asia 2024 Conference Papers , SA ’24, p. 1–11, ACM, Dec. 2024. [22] T. Howell, N. Gileadi, S. Tunyasuvunakool, K. Zakka, T. Erez, and Y. Tassa, “Predictive sampling: Real-time behaviour synthesis with mujoco,” arXiv preprint arXiv:2212.00541 , 2022. [23] G. Williams, A. Aldrich, and E. A. Theodorou, “Model predictive path integral control: From theory to parallel computation,” Journal of Guidance, Control, and Dynamics , vol. 40, no. 2, pp. 344–357, 2017. [24] H. Xue, C. Pan, Z. Yi, G. Qu, and G. Shi, “Full-order sampling-based mpc for torque-level locomotion control via diffusion-style annealing,” 2024. [25] R. Y. Rubinstein and D. P. Kroese, The cross-entropy method: a unified approach to combinatorial optimization, Monte-Carlo simulation and machine learning . Springer Science & Business Media, 2004. [26] N. Hansen and A. Ostermeier, “Completely derandomized self-adaptation in evolution strategies,” Evolutionary computation , vol. 9, no. 2, pp. 159–195, 2001. [27] C. Pinneri, S. Sawant, S. Blaes, J. Achterhold, J. Stueckler, M. Rolinek, and G. Martius, “Sample-efficient cross-entropy method for real-time planning,” 2020. [28] V. Kurtz and J. W. Burdick, “Generative predictive control: Flow matching policies for dynamic and difficult-to-demonstrate tasks,” arXiv preprint arXiv:2502.13406 , 2025. [29] A. Jordana, J. Zhang, J. Amigo, and L. Righetti, “An introduction to zero-order optimization techniques for robotics,” 2025. [30] A. T. Le, K. Nguyen, M. N. Vu, J. Carvalho, and J. Peters, “Model tensor planning,” 2025. [31] V. Kurtz, “Hydrax: Sampling-based model predictive control on gpu with jax and mujoco mjx,” 2024. https://github.com/vincekurtz/hydrax. [32] E. Todorov, T. Erez, and Y. Tassa, “Mujoco: A physics engine for model-based control,” in 2012 IEEE/RSJ international conference on intelligent robots and systems , pp. 5026–5033, IEEE, 2012. [33] P.-T. Boer, D. Kroese, S. Mannor, and R. Rubinstein, “A tutorial on the cross-entropy method,” Annals of Operations Research , vol. 134, pp. 19–67, 02 2005. [34] Z. I. Botev, D. P. Kroese, R. Y. Rubinstein, and P. L’Ecuyer, “Chapter 3 - the cross-entropy method for optimization,” in Handbook of Statistics 
+
+(C. Rao and V. Govindaraju, eds.), vol. 31 of Handbook of Statistics ,pp. 35–59, Elsevier, 2013. [35] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Proximal policy optimization algorithms,” 2017. [36] M. Mittal, P. Roth, J. Tigue, and et. al., “Isaac lab: A gpu-accelerated simulation framework for multi-modal robot learning,” arXiv preprint arXiv:2511.04831 , 2025.
