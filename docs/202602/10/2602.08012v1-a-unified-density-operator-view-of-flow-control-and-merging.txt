@@ -1,0 +1,1998 @@
+Title: A Unified Density Operator View of Flow Control and Merging
+
+URL Source: https://arxiv.org/pdf/2602.08012v1
+
+Published Time: Tue, 10 Feb 2026 02:32:18 GMT
+
+Number of Pages: 28
+
+Markdown Content:
+Preprint. 
+
+# A U NIFIED DENSITY OPERATOR VIEW OF 
+
+# FLOW CONTROL AND MERGING 
+
+Riccardo De Santi 1, 2, Malte Franke 1, Ya-Ping Hsieh 1, Andreas Krause 1, 21ETH Zürich, 2ETH AI Center 
+
+{rdesanti,krausea}@ethz.ch , {malte.franke,yaping.hsieh}@inf.ethz.ch 
+
+## ABSTRACT 
+
+Recent progress in large-scale flow and diffusion models raised two fundamental al-gorithmic challenges: (i) control-based reward adaptation of pre-trained flows, and 
+
+(ii ) integration of multiple models, i.e., flow merging. While current approaches address them separately, we introduce a unifying probability-space framework that subsumes both as limit cases, and enables reward-guided flow merging , allowing principled, task-aware combination of multiple pre-trained flows (e.g., merging priors while maximizing drug-discovery utilities). Our formulation renders possible to express a rich family of operators over generative models densities , including intersection (e.g., to enforce safety), union (e.g., to compose diverse models), interpolation (e.g., for discovery), their reward-guided counterparts, as well as complex logical expressions via generative circuits . Next, we introduce Reward-Guided Flow Merging ( RFM ), a mirror-descent scheme that reduces reward-guided flow merging to a sequence of standard fine-tuning problems. Then, we provide first-of-their-kind theoretical guarantees for reward-guided and pure flow merging via RFM . Ultimately, we showcase the capabilities of the proposed method on illus-trative settings providing visually interpretable insights, and apply our method to high-dimensional de-novo molecular design and low-energy conformer generation. 
+
+## 1 INTRODUCTION 
+
+Large-scale generative modeling has recently progressed at an unprecedented pace, with flow (Lipman et al., 2022; 2024) and diffusion models (Sohl-Dickstein et al., 2015; Song & Ermon, 2019; Ho et al., 2020) delivering high-fidelity samples in chemistry (Hoogeboom et al., 2022), biology (Corso et al., 2022), and robotics (Chi et al., 2024). However, adoption in real-world applications like scientific discovery led to two fundamental algorithmic challenges: (i) reward-guided fine-tuning, i.e., adapting pre-trained flows to maximize downstream utilities (e.g., binding affinity) (e.g., Domingo-Enrich et al., 2024; Uehara et al., 2024b; De Santi et al., 2025b), and (ii ) flow merging (FM): integrating multiple pre-trained models into one (Song et al., 2023; Ma et al., 2025), e.g., to incorporate safety constraints (Dai et al., 2023), or unify diverse priors (Ma et al., 2025). Crucially, so far these two problems have been treated via fundamentally distinct formulations and methods. On the contrary, in this work we ask: 
+
+Can control and merging be cast in a single framework enabling task-aware merging of multiple flows? 
+
+Intuitively, this would allow to merge flows in a task-aware manner, as well as adapt flows to optimize downstream rewards while leveraging information from multiple prior models. Answering this would contribute to the algorithmic-theoretical foundations of flow adaptation .
+
+Our approach To address this challenge, we first introduce a probability-space optimization frame-work (see Fig. 1b) that recovers reward-guided fine-tuning and pure model merging as limit cases, and provably enables reward-guided flow merging (Sec. 3). Our formulation allows to express a rich family of operators over generative models, covering practical needs such as enforcing safety (e.g., via intersection), composing diverse models (e.g., via union), and discovery in data-scarce regions (e.g., via interpolation). However, these operators are expressed via non-linear functionals that cannot be 1
+
+> arXiv:2602.08012v1 [cs.LG] 8 Feb 2026
+
+Preprint. optimized via classic RL or control schemes, as shown by De Santi et al. (2025b). To overcome this challenge, we introduce Reward-Guided Flow Merging ( RFM ), a mirror descent (MD) (Nemirovskij & Yudin, 1983) scheme that solves reward-guided and pure flow merging via a sequential adaptation process implementable via established fine-tuning methods (e.g., Domingo-Enrich et al., 2024; Uehara et al., 2024b) (Sec. 4). Next, we extend the algorithm proposed, to operate on the space of entire flow processes, enabling scalable and stable computation of the intersection operator (Sec. 5). We provide a rigorous convergence analysis of RFM , yielding first-of-its-kind theoretical guarantees for reward-guided and pure flow merging (Sec. 6). Ultimately, we showcase our method’s capabilities on illustra-tive settings, as well as on high-dimensional molecular design and conformer generation tasks (Sec. 7). 
+
+Our contributions To sum up, in this work we contribute • A formalization of reward-guided flow merging via density operators, which unifies and generalizes reward-guided adaptation and flow merging (Sec. 3). • Reward-Guided Flow Merging ( RFM ), a probability-space optimization algorithm that provably solves reward-guided flow merging, and pure flow merging problems (Sec. 4), and a stability-enhancing extension for flow intersection, implementing a scalable mirror-descent scheme over the space of flow processes (Sec. 5). • Theoretical convergence guarantees for the proposed algorithms, leveraging recent insights on mirror flows, and a novel technical result of independent interest. (Sec. 6). • An experimental evaluation of RFM showcasing its practical relevance on both synthetic, yet illustrative settings, as well as on scientific discovery tasks, namely molecular design and conformer generation. (Sec. 7). 
+
+## 2 BACKGROUND AND NOTATION 
+
+We denote the set of Borel probability measures on a set X with P (X ), and the set of functionals over P (X ) as F (X ).
+
+Generative Flow Models. Generative models aim to approximately sample novel data points from a data distribution pdata . Flow models tackle this problem by transforming samples X0 = x0 from a source distribution p0 into samples X1 = x1 from the target distribution pdata (Lipman et al., 2024; Farebrother et al., 2025). Formally, a flow is a time-dependent map ψ : [0 , 1] × Rd → R such that ψ :(t, x ) → ψt(x). A generative flow model is a continuous-time Markov process {Xt}0≤t≤1 obtained by applying a flow ψt to X0 ∼ p0 as Xt = ψt(X0), t ∈ [0 , 1] , such that X1 = ψ1(X0) ∼ pdata . In particular, the flow ψ can be defined by a velocity field u : [0 , 1] × Rd → Rd, which is a vector field related to ψ via the following ordinary differential equation (ODE), typically referred to as flow ODE :
+
+ddt ψt(x) = ut(ψt(x)) (1) with initial condition ψ0(x) = 0 . A flow model Xt = ψt(X0) induces a probability path of marginal densities p = {pt}0≤t≤1 such that at time t we have that Xt ∼ pt. We denote by pu the probability path of marginal densities induced by the velocity field u. Flow matching (FM) (Lipman et al., 2024) can estimate a velocity field uθ s.t. the induced marginal densities puθ satisfy puθ 
+
+> 0
+
+= p0 and 
+
+puθ 
+
+> 1
+
+= pdata , where p0 denotes the source distribution, and pdata the target data distribution. Typically FM are rendered tractable by defining put as the marginal of a conditional density put (·| x0, x 1), e.g.,: 
+
+Xt | X0, X 1 = κtX0 + ωtX1 (2) where κ0 = ω1 = 1 and κ1 = ω0 = 0 (e.g. κt = 1 − t and ωt = t). Then uθ can be learned by regressing onto the conditional velocity field u(·| x1) (Lipman et al., 2022). As diffusion models (Song & Ermon, 2019) (DMs) admit an equivalent ODE formulation (Lipman et al., 2024, Ch. 10), our contributions extend directly to DMs. 
+
+Continuous-time Reinforcement Learning. We formulate finite-horizon continuous-time RL as a specific class of optimal control problems (Wang et al., 2020; Zhao et al., 2024). Given a state space 
+
+X and an action space A, we consider the transition dynamics governed by the following ODE: 
+
+ddt ψt(x) = at(ψt(x)) (3) 2Preprint.  
+
+> (a) Reward-Guided Flow Merging (b) Probability-Space Opt. Viewpoint
+
+Figure 1: (1a) Pre-trained and fine-tuned policies inducing {ppre,i  
+
+> 1
+
+}ni=1 and optimal density p∗
+
+> 1
+
+computed via flow merging, i.e., subcase of Problem 5 where f is disregarded. (1b) Probability-space optimization viewpoint on reward-guided flow merging, as in Problem 5. where at ∈ A is an action. We consider a state space X := Rd × [0 , 1] , and denote by (Markovian) deterministic policy a function πt(Xt) := π(Xt, t ) ∈ A mapping a state (x, t ) ∈ X to an action 
+
+a ∈ A such that at = π(Xt, t ), and denote with pπt the marginal density at time t induced by policy π.
+
+Pre-trained Flow Models as an RL policy. A pre-trained flow model with velocity field upre can be interpreted as an action process apre t := upre (Xt, t ), where apre t is determined by a continuous-time RL policy via apre t = πpre (Xt, t ) (De Santi et al., 2025a). Therefore, we can express the flow ODE induced by a pre-trained flow model by replacing at with apre in Eq. equation 3, and denote the pre-trained model by its policy πpre , which induces a density ppre  
+
+> 1
+
+:= pπpre  
+
+> 1
+
+approximating pdata .
+
+## 3 REWARD -G UIDED FLOW MERGING VIA IMPLICIT DENSITY OPERATORS 
+
+In this section, we introduce the general problem of reward-guided flow merging via density operators . Formally, we wish to implement an operator O: Π × . . . × Π → Π that, given pre-trained generative flow models {πpre,i }i∈[n], returns a merged flow π∗ inducing an ODE: 
+
+ddt ψt(x) = a∗ 
+
+> t
+
+(ψt(x)) with a∗ 
+
+> t
+
+= π∗(x, t ), (4) such that it controllably merges prior information within the n pre-trained generative models, while potentially steering its density p∗ 
+
+> 1
+
+:= pπ∗ 
+
+> 1
+
+towards a high-reward region according to a given scalar reward function f (x) : X → R. We implement such operators by fine-tuning an initial flow 
+
+πinit ∈ { πpre,i }i∈[n] according to the following probability-space optimization problem (see Fig. 1b). 
+
+Reward-Guided FM via Density Operator 
+
+π∗ ∈ arg max  
+
+> π:p∗
+> 0=ppre
+> 0
+
+E
+
+> x∼pπ
+> 1
+
+[f (x)] −
+
+> n
+
+X
+
+> i=1
+
+αiDi(pπ 
+
+> 1
+
+∥ ppre,i  
+
+> 1
+
+) (5) Here, each Di is an arbitrary divergence, αi > 0 are model-specific weights, and pπ 
+
+> 0
+
+= ppre  
+
+> 0
+
+enforces that the marginal density at t = 0 must match the pre-trained model marginal. This formulation recovers reward-guided fine-tuning (e.g., Domingo-Enrich et al., 2024) when n = 1 and D1 = DKL ,and provides a formal framework for pure flow merging (e.g., Poole et al., 2022; Song et al., 2023) with interpretable objectives, when the reward f is constant (e.g., f (x) = 0 ∀x ∈ X ). In this case, Eq. 5 formalizes flow merging as computing a flow π∗ that minimizes a weighted sum of divergences to the priors {πpre,i }i∈[n]. Varying the divergences {Di}i∈[n] yields different merging strategies. 
+
+In-Distribution Flow Merging. Given pre-trained flow models {πpre,i }i∈[n], we denote by 
+
+in-distribution merging when the merged model generates samples from regions with sufficient prior density. Practically relevant instances include the intersection operator O∧ (i.e., a logical AND), and the union operator O∨ (i.e., a logical OR). Formally, these operators can be defined as follows: 3Preprint. 
+
+O∧: Intersection ( ∧) Operator 
+
+π∗ ∈ arg min  
+
+> π:p∗
+> 0=ppre
+> 0
+> n
+
+X
+
+> i=1
+
+αi DKL (pπ 
+
+> 1
+
+∥ppre,i  
+
+> 1
+
+) (6) 
+
+O∨: Union ( ∨) Operator 
+
+π∗ ∈ arg min  
+
+> π:p∗
+> 0=ppre
+> 0
+> n
+
+X
+
+> i=1
+
+αi DRKL (pπ 
+
+> 1
+
+∥ppre,i  
+
+> 1
+
+) (7) The DKL divergences in Eq. 6 heavily penalize density allocation in any region with low prior density for any model πpre,i , leading to an optimal flow model π∗ inducing p∗
+
+> 1
+
+(x) ∝ Qni=1 ppre,i  
+
+> 1
+
+(x)αi (cf. Heskes, 1997). Similarly, the reverse KL divergence DRKL (p∥q) := DKL (q∥p) in Eq. 7 induces a mode-covering behaviour implying a flow model π∗ with density p∗ 
+
+> 1
+
+∝ Pni=1 αippre,i  
+
+> 1
+
+(x) (cf. Baner-jee et al., 2005) sufficiently covering all regions with enough prior density, for any ppre,i  
+
+> 1
+
+, i ∈ [n].
+
+Out-of-Distribution Flow Merging. We denote by out-of-distribution , the case where π∗ samples from regions insufficiently covered by all priors. An example is the interpolation operator OWp
+
+(see Eq. 8), inducing p∗ 
+
+> 1
+
+equal to the priors Wasserstein Barycenter (Cuturi & Doucet, 2014). 
+
+OWp : Interpolation (Wasserstein-p Barycenter) Operator 
+
+arg min 
+
+> πn
+
+X
+
+> i=1
+
+αiWp(pπ 
+
+> 1
+
+∥ ppre,i  
+
+> 1
+
+) (8) 
+
+Straightforward Generalizations. While we presented a few practically relevant operators, the framework in Eqs. 5 is not tied to them: it trivially admits any new operator defined via other divergences (e.g., MMD, Rényi, Jensen–Shannon), and allows diverse Di for each prior flow models 
+
+πpre,i . Moreover, sequential composition of these operators makes it possible to implement arbitrarily complex logical operations over generative models. For instance, as later shown in Sec. 7, one can obtain π∗ = ( πpre, 1 ∨ πpre, 2) ∧ πpre, 3 by first computing π1,2 := O∨(πpre, 1, π pre, 2) and then 
+
+π∗ := O∧(π1,2, π pre, 3). We denote such operators by generative circuits , and illustrate one in Fig. 4d. While being of high practical relevance, the presented framework entails optimizing non-linear distri-butional utilities (see Eq. 5) beyond the reach of standard RL or control schemes, as shown by De Santi et al. (2025b). In the next section, we show how to reduce the introduced problem to sequential fine-tuning for maximization of rewards automatically determined by the choice of operator O.
+
+## 4 ALGORITHM : R EWARD -G UIDED FLOW MERGING 
+
+In this section, we introduce Reward-Guided Flow Merging ( RFM ), see Alg. 1, which provably solves Problem 5. RFM implements general operators O (see Sec. 3) by solving the following problem: 
+
+Reward-Guided Flow Merging as Probability-Space Optimization 
+
+pπ∗ 
+
+> 1
+
+∈ arg max 
+
+> pπ
+> 1
+
+G(pπ 
+
+> 1
+
+) with G(pπ 
+
+> 1
+
+) := E
+
+> x∼pπ
+> 1
+
+[f (x)] −
+
+> n
+
+X
+
+> i=1
+
+αiDi(pπ 
+
+> 1
+
+∥ ppre,i  
+
+> 1
+
+) (9) Given an initial flow model πinit ∈ { πpre,i }i∈[n], RFM follows a mirror descent (MD) scheme (Ne-mirovskij & Yudin, 1983) for K iterations by sequentially fine-tuning πinit to maximize surrogate rewards gk determined by the chosen operator, i.e., G. To understand how RFM computes the surrogate rewards {gk}Kk=1 guiding the optimization process in Eq. 9, we first recall the notion of first variation of G over a space of probability measures (cf. Hsieh et al., 2019). A functional 
+
+G ∈ F (X ) has a first variation at μ ∈ P (X ) if there exists a function δG(μ) ∈ F (X ) such that: 
+
+G(μ + ϵμ ′) = G(μ) + ϵ⟨μ′, δ G(μ)⟩ + o(ϵ).
+
+holds for all μ′ ∈ P (X ), where the inner product is an expectation. At iteration k ∈ [K], given the cur-rent generative model πk−1, RFM fine-tunes it according to the following standard entropy-regularized control or RL problem, solvable via any established method (e.g., Domingo-Enrich et al., 2024) 
+
+arg max 
+
+> π
+
+⟨δG  pπk−1
+
+> 1
+
+ , p π 
+
+> 1
+
+⟩ − 1
+
+γk
+
+DKL (pπ 
+
+> 1
+
+∥ pπk−1 
+
+> 1
+
+) (10) 4Preprint. 
+
+Algorithm 1 R eward-Guided Flow Merging ( RFM )
+
+1: input: {πpre,i }i∈[n] : pre-trained flows, {D i}i∈[n] : arbitrary divergences, f : reward, {αi}i∈[n] : weighs, 
+
+K : iterations number, {γk }Kk=1 stepsizes, πinit ∈ { πpre,i }i∈[n] : initial flow model 2: Init: π0 := πinit 
+
+3: for k = 1 , 2, . . . , K do 
+
+4: Estimate ∇xgk = ∇xδG(pπk−1 
+
+> 1
+
+) with: 
+
+G
+
+
+
+pπk−1
+
+> 1
+
+
+
+=
+
+
+
+E
+
+> x∼pπk−11
+
+[f (x)] −
+
+> n
+
+X
+
+> i=1
+
+αiDi(pπk−1 
+
+> 1
+
+∥ ppre,i  
+
+> 1
+
+) (Reward-Guided Flow Merging) 
+
+−
+
+> n
+
+X
+
+> i=1
+
+αiDi(pπk−1 
+
+> 1
+
+∥ ppre,i  
+
+> 1
+
+) (Flow Merging) (12) 5: Compute πk via standard reward-guided fine-tuning (e.g., Domingo-Enrich et al., 2024): 
+
+πk ← REWARD GUIDED FINE TUNING SOLVER (∇xgk , γ k , π k−1)
+
+6: end for 
+
+7: output: policy π := πK
+
+Thus, we introduce a surrogate reward function gk : X → R defined for all x ∈ X such that: 
+
+gk(x) := δG
+
+
+
+pπk−1
+
+> 1
+
+
+
+(x) and E
+
+> x∼pπ
+> 1
+
+[gk(x)] = ⟨δG
+
+
+
+pπk−1
+
+> 1
+
+
+
+, p π 
+
+> 1
+
+⟩ (11) We now present Reward-Guided Flow Merging ( RFM ), see Alg. 1. At each iteration k ∈ [K], RFM 
+
+estimates the gradient of the first variation at the previous policy πk−1, i.e., ∇xδG(pπk−1 
+
+> 1
+
+) (line 4). Then, it updates the flow model πk by solving the reward-guided fine-tuning problem in Eq. 10 by employing ∇xgk := ∇xδG(pπk−1 
+
+> 1
+
+) as reward function gradient (line 5). Ultimately, RFM returns a final policy π := πK . We report a detailed implementation of REWARD GUIDED FINE TUNING SOLVER 
+
+in Apx. E.2. 
+
+Implementation of Intersection, Union, and Interpolation operators. In the following, we present the specific expressions of ∇xδG(pπ 
+
+> 1
+
+) for pure model merging with the intersection ( O∧), union ( O∨), and interpolation ( OWp ) operators introduced in Sec. 3. 
+
+∇xδG(pπ 
+
+> 1
+
+)( x) = 
+
+
+
+− Pni=1 αisk−1(x, t = 1) + Pni=1 αisπpre,i 
+
+(x, t = 1) Intersection ( O∧)
+
+− Pni=1 ∇x exp ( ϕ∗ 
+
+> i
+
+(x) − 1) , ϕ ∗ 
+
+> i
+
+as by Eq. 46 Union ( O∨)
+
+− Pni=1 ∇xϕ∗ 
+
+> i
+
+(x), ϕ ∗ 
+
+> i
+
+= arg max ϕ:∥∇ xϕ∥≤ 1⟨ϕ, p π − ppre,i ⟩ Interpol. ( OW1 )Where by sk−1(x, t ) := ∇ log pπ−1 
+
+> t
+
+(x) we denote the score of model πk−1 at point x and time t, and 
+
+spre,i := sπpre,i 
+
+. For diffusion models, a learned neural score network is typically available; for flows, the score follows from a linear transformation of π(Xt, t ) (e.g., Domingo-Enrich et al., 2024, Eq. 8): 
+
+sπt (x) = 1
+
+κt( ˙ωt 
+
+> ωt
+
+κt − ˙κt)
+
+
+
+π(x, t ) − ˙ωt
+
+ωt
+
+x
+
+
+
+(13) For the union operator, gradients are defined via critics {ϕ∗ 
+
+> i
+
+}ni=1 learned with the standard variational form of reverse KL, as in f-GAN training of neural samplers (Nowozin et al., 2016). For W1
+
+interpolation, each ϕ∗ 
+
+> i
+
+plays the role of a Wasserstein-GAN discriminator with established learning procedures (Arjovsky et al., 2017). In both cases, each critic compares the fine-tuned density to a prior density ppre,i  
+
+> 1
+
+, seemingly requiring one critic per prior. We prove that, surprisingly, this is unnecessary for the union operator, and conjecture that analogous results hold for other divergences. 
+
+Proposition 1 (Union operator via Pre-trained Mixture Density Representation) . Given ppre  
+
+> 1
+
+=  
+
+> Pni=1 αippre,i
+> 1
+
+/Pni=1 αi, i.e., the α-weighted mixture density of pre-trained models, the following hold: 
+
+π∗ ∈ arg min 
+
+> πn
+
+X
+
+> i=1
+
+αi DRKL (pπ 
+
+> 1
+
+∥ ppre,i  
+
+> 1
+
+) = arg min 
+
+> π
+> n
+
+X
+
+> i=1
+
+αi
+
+!
+
+DRKL (pπ 
+
+> 1
+
+∥ ppre  
+
+> 1
+
+) (14) 5Preprint. Prop. 1, which is proved in Apx. D implies that the union operator in Eq. 7 over n prior models can be implemented by learning a single critic ϕ∗, as shown in Sec. 7. In Apx. C.2, we report the gradient expressions above, and present a brief tutorial to derive the first variations for any new operator. Crucially, the score in Eq. 13 for the intersection gradient diverges at t = 1 (κ1 = 0 ). While prior works attenuate the issue by evaluating the score at 1 − ϵ (De Santi et al., 2025a), this trick hardly scales well to high-dimensional settings. In the following, we propose a principled solution to this problem by leveraging weighted score estimates along the entire noised flow process, i.e., t ∈ [0 , 1] .
+
+## 5 SCALABLE INTERSECTION VIA FLOW PROCESS OPTIMIZATION 
+
+To tackle the aforementioned issue, we lift the problem in Eq. 6 from the probability space of the last time-step marginal pπ 
+
+> 1
+
+, where the score diverges, to the entire flow process: 
+
+Intersection Operator via Flow Process Optimization 
+
+arg max  
+
+> π:pπ
+> 0=ppre
+> 0
+
+L∧(Qπ ) := 
+
+Z 10
+
+λtnX
+
+> i=1
+
+αi DKL (pπt ∥ ppre,i t ) d t (15) Here, Qπ = {pπt }t∈[0 ,1] denotes the entire joint flow process induced by policy π over X [0 ,1] . Under general regularity assumptions, an optimal policy π∗ for Problem 15 is optimal also w.r.t. Eq. 6. Interestingly, an optimal flow π∗ for Problem 15 can be computed via a MD scheme acting over the space of joint flow processes Qπ = {pπt }t∈[0 ,1] determined by the following update rule: 
+
+Reward-Guided FM (Mirror Descent) Step 
+
+Qk ∈ arg max 
+
+> q:p0=pk−10
+
+⟨δL∧(Qk−1), Q⟩ + 1
+
+γk DKL 
+
+ Q∥Qk−1 (16) First, we state the following Lemma 5.1, which allows to express the first variation of L∧ w.r.t. the flow process Qπ as an integral of first variations w.r.t. marginal densities pπt .
+
+Lemma 5.1 (First Variation of Flow Process Functional) . For objective L∧ in Eq. 15 it holds the following: 
+
+⟨δL∧(Qk), q ⟩ =
+
+Z 10
+
+λt EQ
+
+"
+
+δ
+
+> n
+
+X
+
+> i=1
+
+αi DKL (pπt ∥ ppre,i t )
+
+#
+
+dt (17) This factorization of ⟨δL∧(Qk), q ⟩ shows that a flow πk+1 inducing an optimal process Qk w.r.t. the update step in Eq. 16 can be computed by solving a control-affine optimal control problem via the same REWARD GUIDED FINE TUNING SOLVER oracle used in Alg. 1, by introducing the running cost term: 
+
+ft(x) := δ
+
+> n
+
+X
+
+> i=1
+
+αi DKL (pπt ∥ ppre,i t )
+
+!
+
+(x, t ) (18) with ∈ [0 , 1) . This algorithmic idea, which allows to control the score scale at t → 1 via λt, thus enhancing RFM , trivially extends to reward-guided merging, and is accompanied by a detailed pseudocode in Apx. E.2. 
+
+## 6 GUARANTEES FOR REWARD -G UIDED FLOW MERGING 
+
+In this section, we aim to provide rigorous convergence guarantees for RFM by interpreting its iterations as mirror descent on the space of measures. To this end, at each iteration it must hold that 
+
+sk−1(x, t ) := ∇x log pπk−1 
+
+> t
+
+(x), i.e., the REWARD GUIDED FINE TUNING SOLVER subroutine, employed by RFM at every iteration (see line 5, Alg. 1), retains the score information . Our key contribution is to prove this result, which is not only essential for our convergence analysis, but also of independent interest: it provides a rigorous justification for a structural assumption that underlies several control-based fine-tuning analyses, where it is typically implicitly assumed (De Santi et al., 2025b;a). 6Preprint. 
+
+Score Retention via Control-based Fine-Tuning. Our main observation is that, under a standard assumption, control-based fine-tuning schemes retain score information. These include Adjoint Matching (Domingo-Enrich et al., 2024), which we utilize in our experiments (Sec. 7). We consider the standard stochastic optimal control (SOC) framework, exposed in Apx. B, and show that the fine-tuned model via SOC necessarily encodes score information. 
+
+Theorem 6.1 (SOC Retains Score Information) . Suppose that the prior diffusion model forward process converges to a standard Gaussian noise a. Then, the model returned by a SOC fine-tuning solver is such that: 
+
+u⋆(x, t ) := σ(t) ∇ log pkt (x) (19) 
+
+where pkt denotes the marginal distribution of the prior forward process, initialized at pπk 
+
+> 1
+
+, and 
+
+u⋆(x, t ) the applied optimal control (see Sec. B). In other words, REWARD GUIDED FINE TUNING -SOLVER exactly recovers the score. 
+
+> aThis is a standard assumption in diffusion modeling (e.g., Ho et al., 2020; Song et al., 2021).
+
+Theorem 6.1 enables us to reinterpret Algorithm 1 as generating approximate mirror iterates , a framework that has proven effective for sampling and generative modeling (Karimi et al., 2024; De Santi et al., 2025a;b). 
+
+Robust Convergence under Inexact Updates. Thanks to Theorem 6.1, we can now develop a rigor-ous convergence theory for Algorithm 1 under the realistic condition that REWARD GUIDED FINE TUN - 
+
+> ING SOLVER
+
+(see Sec. 4) is implemented approximately . Let G be the objective in Eq. 9. Via πk, the iter-ates generated by Algorithm 1 induce a sequence of stochastic processes, denoted by Qk, which satisfy 
+
+Qk = pπk 
+
+> 1
+
+. Each iterate Qk is understood as an approximation to the idealized mirror descent step: 
+
+Qk♯ ∈ arg max 
+
+> Q:p0=ppre
+> 0
+
+n
+
+⟨δG(pπk 
+
+> 1
+
+), Q⟩ − 1 
+
+> γk
+
+DKL 
+
+ Q ∥ Qk−1o
+
+. (20) which serves as the exact reference point for our analysis. To quantify the discrepancy between Qk
+
+and Qk♯ , let Tk denote the history up to step k, and decompose the error as 
+
+bk := EδG(pπk 
+
+> 1
+
+) − δG(( Qk♯ )1) Tk
+
+ , (21) 
+
+Uk := δG(pπk 
+
+> 1
+
+) − δG(( Qk♯ )1) − bk. (22) Here, bk captures systematic approximation error, and Uk represents a zero-mean fluctuation conditional on Tk. Under mild assumptions over noise and bias (see Section B.2), the long-term behavior of the iterates can be characterized. 
+
+Theorem 6.2 (Asymptotic convergence under inexact updates (Informal)) . Assume the oracle has bounded variance and diminishing bias, and the step sizes {γk} satisfy the Robbins–Monro conditions ( P 
+
+> k
+
+γk = ∞, P
+
+> k
+
+(γk)2 < ∞). Then the sequence {pπk 
+
+> 1
+
+} generated by Algorithm 1 converges almost surely to the optimum in the weak sense: 
+
+pπk 
+
+> 1
+
+⇀ ˜p1 a.s. , (23) 
+
+where ˜p1 is a stationary point of G.
+
+Remark. Several functionals G considered in this work (e.g., forward and reverse KL, Jensen– Shannon, and their f -guided counterparts etc.) are convex over the space of measures. In these cases, Thm. 6.2 trivially strengthens to convergence to a global optimum: pπk 
+
+> 1
+
+⇀ p ⋆ 
+
+> 1
+
+= Q⋆ 
+
+> 1
+
+for some 
+
+Q⋆ ∈ arg max Q: Q0=ppre 0 G(Q1), as shown in Apx. B.2. 
+
+## 7 EXPERIMENTAL EVALUATION 
+
+We evaluate RFM for the reward-guided flow merging problem (see Eq. 5) by tackling two types of experiments: (i) visually interpretable illustrative settings, showcasing the correctness and high expressivity of RFM , and (2) high-dimensional molecular design and conformer generation tasks. Further experimental details are reported in Apx. H 7Preprint.                   
+
+> (a) Pre-trained samples (b) AND Balanced (c) AND reward up (d) AND reward up
+> (e) Pre-trained samples (f) OR Balanced (g) OR α= [0 .1,0.9] (h) OR optimization
+> (i) Pre-trained samples (j) INTR πinit =πpre, 1(k) INTR πinit =πpre, 2(l) Reward-guided INTR
+
+Figure 2: Illustrative settings with visually interpretable results. (top) Flow model balanced pure in-tersection (2b), and reward-guided intersection (2c), (mid) Flow balanced and unbalanced union, (bot-tom) Flow model pure and reward-guided interpolation. Crucially, RFM can correctly implement these practically relevant and diverse operators with high degree of expressivity (e.g., α, reward-guidance). 
+
+Intersection Operator O∧. We consider pre-trained flow models inducing densities ppre, 11 (green) and ppre, 21 (violet), as shown in Fig. 2a. We fine-tune πinit := πpre, 1 via RFM to compute the policy 
+
+π∗ resulting from diverse intersection operations π∗ = O∧(πpre, 1, π pre, 2). First, in Fig. 2b, we show p∗ (black) obtained by RFM with α = [0 .5, 0.5] , i.e., balanced (B). One can notice that the flow model p∗ covers mostly the intersecting regions between ppre, 11 and ppre, 21 (see Fig. 2a). In Fig. 2c we report an instance of reward-guided intersection (RG) for a reward function maximized upward. As one can see, RFM computes a policy π∗ placing density over the highest-reward region among the intersecting ones, i.e., the top intersecting area. This reward-guided flow merging process is carried out via maximization over K = 15 iterations of the objective G illustrated in Fig. 2d. 
+
+Union Operator O∨. We fine-tune the pre-trained flow model πinit = πpre, 1 with density illustrated in Fig. 2e (green) via RFM to implement balanced (i.e., α = [0 .5, 0.5] and unbalanced (i.e., 
+
+α = [0 .1, 0.9] (UB)) versions of the union operator, namely computing π∗ = O∨(πpre, 1, π pre, 2).As shown in Fig. 2f and 2g RFM can successfully compute optimal policies π∗ implementing both operators via optimization of the functional G, corresponding to sum of weighted KL-divergences (see Eq. 7) evaluated for iterations k ∈ [K] with K = 13 in Fig. 2h. 
+
+Interpolation Operator OW1 . We use RFM to compute flows π∗ inducing p∗ 
+
+> 1
+
+corresponding to diverse interpolations between the the pre-trained models’ densities illustrated in Fig. 2i. Although the optimal policy to which RFM converges asymptotically is invariant w.r.t. the initial flow model 
+
+πinit chosen for fine-tuning, here we show that this choice can actually be used to control the algorithm execution over few iterations (i.e., K = 6 ). As one can expect, Fig. 2j and 2k show that the result density after K = 6 iterations is closer to the flow model chosen as πinit , namely πpre, 1
+
+(green) in Fig. 2j and πpre, 2 (violet) in Fig. 2k. We illustrate in Fig. 2l the density (black) obtained via reward-guided interpolation, with a reward function maximized left upwards. 
+
+Complex Logical Expressions via Generative Circuits. We consider 4 flow models {πpre,i }4
+
+> i=1
+
+as in Fig. 4a, which we aim to merge into one flow π∗ determined by the logical expression 
+
+π∗ = ( π1 ∧ π2) ∨ (π3 ∧ π4). We implement the generative circuit in Fig. 4d via sequential use of 
+
+> RFM
+
+. First, we compute π5 := O∧(πpre, 1, π pre, 2) and π6 := O∧(πpre, 3, π pre, 4), shown in Fig. 4b, and subsequently π∗ := O∨(πpre, 3, π pre, 4), as illustrated in Fig. 4c. This illustrative experiments confirms that RFM can implement complex logical expressions over generative models via generative circuits, as the simple one just presented. 8Preprint.              
+
+> (a) Pre-trained samples (b) π5and π6(c) Circuit output π∗(d) Generative circuit
+> (e) Pre-trained samples (f) AND molecules (g) AND α= [0 .33 ,0.66] (h) Validity-Energy
+
+Figure 4: (top) RFM implements a generative circuit (4d) describing a complex logical expressions (π∗ = ( π1 ∧ π2) ∨ (π3 ∧ π4)) by computing sequential operators (4a-4c). (bottom) RFM computes a flows intersection π∗ generating drug molecules with desired energy levels. 
+
+Low-Energy Molecular Design via Flow Merging Navigating chemical space to discover novel structures with desirable properties is a central goal of data-driven molecular design. A generative model must produce diverse, chemically valid structures that follow specified property profiles and constraints. We base our case study on two FlowMol models πpre, 1 and πpre, 2 (Dunn & Koes, 2024) pre-trained on GEOM-Drugs (Axelrod & Gomez-Bombarelli, 2022) with different levels of single-point total energy at GFN1-xTB level of theory (Friede et al., 2024), −14 .8 and 
+
+−8.1 Ha as shown in Fig. 4e. We aim to compute a flow model that generates molecules whose total energy is likely under both generative models. To this end, we run RFM to compute the flow π∗ returned by the intersection operator (see Eq. 6), with parameters detailed in Apx. H. -11.29 -13.83 -14.30 -8.01 
+
+Figure 3: Drug-like molecules generated by 
+
+π∗ 
+
+> AN D
+
+flow via RFM .We report the density p∗ 
+
+> 1
+
+(black) computed via balanced merging (i.e., 
+
+αi = 1 ) in Fig. 4f and the one obtained via unbalanced merging (i.e., 
+
+α1 = 1 , α 2 = 2 ) in Fig. 4g. In the former case, p∗ 
+
+> 1
+
+correctly places the majority of its density on the overlapping region between the two priors within [−20 , 0] Ha (see Fig. 4f). The estimated mean energy of π∗ (black) i.e., −10 .95 ± 0.28 Ha, reported along with validity in 4h matches the energy value of maximal overlap between πpre, 1 and 
+
+πpre, 2, as one can see in 4e. Adding reward-guidance leads to lower energy values compared to the balanced merging model while keeping its high validity. In the unbalanced case, RFM shifts the density slightly leftwards, effectively implementing the α-weighted intersection. We report energy-validity metrics resulting from balanced and unbalanced intersection in Fig. 4h, and compare them with their reward-guided counterpart in Table 1. Next, we compute via RFM the union operator over two FlowMol pre-trained on the QM9 dataset (Ramakrishnan et al., 2014). We parametrize critics ϕ∗ 
+
+> i
+
+(see Sec. 1) via the FlowMol latent representation with an MLP readout layer. Figure 7 shows that the estimated mean of the model π∗ obtained via RFM matches the average total energy of πpre, 1 and πpre, 2 as predicted by the closed-form expression for union from Sec. 3. 
+
+Reward-Guided FM of Conformer Generation Models Inferring 3D conformers from a molecule’s topology is a key prerequisite for many computational chemistry applications including molecular docking (McNutt et al., 2023), thermodynamic property prediction (Pracht & Grimme, 2021), and modeling reaction pathways for catalyst design (Schmid et al., 2025). Given two prior ETFlow models (i.e., PRE-1 and PRE-2) (Hassan et al., 2024) with different property profiles, and we aim to merge them into a conformer generator whose profiles controllably interpolate between, or slightly improve upon their initial energetic ensemble property profile. In particular, we evaluate errors in energy, dipole moment, HOMO-LUMO gap and minimum energy of the generated structure ensemble compared to the equilibrium ensemble. We run RFM initialized from PRE-2, to compute its balanced (B), unbalanced (UB), reward-guided (RG) intersection, and union variants. Figure 5a shows that the median absolute error (MAE) on 9Preprint. PRE-1 
+
+> RFM-UB
+> RFM-B
+> RFM-UNION
+> RFM-RG
+> PRE-2
+> 0.31
+> 0.32
+> 0.33
+> 0.34
+> 0.35
+> E [kcal/mol]
+
+(a) Energy EPRE-1  
+
+> RFM-UB
+> RFM-B
+> RFM-UNION
+> RFM-RG
+> PRE-2
+> 0.12
+> 0.14
+> 0.16
+> 0.18
+> Dipole [debye]
+
+(b) Dipole moment μPRE-1  
+
+> RFM-UB
+> RFM-B
+> RFM-UNION
+> RFM-RG
+> PRE-2
+> 0.48
+> 0.50
+> 0.52
+> 0.54
+> Gap [kcal/mol]
+
+(c) HOMO-LUMO gap ∆ϵPRE-1  
+
+> RFM-UB
+> RFM-B
+> RFM-UNION
+> RFM-RG
+> PRE-2
+> 0.274
+> 0.276
+> 0.278
+> 0.280
+> E Min [kcal/mol]
+
+(d) Min energy Emin 
+
+Figure 5: RFM can perform balanced (B), unbalanced (UB), reward-guided (RG) intersections, as well as unions (UNION) of ETFlow (Hassan et al., 2024) conformer generation models. We evaluate the resulting flows in terms of median absolute errors of energy (5a), dipole moment (5b), HOMO–LUMO gap (5c), and minimum energy (5d). These results demonstrate the ability of RFM to compute new flow models whose properties predictably interpolate those of the available pre-trained flows. the total energy E interpolates between PRE-1 and PRE-2, RFM -B and RFM -UNION achieve intermediate errors of ≈ 0.3356 and 0.3352 kcal/mol as expected. On the other hand, the reward-guided (i.e., via energy minimization) counterpart reaches lower energy values, namely 
+
+≈ 0.3193 kcal/mol, and the unbalanced variant ( α1 = 0 .7, α 2 = 0 .3) remains near PRE-1 at 0.3412 kcal/mol. These results validate the ability of RFM to perform unbalanced and reward-guided intersection. We report similar results for the dipole moment μ in Fig. 5b, for the HOMO–LUMO gap ∆ϵ 5c, and minimum energy Emin 5d. Our evaluation indicates that RFM can perform (reward-guided) flow merging with conformer generation models, leading to flows with controllable interpolations or improvements over property profiles of pre-trained models. Moreover, in Apx. F, we briefly investigate the computational cost of Reward-Guided Flow Merging. Ultimately, although this work is primarily motivated by scientific discovery problems, we report in Apx. H an illustrative application of RFM to image-generation diffusion models. 
+
+## 8 RELATED WORK 
+
+Flow models fine-tuning via optimal control. Several works have framed fine-tuning of flow and diffusion models to maximize expected reward functions under KL regularization as an entropy-regularized optimal control problem (e.g., Uehara et al., 2024a; Tang, 2024; Uehara et al., 2024b; Domingo-Enrich et al., 2024; Gutjahr et al., 2025). More recently, De Santi et al. (2025b) introduced a framework for distributional fine-tuning. The problem tackled in this work (see Eq. 5) instead extends the orthogonal setting of expected rewards with arbitrary divergences to the case with n > 1 pre-trained models. This generalization ( i) unifies flow control and merging, ( ii ) renders possible to use of scalable control-based or RL schemes (e.g., Domingo-Enrich et al., 2024) for flow merging, and ( iii ) enables reward-guided flow merging. 
+
+Flow model merging and inference-time composition. Recent works in inference-time flow and diffusion model composition introduced theory-backed schemes (e.g., Skreta et al., 2024; Bradley et al., 2025; Du et al., 2023). On the other hand, our work tackles the problem of (reward-guided) flow merging (e.g., Song et al., 2023), a significantly less explored research problem. Crucially, while inference-time flow composition aims to compose models at sampling time, flow merging aims to combine multiple flow models into one, and then disregard the prior models. This work provides a for-mal probability-space viewpoint on the latter problem, introduces interpretable merging operators (see Sec. 3) for highly expressive compositions (e.g., via generative circuits), provably implemented by 
+
+RFM , which is to our knowledge the first scheme for provable reward-guided flow merging. Moreover, to our knowledge, the theoretical guarantees in Sec. 6 are first-of-their-kind for merging of flow and diffusion models. In particular, specializing them to specific operators e.g., intersection, yields highly relevant results, such as generative models safety guarantees via intersection with prior safe models. 
+
+Convex and general utilities reinforcement learning. Convex and General (Utilities) RL (Hazan et al., 2019; Zahavy et al., 2021; Zhang et al., 2020) generalizes RL to maximization of a concave (Hazan et al., 2019; Zahavy et al., 2021) or general (Zhang et al., 2020; Barakat et al., 2023) functional of the state distribution induced by a policy over a dynamical system’s state space. Recent works tackled the finite samples budget setting (e.g., Mutti et al., 2022b;a; 2023; De Santi et al., 10 Preprint. 2024b;a). Similarly to previous optimization schemes for diffusion models (De Santi et al., 2025a;b), our framework (in Eq. 5) is related to Convex and General RL, with pπ 
+
+> 1
+
+being the state distribution induced by policy π over a subset of the flow process state space. 
+
+Optimization over probability measures via mirror flows. Recently, there has been a growing interest in devising theoretical guarantees for probability-space optimization problems in diverse fields of application. These include optimal transport (Aubin-Frankowski et al., 2022; Léger, 2021; Karimi et al., 2024), kernelized methods (Dvurechensky & Zhu, 2024), GANs (Hsieh et al., 2019), and manifold exploration (De Santi et al., 2025a) among others. To our knowledge, we present the first use of this theoretical framework to establish guarantees for flow and diffusion models merging. 
+
+## 9 CONCLUSION 
+
+We introduce a probability-space optimization framework for reward-guided flow merging, unifying and generalizing existing formulations. This allows to express diverse practically relevant operators over generative model densities (e.g., intersection, union, interpolation, logical expressions, and their reward-guided counterparts). We propose Reward-Guided Flow Merging, a mirror-descent scheme reducing complex merging tasks to sequential standard fine-tuning steps, solvable by established methods. Leveraging advances in mirror flows theory, we provide first-of-their kind guarantees for (reward-guided) flow merging. Empirical results on interpretable settings, molecular design, and conformer generation tasks demonstrate that our approach can steer pre-trained models to implement reward-guided merging tasks of high practical relevance. 
+
+## ACKNOWLEDGEMENTS 
+
+This publication was made possible by the ETH AI Center doctoral fellowship to Riccardo De Santi. The project has received funding from the Swiss National Science Foundation under NCCR Catalysis grant number 180544 and NCCR Automation grant agreement 51NF40 180545. 
+
+## REFERENCES 
+
+Brian DO Anderson. Reverse-time diffusion equation models. Stochastic Processes and their Applications , 12(3):313–326, 1982. Martin Arjovsky, Soumith Chintala, and Léon Bottou. Wasserstein gan, 2017. URL https: //arxiv.org/abs/1701.07875 .Pierre-Cyril Aubin-Frankowski, Anna Korba, and Flavien Léger. Mirror descent with relative smooth-ness in measure spaces, with application to sinkhorn and em. Advances in Neural Information Processing Systems , 35:17263–17275, 2022. Simon Axelrod and Rafael Gomez-Bombarelli. Geom, energy-annotated molecular conformations for property prediction and molecular generation. Scientific Data , 9(1):185, 2022. Arindam Banerjee, Srujana Merugu, Inderjit S Dhillon, and Joydeep Ghosh. Clustering with bregman divergences. Journal of machine learning research , 6(Oct):1705–1749, 2005. Anas Barakat, Ilyas Fatkhullin, and Niao He. Reinforcement learning with general utilities: Simpler variance reduction and large state-action space. In International Conference on Machine Learning ,pp. 1753–1800. PMLR, 2023. Michel Benaïm. Dynamics of stochastic approximation algorithms. In Seminaire de probabilites XXXIII , pp. 1–68. Springer, 2006. Arwen Bradley, Preetum Nakkiran, David Berthelot, James Thornton, and Joshua M Susskind. Mechanisms of projective composition of diffusion models. arXiv preprint arXiv:2502.04549 ,2025. Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau, Yilun Du, Benjamin Burchfiel, Russ Tedrake, and Shuran Song. Diffusion policy: Visuomotor policy learning via action diffusion, 2024. URL 
+
+https://arxiv.org/abs/2303.04137 .11 Preprint. Gabriele Corso, Hannes Stärk, Bowen Jing, Regina Barzilay, and Tommi Jaakkola. Diffdock: Diffusion steps, twists, and turns for molecular docking. arXiv preprint arXiv:2210.01776 , 2022. Marco Cuturi and Arnaud Doucet. Fast computation of wasserstein barycenters. In International conference on machine learning , pp. 685–693. PMLR, 2014. Josef Dai, Xuehai Pan, Ruiyang Sun, Jiaming Ji, Xinbo Xu, Mickel Liu, Yizhou Wang, and Yaodong Yang. Safe rlhf: Safe reinforcement learning from human feedback. arXiv preprint arXiv:2310.12773 , 2023. Riccardo De Santi, Federico Arangath Joseph, Noah Liniger, Mirco Mutti, and Andreas Krause. Geometric active exploration in markov decision processes: the benefit of abstraction. arXiv preprint arXiv:2407.13364 , 2024a. Riccardo De Santi, Manish Prajapat, and Andreas Krause. Global reinforcement learning: Beyond lin-ear and convex rewards via submodular semi-gradient methods. arXiv preprint arXiv:2407.09905 ,2024b. Riccardo De Santi, Marin Vlastelica, Ya-Ping Hsieh, Zebang Shen, Niao He, and Andreas Krause. Provable maximum entropy manifold exploration via diffusion models. In Proc. International Conference on Machine Learning (ICML) , June 2025a. Riccardo De Santi, Marin Vlastelica, Ya-Ping Hsieh, Zebang Shen, Niao He, and Andreas Krause. Flow density control: Generative optimization beyond entropy-regularized fine-tuning. In Advances in Neural Information Processing Systems (NeurIPS) , December 2025b. Carles Domingo-Enrich, Michal Drozdzal, Brian Karrer, and Ricky TQ Chen. Adjoint matching: Fine-tuning flow and diffusion generative models with memoryless stochastic optimal control. 
+
+arXiv preprint arXiv:2409.08861 , 2024. Yilun Du, Conor Durkan, Robin Strudel, Joshua B Tenenbaum, Sander Dieleman, Rob Fergus, Jascha Sohl-Dickstein, Arnaud Doucet, and Will Sussman Grathwohl. Reduce, reuse, recycle: Composi-tional generation with energy-based diffusion models and mcmc. In International conference on machine learning , pp. 8489–8510. PMLR, 2023. Ian Dunn and David Ryan Koes. Mixed continuous and categorical flow matching for 3d de novo molecule generation, 2024. URL https://arxiv.org/abs/2404.19739 .Pavel Dvurechensky and Jia-Jie Zhu. Analysis of kernel mirror prox for measure optimization. In 
+
+International Conference on Artificial Intelligence and Statistics , pp. 2350–2358. PMLR, 2024. Jesse Farebrother, Matteo Pirotta, Andrea Tirinzoni, Rémi Munos, Alessandro Lazaric, and Ahmed Touati. Temporal difference flows. arXiv preprint arXiv:2503.09817 , 2025. Marvin Friede, Christian Hölzer, Sebastian Ehlert, and Stefan Grimme. dxtb—an efficient and fully differentiable framework for extended tight-binding. The Journal of Chemical Physics , 161(6), 2024. Sven Gutjahr, Riccardo De Santi, Luca Schaufelberger, Kjell Jorner, and Andreas Krause. Constrained flow optimization via sequential fine-tuning for molecular design. In NeurIPS 2025 Workshop on Structured Probabilistic Inference {\ &} Generative Modeling , 2025. Majdi Hassan, Nikhil Shenoy, Jungyoon Lee, Hannes Stärk, Stephan Thaler, and Dominique Beaini. Et-flow: Equivariant flow-matching for molecular conformer generation. Advances in Neural Information Processing Systems , 37:128798–128824, 2024. Elad Hazan, Sham Kakade, Karan Singh, and Abby Van Soest. Provably efficient maximum entropy exploration. In International Conference on Machine Learning , 2019. Tom Heskes. Selecting weighting factors in logarithmic opinion pools. Advances in neural informa-tion processing systems , 10, 1997. Jean-Baptiste Hiriart-Urruty and Claude Lemaréchal. Fundamentals of convex analysis . Springer Science & Business Media, 2004. 12 Preprint. Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. Advances in neural information processing systems , 33:6840–6851, 2020. Emiel Hoogeboom, Vıctor Garcia Satorras, Clément Vignac, and Max Welling. Equivariant diffusion for molecule generation in 3d. In International conference on machine learning , pp. 8867–8887. PMLR, 2022. Ya-Ping Hsieh, Chen Liu, and Volkan Cevher. Finding mixed nash equilibria of generative adversarial networks. In International Conference on Machine Learning , pp. 2810–2819. PMLR, 2019. Mohammad Reza Karimi, Ya-Ping Hsieh, and Andreas Krause. Sinkhorn flow as mirror flow: A continuous-time framework for generalizing the sinkhorn algorithm. In International Conference on Artificial Intelligence and Statistics , pp. 4186–4194. PMLR, 2024. Alex Krizhevsky, Geoffrey Hinton, et al. Learning multiple layers of features from tiny images. 2009. Flavien Léger. A gradient descent perspective on sinkhorn. Applied Mathematics & Optimization , 84 (2):1843–1855, 2021. Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. Yaron Lipman, Marton Havasi, Peter Holderrieth, Neta Shaul, Matt Le, Brian Karrer, Ricky TQ Chen, David Lopez-Paz, Heli Ben-Hamu, and Itai Gat. Flow matching guide and code. arXiv preprint arXiv:2412.06264 , 2024. Qianli Ma, Xuefei Ning, Dongrui Liu, Li Niu, and Linfeng Zhang. Decouple-then-merge: Finetune diffusion models as multi-task learning. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 23281–23291, 2025. Andrew T McNutt, Fatimah Bisiriyu, Sophia Song, Ananya Vyas, Geoffrey R Hutchison, and David Ryan Koes. Conformer generation for structure-based drug design: How many and how good? Journal of Chemical Information and Modeling , 63(21):6598–6607, 2023. Panayotis Mertikopoulos, Ya-Ping Hsieh, and Volkan Cevher. A unified stochastic approximation framework for learning in games. Mathematical Programming , 203(1):559–609, 2024. Alexander Mielke and Jia-Jie Zhu. Hellinger-kantorovich gradient flows: Global exponential decay of entropy functionals. arXiv preprint arXiv:2501.17049 , 2025. Paul Milgrom and Ilya Segal. Envelope theorems for arbitrary choice sets. Econometrica , 70(2): 583–601, 2002. Mirco Mutti, Riccardo De Santi, Piersilvio De Bartolomeis, and Marcello Restelli. Challenging com-mon assumptions in convex reinforcement learning. Advances in Neural Information Processing Systems , 35:4489–4502, 2022a. Mirco Mutti, Riccardo De Santi, and Marcello Restelli. The importance of non-markovianity in maximum state entropy exploration. In International Conference on Machine Learning , pp. 16223–16239. PMLR, 2022b. Mirco Mutti, Riccardo De Santi, Piersilvio De Bartolomeis, and Marcello Restelli. Convex reinforce-ment learning in finite trials. Journal of Machine Learning Research , 24(250):1–42, 2023. Arkadij Semenoviˇ c Nemirovskij and David Borisovich Yudin. Problem complexity and method efficiency in optimization. 1983. Sebastian Nowozin, Botond Cseke, and Ryota Tomioka. f-gan: Training generative neural samplers using variational divergence minimization. Advances in neural information processing systems , 29, 2016. Ben Poole, Ajay Jain, Jonathan T Barron, and Ben Mildenhall. Dreamfusion: Text-to-3d using 2d diffusion. arXiv preprint arXiv:2209.14988 , 2022. 13 Preprint. Philipp Pracht and Stefan Grimme. Calculation of absolute molecular entropies and heat capacities made simple. Chemical science , 12(19):6551–6568, 2021. John David Pressman, Katherine Crowson, and Simulacra Captions Contributors. Simulacra aesthetic captions. Technical Report Version 1.0, Stability AI, 2022. url https://github.com/JD-P/simulacra-aesthetic-captions . Raghunathan Ramakrishnan, Pavlo O Dral, Matthias Rupp, and O Anatole Von Lilienfeld. Quantum chemistry structures and properties of 134 kilo molecules. Scientific data , 1(1):1–7, 2014. Herbert Robbins and Sutton Monro. A stochastic approximation method. The annals of mathematical statistics , pp. 400–407, 1951. Stefan P Schmid, Henrik Seng, Thibault Kläy, and Kjell Jorner. Rapid generation of transition-state conformer ensembles via constrained distance geometry. ChemRxiv , 2025. Christoph Schuhmann, Romain Beaumont, Richard Vencu, Cade Gordon, Ross Wightman, Mehdi Cherti, Theo Coombes, Aarush Katta, Clayton Mullis, Mitchell Wortsman, et al. Laion-5b: An open large-scale dataset for training next generation image-text models. Advances in Neural Information Processing Systems , 35:25278–25294, 2022. Marta Skreta, Lazar Atanackovic, Avishek Joey Bose, Alexander Tong, and Kirill Neklyudov. The su-perposition of diffusion models using the it \ˆ o density estimator. arXiv preprint arXiv:2412.17762 ,2024. Jascha Sohl-Dickstein, Eric Weiss, Niru Maheswaranathan, and Surya Ganguli. Deep unsupervised learning using nonequilibrium thermodynamics. In International conference on machine learning ,pp. 2256–2265. PMLR, 2015. Yang Song and Stefano Ermon. Generative modeling by estimating gradients of the data distribution. 
+
+Advances in neural information processing systems , 32, 2019. Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equations. In International Conference on Learning Representations , 2021. URL https://openreview.net/forum? id=PxTIG12RRHS .Yang Song, Prafulla Dhariwal, Mark Chen, and Ilya Sutskever. Consistency models. International conference on machine learning , 2023. Wenpin Tang. Fine-tuning of diffusion models via stochastic control: entropy regularization and beyond. arXiv preprint arXiv:2403.06279 , 2024. Masatoshi Uehara, Yulai Zhao, Kevin Black, Ehsan Hajiramezanali, Gabriele Scalia, Nathaniel Lee Diamant, Alex M Tseng, Tommaso Biancalani, and Sergey Levine. Fine-tuning of continuous-time diffusion models as entropy-regularized control. arXiv preprint arXiv:2402.15194 , 2024a. Masatoshi Uehara, Yulai Zhao, Kevin Black, Ehsan Hajiramezanali, Gabriele Scalia, Nathaniel Lee Diamant, Alex M Tseng, Sergey Levine, and Tommaso Biancalani. Feedback efficient online fine-tuning of diffusion models. arXiv preprint arXiv:2402.16359 , 2024b. Haoran Wang, Thaleia Zariphopoulou, and Xun Yu Zhou. Reinforcement learning in continuous time and space: A stochastic control approach. Journal of Machine Learning Research , 21(198):1–34, 2020. Tom Zahavy, Brendan O’Donoghue, Guillaume Desjardins, and Satinder Singh. Reward is enough for convex mdps. Advances in Neural Information Processing Systems , 34:25746–25759, 2021. Junyu Zhang, Alec Koppel, Amrit Singh Bedi, Csaba Szepesvari, and Mengdi Wang. Vari-ational policy gradient method for reinforcement learning with general utilities. In H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin (eds.), Advances in Neu-ral Information Processing Systems , volume 33, pp. 4572–4583. Curran Associates, Inc., 2020. URL https://proceedings.neurips.cc/paper_files/paper/2020/ file/30ee748d38e21392de740e2f9dc686b6-Paper.pdf .14 Preprint. Hanyang Zhao, Haoxian Chen, Ji Zhang, David D Yao, and Wenpin Tang. Scores as actions: a framework of fine-tuning diffusion models by continuous-time reinforcement learning. arXiv preprint arXiv:2409.08400 , 2024. 15 Preprint. 
+
+## A APPENDIX 
+
+## CONTENTS 
+
+B Proofs for Section 6 17 
+
+B.1 Proof of Theorem 6.1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 17 B.2 Rigorous Statement and Proof of Theorem 6.2 . . . . . . . . . . . . . . . . . . . . 18 
+
+C Derivations of Gradients of First Variation 20 
+
+C.1 A brief tutorial on first variation derivation . . . . . . . . . . . . . . . . . . . . . . 20 C.2 Derivation of First Variations used in Sec. 4 . . . . . . . . . . . . . . . . . . . . . 20 
+
+D Proof of Proposition 1 22 E Reward-Guided Flow Merging ( RFM ) Implementation 23 
+
+E.1 Implementation of REWARD GUIDED FINE TUNING SOLVER . . . . . . . . . . . . . . . 23 E.2 Implementation of REWARD GUIDED FINE TUNING SOLVER RUNNING COSTS . . . . . . 23 
+
+F Reward-Guided Flow Merging ( RFM ): Computational Complexity, Cost, and Approxi-mate Fine-Tuning Oracles 25 G Experimental Details 26 
+
+G.1 Illustrative Examples Experimental Details . . . . . . . . . . . . . . . . . . . . . 26 G.2 Molecular Design Case Study . . . . . . . . . . . . . . . . . . . . . . . . . . . . 26 G.3 Conformer Generation Case Study . . . . . . . . . . . . . . . . . . . . . . . . . . 27 
+
+H Beyond Molecules: Reward-Guided Flow Merging of Pre-Trained Image Models 28 
+
+16 Preprint. 
+
+## B PROOFS FOR SECTION 6
+
+B.1 PROOF OF THEOREM 6.1 
+
+Stochastic Optimal Control. We consider stochastic optimal control (SOC), which studies the problem of steering a stochastic dynamical system to optimize a specified performance criterion. Formally, let (Xut )t∈[0 ,1] be a controlled stochastic process satisfying the stochastic differential equation (SDE) 
+
+dXut = b(Xut , t ) d t + σ(t) u(Xut , t ) d t + σ(t) d Bt, Xu 
+
+> 0
+
+∼ p0, (24) where u ∈ U is an admissible control and Bt is standard Brownian motion. The objective is to select 
+
+u to minimize the cost functional 
+
+E
+
+" Z 10
+
+12 ∥u(Xut , t )∥2 dt − g(Xu 
+
+> 1
+
+)
+
+#
+
+, (25) where 12 ∥u(·, t )∥2 represents the running cost and g is a terminal reward. A standard application of Girsanov’s theorem shows that Equation (25) is equivalent to the mirror descent iterate in Equa-tion (20) with δG(pπk 
+
+> 1
+
+) ← g and p0 ← ppre (Tang, 2024). In addition, it is well-known that in the context of diffusion-based generative modeling, the corresponding uncontrolled dynamics 
+
+dXt = −b(Xt, t ) d t + σ(t) d Bt (26) coincide with the forward noising process used in score-based models (Song et al., 2021; Domingo-Enrich et al., 2024). 
+
+Proof of Theorem 6.1. Theorem 6.1 (SOC Retains Score Information) . Suppose that the prior diffusion model forward process converges to a standard Gaussian noise 1. Then, the model returned by a SOC fine-tuning solver is such that: 
+
+u⋆(x, t ) := σ(t) ∇ log pkt (x) (19) 
+
+where pkt denotes the marginal distribution of the prior forward process, initialized at pπk 
+
+> 1
+
+, and 
+
+u⋆(x, t ) the applied optimal control (see Sec. B). In other words, REWARD GUIDED FINE TUNING SOLVER 
+
+exactly recovers the score. Proof. Step 1. Let Q⋆ denote the optimal process solving Equation (24). A standard application of Girsanov’s theorem shows that Q⋆ also solves the Schrödinger bridge problem 
+
+min 
+
+> Q0=ppre
+> Q1=Q⋆
+> 1
+
+DKL 
+
+ Q ∥ P, (27) where P is the law of the uncontrolled dynamics 
+
+dXt = b(Xt, t ) d t + σ(t) d Bt.
+
+This equivalence holds because the SOC cost in Equation (24) penalizes control energy in the same way that Girsanov’s theorem expresses a controlled SDE as a relative entropy with respect to its uncontrolled counterpart. 
+
+Step 2. Define the forward process Pforward by 
+
+dXt = −b(Xt, t ) d t + σ(t) d Bt. (28) By assumption, this process maps any initial distribution to the standard Gaussian at t = 1 . In particular, starting from X0 ∼ Q⋆
+
+> 1
+
+, we obtain X1 ∼ ppre = N (0 , I ).
+
+Step 3. Consider the time-reversed Schrödinger bridge problem 
+
+min ←−
+
+> Q0=Q⋆
+> 1
+> ←−
+> Q1=ppre
+
+DKL 
+
+ ←−
+
+Q ∥ Pforward 
+
+, (29) 
+
+> 1
+
+This is a standard assumption in diffusion modeling (e.g., Ho et al., 2020; Song et al., 2021). 
+
+17 Preprint. and denote its solution by ←−
+
+Q⋆. Since relative entropy is invariant under bijective mappings and time-reversal is bijective, the optimizers of Equation (27) and Equation (29) satisfy 
+
+←−
+
+Q⋆ = ←−−
+
+Q⋆
+
+i.e., the optimal reversed bridge is simply the time-reversal of the forward bridge. By Step 2 , the process 
+
+dXt = −b(Xt, t ) d t + σ(t) d Bt, X0 ∼ Q⋆ 
+
+> 1
+
+(30) solves Equation (29), achieving the minimum relative entropy (zero) while satisfying the prescribed marginals. Thus, invoking the relation ←−
+
+Q⋆ = ←−
+
+Q⋆, the solution to Equation (27)—and hence to the SOC problem Equation (24)—is given by the time-reversal of Equation (30). Finally, applying the classical time-reversal formula (Anderson, 1982) yields that Q⋆ is given by 
+
+dXt =
+
+
+
+b(←−
+
+X t, t ) + σ2(t) ∇ log pt(Xt)
+
+
+
+dt + σ(t) d Bt,
+
+where pt is the marginal density of Equation (30). Hence, REWARD GUIDED FINE TUNING SOLVER 
+
+exactly recovers the score function. B.2 RIGOROUS STATEMENT AND PROOF OF THEOREM 6.2 To prepare for the convergence analysis, we impose a few auxiliary assumptions. These assumptions are standard in the study of stochastic approximation and gradient flows, and typically hold in practical situations. Our proof strategy follows ideas that have also been employed in related works (De Santi et al., 2025a;b). We begin with the entropy functional defined on probability measures: 
+
+H(p) := 
+
+Z
+
+p log p. (31) In our analysis, H serves as the mirror map or distance-generating function (Mertikopoulos et al., 2024; Hsieh et al., 2019). The first condition addresses the behavior of the corresponding dual variables. 
+
+Assumption B.1 (Precompactness of Dual Iterates) . The sequence of dual elements {δH(pπk 
+
+> 1
+
+)}k is precompact in the L∞ topology. 
+
+This compactness property ensures that the interpolated dual trajectories remain confined to a bounded region of function space. Such a condition is crucial for invoking convergence results based on asymptotic pseudotrajectories. Variants of this assumption have appeared in the literature on stochastic approximation and continuous-time embeddings of discrete algorithms (Benaïm, 2006; Hsieh et al., 2019; Mertikopoulos et al., 2024). 
+
+Assumption B.2 (Noise and Bias Conditions) . For the stochastic approximations used in the updates, we assume that almost surely: 
+
+∥bk∥∞ → 0, (32) 
+
+X
+
+> k
+
+Eγ2
+
+> k
+
+ ∥bk∥2 
+
+> ∞
+
++ ∥Uk∥2
+
+> ∞
+
+ < ∞, (33) 
+
+X
+
+> k
+
+γk∥bk∥∞ < ∞. (34) These conditions, standard in the Robbins–Monro setting (Robbins & Monro, 1951; Benaïm, 2006; Hsieh et al., 2019), guarantee that the stochastic bias vanishes asymptotically while the cumulative noise remains under control. Together, they ensure that random perturbations do not obstruct convergence to the optimizer of the limiting objective. With these assumptions in place, we can now state and prove the convergence guarantee. 18 Preprint. 
+
+Theorem B.1 (Convergence guarantee in the trajectory setting) . Suppose Assumptions B.1–B.2 hold, and the step sizes {γk} follow the Robbins–Monro conditions ( P 
+
+> k
+
+γk = ∞, P 
+
+> k
+
+γ2 
+
+> k
+
+< ∞). Then the sequence {pπk 
+
+> 1
+
+} generated by Algorithm 1 converges almost surely, in the weak topology, to the optimum: 
+
+pπk 
+
+> 1
+
+⇀ p ∗ 
+
+> 1
+
+a.s. , (35) 
+
+where p∗ 
+
+> 1
+
+= Q∗ 
+
+> 1
+
+for some Q∗ ∈ arg max Q:Q0=ppre  
+
+> 0
+
+G(Q1).
+
+Proof. We analyze the continuous-time mirror flow defined by 
+
+˙ht = δG(pt
+
+> 1
+
+), pt 
+
+> 1
+
+= δH⋆(ht), (36) where the Fenchel conjugate of H is given by H⋆(h) = log R eh (Hsieh et al., 2019; Hiriart-Urruty & Lemaréchal, 2004). To link the discrete dynamics to this continuous flow, we construct a piecewise linear interpolation of the iterates: 
+
+ˆht = h(k) + t − τk
+
+τk+1 − τk
+
+ h(k+1) − h(k), h(k) = δH(pπk 
+
+> 1
+
+), τk =
+
+> k
+
+X
+
+> r=0
+
+αr ,
+
+where {αr } denotes the step-size sequence. This interpolation produces a continuous path ˆht that tracks the discrete updates as the steps shrink. Let Φu denote the flow map of equation 36 at time u. Standard results in stochastic approximation (Benaïm, 2006; Hsieh et al., 2019; Mertikopoulos et al., 2024) imply that for any fixed horizon T > 0,there exists a constant C(T ) such that 
+
+sup 
+
+> 0≤u≤T
+
+∥ˆht+u − Φu(ˆht)∥ ≤ C(T )
+
+h
+
+∆( t − 1, T + 1) + b(T ) + γ(T )
+
+i
+
+,
+
+where ∆ accounts for cumulative noise, b for bias, and γ for step-size effects. Under Assumptions B.1–B.2, these quantities vanish asymptotically, ensuring that ˆht forms a precompact asymptotic pseudotrajectory (APT) of the mirror flow. By the APT limit set theorem (Benaïm, 2006, Thm. 4.2), the limit set of a precompact APT is contained in the internally chain transitive (ICT) set of the underlying flow. In our case, Equation (36) corresponds to a gradient-like flow in the Hellinger–Kantorovich geometry (Mielke & Zhu, 2025), with G serving as a strict Lyapunov function. As G decreases strictly along non-stationary trajectories, the ICT set reduces to the collection of stationary points of G.Ultimately, notice that if G is composed of convex divergences (e.g., forward or reverse KL terms) possibly together with a linear component (i.e., any reward function f ), its stationary points coincide with its global maximizers. Consequently, ˆht converges almost surely to the set of maximizers of G,which establishes the claim. Moreover, notice that within Sec. 6, we report the previously proved statement for stationary-points and then specialize it for global maximizers in the case of convex functionals. 19 Preprint. 
+
+## C DERIVATIONS OF GRADIENTS OF FIRST VARIATION 
+
+C.1 A BRIEF TUTORIAL ON FIRST VARIATION DERIVATION 
+
+In this work, we focus on the functionals that are Fréchet differentiable: Let V be a normed spaces. Consider a functional F : V → R. There exists a linear operator A : V → R such that the following limit holds 
+
+lim  
+
+> ∥h∥V→0
+
+|F (f + h) − F (f ) − A[h]|∥h∥V
+
+= 0 . (37) We further assume that V has enough structure such that every element of its dual (the space of bounded linear operator on V ) admits a compact representation. For example, if V is the space of bounded continuous functions with compact support, there exists a unique positive Borel measure μ
+
+with the same support, which can be identified as the linear functional. We denote this element as 
+
+δF [f ] such that ⟨δF [f ], h ⟩ = A[h]. Sometimes we also denote it as δF δf . We will refer to δF [f ] as the first-order variation of F at f .In the following, we briefly present standard strategies to derive the first-order variation of two broad classes of functionals, including a wide variety of divergence measures, which can be employ to implement novel operators by Eq. 5. We consider: (i) those defined in closed form with respect to the density (e.g., forward KL) and, (ii ) those defined via variational formulations (e.g., Wasserstein distance, reverse KL, and MMD). • Category 1: Functional defined in a closed form with respect to the density. For this class of functionals, the first-order variations can typically be computed using its definition and chain rule. Recalling the definition of first variation (37), we can calculate the first-order variation of the mean functional, as a trivial example. Given a continuous and bounded function r : Rd → R and a probability measure μ on Rd, define the functional F (μ) = R r(x)μ(x)dx . Then we have: 
+
+|F (μ + δμ ) − F (μ) − ⟨ r, δμ ⟩| = 0 . (38) Therefore we obtain that: δF [μ] = r for all μ. In the following section, we compute similarly the first variation of the KL divergence. • Category 2: Functionals defined through a variational formulation. Another fundamental subclass of functionals that plays a central role in this work is the one of functionals defined via a variational problem 
+
+F [f ] = sup 
+
+> g∈Ω
+
+G[f, g ], (39) where Ω is a set of functions or vectors independent of the choice of f , and g is optimized over the set Ω. We will assume that the maximizer g∗(f ) that reaches the optimal value for G[f, ·] is unique (which is the case for the functionals considered in this project). It is known that one can use the Danskin’s theorem (also known as the envelope theorem) to compute 
+
+δF [f ]
+
+δf = ∂f G[f, g ∗(f )] , (40) under the assumption that F is differentiable (Milgrom & Segal, 2002). C.2 DERIVATION OF FIRST VARIATIONS USED IN SEC . 4 In the following, we derive explicitly the first variations employed in Sec. 1 • Optimal transport and Wasserstein-p distance (Category 2) Consider the optimal transport problem 
+
+OT c(u, v ) = inf 
+
+> γ
+
+Z Z
+
+c(x, y )dγ (x, y ) : 
+
+Z
+
+γ(x, y )dx = u(y),
+
+Z
+
+γ(x, y )dy = v(x)
+
+
+
+(41) where 
+
+Γ = 
+
+
+
+γ :
+
+Z
+
+γ(x, y )dx = u(y),
+
+Z
+
+γ(x, y )dy = v(x)
+
+
+
+20 Preprint. It admits the following equivalent dual formulation 
+
+OT c(u, v ) = sup 
+
+> f,g
+
+Z 
+
+f du +
+
+Z
+
+gdv : f (x) + g(y) ≤ c(x, y )
+
+
+
+(42) By taking c(x, y ) = ∥x − y∥p, we recover OT c(u, v ) = Wp(u, v )p. Let ϕ∗ and g∗ be the solution to the above dual optimization problem. From the Danskin’s theorem, we have 
+
+δδu Wp(u, v )p = ϕ∗. (43) In the special case of p = 1 , we know that g∗ = −ϕ∗ (note that the constraint can be equivalently written as ∥∇ ϕ∥ ≤ 1), in which case ϕ∗ is typically known as the critic in the Wasserstein-GAN framework (cf. Arjovsky et al., 2017). • Reverse KL divergence (Category 2) We use the variational (Fenchel–Legendre) representation of the forward KL, DKL (p∥q), as in f-GAN (Nowozin et al., 2016): 
+
+DKL (p∥q) = sup 
+
+> ϕ:X → R
+
+
+
+E 
+
+> p
+
+ϕ(x) − E 
+
+> q
+
+eϕ(x)−1
+
+
+
+(44) which follows from the general f-divergence dual generator f (u) = u log u−u+1 whose conjugate is f ∗(t) = et−1. For fixed p and variable q, we define: 
+
+G(q, ϕ ) := E 
+
+> p
+
+ϕ(x) − E 
+
+> q
+
+eϕ(x)−1 (45) Assuming uniqueness of a maximizer ϕ∗(p, q ), Danskin’s (or envelope) theorem yields the first variation by differentiating G at ϕ∗:
+
+δδq (x) DKL (p∥q) = δδq (x)
+
+
+
+−
+
+Z
+
+q(x)eϕ∗(x)−1du
+
+
+
+= −eϕ∗(x)−1 (46) • KL divergence (Category 1) Consider the KL functional: 
+
+DKL (p∥q) = −
+
+Z
+
+p log pq , dx (47) By the definition of the first-order variation (see Eq. 37), we have: 
+
+δD KL (p∥q) = log pq + 1 (48) 21 Preprint. 
+
+## D PROOF OF PROPOSITION 1
+
+For the union operator, gradients are defined via critics {ϕ∗ 
+
+> i
+
+}ni=1 learned with the standard variational form of reverse KL, as in f-GAN training of neural samplers (Nowozin et al., 2016). For W1
+
+interpolation, each ϕ∗ 
+
+> i
+
+plays the role of a Wasserstein-GAN discriminator with established learning procedures (Arjovsky et al., 2017). In both cases, each critic compares the fine-tuned density to a prior density ppre,i  
+
+> 1
+
+, seemingly requiring one critic per prior. We prove that, surprisingly, this is unnecessary for the union operator, and conjecture that analogous results hold for other divergences. 
+
+Proposition 1 (Union operator via Pre-trained Mixture Density Representation) . Given ppre  
+
+> 1
+
+=  
+
+> Pni=1 αippre,i
+> 1
+
+/Pni=1 αi, i.e., the α-weighted mixture density of pre-trained models, the following hold: 
+
+π∗ ∈ arg min 
+
+> πn
+
+X
+
+> i=1
+
+αi DRKL (pπ 
+
+> 1
+
+∥ ppre,i  
+
+> 1
+
+) = arg min 
+
+> π
+> n
+
+X
+
+> i=1
+
+αi
+
+!
+
+DRKL (pπ 
+
+> 1
+
+∥ ppre  
+
+> 1
+
+) (14) Prop. 1, which is proved in the following, implies that the union operator in Eq. 7 over n prior models can be implemented by learning a single critic ϕ∗, as shown in Sec. 7. 
+
+Proof. We prove the statement for n = 2 , which trivially generalizes to any n. We first rewrite the LHS optimization problem as: 
+
+arg min 
+
+> π
+
+F(pπ ) (49) where we denote pπ 
+
+> 1
+
+by pπ for notational concision and define p1 = ppre,i and p2 = ppre, 2. Then we have: 
+
+F(pπ ) = α1 E
+
+> p1
+
+[log p1 − log pπ ] + α2 E
+
+> p2
+
+[log p2 − log pπ ] (50) 
+
+= α1 E
+
+> p1
+
+log p1 + α2 E
+
+> p2
+
+log p2 −
+
+
+
+α1 E
+
+> p1
+
+log pπ + α2 E
+
+> p2
+
+log π
+
+
+
+(51) We now write the following, where ¯p denotes ¯ppre  
+
+> 1
+
+:
+
+E 
+
+> ¯p
+
+log pπ =
+
+Z
+
+log pπ (x)¯ p(x) d x (52) 
+
+=
+
+Z
+
+log pπ (x)
+
+ α1p1
+
+α1 + α2
+
++ α2p2
+
+α1 + α2
+
+
+
+(x) d x (53) 
+
+= 1
+
+α1 + α2
+
+(log pπ (x)α1p1(x) + log pπ (x)α2p2(x)) (54) 
+
+= 1
+
+α1 + α2
+
+
+
+α1 E
+
+> p1
+
+log pπ + α2 E
+
+> p2
+
+log pπ
+
+
+
+(55) By combining Eq. 51 and 55, we obtain: 
+
+F(pπ ) = α1 E
+
+> p1
+
+log p1 + α2 E 
+
+> p2
+
+log p2 − (α1 + α2) E 
+
+> ¯p
+
+log pπ (56) Therefore, 
+
+arg min 
+
+> π
+
+F(pπ ) = arg min 
+
+> π
+
+α1 E
+
+> p1
+
+log p1 + α2 E
+
+> p2
+
+log p2
+
+| {z }
+
+> constant
+
+−(α1 + α2) E 
+
+> ¯p
+
+log pπ (57) 
+
+= arg min 
+
+> π
+
+−(α1 + α2) E 
+
+> ¯p
+
+log pπ (58) 
+
+= arg min 
+
+> π
+
+−(α1 + α2) E 
+
+> ¯p
+
+log pπ + ( α1 + α2) E 
+
+> ¯p
+
+log ¯ p
+
+| {z }
+
+> constant
+
+(59) 
+
+= arg min 
+
+> π
+
+(α1 + α2)DKL (¯ p∥pπ ) (60) (61) Which concludes the proof. 22 Preprint. 
+
+## E REWARD -G UIDED FLOW MERGING (RFM ) I MPLEMENTATION 
+
+In the following, we provide an example of detailed implementations for REWARD GUIDED FINE TUN -
+
+> ING
+
+SOLVER employed in Sec. 4 by Reward-Guided Flow Merging, as well as REWARD GUIDED FINE -TUNING SOLVER RUNNING COSTS , leveraged in Sec. 5 to scalably implement the AND operator. While the oracle implementation we report for completeness for REWARD GUIDED FINE TUNING SOLVER corre-sponds to classic Adjoint Matching (AM) (Domingo-Enrich et al., 2024), the one for REWARD GUID -
+
+> ED
+
+FINE TUNING SOLVER RUNNING COSTS trivially extends AM base implementation to account for the running cost terms introduced in Eq. 17. E.1 IMPLEMENTATION OF REWARD GUIDED FINE TUNING SOLVER 
+
+Before detailing the implementations, we briefly fix notation. Both algorithms explicitly rely on the interpolant schedules κt and ωt from equation 1. In the flow-model literature, these are more commonly denoted αt and βt. We write upre for the velocity field induced by the pre-trained policy 
+
+πpre , and ufine for the velocity field induced by the fine-tuned policy. In essence, each algorithm first draws trajectories and then uses them to approximate the solution of a surrogate ODE; its marginals serve as regression targets for the control policy (Section 5 Domingo-Enrich et al., 2024). 
+
+Algorithm 2 REWARD GUIDED FINE TUNING SOLVER RUNNING COSTS via AM 
+
+Require: Pre-trained FM velocity field upre , step size h, number of fine-tuning iterations N , gradient of reward ∇r, fine-tuning strength ηk
+
+1: Initialize fine-tuned vector fields: ufinetune = upre with parameters θ.
+
+2: for n ∈ { 0, . . . , N − 1} do 
+
+3: Sample m trajectories X = ( Xt)t∈{ 0,..., 1} with memoryless noise schedule: 
+
+σ(t) = 
+
+r
+
+2κt
+
+ ˙ωt 
+
+> ωt
+
+κt − ˙κt
+
+
+
+(62) 
+
+4: i.e.,: 
+
+Xt+h = Xt + h
+
+
+
+2ufinetune  
+
+> θ
+
+(Xt, t ) − ˙ωt 
+
+> ωt
+
+Xt
+
+
+
++ √h σ (t) εt, εt ∼ N (0 , I ), X0 ∼ N (0 , I ).
+
+(51) 
+
+5: For each trajectory, solve the lean adjoint ODE backwards in time from t = 1 to 0, e.g.: 
+
+˜at−h = ˜ at + h ˜a⊤ 
+
+> t
+
+∇Xt
+
+
+
+2vbase (Xt, t ) − ˙ωt 
+
+> ωt
+
+Xt
+
+
+
+, ˜a1 = ηk∇r(X1). (52) 
+
+6: Note that Xt and ˜at should be computed without gradients, i.e., 
+
+Xt = stopgrad (Xt) (63) 
+
+˜at = stopgrad (˜ at) (64) 
+
+7: For each trajectory, compute the following Adjoint Matching objective: 
+
+LAdj-Match (θ) = X
+
+> t∈{ 0,..., 1−h}
+> 2
+> σ(t)
+
+
+
+vfinetune  
+
+> θ
+
+(Xt, t ) − ubase (Xt, t )
+
+
+
++ σ(t) ˜ at
+
+> 2
+
+. (53) 
+
+8: Compute the gradient ∇θ L(θ) and update θ using favorite gradient descent algorithm. 
+
+9: end for Output: Fine-tuned vector field vfinetune 
+
+E.2 IMPLEMENTATION OF REWARD GUIDED FINE TUNING SOLVER RUNNING COSTS 
+
+The following REWARD GUIDED FINE TUNING SOLVER RUNNING COSTS is algorithmically identical to 
+
+REWARD GUIDED FINE TUNING SOLVER RUNNING COSTS , with the only difference that the lean adjoint 23 Preprint. computation now integrates a running-cost term ft, defined as follows (see Sec. 5): 
+
+ft(x) := δ
+
+> n
+
+X
+
+> i=1
+
+αi DKL (pπt ∥ ppre,i t )
+
+!
+
+(x, t ), t ∈ [0 , 1) (65) 
+
+Algorithm 3 REWARD GUIDED FINE TUNING SOLVER RUNNING COSTS via AM with running costs 
+
+Require: Pre-trained FM velocity field vbase , step size h, number of fine-tuning iterations N , ft =
+
+∇δGt(pπk 
+
+> t
+
+), weight γk, weight schedule λ
+
+1: Initialize fine-tuned vector fields: vfinetune = vbase with parameters θ.
+
+2: for n ∈ { 0, . . . , N − 1} do 
+
+3: Sample m trajectories X = ( Xt)t∈{ 0,..., 1} with memoryless noise schedule: 
+
+σ(t) = 
+
+r
+
+2κt
+
+ ˙ωt 
+
+> ωt
+
+κt − ˙κt
+
+
+
+(66) 
+
+4: i.e.,: 
+
+Xt+h = Xt + h
+
+
+
+2vfinetune  
+
+> θ
+
+(Xt, t ) − ˙ωt 
+
+> ωt
+
+Xt
+
+
+
++ √h σ (t) εt, εt ∼ N (0 , I ), X0 ∼ N (0 , I ).
+
+(40) 
+
+5: For each trajectory, solve the lean adjoint ODE backwards in time from t = 1 to 0, e.g.: 
+
+˜at−h = ˜ at + h ˜a⊤ 
+
+> t
+
+∇Xt
+
+
+
+2vbase (Xt, t ) − ˙ωt 
+
+> ωt
+
+Xt
+
+
+
+− hγ kλtft(Xt) (67) 
+
+˜a1 = −γkλ1∇X1 δG1(pπk 
+
+> 1
+
+)( X1). (41) 
+
+6: Note that Xt and ˜at should be computed without gradients, i.e., 
+
+Xt = stopgrad (Xt) (68) 
+
+˜at = stopgrad (˜ at) (69) 
+
+7: For each trajectory, compute the Adjoint Matching objective: 
+
+LAdj-Match (θ) = X
+
+> t∈{ 0,..., 1−h}
+> 2
+> σ(t)
+
+
+
+vfinetune  
+
+> θ
+
+(Xt, t ) − vbase (Xt, t )
+
+
+
++ σ(t) ˜ at
+
+> 2
+
+. () 
+
+8: Compute the gradient ∇θ L(θ) and update θ using a gradient descent step 
+
+9: end for Output: Fine-tuned vector field ufinetune 
+
+24 Preprint. 
+
+## F REWARD -G UIDED FLOW MERGING (RFM ): C OMPUTATIONAL 
+
+## COMPLEXITY , C OST , AND APPROXIMATE FINE -T UNING ORACLES 
+
+Reward-Guided Flow Merging ( RFM , see Alg. 1) is a sequential fine-tuning scheme which, at each of the ( K) outer iterations, calls a reward-guided fine-tuning oracle such as REWARD GUIDED FINE -TUNING SOLVER (see Apx. E.2). In practice, each oracle call performs ( N ) gradient steps of Adjoint Matching (see Apx. E.2). At first sight, this suggests that the computational complexity of RFM scales linearly in K with respect to a standard fine-tuning run with ( N ) steps. However, this worst-case view does not fully capture the practical computational cost. We highlight two observations. 
+
+Approximate fine-tuning oracle. First, RFM can operate reliably with a rather approximate fine-tuning oracle , i.e., with relatively small values of ( N ). We evaluate this phenomenon by replicating the objective curve of Fig. 2d with same parameters and setting, for three different configurations of 
+
+(K, N ) that keep the total budget ( K · N = 300 ) fixed but vary the outer (i.e., K) and inner (i.e., N )iteration counts: • K = 10 , ; N = 30 
+
+• K = 15 , ; N = 20 (as in Fig. 2d) • K = 30 , ; N = 10            
+
+> (a) K= 10 , N = 30 (b) K= 15 , N = 20 (c) K= 30 , N = 10
+
+Figure 6: (left) RFM run for reward-guided intersection with K = 10 , N = 30 , (center) RFM run for reward-guided intersection with K = 15 , N = 20 , (right) RFM run for reward-guided intersection with K = 30 , N = 10 .The three corresponding curves are reported in Fig. 6. Empirically, all three settings achieve nearly identical final objective values, indicating that a more approximate oracle (smaller (N)) can be compensated by increasing the number of outer RFM iterations ( K), and vice versa, as long as the total optimization budget remains comparable. We observe a similar behaviour also on real-world, higher-dimensional, experiments (see Sec. 7 and Apx. H), where we values of K vary from K = 1 
+
+to K = 37 .
+
+K/N Trade-off. Second, the runtimes of these configurations are of the same order. On our implementation, the runs with (( K, N ) = (10 , 30) , (15 , 20) , (30 , 10)) require approximately 1615 s, 1643 s, and 1870 s, respectively, showing a very light increase depending on K. This further supports the view that practitioners can trade off a cheaper but less accurate inner oracle (small ( N )) against a slightly larger number of outer RFM steps (larger ( K)), and vice versa, without incurring prohibitive additional cost. Since RFM effectively solves a convex/non-convex optimization problem in probability space, we believe that classic convex optimization provides an interpretable framework for trading-off N and K, by interpreting N as the typical step-size, or learning rate, and K as the typical number of gradient steps. Clearly, higher learning rates typically require less gradient steps and vice versa. Ultimately, one should notice that increasing N does not directly imply better solution quality of the fine-tuning oracle, as it is the case for the oracle we employ within Sec. 7 (i.e., Adjoint Matching (Domingo-Enrich et al., 2024)), for which performance can degrade for excessively high values of N .25 Preprint. 
+
+## G EXPERIMENTAL DETAILS 
+
+G.1 ILLUSTRATIVE EXAMPLES EXPERIMENTAL DETAILS 
+
+Numerical values in all plots shown within Sec. 7 are means computed over diverse runs of RFM via 
+
+5 different seeds. Error bars correspond to 95% Confidence Intervals. 
+
+Shared experimental setup. For all illustrative experiments we utilize Adjoint Matching (AM) [14 ] for the entropy-regularized fine-tuning solver in Algorithm 1. Moreover, the stochastic gradient steps within the AM scheme are performed via an Adam optimizer. 
+
+Intersection Operator. The balanced plot (see Fig. 2b is obtained by running RFM with α =[0 .1, 0.1] , for K = 80 iterations, γk = 28 , and λt = 0 .2 for t > 1 − 0.05 , and λt = 0 .4 otherwise. For the balanced, reward-guided case in Fig. 2c, we consider a reward function that is maximized by increasing the x2 coordinate. We run RFM with α = [0 .1, 0.1] , for K = 15 iterations, γk = 1 .2, and 
+
+λt = 0 .2 for t > 1 − 0.05 , and λt = 0 .4 otherwise. 
+
+Union Operator. 
+
+In both cases, we learn a critic via standard f-GAN (Nowozin et al., 2016) with 300 gradient steps at each iteration k ∈ [K] and continually fine-tune the same critic over subsequent iterations. For critic learning, we use a learning rate of 5 exp( −5) .For the balanced case, in Fig. 2f, we run RFM with α = [1 .0, 1.0] . We use K = 13 iterations, 
+
+γk = 0 .001 .For the unbalanced case in Fig. 2g, we run RFM with α = [0 .2, 1.8] . Notice that up to normalization this is equivalent to [0 .1, 0.9] as reported in Fig. 2g for the sake of interpretability. We use K = 13 
+
+iterations, γk = 0 .001 .
+
+Interpolation Operator. In both cases, we learn a critic via standard f-GAN (Nowozin et al., 2016) with 800 gradient steps at each iteration k ∈ [K] and continually fine-tune the same critic over subsequent iterations. For critic learning, we use a learning rate of 1 exp( −5) , and gradient penalty of 10 .0 to enforce 1-Lip. of the learned critic. For the case where πinit := πpre, 1 (i.e., left pre-trained model), in Fig. 2j, we run RFM with 
+
+α = [1 .0, 1.0] . We use K = 6 iterations, γk = 1 .0.For the case where πinit := πpre, 2 (i.e., right pre-trained model), in Fig. 2k, we run RFM with 
+
+α = [1 .0, 1.0] . We use K = 6 iterations, γk = 1 .0.
+
+Complex Logic Expressions via Generative Circuits. Pre-trained flows π1 and π2, as well as π1
+
+and π2 are intersected via RFM with γk = 1 , for K = 20 , and λt = 0 .1. The union operator is implemented with K = 30 , γk = 0 .0009 , 300 critic steps and learning rate 5 exp( −5) .G.2 MOLECULAR DESIGN CASE STUDY 
+
+Our base model FlowMol2 CTMC (i.e., PRE-1) (Dunn & Koes, 2024) is pretrained on the GEOM-Drugs dataset (Axelrod & Gomez-Bombarelli, 2022). We obtain our second model (i.e., PRE-2) by finetuning PRE-1 with AM (Domingo-Enrich et al., 2024) to generate poses with lower single point total energy wrt. the continuous atomic positions as calculated with dxtb at the GFN1-xTB level of theory Friede et al. (2024). We then run RFM with K = 50 , γ = 0 .001 for the balanced flow merging, and K = 20 , γ = 0 .005 to obtain the unbalanced flow merging. For reward-guided flow merging (RFM-RG), we set γ = 0 .1 and obtain the best model after K = 11 . All models start from PRE-1, i.e., πinit = πpre, 1. All results for merging pre-trained models on GEOM can be found in Table 1. Running RFM-RG with α = 3 and γ = 0 .001 , we obtain a model after K = 35 that keeps the validity of its base models while implementing the reward-guided intersection. We note that beyond validity, a critical step towards practical application will be to integrate molecular stability and synthesizability. Our RFM formulation straightforwardly supports these extensions in the reward functional, and we leave their implementation to future work. For our second case-study - the OR operator - we use FlowMol2 CTMC pre-trained on QM9 (Ramakrishnan et al., 2014). 26 Preprint. 
+
+Mean total energy Mean validity Model [Ha] [%] 
+
+PRE-1 −8.09 ± 0.31 76 .44 ± 1.7
+
+RFM-B −10 .95 ± 0.28 74 .34 ± 0.9
+
+RFM-RG −12 .85 ± 0.16 74 .02 ± 1.18 
+
+RFM-UB −13 .69 ± 0.28 72 .78 ± 0.4
+
+PRE-2 −14 .76 ± 0.29 68 .04 ± 0.8
+
+Table 1: Mean total energy and validity with standard deviation, averaged over 5 different seeds. 
+
+> Suffixes: B - balanced ; UB - unbalanced; RG - reward-guided flow merging
+
+We limit dimensionality to reduce the problem complexity by sampling 10 atoms per molecule, and run RFM with γ = 100 , K = 37 . In particular Figure 7 shows that the estimated mean of the model 
+
+π∗ obtained via RFM matches the average total energy of πpre, 1 and πpre, 2 as predicted by the closed-form solution for the union operator presented in Sec. 3. In Fig. 7, OR denotes the final policy 
+
+π∗ returned by RFM .PRE-2 PRE-1 OR 
+
+Figure 7: Union on QM9 G.3 CONFORMER GENERATION CASE STUDY 
+
+We finetune the GEOM-QM9 pre-trained ETFlow model (denoted PRE-1) with AM on the molecular system C#C[C@H](C=O)CCC to obtain PRE-2, using the same total energy objective as in the molecular design case study. This is also the molecular system we perform our evaluations on. For the subsequent merging experiments, we choose the lower-energy PRE-2 as the base model, i.e., 
+
+πinit = πpre, 2. Balanced merging is performed with α1 = α2 = 1 , γ = 0 .025 and K = 6 . The unbalanced merging is run with α1 = 0 .7 and α2 = 0 .3 and we take the model after K = 8 steps with γ = 5 e − 5. The reward-guided merging model was obtained with γ = 0 .025 after K = 6 , and the union model after K = 1 with γ = 1 e − 3 and critics with the same GNN backbone as ETFlow. We show all results for the conformer generation case study in Tab. 2 
+
+E μ ∆ϵ Emin 
+
+Model [kcal/mol] [debye] [kcal/mol] [kcal/mol] 
+
+PRE-1 0.3385 ± 0.0002 0.1679 ± 0.0002 0.5373 ± 0.0019 0.2793 
+
+RFM-UB 0.3412 0.1512 0.5173 0.2778 
+
+RFM-B 0.3356 ± 0.0001 0.1503 ± 0.0002 0.4915 ± 0.0014 0.2782 
+
+RFM-UNION 0.3352 0.1467 0.5033 0.2761 
+
+RFM-RG 0.3193 ± 0.0003 0.1141 ± 0.0002 0.4849 ± 0.0015 0.2777 ± 0.0008 
+
+PRE-2 0.3175 ± 0.0006 0.1268 ± 0.0006 0.4819 ± 0.0010 0.2761 ± 0.0027 
+
+Table 2: Median Absolute Errors for energy E, dipole moment μ, HOMO-LUMO gap ∆ϵ, and minimum energy Emin across different models. We report mean and standard deviation over 5 different seeds. 27 Preprint. 
+
+## H BEYOND MOLECULES : R EWARD -G UIDED FLOW MERGING OF 
+
+## PRE -T RAINED IMAGE MODELS 
+
+We further showcase the capabilities of Reward-Guided Flow Merging on a small-scale, yet infor-mative experiment for image generation. In the following, we consider pretrained CIFAR-10 image models (Krizhevsky et al., 2009) and use the LAION aesthetics predictor V1 (Schuhmann et al., 2022) as a reward model. Specifically, the aesthetics predictor was trained on a subset of the SAC dataset (Pressman et al., 2022) with available ratings from 1 (low preference / aesthetics) to 10 (high preference). The goal of this case study is to show that RFM can merge two models, PRE-1 and PRE-2, while optimizing the aesthetics score. We perform reward-guided flow merging with PRE-2 as the base model, obtaining the model RFM-RG after K = 11 iterations with γ = 1 and αi = 1 .The numerical results in Tab. 3 show that RFM can successfully intersect multiple prior flow image models while maximizing the aesthetic score. In particular, the fine-tuned model achieves a score of 
+
+3.64 ± 0.53 against 3.16 ± 0.66 and 3.23 ± 0.58 of PRE-1 and PRE-2 respectively. We also report sample images of the discussed models in Fig. 8. 
+
+Model Mean aesthetic score 
+
+PRE-1 3.16 ± 0.66 
+
+PRE-2 3.23 ± 0.58 
+
+RFM-RG 3.64 ± 0.53 
+
+Table 3: RFM can perform reward-guided (RG) intersections of pre-trained CIFAR-10 image models (Krizhevsky et al., 2009). We evaluate the resulting models in terms of mean aesthetic score (i.e., the reward) over 1000 samples, and report one std. 
+
+> (a) PRE-1
+> (b) PRE-2
+> (c) RFM-RG
+
+Figure 8: Images generated by the two pre-trained flow models (i.e., PRE-1, PRE-2), and by the flow model obtained via reward-guided intersection (i.e., RFM-RG). 28

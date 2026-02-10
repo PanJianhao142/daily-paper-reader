@@ -1,0 +1,539 @@
+Title: STEP: Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction
+
+URL Source: https://arxiv.org/pdf/2602.08245v1
+
+Published Time: Tue, 10 Feb 2026 02:41:05 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# STEP: Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction 
+
+Jinhao Li 1 2 Yuxuan Cong 1 Yingqiao Wang 1 Hao Xia 1 Shan Huang 1 2 Yijia Zhang 1 Ningyi Xu 1
+
+Guohao Dai 1 2 3 
+
+## Abstract 
+
+Diffusion policies have recently emerged as a powerful paradigm for visuomotor control in robotic manipulation due to their ability to model the distribution of action sequences and capture multimodality. However, iterative denoising leads to substantial inference latency, limiting control frequency in real-time closed-loop systems. Exist-ing acceleration methods either reduce sampling steps, bypass diffusion through direct prediction, or reuse past actions, but often struggle to jointly preserve action quality and achieve consistently low latency. In this work, we propose STEP ,a lightweight spatiotemporal consistency predic-tion mechanism to construct high-quality warm-start actions that are both distributionally close to the target action and temporally consistent, with-out compromising the generative capability of the original diffusion policy. Then, we propose a velocity-aware perturbation injection mecha-nism that adaptively modulates actuation excita-tion based on temporal action variation to prevent execution stall especially for real-world tasks. We further provide a theoretical analysis showing that the proposed prediction induces a locally con-tractive mapping, ensuring convergence of action errors during diffusion refinement. We conduct extensive evaluations on nine simulated bench-marks and two real-world tasks. Notably, STEP with 2 steps can achieve an average 21.6% and 27.5% higher success rate than BRIDGER and DDIM on the RoboMimic benchmark and real-world tasks, respectively. These results demon-strate that STEP consistently advances the Pareto frontier of inference latency and success rate over existing methods. 
+
+> 1
+
+Shanghai Jiao Tong University, Shanghai, China 2Shanghai Innovation Institute, Shanghai, China 3Infinigence-AI, Shang-hai, China. Correspondence to: Guohao Dai <daiguo-hao@sjtu.edu.cn >.
+
+Preprint. February 10, 2026. Overview 图     
+
+> DDIM
+> DDPM
+> BRIDGER
+> RTI-DP
+> STEP
+> (Ours)
+> Policy Noise Action
+> Policy Noise Action Predictor
+> Policy Noise Action
+> Policy Action
+> Previous
+> Action
+> Policy Action Predictor
+> Previous
+> Action
+> 100 steps
+> 4-8 steps
+> 4-8 steps
+> 2-4 steps
+> 2 steps
+
+Figure 1. Comparison of inference pipelines for diffusion-based visuomotor policies. Our method leverages spatiotemporally con-sistent action prediction to reduce sampling to only two steps. 
+
+## 1. Introduction 
+
+Diffusion policy has been introduced as a new paradigm for visuomotor control in robotic manipulation recently (Chi et al., 2025; Ma et al., 2024; Ze et al., 2024; Liu et al., 2025; Wolf et al., 2025; Song et al., 2025). Unlike conventional regression-based policies that directly predict single-step actions, diffusion policies explicitly model the generative distribution of action sequences, formulating action gener-ation as a progressive denoising process that evolves from Gaussian noise toward the target action distribution. This generative formulation naturally captures the multimodal-ity and long-horizon dependencies commonly observed in complex tasks, enabling diffusion-based policies to achieve superior action stability and higher success rates. However, diffusion policies typically require up to 100 steps to generate high-quality actions, limiting the real-time closed-loop control (Ho et al., 2020). Prior efforts to accelerate diffusion-based action generation mainly fall into three categories. (1) A line of work focuses on ac-celerating diffusion sampling through improved numeri-cal solvers, including DDIM (Song et al., 2020), DPM-Solver (Lu et al., 2022), and DPM-Solver++ (Lu et al., 2025). These methods reformulate the reverse stochastic dif-fusion process as a deterministic or higher-order ODE and employ advanced integration schemes to reduce sampling steps. Nevertheless, they still rely on repeated evaluations 1
+
+> arXiv:2602.08245v1 [cs.RO] 9 Feb 2026 STEP : Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction
+
+of the same policy network, which limits their efficiency in high-dimensional or high-frequency control scenarios. (2) Direct prediction approaches, including CP (Prasad et al., 2024), OneDP (Wang et al., 2025), BRIDGER (Chen et al., 2024), and NO-Diffusion (Aizu et al., 2025), aim to reduce diffusion overhead by replacing iterative denoising with a small number of direct prediction or consistency-based refinement steps. These methods learn to map simple la-tent or noisy distributions toward target action distributions, but the limited capacity of lightweight predictors makes such distribution transformations challenging, often lead-ing to degraded action quality or reduced robustness. (3) Action reuse strategies such as RTI-DP (Duan et al., 2025), SDP (Høeg et al., 2025), RNR-DP (Chen et al., 2025b) and Falcon (Chen et al., 2025a) exploit temporal continuity to warm-start the diffusion process, reducing iterations at inference time, yet their effectiveness relies on smooth dy-namics and cannot reliably guarantee action quality under rapid state changes. Although existing methods can reduce inference cost to some extents, they are still insufficient to fully meet the requirements of high-frequency, closed-loop control on resource-constrained platforms. Motivated by the above limitations, we investigate how to construct a high-quality warm-start initialization for diffusion-based policies that is both distributionally close to the target action manifold and spatiotemporally consistent across successive control steps, while fully preserving the generative expressiveness of the original diffusion policy. To this end, we propose STEP , a diffusion-based control frame-work equipped with a spatiotemporal consistency prediction 
+
+mechanism that initializes the diffusion process in the vicin-ity of the target action distribution, enabling robust and low-latency control under rapidly changing system states. Rather than replacing or distilling the diffusion model, our approach serves as a principled warm-start strategy that substantially reduces the required number of denoising iter-ations without compromising action quality or stability. Our main contributions are summarized as follows: 
+
+(1) Spatiotemporal Consistency Prediction Mechanism. 
+
+We propose a lightweight spatiotemporal consistency pre-diction mechanism that generates high-quality warm-start actions aligned with both the target action distribution and temporal dynamics, enabling low-latency diffusion-based control. Our STEP with 2 steps can achieve an average 21.6% and 48.8% higher success rate over spatial-only method BRIDGER (Chen et al., 2024) and temporal-only Falcon (Chen et al., 2025a) method. 
+
+(2) Velocity-aware Perturbation Injection Mechanism. 
+
+We propose a lightweight velocity-aware perturbation injec-tion mechanism that prevents execution deadlock especially for real-world robotic deployment by introducing bounded actuation excitation only when necessary, without degrad-ing control precision. Under different denoising steps, our method can reduce the average episode execution time by 59%, resulting in faster task completion. 
+
+(3) Local Contractivity Analysis. We provide a theoretical analysis showing that our method can induce a locally con-tractive mapping, which guarantees convergence of action errors during subsequent diffusion refinement. We conduct extensive evaluations on nine simulated bench-marks and two real-world robotic tasks. Notably, on the RoboMimic benchmark, STEP with 2 steps can achieve an average 21.6% improvement in task success rate over the state-of-the-art BRIDGER (Chen et al., 2024) method. On real-world tasks, STEP with 2 steps improves average 27.5% in success rate compared to DDIM. These results demon-strate that STEP consistently advances the Pareto frontier of inference latency and success rate over existing methods. 
+
+## 2. Background 
+
+Diffusion policy models continuous action generation as a conditional diffusion process, enabling expressive represen-tation of complex and multimodal action distributions for robot control. Given an observation o, such as visual in-puts or proprioceptive states, the policy generates an action sequence by iteratively denoising a latent action variable conditioned on o.Let a0 ∈ RT ×d denote a ground-truth action sequence with horizon T and action dimension d. The forward diffusion process gradually corrupts a0 through a Markov chain: 
+
+q(at | at−1) = N
+
+p 1 − βt at−1, β tI
+
+
+
+, (1) where {βt}Nt=1 defines a noise schedule. This process ad-mits a closed-form reparameterization: 
+
+at = √¯αt a0 + √1 − ¯αt ϵ, ϵ ∼ N (0, I) (2) with αt = 1 − βt and ¯αt = Qti=1 αi.The policy learns a conditional reverse process that progres-sively removes noise given the observation o:
+
+pθ (at−1 | at, o) = N
+
+
+
+μθ (at, t, o), Σt
+
+
+
+, (3) where a neural network ϵθ (at, t, o) is trained to predict the injected noise. Under this parameterization, the mean of the reverse transition is given by: 
+
+μθ = 1
+
+√αt
+
+
+
+at − 1 − αt
+
+√1 − ¯αt
+
+ϵθ (at, t, o)
+
+
+
+. (4) Training is performed by minimizing a conditional noise prediction loss L:
+
+L = Ea0, ϵ, t ϵ − ϵθ (√¯αta0 + √1 − ¯αtϵ, t, o) 22
+
+, (5) 2STEP : Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction 
+
+which corresponds to optimizing a variational lower bound on the conditional data likelihood. At inference time, action generation starts from Gaussian noise ϵ ∼ N (0, I) and applies the learned reverse process for N denoising steps: 
+
+ak−1 = 1
+
+√αk
+
+
+
+ak − 1 − αk
+
+√1 − ¯αk
+
+ϵθ (ak, k, o)
+
+
+
++ σkϵ, (6) where αk and ¯αk = Qki=1 αi are diffusion schedule param-eters, σk controls the injected noise, and ϵθ is the learned denoising network. Obtaining high-quality action sequences typically requires nearly 100 denoising steps, which intro-duces substantial inference latency and makes it challenging to deploy diffusion policies in high-frequency, real-time closed-loop control. 
+
+## 3. Method 
+
+3.1. Motivation 
+
+Previous methods (Song et al., 2020; Lu et al., 2022; 2025; Prasad et al., 2024; Chen et al., 2024; Duan et al., 2025; Chen et al., 2025b) attempt to accelerate diffusion poli-cies by modifying the initialization or sampling process. To more clearly understand the differences among these approaches, we introduce three forms of consistency for diffusion policies: temporal consistency, spatial consistency and spatiotemporal consistency. 
+
+Temporal Consistency. Temporal consistency captures the smoothness of actions across successive control steps, reflecting physical continuity and control frequency con-straints. Given two consecutive time steps t − 1 and t, with the executed action at−1 and a warm-start action ˜at at time 
+
+t, we say the warm start satisfies temporal consistency if 
+
+∥˜at − at−1∥ ≤ ϵt, ∀t, (7) where ϵt is a Lipschitz-like bounded constant determined by the system dynamics and control frequency. This assumption is commonly exploited by action extrap-olation or reuse strategies, which initialize the diffusion process using previous actions. While effective in reducing inter-step action variation, temporal consistency alone does not guarantee that the initialized action remains compatible with the current system state. 
+
+Spatial Consistency. Spatial consistency characterizes the alignment between the warm-start action and the state-conditioned target action distribution induced by the dif-fusion policy. Let st denote the current system state and 
+
+p(a | st) the corresponding target action distribution. A warm-start action ˜at satisfies spatial consistency if 
+
+dist  ˜at, M(st) ≤ ϵs, ∀t (8)                
+
+> Table 1. Comparison of diffusion-based control acceleration meth-ods from the perspective of spatiotemporal consistency.
+> Method TC SC
+> Vanilla DDPM ✗✗
+> DDIM/DPM-Solver/DPM-Solver++ ✗✗
+> RTI-DP/SDP/RNR-DP/Falcon ✓✗
+> CP/OneDP ✗✗
+> BRIDGER ✗✓
+> STEP (Ours) ✓✓
+
+where M(st) denotes the high-probability action manifold of p(a | st), and ϵs controls the allowable deviation. Meth-ods based on prediction can be viewed as enforcing spatial consistency. However, the predictor in these approaches often leads to limited capability, sacrificing generative flexi-bility and robustness. Previous methods can be categorized by the type of con-sistency they enforce, as summarized in Table 1. Stan-dard diffusion samplers (e.g., DDIM (Song et al., 2020), DPM-Solver (Lu et al., 2022), and DPM-Solver++ (Lu et al., 2025)) as well as distillation-based methods such as CP (Prasad et al., 2024) and OneDP (Wang et al., 2025) gen-erate action sequences from Gaussian noise without warm-starting. As a consequence, neither spatial consistency nor temporal consistency is explicitly enforced across control steps. Methods that reuse historical actions such as RTI-DP (Duan et al., 2025), RNR-DP (Chen et al., 2025b) and Falcon (Chen et al., 2025a) promote temporal consistency through warm-start initialization, yet their initializations are not guaranteed to remain close to the state-conditioned high-probability action manifold, making it challenging to ensure spatial consistency. BRIDGER (Chen et al., 2024) constructs deterministic mappings between noise and ac-tions for faster sampling, but lack explicit constraints on temporal consistency. Our STEP explicitly enforces both spatial and temporal consistency during warm-start initial-ization, thereby achieving spatiotemporal consistency and enabling fast and stable diffusion-based control. A warm-start action ˜at is said to be spatiotemporally consistent if it simultaneously satisfies the temporal and spatial consis-tency in Equation (7) and Equation (8). Spatiotemporal consistency ensures that the warm-start action is both tem-porally smooth and spatially aligned with the current state-conditioned action distribution, providing a stable and infor-mative initialization for subsequent diffusion refinement. 
+
+Why Spatiotemporal Consistency Matters. To clarify why enforcing only a single dimension of consistency is insufficient, we analyze two representative failure cases corresponding to existing acceleration strategies. 
+
+Case I: Temporal warm-start without spatial consistency. 
+
+Methods such as RTI-DP and Falcon accelerate inference by warm-starting the diffusion process from previous actions, thereby promoting temporal consistency across control steps. 3STEP : Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction Cross-Attention 
+
+> Block x2
+> Predicted
+> Actions
+> Embedding Layer
+> Key/Value
+> Layer Normalization
+> Output Projection
+> Embedding Layer
+> Query
+> Previous Actions
+> T
+> T+1
+> T+2
+> T+15
+> …
+> Observations
+
+Figure 2. The model architecture of predictor in STEP. 
+
+However, these warm-start actions are not explicitly con-strained to align with the state-conditioned target action distribution. As a result, the initialization may deviate from the high-probability action manifold induced by the cur-rent observation, and even with warm-starting, typically still requires additional steps to correct the distributional mismatch. 
+
+Case II: Spatial warm-start without temporal consistency. 
+
+Methods like BRIDGER train a conditional predictor to predict actions conditioned on the current state, and use the decoder output as a warm-start initialization for diffusion sampling. While it helps guide the sampling process to-ward the target action distribution, the predictor operates in a single-shot manner with Gaussian noise as input and does not explicitly condition on previous actions or control steps. As a result, the warm-start initialization varies across consecutive timesteps t, making it difficult to guarantee the temporal consistency and potentially leading to oscillatory behaviors. Moreover, since the predictor provides only a coarse initialization rather than directly modeling the local action mode, additional denoising steps are often required to refine the action. 
+
+3.2. Spatiotemporal Consistency Prediction 
+
+We consider a discrete-time visuomotor control problem with a planning horizon H. At each timestep t, the policy receives an observation ot ∈ O and generates a continuous action sequence: 
+
+At = ( at, a t+1 , . . . , a t+H−1) ∈ A H , (9) To exploit spatiotemporal consistency, we define a predictor: 
+
+fθ : O × A H → A H , (10) which maps the current observation ot and the previous timestep’s action sequence At−H to a prediction: 
+
+ˆAt = fθ (ot, At−H ). (11) 
+
+Algorithm 1 Warm-Started Diffusion Policy Inference 
+
+1: Input: K (total diffusion steps), K′ < K (warm-start step), 
+
+σt (noise magnitude) 2: Initialize: cache for previous H-step actions, Acache ← None 3: while control loop is running do 
+
+4: Observe current state ot
+
+5: if t < H or Acache = None then 
+
+6: Initialize AK ∼ N (0, I)
+
+7: else 
+
+8: Predict ˆAt = fθ (ot, Acache )
+
+9: Warm-start: ˜AK′ = σ ˆAt + σt ϵt, ϵt ∼ N (0, I)
+
+10: end if 
+
+11: Run reverse process from step K′ to 0 to obtain At
+
+12: Update cache: Acache ← At
+
+13: Execute actions in At
+
+14: end while 0.48         
+
+> 1
+> 0.86
+> 0.98
+> 0.96
+> 0.64
+> 0.41
+> 1
+> 0.84
+> 1
+> 0.98
+> 0.62
+> 15
+> 17
+> 19
+> 21
+> 23
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1
+> Push-T Lift Transport Can Square ToolHang
+> 2 Blocks 4 Blocks 2 Blocks 4 Blocks
+> Score
+> Time (ms)
+
+Figure 3. Score and latency with different numbers of cross-attention blocks. 
+
+The predictor is implemented as a multi-layer Transformer with cross-attention, as shown in Figure 2. Historical actions and current observations are first projected to a shared 128-dimensional embedding space, followed by cross-attention to incorporate temporal context. The predictor is trained in a supervised manner using MSE loss: 
+
+Lpred (θ) = E∥ ˆAt − At∥22
+
+. (12) This learning objective encourages ˆAt to approximate the conditional expectation E[At | ot, At−H ]. After separate training of the predictor and diffusion policy, they are cas-caded for inference. During inference, the predicted sequence ˆAt is used to initialize the diffusion reverse process at an intermediate step K′ < K rather than from pure noise: 
+
+˜AK′ = σ ˆAt + σt ϵt, ϵt ∼ N (0, I), (13) where σ and σt controls the predicted action and noise magnitude which are discussed in 3.3. The reverse denoising process then proceeds from step K′ to 0, producing the final action sequence At. The entire sequence At is executed and stored in a cache for the next timestep’s predictor input. In Figure 2, the previous action sequence and observations are first encoded by embedding layers, followed by multiple cross-attention blocks (Vaswani et al., 2017). The action se-quence serves as the query, while the observations are used as the key and value. The attention outputs are then trans-formed via layer normalization and an output projection to 4STEP : Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction Push-T  Lift  Can  Square  Transport  Tool Hang  Stack Cube  Turn Faucet  Push Chair  
+
+> Figure 4. Illustrations of Simulation Experiments. Left to Right: Push-T, RoboMimic’s 5 tasks, and ManiSkill2’s 3 tasks.
+
+match the dimensionality of the input action sequence. As shown in Figure 3, experiments on the RoboMimic bench-mark indicate that 2 blocks can achieve the same success rate (score) with lower inference latency. Consequently, we adopt two blocks in all subsequent experiments. 
+
+3.3. Velocity-aware Perturbation Injection 
+
+In real-world execution, we observe that the robot may enter an execution deadlock where consecutive actions ex-hibit minimal variation, leading to insufficient actuation to overcome static friction and control dead zones. To detect such stagnation, we measure the action variation between consecutive timesteps ( ..., t − 2H, t − H, t, ... ) as ∆At =
+
+Acache − At−2H . Execution stagnation is identified using a threshold on the action variation: It = I(∥∆At∥ < ϵ a),where I(·) denotes the indicator function and ϵa is a small constant. Based on this criterion, we switch between normal execution and perturbed execution by adjusting both the action scaling factor and the perturbation magnitude. Then, the warm-started action is defined as Line 9 in Algorithm 1, where the coefficients are set as 
+
+σ =
+
+(
+
+σscale , It = 1 ,
+
+1, It = 0 , σt =
+
+(
+
+σstall , It = 1 ,
+
+0, It = 0 , (14) where σscale and σstall are hyperparameters to controls the predicted action and noise magnitude. This formulation injects controlled actuation excitation only when execution stagnation is detected, while preserving the original policy behavior during normal execution. In practice, we set ϵa =0.01 . A small perturbation σstall = 0 .1 is sufficient in simulation, whereas real-world experiments require larger 
+
+σstall to compensate for static friction and actuation dead zones in Appendix B. 
+
+3.4. Local Contractivity Analysis 
+
+We analyze the local contractive behavior of diffusion-based policy solvers when initialized from a spatiotemporally con-sistent warm start. Our analysis applies uniformly to com-monly used reverse solvers. 
+
+Unified reverse update. All solvers considered in this work admit a unified reverse update of the form 
+
+Ak−1 = μk(Ak, ot) + ξk, (15) where μk denotes the reverse posterior mean induced by the learned denoising network, and ξk is a (possibly zero) noise term whose variance is determined by the scheduler. DDPM, DDIM, and DPM-Solver differ in the exact form of μk and ξk, but all share the same mean-based update structure. We focus on the contraction property of the mean map-ping μk, which governs the stability of the reverse process. Assume that the learned denoising network ϵθ (A, k, ot) is 
+
+L-Lipschitz continuous in A within a neighborhood U of the data manifold. Then, for standard noise schedules (e.g., linear or cosine), the reverse posterior mean μk satisfies 
+
+∥μk( ˜Ak) − μk(Ak)∥ ≤ ck∥ ˜Ak − Ak∥, ck < 1, (16) where ck depends on the noise schedule and the Lipschitz constant L.
+
+Proof sketch. Under standard DDPM assumptions, the re-verse conditional distribution q(Ak−1 | Ak, ot) is Gaussian with mean 
+
+μk(Ak, ot) = 1
+
+√αk
+
+
+
+Ak − βk
+
+√1 − ¯αk
+
+ϵθ (Ak, k, ot)
+
+
+
+.
+
+(17) If ϵθ is L-Lipschitz in Ak, then μk is also Lipschitz. For well-designed noise schedules, one can upper-bound the Lipschitz constant by a factor ck < 1 (see, e.g., prior analy-ses of diffusion contractivity). The same argument applies to DDIM and DPM-Solver, whose updates correspond to deterministic discretizations of the same reverse-time dy-namics. By recursively applying Equation (16) from step K′ down to 0, we obtain 
+
+∥ ˜A0 − A0∥ ≤ 
+
+> K′
+
+Y
+
+> k=1
+
+ck∥ ˜AK′ − AK′ ∥. (18) Since ck < 1, the reverse process is locally contractive. The spatiotemporal predictor ensures that the warm-start initial-ization ˜AK′ lies within the contraction neighborhood U. As a result, initialization errors decay exponentially through re-verse diffusion, enabling stable and efficient inference even with a reduced number of denoising steps. 5STEP : Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction 
+
+Table 2. State-based Simulation Results on PushT and RoboMimic.                                                                                                                                                                          
+
+> Method Step Push-T Lift Transport Can Square ToolHang Score Time(ms) Score Time(ms) Score Time(ms) Score Time(ms) Score Time(ms) Score Time(ms) Vanilla (DDPM) 100 0.94 665 1.00 654 0.86 682 0.98 681 0.94 675 0.68 674 DDIM 40.73 28 1.00 28 0.84 28 0.96 28 0.98 28 0.60 30 20.29 15 0.80 14 0.04 15 0.32 15 0.84 14 0.06 16 DPM-Solver++ 41.00 36 1.00 32 1.00 33 1.00 35 1.00 33 036 20.20 22 1.00 21 021 024 1.00 21 023 BRIDGER 40.83 27 1.00 28 0.86 29 1.00 29 0.94 29 0.52 29 20.37 14 1.00 16 0.46 16 0.98 16 0.84 15 0.08 15 RTI-DP -0.91 25 0.86 31 0.50 140 0.90 31 0.88 79 0.34 128 Falcon 41.00 36 1.00 33 1.00 33 1.00 35 1.00 39 036 20.21 22 1.00 21 021 024 1.00 26 023 STEP (Ours) 40.91 32 1.00 31 0.82 32 1.00 31 0.96 31 0.62 33 20.49 18 1.00 17 0.86 18 0.98 18 0.96 17 0.64 19
+
+## 4. Evaluation 
+
+4.1. Simulation Environments and Benchmarks 
+
+We conduct a comprehensive simulated evaluation across 9 tasks drawn from three widely used benchmarks (Mandlekar et al.; Florence et al., 2022; Gu et al.) in Figure 4. 
+
+Robomimic (Mandlekar et al.) is a large-scale robotic ma-nipulation benchmark designed to study imitation learning and offline RL. The benchmark consists of 5 tasks: Lift ,
+
+Can , Square , Transport , and Tool Hang .
+
+Push-T is a contact-rich task adapted from IBC (Florence et al., 2022), requires pushing a T shaped block to a fixed target with a circular end-effector. Variation is added by random initial conditions for T block and end-effector. 
+
+ManiSkill2 (Gu et al.) is a benchmark for dexterous robotic manipulation, featuring a diverse set of object-centric tasks with contact-rich interactions. We select three represen-tative tasks including Stack Cube , Turn Faucet , and Push Chair , which span different levels of contact complexity, articulation, and dynamics randomization. 
+
+4.2. Evaluation Methodology 
+
+We evaluate our method against 4 categories including 8 state-of-the-art baselines: (1) Numerical solver: DDPM (Ho et al., 2020), DDIM (Song et al., 2020), and DPM-Solver++ (Lu et al., 2025). (2) Distillation: CP (Prasad et al., 2024) and OneDP (Wang et al., 2025). (3) Prediction: BRIDGER (Chen et al., 2024). (4) Action reuse: RTI-DP (Duan et al., 2025), RNR-DP (Chen et al., 2025b), and Falcon (Chen et al., 2025a). For Robomimic and Push-T tasks, we follow the original diffusion policy (DP) codebase (Chi et al., 2025). For Man-iSkill2 tasks, we adopt the official RNR-DP implementa-tion (Chen et al., 2025b) to ensure fair comparisons under consistent training and evaluation protocols. For numeri-cal solver, we adopt the solvers provided by the Diffusers 
+
+library (von Platen et al., 2022) to ensure standardized and reproducible implementations. For all remaining methods, we use DDIM as the default sampler, as it consistently yields the best empirical performance among the solvers in our pre-liminary evaluations. During training, all prediction models are trained for 100,000 optimization steps. And all diffusion models are trained using the default training configurations provided in their respective official codebases. All experiments are conducted on a single NVIDIA RTX 4090 GPU for both training and inference. We evaluate each method using task success rate (Score) and inference latency (Time) as the primary metrics. For the Push-T task, we report target area coverage (Score). State-based experi-ments use only trajectories as conditional inputs, whereas the image-based take images as inputs. We set σ = 1 and 
+
+σt = 0 .1 in all simulation tasks. 
+
+4.3. Results 
+
+The experimental results are summarized in Table 2 and 3 for Push-T and RoboMimic, and in Table 4 for ManiSkill2. Bold denotes the best performance under the same number of inference steps, and underline indicates the second-best. 
+
+Comparison with Standard Diffusion. We first com-pare STEP with DDPM (Ho et al., 2020), a conventional diffusion-based policy using 100 denoising steps as a high-performance but high-latency baseline. For RoboMimic benchmark, STEP with 2 steps can achieve score of vanilla DDPM on both state-based and image-based conditions. And for contact-rich Push-T benchmark, on state-based condition, STEP with 4 steps can achieve 0.91 score, ap-proaching DDPM’s 0.94, and on image-based condition, the denoising step can be reduced to 2. STEP with 2 steps achieves similar scores on 0.96 on ManiSkill2’s tasks. This indicates that STEP preserves the performance of standard diffusion models while improving inference efficiency. 
+
+Comparison with Numerical Solver. Compared to DDIM (Song et al., 2020), STEP achieves comparable per-6STEP : Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction 
+
+Table 3. Image-based Simulation Results on PushT and RoboMimic.                                                                                                                                                                                       
+
+> Method Step Push-T Lift Transport Can Square ToolHang Score Time(ms) Score Time(ms) Score Time(ms) Score Time(ms) Score Time(ms) Score Time(ms) Vanilla (DDPM) 100 0.81 767 1.00 711 0.86 736 0.98 723 0.96 731 0.86 736 DDIM 40.83 36 1.00 37 0.84 42 1.00 38 0.92 36 0.33 44 20.79 20 1.00 22 0.78 28 0.94 23 0.74 22 0.5 30 DPM-Solver++ 40.72 29 032 1.00 40 035 033 034 20.19 17 019 026 021 020 020 CP -0.65 27 0.99 24 0.83 36 0.93 28 0.84 28 0.20 29 BRIDGER 40.82 38 1.00 39 0.88 46 1.00 39 0.96 40 0.78 49 20.81 22 1.00 24 0.88 31 0.98 24 0.92 24 0.72 33 RTI-DP -0.60 122 1.00 119 0.84 127 0.56 121 0.66 119 0.68 56 Falcon 40.19 39 045 054 046 043 045 20.19 25 030 038 033 029 030 STEP (Ours) 40.84 40 1.00 41 0.88 46 1.00 41 0.92 40 0.92 48 20.86 24 1.00 26 0.86 32 1.00 26 0.96 26 0.76 33
+
+Table 4. Simulation Results on ManiSkill2. (Time: ms)                                                                                        
+
+> Method Step StackCube TurnFaucet PushChair Score Time Score Time Score Time Vanilla(DDPM) 100 0.97 582 0.22 550 0.42 590 DPM-Solver++ 100 0.07 497 0.05 481 0.43 522 4048 048 048 DDIM 40.97 26 0.20 28 0.42 24 20.41 12 0.15 17 0.39 13 1060906BRIDGER 20.97 11 0.13 12 0.45 12 1080.04 70.40 8RTI-DP -0.96 11 0.16 11 0.32 12 RNR-DP -0.91 160 0.22 158 0.45 162 STEP (Ours) 20.96 11 0.20 12 0.39 13 10.06 70.04 80.26 8
+
+formance and inference speed with 4 steps, while signif-icantly outperforming DDIM on more challenging tasks such as RoboMimic ToolHang and in state-only input set-tings. When the number of denoising steps is further re-duced to 2, our method maintains stable performance while achieving even lower inference latency. Compared to DPM-Solver++ (Lu et al., 2025), STEP consistently delivers sub-stantially better performance across both 2 and 4 steps. No-tably, under extreme settings such as single-step denoising on ManiSkill2, STEP still succeeds with a high probability. 
+
+Comparison with Distillation. Compared to CP (Prasad et al., 2024), STEP achieves slightly higher scores on simple tasks under the same inference time budget, and delivers substantial improvements on more challenging tasks such as Push-T and ToolHang, with score gains of 21% and 56%, respectively. While OneDP (Wang et al., 2025) achieves one-step denoising via distillation and attains a score close to vanilla DDPM, Table 5 shows that our STEP is more parameter-efficient, requiring substantially fewer trainable parameters to achieve comparable or better performance. 
+
+Comparison with Noise Prediction. Compared with BRIDGER (Chen et al., 2025a), STEP achieves higher av-erage score with 2 and 4 steps on RoboMimic benchmarks, 0.3            
+
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1
+> 816 32 64 128 256
+> STEP (Ours)
+> Time (ms)
+> Score
+> DDPM
+> RTI-DP
+> DDIM
+> BRIDGER
+> DPM-Solver++
+> Falcon
+> 673
+> 0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1
+> 816 32 64 128 256 512
+> DDPM
+> RTI-DP DDIM
+> BRIDGER
+> DPM-Solver++
+> STEP
+> (Ours)
+> Falcon
+> Time (ms)
+> CP
+> 727
+
+Figure 5. Comparison of STEP and baselines on RoboMimic benchmarks. Left: State-based. Right: Image-based. 
+
+Table 5. Comparisons of training parameters.         
+
+> Method CP OneDP BRIDGER STEP (Ours) Parameters(M) 255.18 251.51 0.76 0.98
+
+as shown in Figure 5. Especially on more challenging tasks such as Push-T and ToolHang, STEP achieves 2-56% higher score, which indicates that STEP demonstrates stronger ro-bustness and generalization under aggressive step reduction. 
+
+Comparison with Action Reuse. For RoboMimic, STEP achieves higher score and lower inference latency than RTI-DP (Duan et al., 2025) and Falcon (Chen et al., 2025a), as shown in Figure 5. For ManiSkill2, under the comparable score, STEP can achieve lower inference latency than RNR-DP (Chen et al., 2025b) because RNR-DP only generates one action while STEP generate 8 actions for each inference. 
+
+4.4. Discussion Low-step Generalization and Multimodality. Among numerical solvers, DDIM remains strong generation qual-ity even with few steps, making it a competitive low-step baseline. However, solver-based methods still rely on itera-tive refinement to address the mismatch between low-step sampling and the target action distribution. Noise predic-tion and action reuse methods, such as BRIDGER (Chen et al., 2025a), can perform one-step or few-step inference on simple manipulation tasks (e.g., Lift and Can). Yet, they tend to overfit to specific task distributions and exhibit lim-7STEP : Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction PickNPlace: Pick up the blue cube and place it on the pink plate.  
+
+> StackCube: Stack the blue cube on top of the pink cube.
+> 5 DoF arm + 1 DoF gripper Teleoperator SO-ARM101
+
+Figure 6. Real-world robot system and tasks. 
+
+Table 6. Real-world experiment results on RTX 2050.                                    
+
+> Method Step PickNPlace StackCube Score Time (ms) Score Time (ms) Vanilla (DDPM) 100 1.00 4229 1.00 4370 DDIM 81.00 190 1.00 195 40.95 39 0.80 38 20.60 18 0.60 17 STEP (Ours) 81.00 192 1.00 194 41.00 40 1.00 40 20.95 20 0.80 19
+
+ited generalization in multi-task or more diverse scenarios. In particular, predicting actions or noise without sufficient temporal regularization often degrades performance under distribution shifts and reduces multimodality. In contrast, STEP explicitly preserves spatiotemporal consistency across action sequences, enabling robust low-step inference while maintaining more expressive multimodal generation capa-bility of the original diffusion policy than other methods. 
+
+## 5. Real-World Experiments 
+
+5.1. Robot and Tasks 
+
+We deploy our real-world experiments on single-arm SO-ARM101 robot, which is equipped with a 5-DoF robotic arm, a 1-DoF gripper, and a RGB camera providing top-view observation in Figure 6. We evaluate our method on two manipulation tasks, PickNPlace and StackCube , imple-mented using the LeRobot framework (Cadene et al., 2024). For each task, we collect 20 teleoperated demonstrations. Each task is evaluated over 20 episodes, and the success rate (score) and inference latency are reported. 
+
+5.2. Evaluation Methodology 
+
+Our model adopts the standard Diffusion Policy formulation with a U-Net backbone, following prior work (Chi et al., 2025). The action horizon is set to 16 and 8 actions are 42  33  35              
+
+> 75 56 55 49
+> 21
+> 11 11
+> 35
+> 23 17 20
+> 0
+> 20
+> 40
+> 60
+> 80
+> 842842
+> w/o with Velocity-aware Perturbation
+> Episode Time (s)
+> PickNPlace StackCube
+> avg.
+> 59%
+
+Figure 7. Ablation study for velocity-aware perturbation injection. 
+
+selected and executed for each loop, consistent with the original Diffusion Policy setting. We train the policy with a batch size of 64 for 200,000 steps using an NVIDIA RTX 4090 GPU. For real-world inference, the policy is deployed on an NVIDIA RTX 2050 GPU (25-35W) with 4GB mem-ory, operating under a realistic edge-device configuration. 
+
+5.3. Results 
+
+As shown in Table 6, the vanilla DDPM achieves success rates (score) of 100% with 100 denoising steps on PickN-Place and StackCube, respectively. However, this perfor-mance is accompanied by high inference latency, requiring 4220ms and 4370ms per action sequence. By reducing the number of denoising steps to 8, DDIM can reduce inference latency while preserving task success rates. Nevertheless, when the number of denoising steps is further reduced to 4 or fewer, the success rates collapse, indicating that they fail to maintain feasible solutions in the low-step regime. In con-trast, our STEP consistently achieves high task success with only 2 denoising steps, without observable performance degradation. This results in an end-to-end inference latency of 20ms, effectively pushing the Pareto frontier by simul-taneously improving inference efficiency and preserving real-world task success. Consequently, under the same suc-cess rate, STEP achieves speedups of 105.7 × and 4.8 ×
+
+compared to vanilla DDPM and DDIM, respectively. 
+
+5.4. Ablation Study 
+
+We further conduct real-world experiments to evaluate the velocity-aware perturbation injection mechanism. As shown in Figure 7, under different denoising steps, our method can reduce the average episode execution time by 59%, resulting in faster task completion and lower energy consumption during real-world execution. 
+
+## 6. Conclusion 
+
+We propose a low-latency diffusion-based visuomotor policy that enables efficient real-time control through spatiotempo-ral consistency prediction and velocity-aware perturbation injection. Extensive simulation and real-world experiments show that STEP can push the Pareto frontier between in-ference latency and success rate, making diffusion-based visuomotor policies practical for on-device deployment in embodied intelligence systems. 8STEP : Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction 
+
+## References 
+
+Aizu, T., Oba, T., Kondo, Y., and Ukita, N. Robot motion planning using one-step diffusion with noise-optimized approximate motions. arXiv preprint arXiv:2504.19652 ,2025. Cadene, R., Alibert, S., Soare, A., Gallouedec, Q., Zoui-tine, A., Palma, S., Kooijmans, P., Aractingi, M., Shukor, M., Aubakirova, D., Russi, M., Capuano, F., Pascal, C., Choghari, J., Moss, J., and Wolf, T. Lerobot: State-of-the-art machine learning for real-world robotics in pytorch. https://github.com/huggingface/ lerobot , 2024. Chen, H., Liu, M., Ma, C., Ma, X., Ma, Z., Wu, H., Chen, Y., Zhong, Y., Wang, M., Li, Q., et al. Falcon: Fast visuomotor policies via partial denoising. arXiv preprint arXiv:2503.00339 , 2025a. Chen, K., Lim, E., Lin, K., Chen, Y., and Soh, H. Don’t start from scratch: Behavioral refinement via interpolant-based policy diffusion. arXiv preprint arXiv:2402.16075 ,2024. Chen, Z., Yuan, X., Mu, T., and Su, H. Responsive noise-relaying diffusion policy: Responsive and efficient visuo-motor control. arXiv preprint arXiv:2502.12724 , 2025b. Chi, C., Xu, Z., Feng, S., Cousineau, E., Du, Y., Burch-fiel, B., Tedrake, R., and Song, S. Diffusion policy: Visuomotor policy learning via action diffusion. The International Journal of Robotics Research , 44(10-11): 1684–1704, 2025. Duan, Y., Yin, H., and Kragic, D. Real-time iteration scheme for diffusion policy. In 2025 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pp. 11758–11764. IEEE, 2025. Florence, P., Lynch, C., Zeng, A., Ramirez, O. A., Wahid, A., Downs, L., Wong, A., Lee, J., Mordatch, I., and Tompson, J. Implicit behavioral cloning. In Conference on robot learning , pp. 158–168. PMLR, 2022. Gu, J., Xiang, F., Li, X., Ling, Z., Liu, X., Mu, T., Tang, Y., Tao, S., Wei, X., Yao, Y., et al. Maniskill2: A unified benchmark for generalizable manipulation skills. In The Eleventh International Conference on Learning Repre-sentations .Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. Advances in neural information process-ing systems , 33:6840–6851, 2020. Høeg, S. H., Du, Y., and Egeland, O. Fast policy synthesis with variable noise diffusion models. In 2025 IEEE Inter-national Conference on Robotics and Automation (ICRA) ,pp. 4821–4828. IEEE, 2025. Liu, X., Ma, K. Y., Gao, C., and Shou, M. Z. Diffusion models in robotics: A survey. 2025. Lu, C., Zhou, Y., Bao, F., Chen, J., Li, C., and Zhu, J. Dpm-solver: A fast ode solver for diffusion probabilistic model sampling in around 10 steps. Advances in neural information processing systems , 35:5775–5787, 2022. Lu, C., Zhou, Y., Bao, F., Chen, J., Li, C., and Zhu, J. Dpm-solver++: Fast solver for guided sampling of diffusion probabilistic models. Machine Intelligence Research , pp. 1–22, 2025. Ma, X., Patidar, S., Haughton, I., and James, S. Hierarchical diffusion policy for kinematics-aware multi-task robotic manipulation. In Proceedings of the IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition , pp. 18081–18090, 2024. Mandlekar, A., Xu, D., Wong, J., Nasiriany, S., Wang, C., Kulkarni, R., Fei-Fei, L., Savarese, S., Zhu, Y., and Mart ´ın-Mart ´ın, R. What matters in learning from offline human demonstrations for robot manipulation. In 5th Annual Conference on Robot Learning .Prasad, A., Lin, K., Wu, J., Zhou, L., and Bohg, J. Consis-tency policy: Accelerated visuomotor policies via con-sistency distillation. In Robotics: Science and Systems ,2024. Song, J., Meng, C., and Ermon, S. Denoising diffusion implicit models. arXiv preprint arXiv:2010.02502 , 2020. Song, M., Deng, X., Zhou, Z., Wei, J., Guan, W., and Nie, L. A survey on diffusion policy for robotic manipula-tion: Taxonomy, analysis, and future directions. Authorea Preprints , 2025. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., and Polosukhin, I. At-tention is all you need. Advances in neural information processing systems , 30, 2017. von Platen, P., Patil, S., Lozhkov, A., Cuenca, P., Lam-bert, N., Rasul, K., Davaadorj, M., Nair, D., Paul, S., Berman, W., Xu, Y., Liu, S., and Wolf, T. Diffusers: State-of-the-art diffusion models. https://github. com/huggingface/diffusers , 2022. Wang, Z., Li, M., Mandlekar, A., Xu, Z., Fan, J., Narang, Y., Fan, L., Zhu, Y., Balaji, Y., Zhou, M., Liu, M.-Y., and Zeng, Y. One-step diffusion policy: Fast vi-suomotor policies via diffusion distillation. In Forty-second International Conference on Machine Learning ,2025. URL https://openreview.net/forum? id=E2VsqgKNlr .9STEP : Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction 
+
+Wolf, R. P., Shi, Y., Liu, S., and Rayyes, R. Diffusion models for robotic manipulation: A survey. Frontiers in Robotics and AI , 12:1606247, 2025. Ze, Y., Zhang, G., Zhang, K., Hu, C., Wang, M., and Xu, H. 3d diffusion policy: Generalizable visuomotor policy learning via simple 3d representations. arXiv preprint arXiv:2403.03954 , 2024. Zhao, T. Z., Kumar, V., Levine, S., and Finn, C. Learn-ing fine-grained bimanual manipulation with low-cost hardware. arXiv preprint arXiv:2304.13705 , 2023. 10 STEP : Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction 
+
+## A. Training Details 
+
+We use the CNN-based neural network architecture for both simulation and real-world experiments, we use a 256M parameter version for DDPM. Additionally, we adopt the action chunking idea 16 actions per chunk for prediction (Zhao et al., 2023; Chi et al., 2025), and utilize two observations for vision encoding. In Table 7, we present hyperparamters used to train diffusion policy and our predictor on PushT, RoboMimic and ManiSkill2 benchmarks.  
+
+> Table 7. Hyperparameters
+
+Hyperparameters Values Diffusion Policy Learning Rate 1e-4 Diffusion Policy Optimizer AdamW Diffusion Policy Batch Size 64 Diffusion Policy Scheduler Warmup & Cosine Decay Diffusion Policy Iterations 200000 Action Chunk Size 16 Number of Observations 2DDPM Timesteps 100 Predictor Learning Rate 1e-4 Predictor Optimizer AdamW Predictor Batch Size 64 Predictor Scheduler Warmup & Cosine Decay Predictor Iterations 100000 Number of Cross-attention Blocks 2Hidden Dimension of Embeddings 128 
+
+## B. More Study on Velocity-aware Perturbation Injection 
+
+Table 8 evaluates the effect of the perturbation scale σstall on real-world PickNPlace and StackCube tasks. Across all inference step settings, we observe a clear unimodal trend: without perturbation ( σstall = 0 ), the policy consistently fails due to execution stagnation, while overly large perturbations ( σstall ≥ 1.6) lead to severe instability and task failure. Performance peaks at moderate values σstall ∈ [1 .0, 1.4] , where step=8 and step=4 achieve 100% success on both tasks, and even the extremely low-latency setting (step=2) reaches up to 95% success on PickNPlace and 80% on StackCube. These results highlight an inherent trade-off between exploration and control stability, and demonstrate that σstall constitutes a critical design parameter whose optimal range can be systematically identified through design space exploration rather than heuristic tuning.    
+
+> Table 8. Impact of σstall on Success Rate of Real-World PickNPlace and StackCube Tasks
+
+σstall 
+
+PickNPlace StackCube step=8 step=4 step=2 step=8 step=4 step=2 0.0 0.00 0.00 0.00 0.00 0.00 0.00 0.2 0.10 0.10 0.05 0.10 0.05 0.05 0.4 0.35 0.30 0.20 0.30 0.25 0.15 0.6 0.60 0.55 0.35 0.60 0.55 0.30 0.8 0.90 0.85 0.60 0.85 0.80 0.60 1.0 1.00 0.95 0.75 1.00 0.95 0.70 1.2 1.00 1.00 0.95 1.00 1.00 0.80 
+
+1.4 0.95 0.95 0.95 0.95 0.90 0.75 1.6 0.65 0.60 0.40 0.60 0.55 0.30 1.8 0.30 0.25 0.15 0.25 0.20 0.10 2.0 0.00 0.00 0.00 0.00 0.00 0.00 11 STEP : Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction 
+
+Table 9 further investigates the joint effect of predictor weight σscale and perturbation scale σstall under the extremely low-latency setting (step=2). Despite the limited denoising budget, a clear two-dimensional unimodal pattern can still be observed. For any fixed σscale , the success rate increases as σstall grows from zero, reaches its maximum around 
+
+σstall ∈ [1 .2, 1.4] , and then degrades rapidly when excessive noise is injected. Meanwhile, for a fixed σstall , moderate predictor retention ratios ( σscale = 0 .2 or 0.4) consistently yield higher success rates than both overly conservative settings (σscale = 0 ), which lack corrective adaptation, and overly aggressive settings ( σscale ≥ 0.6), which reduce the stabilizing effect of the predictor. Under the optimal configurations, step=2 achieves up to 95% success on PickNPlace and 80% on StackCube, indicating that even in the extreme low-step regime, carefully balancing predictor reliance and noise injection can substantially mitigate execution failures. These results suggest that the performance gap introduced by aggressive step reduction is not fundamental, but can be largely compensated through precise calibration of predictor trust and exploration strength. 
+
+Table 9. Impact of σstall and σscale on Success Rate of Real-World PickNPlace and StackCube Tasks with step=2 
+
+σstall 
+
+PickNPlace StackCube 
+
+σscale =0 0.2 0.4 0.6 0.8 1.0 σscale =0 0.2 0.4 0.6 0.8 1.0 0.0 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.2 0.00 0.00 0.05 0.05 0.00 0.00 0.00 0.00 0.05 0.05 0.00 0.00 0.4 0.15 0.15 0.20 0.20 0.20 0.15 0.10 0.10 0.15 0.15 0.15 0.10 0.6 0.25 0.30 0.35 0.35 0.25 0.20 0.25 0.30 0.30 0.30 0.25 0.25 0.8 0.45 0.60 0.60 0.60 0.55 0.45 0.40 0.55 0.60 0.55 0.45 0.40 1.0 0.60 0.75 0.75 0.70 0.70 0.60 0.50 0.65 0.70 0.65 0.55 0.50 1.2 0.65 0.95 0.95 0.85 0.75 0.65 0.55 0.80 0.80 0.70 0.60 0.55 1.4 0.60 0.95 0.95 0.80 0.70 0.60 0.50 0.75 0.75 0.65 0.55 0.50 1.6 0.40 0.40 0.40 0.40 0.35 0.30 0.20 0.25 0.30 0.30 0.25 0.25 1.8 0.10 0.10 0.15 0.10 0.05 0.05 0.00 0.05 0.10 0.10 0.05 0.00 2.0 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 
+
+## C. Visualization of Failure Cases Case 0: From the frame 2, as the robot approaches the blue cube, the action changes across all DoFs become small, causing the execution process to fall into an execution deadlock, which ultimately leads to task failure.           
+
+> 012345
+> 012345
+> Case 1: From the frame 4, as the robot approaches the pink plate, the action changes are small, causing the execution process to fall into an execution deadlock.
+
+Figure 8. Failure cases of real-world PickNPlace task. 
+
+We further visualize failure cases in real-world tasks without applying velocity-aware perturbation injection. Figure 8 and Figure 9 show representative failure cases for PickNPlace and StackCube, respectively. For PickNPlace, in Case 0, from frame 2, as the robot approaches the blue cube, the action changes across all DoFs become extremely small, causing the 12 STEP : Warm-Started Visuomotor Policies with Spatiotemporal Consistency Prediction Case 0: From the frame 2, as the robot approaches the blue cube, the action changes across all DoFs become small, causing the execution process to fall into an execution deadlock, which ultimately leads to task failure.           
+
+> Case 1: From the frame 3, as the robot approaches the top face of pink cube, the action changes are small, causing the execution process to fall into an execution deadlock.
+> 012345
+> 012345
+
+Figure 9. Failure cases of real-world StackCube task. 
+
+execution to fall into an execution deadlock and ultimately leading to task failure; similarly, in Case 1, from frame 4, minimal action variations are observed as the robot approaches the pink plate, resulting in execution deadlock. For StackCube, similar execution deadlocks occur when the robot approaches the target cube, due to vanishing action changes. By incorporating velocity-aware perturbation injection, such deadlocks can be effectively avoided, enabling stable task execution. 13

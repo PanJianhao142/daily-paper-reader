@@ -1,0 +1,892 @@
+Title: Language-Guided Transformer Tokenizer for Human Motion Generation
+
+URL Source: https://arxiv.org/pdf/2602.08337v1
+
+Published Time: Tue, 10 Feb 2026 03:08:54 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# Language-Guided Transformer Tokenizer for Human Motion Generation 
+
+## Sheng Yan 1 Yong Wang 2 Xin Du 2 Junsong Yuan 3 Mengyuan Liu 4 *
+
+> 1
+
+## Transsion Ltd. 2Chongqing University of Technology 
+
+> 3
+
+## State University of New York at Buffalo 4 Peking University 
+
+https://eanson023.github.io/LG-Tok/ 
+
+## Abstract 
+
+In this paper, we focus on motion discrete tokenization, which converts raw motion into compact discrete tokens—a process proven crucial for efficient motion generation. In this paradigm, increasing the number of tokens is a com-mon approach to improving motion reconstruction qual-ity, but more tokens make it more difficult for generative models to learn. To maintain high reconstruction quality while reducing generation complexity, we propose leverag-ing language to achieve efficient motion tokenization, which we term Language-Guided Tokenization (LG-Tok). LG-Tok aligns natural language with motion at the tokeniza-tion stage, yielding compact, high-level semantic represen-tations. This approach not only strengthens both tokeniza-tion and detokenization but also simplifies the learning of generative models. Furthermore, existing tokenizers pre-dominantly adopt convolutional architectures, whose local receptive fields struggle to support global language guid-ance. To this end, we propose a Transformer-based Tok-enizer that leverages attention mechanisms to enable effec-tive alignment between language and motion. Additionally, we design a language-drop scheme, in which language con-ditions are randomly removed during training, enabling the detokenizer to support language-free guidance during gen-eration. On the HumanML3D and Motion-X generation benchmarks, LG-Tok achieves Top-1 scores of 0.542 and 0.582, outperforming state-of-the-art methods (MARDM: 0.500 and 0.528), and with FID scores of 0.057 and 0.088, respectively, versus 0.114 and 0.147. LG-Tok-mini uses only half the tokens while maintaining competitive perfor-mance (Top-1: 0.521/0.588, FID: 0.085/0.071), validating the efficiency of our semantic representations. 
+
+## 1. Introduction 
+
+Text-driven human motion generation [1–9] enables the synthesis of realistic human motions based on natural lan-       
+
+> *Corresponding author. CNN
+> Tokenizer
+> CNN
+> Detokenizer
+> Quantizer
+> Input
+> Recons.
+> Transformer
+> Tokenizer
+> Transformer
+> Detokenizer
+> Quantizer
+> Input
+> Recons.
+> (a) Previous methods (b) Ours
+> “A person
+> walks in
+> awinding
+> manner...”
+> Input
+> Input
+
+Figure 1. Comparison between previous CNN-based tokenizers and our Language-Guided Transformer Tokenizer (LG-Tok). Our method aligns language and motion during tokenization, leverag-ing the transformer’s flexibility. 
+
+guage descriptions, with widespread applications in game animation, virtual reality, and video motion editing, etc. In recent years, the two-stage paradigm, combining motion tokenization with generative models [10–15], has demon-strated a pivotal role in efficiently synthesizing high-fidelity motions. These methods tokenize continuous motion repre-sentations into discrete tokens, thereby enabling the direct utilization of well-established generative transformer train-ing and sampling techniques [16–20] with minimal modifi-cations. #Tokens 104 160 236 rFID ↓ 0.143 0.110 0.090 gFID ↓ 0.230 0.205 0.257 
+
+Table 1. Performance against #Tokens. 
+
+As the core of this paradigm, the properties of motion tokeniza-tion significantly influence the performance of generative transformers. Despite various motion tokenization studies focusing on improving training objectives [10, 21] or optimizing quantization [12, 22, 23], current methods still suffer from a fundamental trade-off between reconstruction and generation quality. As shown in Table 1, increasing the number of tokens typically improves motion reconstruction quality (rFID). However, the generation process exhibits a different behavior—more tokens increase learning dif-ficulty, leading to suboptimal results (gFID). Based on this observation, we raise the question: Can we maintain sufficient tokens for high-quality reconstruction while simultaneously reducing the learning difficulty of token sequences for generative models? 
+
+Our key insight is that language descriptions naturally 1
+
+> arXiv:2602.08337v1 [cs.CV] 9 Feb 2026
+
+provide high-level semantic abstractions— e.g ., “a person walks forward” encapsulates core motion intent. Introduc-ing language into tokenization may alleviate the semantic burden on tokens, enabling them to focus on fine-grained details that text cannot fully convey. To this end, we propose Language-Guided Tokenization (LG-Tok), which aligns natural language with motion during tokenization, aiming to provide compact, high-level semantic representa-tions. This approach, typically reserved for the generation phase, is extended to the tokenization stage in our work. It achieves three benefits: 1) enables latent tokens to learn motion representations while simultaneously absorbing lin-guistic semantic knowledge during the tokenizing process; 
+
+2) allows language conditions to assist in effectively recon-structing the input motion during the detokenizing process. 
+
+3) simplifies the learning of generative models. For in-stance, on the Motion-X dataset [24], our compact seman-tic representations reduce model perplexity from 146.5 to 103.1 and improve FID from 0.257 to 0.088, indicating eas-ier and more effective learning. Notably, existing tokenizers [10, 12, 21, 23] predom-inantly adopt convolutional tokenizer-detokenizer archi-tectures, whose local receptive fields struggle to support global language guidance. To address this, we propose a Transformer-based Tokenizer that leverages flexible atten-tion mechanisms to enable effective alignment between lan-guage and motion, while enhancing the global contextual awareness of token representations. Specifically, we pre-define a learnable sequence of latent tokens that are con-catenated with both motion and language representations. Following feature encoding by the transformer-based tok-enizer, these latent tokens form semantically informed rep-resentations. After vector quantization, a transformer-based detokenizer reconstructs the input motion from the masked token sequences. 0.0 0.1 0.2 0.3 0.4 0.5     
+
+> 0.44
+> 0.46
+> 0.48
+> 0.50
+> 0.52
+> 0.54
+> 0.56
+> R-Precision Top-1  ↑
+> MARDM FID: 0.114
+> StableMoFusion FID: 0.177
+> MoMask FID: 0.116 MLD FID: 0.431
+> LG-Tok (Ours) FID: 0.057
+> T2M-GPT FID: 0.335
+> LG-Tok-mini (Ours) FID: 0.085
+> FID ↓
+
+Figure 2. Generation quality on HumanML3D. 
+
+Furthermore, we design a language-drop scheme, in which language conditions are randomly removed during training. This simple yet effective strategy enables the deto-kenizer to support language-free guidance decoding dur-ing motion generation. Fig. 2 shows our LG-Tok out-performing representative baselines. Quantitatively, on HumanML3D [25] and Motion-X benchmarks, LG-Tok achieves Top-1 scores of 0.542 and 0.582 , outperforming state-of-the-art methods (MARDM [26]: 0.500 and 0.528), and with FID scores of 0.057 and 0.088 respectively, ver-sus 0.114 and 0.147. LG-Tok-mini utilizes only half the tokens while maintaining competitive performance (Top-1: 0.521/0.588, FID: 0.085/0.071), validating the efficiency of our semantic representations. In summary, our contribu-tions are as follows: • We propose Language-Guided Tokenization (LG-Tok), which achieves alignment between natural language and motion during the motion tokenization phase. • We introduce a Transformer-based Tokenizer that lever-ages attention mechanisms to enable effective language-motion alignment and enhance global contextual aware-ness of token representations. • We design a language-drop scheme that enables the deto-kenizer to support language-free guidance decoding dur-ing motion generation. 
+
+## 2. Related Work 
+
+Motion tokenization. Motion tokenizers [3, 10–12, 21, 27– 30] play a crucial role in efficiently synthesizing high-fidelity motion by reducing computational costs while im-proving generation quality and efficiency. This has been achieved through autoencoders (AEs) [30, 31]. This general design compresses motion into low-dimensional representa-tions, which are decoded back to the original space. Vari-ational autoencoders (VAEs) [32, 33] extend this paradigm by introducing probability distributions, enabling stochastic sampling and generative capabilities. TEMOS [28] is a rep-resentative work, aligning a text encoder’s output distribu-tion with the VAE’s latent space to enable text-conditioned motion generation. Latent diffusion models [34–36] fur-ther exploit compressed spaces—avoiding the cost of diffu-sion in the raw motion space. More recently, MARDM [26] performs masked autoregressive diffusion directly on deter-ministic AE latents, mitigating the sampling noise inherent to VAE representations. Alternatively, Vector Quantized VAEs (VQ-VAE) [37] insert a quantization step between AE encoders (tokeniz-ers) and decoders (detokenizers), replacing continuous la-tent distributions with discrete codes that partition the mo-tion space into categorical units. TM2T [21] first applied VQ-VAE to motion, introducing discrete motion tokens. This discrete tokenization facilitates the use of powerful sequence-based generative models [19, 20, 38, 39]. Sub-sequent variants [10, 14, 40], e.g . RQ-VAE [12, 41] and FSQ [15, 22], further refined the quantization and enabled the integration of advanced generative architectures. In this paper, we focus on this discrete ( i.e ., VQ-based) tokeniza-tion pipeline. Based on our observation of the fundamental trade-off between reconstruction and generation in current methods, we propose leveraging language guidance during tokenization to provide compact semantic representations, thereby maintaining high reconstruction quality while re-ducing the learning difficulty for generative models. 
+
+Text-driven motion generation. Natural language pro-2vides rich semantic cues for specifying actions, veloci-ties, and directions, making it a key conditioning modal-ity for human motion synthesis [2–9, 42]. Early GAN-based work, such as Text2Action [43], generated diverse motions from textual descriptions, while JL2P [44] em-ployed GRU-based encoders and decoders to map text to movement. Inspired by advances in text-to-image gener-ation, recent approaches predominantly adopt diffusion or VQ-based paradigms. Diffusion models [45–51] simulate a forward noising process and train networks to reverse it; MLD [34] improves efficiency by operating in latent space, while PhysDiff [52] enforces physical constraints during generation. VQ-based methods [13–15, 22, 40, 41, 53, 54], 
+
+e.g ., T2M-GPT [10], quantize motion into discrete to-kens via VQ-VAE and model them autoregressively us-ing GPT-style [18, 19] transformers. MoMask [12] and MMM [11] adopt MaskGIT-style [20] masked training and non-autoregressive sampling, and MoSa [23] adapts scal-able autoregressive modeling from the image domain [17]. In this paper, we adopt MoSa as our generative model given its notable gains in quality and efficiency. To demonstrate the generalizability of our approach, we also apply LG-Tok to MoMask, showing consistent improvements across dif-ferent generative paradigms. 
+
+Image tokenization. Image tokenization has emerged as a fundamental technique bridging various vision tasks. This field has diverged into two main branches: understanding-oriented and generation-oriented. Understanding-oriented approaches [55–57] leverage large language models (LLMs) to create semantic representations for tasks such as classification [58] and segmentation [59]. Meanwhile, generation-oriented methods, such as VQ-GAN [60, 61], emphasize learning latent spaces for detail-preserving com-pression. These methods typically employ 2D latent grids with fixed downsampling factors [9, 17, 20, 62–64]. Tik-Tok [65] first introduces a transformer-based 1D tokenizer that generates global tokens as more compact representa-tions of images. Subsequently, numerous variants have re-fined it [66–69]. e.g ., TxtTok [70] extends this paradigm by incorporating image captions as conditions during to-kenization, significantly improving reconstruction quality and compression rates. Inspired by these works, we in-troduce natural language guidance into motion tokeniza-tion and propose a transformer-based tokenizer to enable effective alignment. While transformer-based tokenizers have been explored in continuous VAE representations [28, 34], their application in VQ-based tokenizers remains lim-ited—existing attempts [23, 71] only stack shallow self-attention layers after CNN-based residual blocks, which may be insufficient for effective alignment. Additionally, we design a novel language-drop scheme that enables the detokenizer to support language-free guidance decoding during motion generation. Natural language:                    
+
+> A person walks in a
+> winding manner, and
+> his trajectory is an
+> S shape.
+> ... ... ...
+> SwiGLU
+> Self Attention
+> RMSNorm
+> RMSNorm
+> RoPE
+> Transformer
+> Tokenizer
+> ... ... ...
+> Transformer
+> Detokenizer
+> ...
+> Text
+> Encoder
+> Text embedding
+> Quantizer
+> Text embedding
+> Learnable latent tokens
+> Learnable mask tokens Dequantized embedding
+> Input motion
+> Reconstructed Motion
+
+# ❄ For Cross Attention   
+
+> Skip connection
+> Concat input
+> Transformer
+> layer
+
+Figure 3. Illustration of our LG-Tok framework. Given an in-put motion sequence and corresponding natural language descrip-tion, a frozen text encoder ( e.g ., LLaMA [72]) extracts text em-beddings which are concatenated with learnable latent tokens and motions, and fed into a Transformer-based tokenizer to produce high-level semantic motion tokens. The quantizer then quantized these tokens into discrete codes for downstream generative model-ing training. During detokenization, the dequantized embeddings, learnable mask tokens, and corresponding text embeddings inter-act via cross-attention layers within a Transformer-based detok-enizer to reconstruct the motion sequence. For generation, motion tokens sampled by the trained generative model are dequantized and fed into the detokenizer to synthesize diverse, high-fidelity human motion. 
+
+## 3. Method 
+
+3.1. Preliminary 
+
+Motion tokenizer. Human motion tokenization converts continuous motion representations into discrete tokens to facilitate the generative models. Traditional approaches employ vanilla VQ-VAE [10, 11, 21], where a tokenizer (encoder) E(·) compresses motion m into latent features 
+
+z = E(m) ∈ RT ×d, followed by a quantizer Q(z) that maps each latent feature to its nearest codebook entry, pro-ducing discrete tokens x ∈ [V ]T , where V is the codebook size. Then, a detokenizer (decoder) D(·) reconstructs mo-tion from the dequantized embeddings ˆm = D(ˆ z). To ad-dress quantization errors, Residual VQ-VAE [12, 41] per-forms iterative residual quantization with N quantizers, cre-3ating the same-scale token sets (x(1) , . . . , x (N )) where each 
+
+x(n) ∈ [V ]T . Recent work, MoSa [23], introduces in-terpolations before each residual quantization to construct tokens at different scales S = (s1, s 2, . . . , s N ) through downsampling: x(n) = Q(n)(w(z(n), s n)) where the sym-bol w(·, s n) denotes downsampling latent features to spe-cific granularities sn. This process produces compact multi-scale tokens x(n) ∈ [V ]sn rather than same-scale represen-tations. 
+
+Generative model. Leveraging multi-scale tokens, MoSa enables Scalable Autoregressive (SAR) modeling that re-formulates traditional token-by-token prediction [10] into scale-by-scale generation. The SAR likelihood is defined as:       
+
+> p(x(1) , . . . , x (N)|c) =
+> NY
+> n=1
+> p(x(n)|x(1) , . . . , x (n−1) , c )(1)
+
+where x(n) = ( x(n)1 , . . . , x (n) 
+
+> sn
+
+) represents all tokens at scale 
+
+sn, and will be predicted simultaneously at step n. This ap-proach generates multiple tokens in parallel at each autore-gressive step, conditioned on previous scales and condition 
+
+c. Given this framework’s notable gains in quality and effi-ciency, we adopt it as our generative model. We also apply LG-Tok to MoMask to demonstrate its generalizability. The complete tokenizaton-generation-detokenization pipeline is detailed in the appendix. 
+
+3.2. Transformer-based Tokenizer 
+
+To facilitate understanding of our approach, we introduce our Transformer-based Tokenizer first. Existing discrete tokenizers have achieved substantial re-sults but still exhibit a limitation in their standard work-flow: The 196-frame motion is compressed into 49 latent to-kens via 1D convolutional encoding with 4× downsampling, whose local receptive fields struggle to support global lan-guage guidance and to enhance the global contextual aware-ness of token representations. To this end, we propose a Transformer-based Tokenizer. As depicted in Fig. 3, both our tokenizer and detokenizer are attention-based [73]. We predefine a learnable sequence of latent tokens and use these tokens for reconstruction and subsequent generation. With the self-attention mechanism, token representations can en-hance global contextual awareness. After feature encod-ing, these latent tokens constitute a representation of mo-tion. Specifically, we concatenate a set of learnable tokens 
+
+zl ∈ RT ×d of length T with linearly transformed motion 
+
+m ∈ RF ×d as the input to the tokenizer, and retain only the output corresponding to the learnable latent tokens as the tokenizer output: 
+
+z = E([ zl; m]) (2) subsequently, the latent tokens undergo vector quantiza-tion to obtain multi-scale discrete tokens (as mentioned in Sec. 3.1) to support subsequent SAR modeling, and yield dequantized embeddings ˆz ∈ RT ×d. For the detokenizer, we reconstruct motion from a sequence of learnable mask tokens ˆml ∈ RF ×d [39, 74]: 
+
+ˆm = D( ˆ ml, ˆz) (3) unlike the tokenizer, the mask tokens interact with the de-quantized embeddings through cross-attention. This design is inspired by object queries [75] in object detection, and we provide detailed ablations in the experimental section. At the detokenizer end, we use a linear layer to regress from mask tokens to motion space. Noteably, we do not apply patchify processing [58] to motion throughout pro-cess, since 1D motion (196 frames) incurs a significantly lower computational cost than 2D images (256×256), and this operation avoids information loss. Our architecture is closely integrated with LLaMA, in-corporating RMSNorm [76], SwiGLU activation [77], and advanced rotary position embedding (RoPE) [78]. The RoPE base is set to 100 to accommodate short sequence tasks. We further enhance the transformer networks of both tokenizer E and detokenizer D with UNet-like long skip connections for higher-fidelity motion reconstruction. 
+
+3.3. Language-Guided Tokenization 
+
+Introducing language into tokenization may alleviate the se-mantic burden on tokens, enabling them to focus on fine-grained details that text cannot fully convey. Building on the flexibility of our transformer-based tokenizer, we intro-duce Language-Guided Tokenization, which aligns natural language with motion during tokenization. This approach, typically reserved for the generation phase, is extended to the tokenization stage in our work. Given textual descrip-tions of motion, we use a frozen LLaMA [79] as the text encoder to extract text embeddings. These embeddings are injected into both the tokenizer and detokenizer, providing semantic guidance throughout the tokenization process. As illustrated in Fig. 3, the tokenizer input is further concate-nated with linearly projected text embeddings t ∈ RW ×d.The Eq. 2 is updated to z = E([ t; zl; m]) , yielding compact, high-level semantic representations. For the detokenizer, the mask tokens additionally interact with text embeddings through another cross-attention: ˆm = D( ˆ ml, ˆz, t ). We train LG-Tok using smooth L1 loss for motion reconstruction, without involving text reconstruction. In the generation phase, the provided text descriptions are used for both gen-eration and detokenization. The text embeddings and the latent tokens sampled by the generative model are fed into the detokenizer to produce the final motion. Despite its simplicity, we emphasize that this approach achieves three benefits: 1) enables latent tokens to learn motion representations while simultaneously absorbing lin-guistic semantic knowledge during the tokenizing process; 
+
+2) allows language conditions to assist masked token se-4quences in effectively reconstructing the input motion dur-ing the detokenizing process. 3) simplifies the learning of generative models by more compact semantic representa-tions. We demonstrated these views in our experiments. 
+
+3.4. Language-Drop Scheme 
+
+We design a language-drop scheme in which language con-ditions are randomly removed during training. During train-ing, we train LG-Tok without language guidance t = ∅ with a probability of 10%. This simple yet effective strategy en-ables the detokenizer to support language-free guidance de-coding during motion generation. The final motion ˆm is computed by moving the conditional motion ˆmc away from the unconditional motion ˆmu with guidance scale g:
+
+ˆm = (1 + g) × ˆmc − g × ˆmu (4) Similar guidance techniques[17, 80, 81] have been ap-plied during the generation process, e.g ., in logits[12] or noise space [26]. In contrast, our approach performs guid-ance in the motion space after generation, i.e ., at the detok-enizing stage. 
+
+## 4. Experiment 
+
+In this section, we present the results of our experiments. We introduce our experimental setup in Sec. 4.1. Subse-quently, we compare our results with competing methods in Sec. 4.2, followed by related ablation experiments in Sec. 4.4. Finally, we provide tokenizer analysis in Sec. 4.5. 
+
+4.1. Experimental Setup 
+
+We conduct experiments on two text-to-motion bench-marks: HumanML3D [25], and the larger-scale Motion-X dataset [24]. We follow the most evaluation protocol pro-posed in [25, 26]. 
+
+Datasets. HumanML3D dataset includes 14,616 high-quality motions paired with 44,970 text descriptions, where three different captions describe each motion. Motion-X is the larger motion-text dataset, featuring greater diver-sity. Following the protocol of the first dataset, we filter out motion-text pairs exceeding 200 frames, resulting in 37,751 motion sequences and 61,637 text captions. The datasets are split into training, validation, and test sets with ratios of 80%, 5%, and 15%, respectively. For standardization, both datasets adopt the meng67 
+
+(67-dim) representation [26], as their research uncovered the redundancy of the original 263-dim features. That is, Motion-X’s whole-body representation is also converted to 
+
+meng67 . Since most textual descriptions primarily focus on body actions, we choose to ignore finger and facial infor-mation to avoid unnecessary modal discrepancies. We pro-vide supplementary training details for the Motion-X fea-ture extractor in the appendix. 
+
+Evaluation metrics. We adopt the following evaluation metrics: (1) the Frechet Inception Distance (FID) , which assesses the overall action quality by measuring the distri-butional difference between the high-level features of gen-erated and real actions; (2) R-Precision and Multimodal dis-tance , which are used to measure the semantic consistency between the input text and the generated actions; (3) Multi-modality , which is used to evaluate the diversity of actions generated from the exact text. (4) CLIP-score , which mea-sures the compatibility of motion-text pairs by calculating the cosine similarity. 
+
+Implementation details. We train LG-Tok using the AdamW optimizer with a batch size of 128 for 200 epochs. The learning rate is reduced from 2 × 10 −4 to 2 × 10 −5
+
+at the 180th epoch. We set the gradient clipping factor to 0.01 to prevent gradient explosion. No velocity loss is em-ployed during optimization, as the meng67 representation is sufficiently compact. For the Transformer, we stack 9 layers for both the tokenizer and detokenizer, each with 4 heads, 256 latent dimensions, and a SwiGLU dimension of 1024. To accelerate training and reduce memory usage, we enable mixed-precision training and utilize PyTorch 2.2.0 to support flash attention. For text guidance, LLaMA-3.2-1B serves as our text encoder, and the maximum text length is set to 77, with more extended sequences truncated. The guidance scale g is set to 2.0 and 1.0 on the HumanML3D and Motion-X, respectively. During generation, the gener-ative model’s configuration remains unchanged, except that 
+
+PAD masks are no longer required. The generation and eval-uation continue to use CLIP-ViT-B/32 for text embedding extraction. LG-Tok training can be completed on a single RTX 4090 GPU. 
+
+Model variants. To validate the high-level semantic repre-sentations of LG-Tok, we study three variants with differ-ent token scales: LG-Tok-mini (25 tokens), LG-Tok-mid (36 tokens), and LG-Tok (49 tokens). The interpolation scales mentioned in Sec. 3.1 are set to S = (1 , 2, . . . , 25) ,
+
+S = (2 , 4, . . . , 36) , and S = (3 , 6, . . . , 49) respectively. All variants use N = 10 scales (quantizers), resulting in 104, 160, and 236 total tokens, respectively. 
+
+4.2. Text-driven Motion Generation Comparison 
+
+Quantitative comparisons. We evaluate our approach against state-of-the-art methods. Results on HumanML3D are primarily sourced from [26], while results on Motion-X are our reimplementations based on the meng67 repre-sentation. We provide reimplementation details in the ap-pendix. As shown in Table 2, our LG-Tok variants out-perform existing methods across multiple metrics. On Hu-manML3D, LG-Tok achieves the best performance with a Top-1 R-Precision of 0.542 and FID of 0.057 , surpass-ing the previous best method, MoSa (0.518 and 0.064, re-spectively). Notably, even our most compact variant, LG-5Datasets Methods Venues #Tokens R Precision ↑ FID ↓ MultiModal Dist ↓ MultiModality ↑ CLIP-score ↑
+
+Top 1 Top 2 Top 3 Human ML3D 
+
+Real motions - - 0.501 ±.002 0.696 ±.003 0.792 ±.002 0.000 ±.000 3.251 ±.010 - 0.639 ±.001 
+
+MotionDiffuse [46] TPAMI' 24 - 0.450 ±.006 0.641 ±.005 0.753 ±.005 0.778 ±.005 3.490 ±.023 3.179 ±.046 0.606 ±.004 
+
+T2M-GPT [10] CVPR' 23 49 0.470 ±.003 0.659 ±.002 0.758 ±.002 0.335 ±.003 3.505 ±.017 2.018 ±.053 0.607 ±.005 
+
+MMM [11] CVPR' 24 49 0.487 ±.003 0.683 ±.003 0.782 ±.001 0.132 ±.004 3.359 ±.009 1.241 ±.073 0.635 ±.003 
+
+MoMask [12] CVPR' 24 294 0.490 ±.004 0.687 ±.003 0.786 ±.003 0.116 ±.006 3.353 ±.010 1.263 ±.079 0.637 ±.003 
+
+StableMoFusion † [82] ACM MM' 24 - 0.510 ±.002 0.710 ±.003 0.810 ±.003 0.177 ±.006 3.182 ±.009 1.969 ±.053 0.654 ±.001 
+
+MARDM [26] CVPR' 25 - 0.500 ±.004 0.695 ±.003 0.795 ±.003 0.114 ±.007 3.270 ±.009 2.231 ±.071 0.642 ±.002 
+
+MoSa † [23] Arxiv' 25 236 0.518 ±.002 0.712 ±.002 0.809 ±.002 0.064 ±.004 3.150 ±.008 1.789 ±.056 0.657 ±.001 
+
+LG-Tok-mini - 104 0.521 ±.003 0.715 ±.003 0.811 ±.003 0.085 ±.004 3.113 ±.001 1.728 ±.053 0.655 ±.001 
+
+LG-Tok-mid - 160 0.537 ±.003 0.729 ±.002 0.821 ±.002 0.109 ±.005 3.061 ±.010 1.674 ±.052 0.664 ±.001 
+
+LG-Tok - 236 0.542 ±.003 0.736 ±.002 0.830 ±.002 0.057 ±.003 2.997 ±.010 1.540 ±.059 0.669 ±.001 
+
+Motion-X
+
+Real motions - - 0.595 ±.002 0.787 ±.001 0.868 ±.001 0.000 ±.000 3.717 ±.007 - 0.672 ±.000 
+
+MotionDiffuse † [46] TPAMI' 24 - 0.559 ±.003 0.752 ±.002 0.839 ±.001 0.954 ±.014 4.167 ±.023 2.476 ±.098 0.660 ±.001 
+
+T2M-GPT † [10] CVPR' 23 49 0.470 ±.003 0.644 ±.002 0.735 ±.003 1.085 ±.032 5.488 ±.023 12 .807 ±.405 0.622 ±.001 
+
+MMM † [11] CVPR' 24 49 0.424 ±.002 0.600 ±.002 0.695 ±.002 2.918 ±.036 6.098 ±.019 2.342 ±.193 0.607 ±.001 
+
+MoMask † [12] CVPR' 24 294 0.502 ±.003 0.694 ±.002 0.790 ±.002 0.247 ±.008 4.832 ±.009 2.715 ±.091 0.644 ±.001 
+
+StableMoFusion † [82] ACM MM' 24 - 0.474 ±.003 0.682 ±.002 0.787 ±.002 0.213 ±.008 4.888 ±.014 2.985 ±.111 0.607 ±.001 
+
+MARDM † [26] CVPR' 25 - 0.528 ±.003 0.727 ±.001 0.820 ±.002 0.147 ±.009 4.433 ±.018 3.077 ±.066 0.643 ±.001 
+
+MoSa † [23] Arxiv' 25 236 0.513 ±.002 0.703 ±.002 0.796 ±.002 0.210 ±.009 4.783 ±.013 3.167 ±.122 0.654 ±.001 
+
+LG-Tok-mini - 104 0.588 ±.002 0.776 ±.002 0.857 ±.002 0.071 ±.004 3.835 ±.012 2.235 ±.111 0.681 ±.001 
+
+LG-Tok-mid - 160 0.591 ±.002 0.781 ±.002 0.864 ±.001 0.076 ±.005 3.758 ±.010 2.245 ±.091 0.682 ±.000 
+
+LG-Tok - 236 0.582 ±.002 0.775 ±.001 0.858 ±.001 0.088 ±.006 3.844 ±.009 2.294 ±.088 0.682 ±.000 
+
+Table 2. Quantitative evaluation on the HumanML3D and Motion-X test set. Each experiment is evaluated 20 times, and ± indicates a 95% confidence interval. Blue and Red indicate the best and the second best result, respectively. ‘ †’ denotes our reimplementation on the 
+
+meng67 representation [26]. 
+
+Tok-mini, using only 104 tokens, also maintains competi-tive performance (0.521 Top-1 R-Precision), validating the efficiency of our high-level semantic representations. On the larger and more diverse Motion-X dataset, our methods show substantial improvements, with LG-Tok-mid achiev-ing the best Top-1 R-Precision of 0.591 . The consistent per-formance gains validate that transformer-based, language-guided tokenization effectively captures motion semantics. 
+
+Qualitative comparisons. Fig. 4 displays qualitative com-parisons of our approach against StableMoFusion [82], MARDM [26], and MoSa [23] based on HumanML3D checkpoints. We randomly select several generated sam-ples for comparison. These three examples demonstrate that LG-Tok can understand more complex semantics. e.g ., in the first row, our method successfully understands “ in the middle ” (competitors fail to return to the middle posi-tion). In the second row, LG-Tok synthesizes more realistic crouching postures in the “ dodges quickly ” motion. In the final row, our approach exhibits better directional aware-ness for “ then turns to the left ”. More dynamic results can be found on our supplementary materials. 
+
+4.3. Comparison of Discrete Tokenizers 
+
+We compare our approach against existing discrete (VQ-based) tokenizers, which are predominantly CNN-based. Table 3 demonstrates our LG-Tok consistent improvements in both reconstruction and generation stages across both datasets. Notably, by incorporating language guidance, our compact semantic representations significantly simplify the learning of generative models. On Motion-X, text-guided LG-Tok achieves substantial generation performance gains (FID: 0.257 →0.088), and the perplexity we recorded de-creases from 146.5 to 103.1; similar improvements on Hu-manML3D (160.6 →155.9 ). These results confirm that in-corporating language into tokenization shifts the semantic burden away from tokens, enabling them to focus on fine-grained motion details beyond the reach of text descriptions. Furthermore, without text guidance ( i.e ., using only transformer-based tokenization from Sec. 3.2), our method outperforms most competitors, demonstrating that our transformer-based architecture provides superior global context modeling. More importantly, we integrate LG-Tok into a representative motion tokenization–plus–generation framework, MoMask. The enhanced variant, MoMask (LG-Tok), consistently surpasses the original across all evalua-tion metrics, demonstrating strong generalization. 
+
+4.4. Ablation Studies 
+
+Guidance hyper-parameter. Fig. 5 demonstrates the ef-fectiveness of our language-drop scheme (mentioned in Sec. 3.4) across different guidance scales g. The results show optimal performance at g = 2 .0 for HumanML3D and g = 1 .0 for Motion-X. The qualitative comparisons are provided in the appendix. 6StableMoFusion MARDM MoSa LG -Tok (Ours) 
+
+a person walks to the left, then to the right, then back to their original position in the middle .
+
+The boxer dodges quickly , shifting their weight from side to side. 
+
+a person walks a few steps forward and then starts dancing as if with a partner and then turns to the righ t.Figure 4. Qualitative comparisons on HumanML3D dataset. Our LG-Tok demonstrates superior semantic understanding compared to existing methods. The examples show better spatial awareness (“ in the middle ”), more realistic posture synthesis (“ dodges quickly ”), and improved directional control (“ then turns to the left ”). 
+
+Methods Reconstruction Generation FID ↓ Top 1 ↑ MPJPE ↓ FID ↓ MM-Dist ↓
+
+Evaluation on HumanML3D dataset T2M-GPT ⋆ [10] 0.081 ±.001 0.483 ±.003 72 .6±.001 0.335 ±.003 3.505 ±.017 
+
+MoMask ⋆ [12] 0.029 ±.001 0.497 ±.002 31 .5±.001 0.116 ±.006 3.353 ±.010 
+
+MoMask-reprod. 0.029 ±.000 0.499 ±.003 30 .9±.000 0.180 ±.005 3.332 ±.009 
+
+MoMask (LG-Tok) 0.019 ±.000 0.501 ±.003 26 .4±.000 0.111 ±.005 3.300 ±.012 
+
+MoSa [23] 0.023 ±.000 0.496 ±.003 43 .0±.000 0.064 ±.004 3.150 ±.008 
+
+LG-Tok 0.022 ±.000 0.502 ±.002 39 .0±.000 0.057 ±.003 2.997 ±.010 
+
+w/o text guidance 0.025 ±.000 0.494 ±.002 39 .0±.000 0.062 ±.003 3.129 ±.008 
+
+Evaluation on Motion-X dataset T2M-GPT [10] 0.826 ±.011 0.497 ±.002 59 .6±.000 1.102 ±.000 5.515 ±.000 
+
+MoMask [12] 0.394 ±.005 0.554 ±.002 24 .9±.000 0.247 ±.008 4.832 ±.009 
+
+MoMask (LG-Tok) 0.076 ±.002 0.580 ±.002 23 .0±.000 0.157 ±.006 4.259 ±.008 
+
+MoSa [23] 0.072 ±.001 0.558 ±.002 39 .0±.000 0.210 ±.009 4.783 ±.013 
+
+LG-Tok 0.041 ±.001 0.577 ±.002 31 .0±.000 0.088 ±.006 3.844 ±.009 
+
+w/o text guidance 0.090 ±.002 0.568 ±.002 33 .0±.000 0.257 ±.010 4.274 ±.008 
+
+Table 3. Reconstruction and generation performance compar-ison. We evaluate both reconstruction quality and generation per-formance across different discrete tokenizers. “ w/o text guidance” denotes our approach without language guidance, i.e ., using only the transformer-based tokenization from Sec. 3.2. “ ⋆” denotes re-port from [26], and the others are our reproductions. 
+
+The remaining ablation studies were conducted on a smaller version (LG-Tok-tiny) with reduced model size and training data for efficient hyperparameter tuning. LG-Tok-tiny uses 3-layer transformers trained on 5,000 samples. 
+
+Transformer architecture. Tables 4a- 4d demonstrate the advantages of our transformer design over vanilla trans-0.0 0.4 0.8 1.2 1.6 2.0 2.4 2.8 3.2 3.6 4.0 
+
+> 0.055
+> 0.060
+> 0.065
+> 0.070
+> 0.075
+> 0.080
+> 2.99
+> 3.00
+> 3.01
+> 3.02
+> 3.03
+> 3.04
+> FID
+> MM-Dist
+
+(a) HumanML3D 0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4 1.6 1.8 2.0  
+
+> 0.08
+> 0.10
+> 0.12
+> 0.14
+> 0.16
+> 3.80
+> 3.85
+> 3.90
+> 3.95
+> 4.00
+> FID
+> MM-Dist
+
+(b) Motion-X 
+
+Figure 5. Evaluation sweep over guidance scale g. We evalu-ate the impact of different guidance scales on generation quality, showing optimal performance at g = 2 .0 for HumanML3D and 
+
+g = 1 .0 for Motion-X. 
+
+formers [73]. RMSNorm, SwiGLU activation, and skip connections all contribute to improved performance. No-tably, RoPE with base =100 is better suited for our short se-quence task ( ∼10s, 196 frames) compared to other bases. 
+
+Guidance location. Table 4e validates our method’s ben-efits. Injecting guidance into both tokenizer and detok-enizer achieves the best results, confirming that language guidance: 1) enables latent tokens to learn motion represen-tations while simultaneously absorbing linguistic semantic knowledge during tokenizing; 2) allows language condi-tions to assist masked token sequences in effectively recon-structing input motion during detokenizing. 
+
+Text encoder choice. We compare popular pretrained text encoders [72, 83–85] in Table 4f. LLaMA achieves the best performance among the tested encoders. 
+
+Interaction methods. Table 4g ablates how tokens inter-act in both the tokenizer and detokenizer. We compare two interaction strategies: In-context (concatenating all tokens 7Normalization FID ↓ MPJPE ↓
+
+LayerNorm 0.050 ±.001 58.7 RMSNorm 0.049 ±.000 56.1 
+
+(a) Normalization Architecture FID ↓ MPJPE ↓
+
+GeLU 0.050 ±.001 57.4 SwiGLU 0.049 ±.000 56.1 
+
+(b) Activation Activation FID ↓ MPJPE ↓
+
+Skip Conn. 0.049 ±.000 56.1 
+
+w/o Skip Conn. 0.059 ±.001 61.7 
+
+(c) Skip connections Position embedding FID ↓ MPJPE ↓
+
+Learnable 0.065 ±.001 54.7 RoPE ( base =10) 0.061 ±.001 54.8 RoPE ( base =100) 0.049 ±.000 56.1 RoPE ( base =1000) 0.042 ±.001 56.3 RoPE ( base =10000) 0.052 ±.001 56.6 
+
+(d) Position embedding Guidance location FID ↓ MPJPE ↓
+
+None 0.064 ±.001 64.1 Tokenizer only 0.063 ±.001 57.5 Detokenizer only 0.055 ±.000 58.7 Tokenizer & Detokenizer 0.049 ±.000 56.1 
+
+(e) Guidance location Frozen FID ↓ MPJPE ↓
+
+text encoder CLIP 0.051 ±.000 59.1 T5 0.053 ±.000 58.9 BERT 0.055 ±.001 58.9 LLaMA 0.049 ±.000 56.1 
+
+(f) Text encoder chosen Tokenizer Detokenizer FID ↓ MPJPE ↓
+
+In-Context Cross-Attn. In-Context Cross-Attn. 
+
+✓ ✗ ✓ ✗ 0.053 ±.001 66.1 
+
+✗ ✓ ✗ ✓ 1.120 ±.004 111.2 
+
+✓ ✗ ✗ ✓ 0.049 ±.000 56.1 
+
+✗ ✓ ✓ ✗ 2.049 ±.007 127.7 
+
+(g) Latent-tokens/motion/text interaction in tokenizer & Mask-tokens/latent/text interation in detokenizer 
+
+Table 4. Ablation studies on LG-Tok-tiny . We ablate key design choices affecting LG-Tok’s reconstruction performance on HumanML3D dataset. Default setting: RMSNorm, SwiGLU activation, skip connections, RoPE with base =100, LLaMA text encoder, with in-context conditioning for tokenizer and cross-attention for detokenizer. Injecting natural language to both tokenizer and detokenizer obtains the best results. T2M-GPT 
+
+> MoSa
+> MoMask
+> LG-Tok
+
+Figure 6. t-SNE visualization of dequantized embedding space representations. LG-Tok demonstrates well-structured clusters with clear boundaries, indicating effective capture of distinct mo-tion patterns. 
+
+for joint self-attention) and Cross-attention (two separate cross-attention between different token types). The results show that In-context concatenation performs better in the tokenizer, while cross-attention excels in the detokenizer. 
+
+4.5. Tokenizer Analysis 
+
+We provide further analysis of the learned representations of our tokenizer. Fig. 6 visualizes the t-SNE representa-tions of dequantized embeddings from different discrete to-kenizers. Our LG-Tok demonstrates well-structured clus-ters with clear boundaries ( e.g ., in the red box), indicat-ing that our compact, high-level semantic representations effectively capture distinct motion patterns. Fig. 7 com-pares codebook usage frequencies across different scales on the HumanML3D test-set. LG-Tok achieves more uniform 0 200 400           
+
+> 0
+> 1
+> 2
+> 3
+> 4
+> Code ID
+> Usage Frequency %
+> Codebook 5 (MoSa)
+> 0200 400 600 800
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> Code ID
+> Usage Frequency %
+> Codebook 10 (MoSa)
+> 0200 400
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> Code ID
+> Usage Frequency %
+> Codebook 5 (LG-Tok)
+> 0200 400 600 800
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Code ID
+> Usage Frequency %
+> Codebook 10 (LG-Tok)
+
+Figure 7. Code usage comparison on the HumanML3D test-set . LG-Tok achieves more uniform codebook utilization. 
+
+codebook utilization across all scales, indicating better cov-erage of the motion space. This uniform usage demonstrates that our language-guided, transformer-based approach pos-sesses learned comprehensive motion representations with-out redundancy. 
+
+## 5. Conclusion 
+
+In this paper, we present Language-Guided Trans-former Tokenization (LG-Tok) for text-driven human motion generation. By aligning natural language with motion during tokenization and employing aTransformer-based tokenizer-detokenizer architecture, LG-Tok provides semantically informed latent rep-resentations that improve reconstruction fidelity and simplify generative learning. LG-Tok achieves state-of-the-art results on HumanML3D and Motion-X benchmarks. 8References 
+
+[1] Wentao Zhu, Xiaoxuan Ma, Dongwoo Ro, Hai Ci, Jinlu Zhang, Jiaxin Shi, Feng Gao, Qi Tian, and Yizhou Wang. Human motion generation: A survey. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2023. 1 [2] Mathis Petrovich, Michael J Black, and G¨ ul Varol. Action-conditioned 3d human motion synthesis with transformer vae. In Proceedings of the IEEE/CVF International Con-ference on Computer Vision , pages 10985–10995, 2021. 3 [3] Chuan Guo, Xinxin Zuo, Sen Wang, Shihao Zou, Qingyao Sun, Annan Deng, Minglun Gong, and Li Cheng. Ac-tion2motion: Conditioned generation of 3d human motions. In Proceedings of the 28th ACM International Conference on Multimedia , pages 2021–2029, 2020. 2 [4] Anindita Ghosh, Noshaba Cheema, Cennet Oguz, Christian Theobalt, and Philipp Slusallek. Synthesis of compositional animations from textual descriptions. In Proceedings of the IEEE/CVF international conference on computer vision ,pages 1396–1406, 2021. [5] Taoran Tang, Jia Jia, and Hanyang Mao. Dance with melody: An lstm-autoencoder approach to music-oriented dance syn-thesis. In Proceedings of the 26th ACM international confer-ence on Multimedia , pages 1598–1606, 2018. [6] Nhat Le, Thang Pham, Tuong Do, Erman Tjiputra, Quang D Tran, and Anh Nguyen. Music-driven group choreography. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8673–8682, 2023. [7] Shiry Ginosar, Amir Bar, Gefen Kohavi, Caroline Chan, Andrew Owens, and Jitendra Malik. Learning individ-ual styles of conversational gesture. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 3497–3506, 2019. [8] Simon Alexanderson, Rajmund Nagy, Jonas Beskow, and Gustav Eje Henter. Listen, denoise, action! audio-driven motion synthesis with diffusion models. ACM Transactions on Graphics (TOG) , 42(4):1–20, 2023. [9] Lingting Zhu, Xian Liu, Xuanyu Liu, Rui Qian, Ziwei Liu, and Lequan Yu. Taming diffusion models for audio-driven co-speech gesture generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10544–10553, 2023. 1, 3 [10] Jianrong Zhang, Yangsong Zhang, Xiaodong Cun, Yong Zhang, Hongwei Zhao, Hongtao Lu, Xi Shen, and Ying Shan. Generating human motion from textual descrip-tions with discrete representations. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 14730–14740, 2023. 1, 2, 3, 4, 6, 7, 8 [11] Ekkasit Pinyoanuntapong, Pu Wang, Minwoo Lee, and Chen Chen. Mmm: Generative masked motion model. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1546–1555, 2024. 3, 6, 8 [12] Chuan Guo, Yuxuan Mu, Muhammad Gohar Javed, Sen Wang, and Li Cheng. Momask: Generative masked model-ing of 3d human motions. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 1900–1910, 2024. 1, 2, 3, 5, 6, 7, 8 [13] Weihao Yuan, Yisheng He, Weichao Shen, Yuan Dong, Xi-aodong Gu, Zilong Dong, Liefeng Bo, and Qixing Huang. Mogents: Motion generation based on spatial-temporal joint modeling. Advances in Neural Information Processing Sys-tems , 37:130739–130763, 2024. 3 [14] Zeyu Zhang, Yiran Wang, Wei Mao, Danning Li, Rui Zhao, Biao Wu, Zirui Song, Bohan Zhuang, Ian Reid, and Richard Hartley. Motion anything: Any to motion generation. arXiv preprint arXiv:2503.06955 , 2025. 2 [15] Zan Wang, Jingze Zhang, Yixin Chen, Baoxiong Jia, Wei Liang, and Siyuan Huang. Spatial-temporal multi-scale quantization for flexible motion generation. arXiv preprint arXiv:2508.08991 , 2025. 1, 2, 3 [16] Tianhong Li, Yonglong Tian, He Li, Mingyang Deng, and Kaiming He. Autoregressive image generation without vec-tor quantization. Advances in Neural Information Processing Systems , 37:56424–56445, 2024. 1 [17] Keyu Tian, Yi Jiang, Zehuan Yuan, Bingyue Peng, and Li-wei Wang. Visual autoregressive modeling: Scalable im-age generation via next-scale prediction. arXiv preprint arXiv:2404.02905 , 2024. 3, 5 [18] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Sub-biah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakan-tan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Lan-guage models are few-shot learners. Advances in neural in-formation processing systems , 33:1877–1901, 2020. 3 [19] Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, Ilya Sutskever, et al. Language models are unsu-pervised multitask learners. OpenAI blog , 1(8):9, 2019. 2, 3[20] Huiwen Chang, Han Zhang, Lu Jiang, Ce Liu, and William T Freeman. Maskgit: Masked generative image transformer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 11315–11325, 2022. 1, 2, 3 [21] Chuan Guo, Xinxin Zuo, Sen Wang, and Li Cheng. Tm2t: Stochastic and tokenized modeling for the reciprocal genera-tion of 3d human motions and texts. In European Conference on Computer Vision , pages 580–597. Springer, 2022. 1, 2, 3 [22] Shunlin Lu, Jingbo Wang, Zeyu Lu, Ling-Hao Chen, Wenxun Dai, Junting Dong, Zhiyang Dou, Bo Dai, and Ruimao Zhang. Scamo: Exploring the scaling law in au-toregressive motion generation model. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 27872–27882, 2025. 1, 2, 3 [23] Mengyuan Liu, Sheng Yan, Yong Wang, Yingjie Li, Gui-Bin Bian, and Hong Liu. Mosa: Motion generation with scalable autoregressive modeling. arXiv preprint arXiv:2511.01200 ,2025. 1, 2, 3, 4, 6, 7, 8 [24] Jing Lin, Ailing Zeng, Shunlin Lu, Yuanhao Cai, Ruimao Zhang, Haoqian Wang, and Lei Zhang. Motion-x: A large-scale 3d expressive whole-body human motion dataset. Advances in Neural Information Processing Sys-tems , 36:25268–25280, 2023. 2, 5 [25] Chuan Guo, Shihao Zou, Xinxin Zuo, Sen Wang, Wei Ji, Xingyu Li, and Li Cheng. Generating diverse and natural 3d human motions from text. In Proceedings of the IEEE/CVF 
+
+9Conference on Computer Vision and Pattern Recognition ,pages 5152–5161, 2022. 2, 5, 4 [26] Zichong Meng, Yiming Xie, Xiaogang Peng, Zeyu Han, and Huaizu Jiang. Rethinking diffusion for text-driven human motion generation: Redundant representations, evaluation, and masked autoregression. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 27859– 27871, 2025. 2, 5, 6, 7, 4, 8 [27] Ekkasit Pinyoanuntapong, Muhammad Usama Saleem, Pu Wang, Minwoo Lee, Srijan Das, and Chen Chen. Bamm: Bidirectional autoregressive motion model. In European Conference on Computer Vision , pages 172–190. Springer, 2024. 2 [28] Mathis Petrovich, Michael J Black, and G¨ ul Varol. Temos: Generating diverse human motions from textual descriptions. In European Conference on Computer Vision , pages 480– 497. Springer, 2022. 2, 3 [29] Qi Wu, Yubo Zhao, Yifan Wang, Yu-Wing Tai, and Chi-Keung Tang. Motionllm: Multimodal motion-language learning with large language models. arXiv e-prints , pages arXiv–2405, 2024. [30] Taku Komura, Ikhsanul Habibie, Daniel Holden, Jonathan Schwarz, and Joe Yearsley. A recurrent variational autoen-coder for human motion synthesis. In The 28th British Ma-chine Vision Conference , 2017. 2 [31] Guy Tevet, Brian Gordon, Amir Hertz, Amit H Bermano, and Daniel Cohen-Or. Motionclip: Exposing human motion generation to clip space. In European Conference on Com-puter Vision , pages 358–374. Springer, 2022. 2, 4 [32] Diederik P Kingma and Max Welling. Auto-encoding varia-tional bayes. arXiv preprint arXiv:1312.6114 , 2013. 2 [33] Diederik P Kingma, Max Welling, et al. An introduction to variational autoencoders. Foundations and Trends® in Ma-chine Learning , 12(4):307–392, 2019. 2 [34] Xin Chen, Biao Jiang, Wen Liu, Zilong Huang, Bin Fu, Tao Chen, and Gang Yu. Executing your commands via motion diffusion in latent space. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 18000–18010, 2023. 2, 3 [35] Nefeli Andreou, Xi Wang, Victoria Fern´ andez Abrevaya, Marie-Paule Cani, Yiorgos Chrysanthou, and Vicky Kalo-geiton. Lead: Latent realignment for human motion diffu-sion. In Computer Graphics Forum , page e70093. Wiley Online Library, 2025. [36] Samaneh Azadi, Akbar Shah, Thomas Hayes, Devi Parikh, and Sonal Gupta. Make-an-animation: Large-scale text-conditional 3d human motion generation. In Proceedings of the IEEE/CVF International Conference on Computer Vi-sion , pages 15039–15048, 2023. 2 [37] Aaron Van Den Oord, Oriol Vinyals, et al. Neural discrete representation learning. Advances in neural information pro-cessing systems , 30, 2017. 2 [38] Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. Neural machine translation by jointly learning to align and translate. arXiv preprint arXiv:1409.0473 , 2014. 2 [39] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: Pre-training of deep bidirectional trans-formers for language understanding. In Proceedings of the 2019 conference of the North American chapter of the asso-ciation for computational linguistics: human language tech-nologies, volume 1 (long and short papers) , pages 4171– 4186, 2019. 2, 4 [40] Junyu Shi, Lijiang Liu, Yong Sun, Zhiyuan Zhang, Jinni Zhou, and Qiang Nie. Genm3: Generative pretrained multi-path motion model for text conditional human motion gener-ation. arXiv preprint arXiv:2503.14919 , 2025. 2, 3 [41] Zeyu Zhang, Hang Gao, Akide Liu, Qi Chen, Feng Chen, Yi-ran Wang, Danning Li, Rui Zhao, Zhenming Li, Zhongwen Zhou, et al. Kmm: Key frame mask mamba for extended motion generation. arXiv preprint arXiv:2411.06481 , 2024. 2, 3 [42] Yuanhao Zhai, Mingzhen Huang, Tianyu Luan, Lu Dong, Ifeoma Nwogu, Siwei Lyu, David Doermann, and Jun-song Yuan. Language-guided human motion synthesis with atomic actions. In Proceedings of the 31st ACM Interna-tional Conference on Multimedia , pages 5262–5271, 2023. 3[43] Hyemin Ahn, Timothy Ha, Yunho Choi, Hwiyeon Yoo, and Songhwai Oh. Text2action: Generative adversarial synthesis from language to action. In 2018 IEEE International Confer-ence on Robotics and Automation (ICRA) , pages 5915–5920. IEEE, 2018. 3 [44] Chaitanya Ahuja and Louis-Philippe Morency. Lan-guage2pose: Natural language grounded pose forecasting. In 2019 International Conference on 3D Vision (3DV) , pages 719–728. IEEE, 2019. 3 [45] Mingyuan Zhang, Xinying Guo, Liang Pan, Zhongang Cai, Fangzhou Hong, Huirong Li, Lei Yang, and Ziwei Liu. Re-modiffuse: Retrieval-augmented motion diffusion model. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 364–373, 2023. 3 [46] Mingyuan Zhang, Zhongang Cai, Liang Pan, Fangzhou Hong, Xinying Guo, Lei Yang, and Ziwei Liu. Motiondif-fuse: Text-driven human motion generation with diffusion model. arXiv preprint arXiv:2208.15001 , 2022. 6, 8 [47] Korrawe Karunratanakul, Konpat Preechakul, Supasorn Suwajanakorn, and Siyu Tang. Guided motion diffusion for controllable human motion synthesis. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 2151–2162, 2023. [48] Wenyang Zhou, Zhiyang Dou, Zeyu Cao, Zhouyingcheng Liao, Jingbo Wang, Wenjia Wang, Yuan Liu, Taku Komura, Wenping Wang, and Lingjie Liu. Emdm: Efficient motion diffusion model for fast and high-quality motion generation. In European Conference on Computer Vision , pages 18–38. Springer, 2024. [49] Jihoon Kim, Jiseob Kim, and Sungjoon Choi. Flame: Free-form language-based motion synthesis & editing. In Pro-ceedings of the AAAI Conference on Artificial Intelligence ,volume 37, pages 8255–8263, 2023. [50] Weilin Wan, Yiming Huang, Shutong Wu, Taku Komura, Wenping Wang, Dinesh Jayaraman, and Lingjie Liu. Dif-fusionphase: Motion diffusion in frequency domain. arXiv preprint arXiv:2312.04036 , 2023. [51] Yunhong Lou, Linchao Zhu, Yaxiong Wang, Xiaohan Wang, and Yi Yang. Diversemotion: Towards diverse human 
+
+10 motion generation via discrete diffusion. arXiv preprint arXiv:2309.01372 , 2023. 3 [52] Ye Yuan, Jiaming Song, Umar Iqbal, Arash Vahdat, and Jan Kautz. Physdiff: Physics-guided human motion diffusion model. In Proceedings of the IEEE/CVF international con-ference on computer vision , pages 16010–16021, 2023. 3 [53] Chongyang Zhong, Lei Hu, Zihao Zhang, and Shihong Xia. Attt2m: Text-driven human motion generation with multi-perspective attention mechanism. In Proceedings of the IEEE/CVF international conference on computer vision ,pages 509–519, 2023. 3 [54] Zhe Li, Weihao Yuan, Yisheng He, Lingteng Qiu, Shen-hao Zhu, Xiaodong Gu, Weichao Shen, Yuan Dong, Zi-long Dong, and Laurence T Yang. Lamp: Language-motion pretraining for motion generation, retrieval, and captioning. 
+
+arXiv preprint arXiv:2410.07093 , 2024. 3 [55] Chuofan Ma, Yi Jiang, Junfeng Wu, Jihan Yang, Xin Yu, Ze-huan Yuan, Bingyue Peng, and Xiaojuan Qi. Unitok: A uni-fied tokenizer for visual generation and understanding. arXiv preprint arXiv:2502.20321 , 2025. 3 [56] Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi. Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models. In In-ternational conference on machine learning , pages 19730– 19742. PMLR, 2023. [57] Jean-Baptiste Alayrac, Jeff Donahue, Pauline Luc, Antoine Miech, Iain Barr, Yana Hasson, Karel Lenc, Arthur Men-sch, Katherine Millican, Malcolm Reynolds, et al. Flamingo: a visual language model for few-shot learning. Advances in neural information processing systems , 35:23716–23736, 2022. 3 [58] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Syl-vain Gelly, et al. An image is worth 16x16 words: Trans-formers for image recognition at scale. arXiv preprint arXiv:2010.11929 , 2020. 3, 4 [59] Huiyu Wang, Yukun Zhu, Hartwig Adam, Alan Yuille, and Liang-Chieh Chen. Max-deeplab: End-to-end panoptic segmentation with mask transformers. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 5463–5474, 2021. 3 [60] Patrick Esser, Robin Rombach, and Bjorn Ommer. Taming transformers for high-resolution image synthesis. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 12873–12883, 2021. 3 [61] Ali Razavi, Aaron Van den Oord, and Oriol Vinyals. Gener-ating diverse high-fidelity images with vq-vae-2. Advances in neural information processing systems , 32, 2019. 3 [62] Doyup Lee, Chiheon Kim, Saehoon Kim, Minsu Cho, and Wook-Shin Han. Autoregressive image generation using residual quantization. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pages 11523–11532, 2022. 3 [63] Xiang Li, Kai Qiu, Hao Chen, Jason Kuen, Jiuxiang Gu, Bhiksha Raj, and Zhe Lin. Imagefolder: Autoregres-sive image generation with folded tokens. arXiv preprint arXiv:2410.01756 , 2024. [64] Kai Qiu, Xiang Li, Jason Kuen, Hao Chen, Xiaohao Xu, Jiuxiang Gu, Yinyi Luo, Bhiksha Raj, Zhe Lin, and Mar-ios Savvides. Robust latent matters: Boosting image generation with sampling error synthesis. arXiv preprint arXiv:2503.08354 , 2025. 3 [65] Qihang Yu, Mark Weber, Xueqing Deng, Xiaohui Shen, Daniel Cremers, and Liang-Chieh Chen. An image is worth 32 tokens for reconstruction and generation. Advances in Neural Information Processing Systems , 37:128940– 128966, 2024. 3 [66] Pingyu Wu, Kai Zhu, Yu Liu, Longxiang Tang, Jian Yang, Yansong Peng, Wei Zhai, Yang Cao, and Zheng-Jun Zha. Alitok: Towards sequence modeling alignment be-tween tokenizer and autoregressive model. arXiv preprint arXiv:2506.05289 , 2025. 3 [67] Hao Chen, Ze Wang, Xiang Li, Ximeng Sun, Fangyi Chen, Jiang Liu, Jindong Wang, Bhiksha Raj, Zicheng Liu, and Emad Barsoum. Softvq-vae: Efficient 1-dimensional contin-uous tokenizer. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 28358–28370, 2025. [68] Lei Zhu, Fangyun Wei, Yanye Lu, and Dong Chen. Scaling the codebook size of vq-gan to 100,000 with a utilization rate of 99%. Advances in Neural Information Processing Systems , 37:12612–12635, 2024. [69] Jiawei Yang, Tianhong Li, Lijie Fan, Yonglong Tian, and Yue Wang. Latent denoising makes good visual tokenizers. 
+
+arXiv preprint arXiv:2507.15856 , 2025. 3 [70] Kaiwen Zha, Lijun Yu, Alireza Fathi, David A Ross, Cordelia Schmid, Dina Katabi, and Xiuye Gu. Language-guided image tokenization for generation. In Proceedings of the Computer Vision and Pattern Recognition Conference ,pages 15713–15722, 2025. 3 [71] Chuan Guo, Inwoo Hwang, Jian Wang, and Bing Zhou. Snapmogen: Human motion generation from expressive texts. arXiv preprint arXiv:2507.09122 , 2025. 3 [72] Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Ab-hishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. The llama 3 herd of models. arXiv e-prints , pages arXiv–2407, 2024. 3, 7 [73] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-reit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems , 30, 2017. 4, 7 [74] Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li, Piotr Doll´ ar, and Ross Girshick. Masked autoencoders are scalable vision learners. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 16000– 16009, 2022. 4 [75] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-to-end object detection with transformers. In European confer-ence on computer vision , pages 213–229. Springer, 2020. 4 [76] Biao Zhang and Rico Sennrich. Root mean square layer nor-malization. Advances in neural information processing sys-tems , 32, 2019. 4 [77] Noam Shazeer. Glu variants improve transformer. arXiv preprint arXiv:2002.05202 , 2020. 4 
+
+11 [78] Jianlin Su, Murtadha Ahmed, Yu Lu, Shengfeng Pan, Wen Bo, and Yunfeng Liu. Roformer: Enhanced transformer with rotary position embedding. Neurocomputing , 568:127063, 2024. 4 [79] Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Ab-hinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Alex Vaughan, et al. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 , 2024. 4 [80] Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 , 2022. 5 [81] Alexander Quinn Nichol and Prafulla Dhariwal. Improved denoising diffusion probabilistic models. In International conference on machine learning , pages 8162–8171. PMLR, 2021. 5 [82] Yiheng Huang, Hui Yang, Chuanchen Luo, Yuxi Wang, Shibiao Xu, Zhaoxiang Zhang, Man Zhang, and Jun-ran Peng. Stablemofusion: Towards robust and efficient diffusion-based motion generation framework. In Proceed-ings of the 32nd ACM International Conference on Multime-dia , pages 224–232, 2024. 6, 8 [83] Benjamin Warner, Antoine Chaffin, Benjamin Clavi´ e, Orion Weller, Oskar Hallstr¨ om, Said Taghadouini, Alexis Gal-lagher, Raja Biswas, Faisal Ladhak, Tom Aarsen, et al. Smarter, better, faster, longer: A modern bidirectional en-coder for fast, memory efficient, and long context finetuning and inference. arXiv preprint arXiv:2412.13663 , 2024. 7 [84] Hyung Won Chung, Le Hou, Shayne Longpre, Barret Zoph, Yi Tay, William Fedus, Yunxuan Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, et al. Scaling instruction-finetuned language models. Journal of Machine Learning Research , 25(70):1–53, 2024. [85] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervi-sion. In International conference on machine learning , pages 8748–8763. PmLR, 2021. 7 [86] Sheng Yan, Yang Liu, Haoqiang Wang, Xin Du, Mengyuan Liu, and Hong Liu. Cross-modal retrieval for motion and text via droptriple loss. In Proceedings of the 5th ACM Interna-tional Conference on Multimedia in Asia , pages 1–7, 2023. 4[87] Mathis Petrovich, Michael J Black, and G¨ ul Varol. Tmr: Text-to-motion retrieval using contrastive 3d human motion synthesis. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 9488–9497, 2023. 4 
+
+12 Language-Guided Transformer Tokenizer for Human Motion Generation 
+
+## Supplementary Material 
+
+## A. Overview 
+
+The supplementary material is organized into the following sections: • Section B: Complete tokenization-generation-detokenization pipeline • Section C: Robust language guidance • Section D: Feature extractor training on the Motion-X dataset • Section E: Details of baseline reproduction on the Motion-X dataset • Section F: Qualitative comparison for text guidance • Section G: The role of language guidance in the detokenization stage during generation • Section H: More qualitative results • Section I: Application: motion editing • Section J: Evaluation of average inference time • Section K: Limitations 
+
+## B. Complete Tokenization-Generation-Detokenization Pipeline 
+
+In this section, we present the complete tokenization-generation-detokenization pipeline to facilitate a comprehensive un-derstanding of the interplay between tokenization and generation. We adopt the Scalable AutoRegressive (SAR) modeling framework, MoSa [23], as our generative model, benefiting from its notable performance gains. As illustrated in Fig. 8, we apply multi-scale quantization in (a) Language-Guided Motion Tokenization , where the retained multi-scale token sets enable (b) Scalable AutoRegressive (SAR) Modeling . In the SAR section, we demonstrate the training procedure. Finally, we illustrate how the trained LG-Tok and SAR models interact to generate high-quality, diverse motions conditioned on natural language descriptions. We elaborate on this pipeline through three stages: 
+
+1) LG-Tok Training Stage. The orange dashed line illustrates the tokenization flow. Since the tokenization process is detailed in Sec. 3, we focus on constructing the multi-scale quantizer. Unlike standard residual quantization, the multi-scale quantizer introduces a downsample-quantize-upsample interpolation at each residual quantization layer, enabling the model to obtain token representations at different temporal resolutions, all of which are retained for SAR modeling in stage 2). Mathematically, the resulting multi-scale token set is denoted as: 
+
+x =
+
+(x(1) 1 , . . . , x (1)  
+
+> s1
+
+)
+
+| {z }
+
+> x(1)
+
+, (x(2) 1 , x (2) 2 , . . . , x (2)  
+
+> s2
+
+)
+
+| {z }
+
+> x(2)
+
+, . . . , (x(N )1 , x (N )2 , . . . , x (N ) 
+
+> sN
+
+)
+
+| {z } 
+
+> x(N)
+
+ (5) where x(n) ∈ Rsn denotes the token sequence at the n-th scale, with length controlled by a predefined scale scheduler 
+
+S = ( s1, . . . , s N ). For instance, in LG-Tok-mid, S = (2 , 4, . . . , 36) increases progressively from the coarsest scale (2 tokens) to the finest scale (36 tokens). We now describe how multi-scale tokens are obtained through the quantization process. After feature encoding by the tokenizer, the latent features z ∈ RT ×d sequentially pass through N sequential quantizer layers Q. At each layer, A downsampling operation ⇓ (·, s n) is first applied to reduce the latent features z(n) to the target scale sn. The downsam-pled features are then quantized by retrieving their nearest codebook entries, generating the n-th scale tokens (discrete codes) x(n) = Q(n)(⇓(z(n), s n)) ∈ Rsn . The corresponding codebook entries form the dequantized embeddings at this scale ˆz′(n) ∈ Rsn×d. To enable proper residual updates across different scales, the dequantized embeddings ˆz′(n) must be restored to a consistent scale. An upsampling operation ⇑ (·) is applied to bring the embedding scale back to sN :
+
+ˆz(n) =⇑ ( ˆ z′(n)) ∈ RsN ×d. This allows the computation of the residual for the next quantization layer: z(n+1) = z(n) − ˆz(n).The downsample-quantize-upsample process is repeated for all N layers, progressively refining the motion representation at different temporal granularities. After N iterations, we obtain the complete multi-scale token set x = ( x(1) , x (2) , . . . , x (N ))
+
+for SAR modeling. The final dequantized embedding ˆz fed into the detokenizer for motion reconstruction is computed as the sum of all intermediate upsampled embeddings: ˆz = PNn=1 ˆz(n) (indicated by the addition symbol in Fig. 8). Listing 1 presents the PyTorch-style pseudocode for this forward process. 1Natural language: 
+
+A person walks in 
+
+a winding manner, 
+
+and his trajectory 
+
+is an S shape.  
+
+> SwiGLU
+> Self Attention
+> RMSNorm
+> RMSNorm
+> RoPE
+
+Transformer Tokenizer 
+
+Transformer Detokenizer 
+
+Text Encoder 
+
+# ❄
+
+> Input/Output
+> Motion
+
+... 
+
+Sca lable Autoregressive Transformer 
+
+... 
+
+... 
+
+Multi -scale Quantizer 
+
+(a) Language -Guided Motion Tokenization 
+
+(b) Scalable AutoRegressive Modeling 
+
+Input 
+
+Input 
+
+Reconstruction 
+
+Generation            
+
+> Transformer
+> Layer
+> Learnable Mask
+> Tokens
+> Learnable Latent
+> Tokens
+> Dequantized
+> Embeddings
+> Mul ti -scale
+> Tokens
+> Text
+> Embeddings
+> Quantization
+> Layer
+> [SOS] Token
+> LG -Tok Training
+> Stage
+> SAR Model
+> Training Stage
+> Generation Stage
+> Downsampling
+> Operation
+> Upsampling
+> Operation
+> Concat Input Skip
+> Connection
+> For Cross -
+> Attention
+> Dequantized
+> Embeddings
+> (before -upsampling )
+
+Figure 8. Complete tokenization-generation-detokenization pipeline. (a) Language-Guided Motion Tokenization : The transformer tok-enizer encodes motion with text guidance, followed by multi-scale quantization that produces multi-scale token sets to enable (b) Scalable Autoregressive Modeling : The SAR model performs scale-by-scale generation conditioned on text, and the transformer detokenizer de-codes motion from dequantized embeddings. Orange, blue, and purple dashed lines indicate LG-Tok training, SAR Model training, and generation flows, respectively. 
+
+2) SAR Model Training Stage. Leveraging multi-scale tokens, SAR modeling reformulates traditional token-by-token prediction [10] into scale-by-scale generation. The blue dashed line in Fig. 8 illustrates the SAR model training flow. Given input ([sos] , x (1) , x (2) , . . . , x (N −1) ), SAR predicts (x(1) , x (2) , . . . , x (N )), where x(n) = ( x(n)1 , . . . , x (n) 
+
+> sn
+
+) represents the 2token sequence at scale sn (as defined in Eq. 5). The SAR likelihood is defined as: 
+
+p(x(1) , . . . , x (N ) | t) = 
+
+> N
+
+Y
+
+> n=1
+
+p(x(n) | x(1) , . . . , x (n−1) , t ) (6) where all tokens in x(n) are predicted simultaneously at step n. A scale-wise causal attention mask ensures that each x(n)
+
+can only attend to x(≤n), which makes the generation at each step condition on flattened features from previous scales and text embeddings t (produced by the text encoder). Thanks to scalable autoregressive modeling, the inference steps align with the number of multi-scale quantizer layers N . Following MoSa, we set N = 10 in our experiments. This reduces inference from 49 sequential steps (for token-by-token generation) to 10, since SAR predicts all tokens within each scale in parallel at each step. Moreover, the introduction of multi-scale intermediate representations enhances the model’s contextual modeling capability. 
+
+3) Generation Stage. With both LG-Tok and the SAR model trained, they can be jointly leveraged to generate high-quality, diverse motions from natural language descriptions. The purple dashed line in Fig. 8 illustrates the complete generation flow, comprising three key phases: autoregressive token generation, dequantization, and motion detokenization. The SAR model first predicts (samples) the first scale’s token sequence ˆx(1) in parallel, conditioned on text embedding t extracted by the text encoder. Subsequently, the prediction of tokens ˆx(2) at the second scale is conditioned on (ˆ x(1) , t ); the prediction of tokens 
+
+ˆx(3) at the third scale is conditioned on (ˆ x(1) , ˆx(2) , t ), . . . . This autoregressive process continues iteratively until all N scales are predicted. Then, the predicted multi-scale tokens (ˆ x(1) , . . . , ˆx(N )) are processed through dequantization. First, each scale’s tokens are dequantized by getting their corresponding embeddings from the codebook. Following the upsampling and summation operations described in stage 1), these embeddings are combined to form the final dequantized embeddings 
+
+ˆz. Finally, detokenization is performed: the learnable mask tokens in the LG-Tok detokenizer interact with both ˆz and text embedding t through separate cross-attention layers to decode the final motion output. 
+
+## C. Robust Language Guidance: Language-Drop Scheme 
+
+While text injection in tokenization shares conceptual similarities with language-guided image tokenizers ( e.g ., Tex-Tok [70]), our contribution extends beyond direct cross-modal adaptation. The critical innovation lies in the Language-Drop Scheme (Sec. 3.4), a training strategy specifically designed to enable robust language-free guidance during detokenization. Table 5 presents comprehensive ablations demonstrating two fundamental advantages: 1) regularization that prevents over-reliance on semantic information, and 2) semantic amplification that enhances text-motion alignment during generation.                                                          
+
+> Method Reconstruction Generation
+> FID ↓Top 1 ↑MM-Dist. ↓FID ↓Top 1 ↑MM-Dist. ↓
+> HumanML3D  LG-Tok ( g= 2 .0)0.022 ±.000 0.502 ±.002 3.250 ±.010 0.057 ±.003 0.542 ±.003 2.997 ±.010
+> LG-Tok ( g= 0 .0)0.061 ±.003 0.534 ±.003 3.032 ±.011
+> w/o lang-drop scheme 0.039 ±.000 0.505 ±.002 3.233 ±.009 0.132 ±.005 0.533 ±.003 3.068 ±.007
+> w/o text guidance 0.025 ±.000 0.494 ±.002 3.301 ±.009 0.062 ±.002 0.533 ±.003 3.042 ±.008
+> Motion-X  LG-Tok ( g= 1 .0)0.041 ±.001 0.577 ±.002 3.890 ±.008 0.088 ±.006 0.582 ±.002 3.844 ±.009
+> LG-Tok ( g= 0 .0)0.139 ±.008 0.576 ±.002 3.969 ±.012
+> w/o lang-drop scheme 0.057 ±.002 0.580 ±.002 3.846 ±.007 0.136 ±.007 0.574 ±.002 3.918 ±.012
+> w/o text guidance 0.090 ±.002 0.568 ±.002 4.022 ±.008 0.257 ±.010 0.555 ±.002 4.274 ±.008
+
+Table 5. Ablation study on language-drop scheme and language-free guidance. Symbol g denotes the guidance scale for language-free decoding during generation. “ w/o text guidance” represents a vanilla Transformer tokenizer without text injection. 
+
+1) Regularization Effect. The language-drop scheme enforces a crucial balance during training: the detokenizer must learn to reconstruct motion from tokens alone during dropout periods (when text is masked), while simultaneously leveraging se-mantic guidance when text is available. Without this regularization, the detokenizer becomes overly dependent on semantic cues. As shown in Table 5, the “ w/o lang-drop scheme” variant suffers severe degradation during generation, even underper-forming the vanilla baseline (FID on HumanML3D: 0.057 → 0.132 ). This demonstrates that constant text guidance without proper regularization causes the detokenizer to over-rely on semantic information while neglecting structural details encoded in motion tokens. 32) Semantic Amplification. Beyond regularization, the language-drop scheme enables semantic amplification through language-free guidance during inference: ˆm = (1 + g) · ˆmc − g · ˆmu, where ˆmc and ˆmu represent motions decoded with and without text conditioning, respectively. The difference term g · ( ˆ mc − ˆmu) amplifies text-specific features, allowing generated motions to better align with textual descriptions. This mechanism demonstrates substantial improvements: on HumanML3D, guidance ( g = 2 .0) achieves FID of 0.057 versus 0.061 without guidance; on Motion-X, the improvement is more pronounced (0.088 vs. 0.139), demonstrating that language-drop is a fundamental enabler of semantic control during generation. 
+
+## D. Feature Extractor Training on the Motion-X Dataset 
+
+Quantitative evaluation of stochastic generative models has been well-established in the image generation domain. This typically involves extracting high-dimensional features from deep networks ( e.g ., Inception V3). These high-dimensional features are then used to measure distributional differences, diversity, and other properties. Similarly, quantitative evaluation for text-to-motion generation has been inspired by this paradigm. Guo et al . [25] trained separate feature extractors for text and motion using contrastive loss, and subsequent methods have adopted these extractors to evaluate key metrics such as FID and R-Precision. Recently, Meng et al . [26] revealed redundancy in data representations and retrained feature extractors on HumanML3D using tighter representations, while also introducing a MotionCLIP-style [31] network architecture for CLIP-based score evaluation. In our experiments, we adopt the HumanML3D feature extractor they provide and use it to reproduce representative methods. Since no feature extractor was provided for the larger Motion-X dataset, we trained a corresponding feature extractor following the discussions by Meng et al . in their GitHub issue 1. Notably, we made two reasonable adaptations: 
+
+1) Vocabulary handling. We observe that the Motion-X dataset contains a significantly more diverse vocabulary. When using the original vocabulary provided by Guo et al ., many out-of-vocabulary words are uniformly marked as unk (unknown token), resulting in missing word embeddings. To better preserve and understand semantic information, we use GloVe 6B pre-trained word embeddings and perform part-of-speech tagging directly with spaCy. 
+
+2) Batch size adjustment. When training the MotionCLIP-style network for CLIP-based score evaluation, we observe that mini-batch contrastive training ( e.g ., batch size = 8) results in negligible training loss reduction. This phenomenon likely stems from the inherently high similarity among motion descriptions, causing the negative sample set to contain numerous “false negatives” that are semantically highly related to the anchor description, thereby undermining the learned embeddings [86, 87]. To mitigate this issue, we appropriately increase the batch size during training to enhance negative sample diversity. We ultimately set the batch size to 32 and conduct corresponding ablation studies: Batch size CLIP-score 8 0.012 16 0.026 32 0.672 
+
+64 0.656 128 0.630 
+
+> Table 6. Ablation study on batch size for training the MotionCLIP-style CLIP-score evaluator on Motion-X.
+
+## E. Details of Baseline Reproduction on the Motion-X Dataset 
+
+After training the Motion-X feature extractor, we reproduced representative baselines with extended training for optimal validation performance: StableMoFusion (150K steps vs. 50K original), MotionDiffuse (100 vs. 50 epochs), and MoMask tokenizer (100 vs. 50 epochs), etc . Additionally, for tokenizer-based models (both discrete and continuous), we further enhance robustness by training on out-of-distribution (OOD) data. We observe that under the current generation paradigm targeting ∼10s of motions ( < 200 frames), a substantial number of longer motion sequences ( ≥ 200 frames) remain unused. We leverage these as OOD data by scanning them with a sliding window of 200 frames for tokenizer training. Notably, in comparison to pre-training followed by fine-tuning, we employ parallel training: each batch comprises 50% OOD samples and 50% in-distribution samples. This prevents catastrophic forgetting while enabling knowledge transfer from extended 
+
+> 1https://github.com/neu-vi/MARDM/issues/8
+
+4motion sequences. Table 7 demonstrates the effectiveness of this approach, showing reconstruction improvements for LG-Tok and MoMask’s tokenizer on the Motion-X test set: Method R Precision ↑ FID ↓ MultiModal Dist ↓ MPJPE ↓
+
+Top 1 Top 2 Top 3 MoMask 0.554 ±.002 0.743 ±.001 0.829 ±.001 0.394 ±.005 4.284 ±.006 24.9 
+
+w/o OOD training 0.540 ±.002 0.727 ±.002 0.813 ±.001 0.427 ±.004 4.482 ±.008 34.1 LG-Tok 0.577 ±.002 0.773 ±.001 0.858 ±.001 0.041 ±.001 3.890 ±.008 31.0 
+
+w/o OOD training 0.563 ±.002 0.757 ±.001 0.842 ±.001 0.086 ±.003 4.098 ±.007 32.7 
+
+Table 7. Training on OOD data improves reconstruction performance for tokenizer-based models on the Motion-X test set. 
+
+## F. Qualitative Comparison for Text Guidance The person walks in a confident manner. 
+
+The woman walks on a balance beam.         
+
+> w/o text guidance, sample 1
+> w/o text guidance, sample 2 LG -Tok, sample 1 LG -Tok, sample 2
+> w/o text guidance, sample 1
+> w/o text guidance, sample 2 LG -Tok, sample 1 LG -Tok, sample 2
+
+Figure 9. Qualitative comparison for text guidance. Qualitative comparison based on Motion-X checkpoint demonstrating that text-guided tokenization (LG-Tok) generates motions with improved semantic alignment to text descriptions compared to training without (w/o) text guidance. 
+
+We compare the qualitative results of our transformer-based tokenizer with text guidance (LG-Tok) against the variant with-out text guidance (w/o text guidance) on the Motion-X dataset. Fig. 9 illustrates two representative examples. We argue that incorporating language guidance enables LG-Tok to capture high-level semantic representations, which better align the generated motions with textual conditions. In the first example (“ The person walks in a confident manner ”), both variants generate walking motions. Yet, the w/o text guidance version exhibits predominantly single-foot movements with notice-able foot-slip artifacts. In contrast, LG-Tok produces bilateral swaying motions that better convey the semantic notion of “confident” walking. In the second example (“ The woman walks on a balance beam ”), LG-Tok generates a nearly straight trajectory, while w/o text guidance version shows slight curvature deviations. These qualitative comparisons demonstrate the advantages of integrating natural language during tokenization. The role of language guidance in the detokenization stage is further analyzed in the next section. 5(a) a person takes one step forward with their right foot and then with their left to end with their feet side by side. 
+
+(b) the person is balancing on one leg using his hands to help balance 
+
+(c) a man turns to his left, then goes down onto a crawl , moving around on his hands and feet. 
+
+(d) a person quickly runs forward and stoops to pick up an object before carrying it off. Figure 10. More qualitative results on HumanML3D. Each motion sequence is visualized with temporal expansion, with yellow dashed boxes highlighting key frames corresponding to the emphasized actions in the text descriptions (shown in blue and red). 
+
+## G. The Role of Language Guidance in the Detokenization Stage during Generation 
+
+Our language-guided tokenization establishes motion-text alignment during training, enabling the detokenizer to act as a se-mantic amplifier during generation. As shown in Table 8, language-free guidance decoding consistently improves generation quality across both datasets. This phenomenon reveals that language guidance in detokenization serves as a semantic re-finement mechanism: the tokens generated by the generative model already encode high-level semantic information learned during tokenization, and the detokenizer’s language conditioning further enhances this semantic coherence. Notably, even in 6free-form generation (where the generative model operates without text conditioning), language-free guidance decoding also improves quality (FID: 4.025 →3.564 on HumanML3D, 25.093 →14.715 on Motion-X), demonstrating that the detokenizer can leverage its learned language-motion alignment to refine arbitrary token sequences semantically. This validates our hy-pothesis that language guidance in detokenization acts as a continuous semantic enhancement process, translating compact token representations into motion sequences with improved semantic fidelity. Method FID ↓ R-Precision Top-1 ↑ CLIP-score ↑                                 
+
+> HumanML3D Motion-X HumanML3D Motion-X HumanML3D Motion-X Free-form Generation (no text in generative model)
+> w/o language decoding 4.025 ±.094 25 .093 ±.322 0.044 ±.001 0.048 ±.001 0.089 ±.002 0.070 ±.001
+> w/ language decoding 3.564 ±.079 14 .715 ±.200 0.054 ±.001 0.101 ±.001 0.108 ±.002 0.154 ±.001
+> Text-conditioned Generation (standard setting)
+> w/o language decoding 0.061 ±.003 0.139 ±.008 0.534 ±.003 0.576 ±.002 0.665 ±.001 0.680 ±.000
+> w/ language decoding 0.057 ±.003 0.088 ±.006 0.542 ±.003 0.582 ±.002 0.669 ±.001 0.682 ±.000
+
+Table 8. Effect of language-free guidance decoding during generation. + “A man picks something from the 
+
+ground using his right hand.” [5s, 8s] 
+
+(a) Motion in -painting 
+
++ “someone is running diagonally across 
+
+the screen” [0s,3s]+[8s, 10s] 
+
+(b) Motion out -painting 
+
+source 
+
+source 
+
+Figure 11. Motion editing results from LG-Tok. (a) Motion in-painting : given a source motion sequence with overlapping characters (left), our model generates a coherent edited motion where a man bends down and picks something from the ground using his right hand during [5 s, 8s] (red dashed box), seamlessly blending with the surrounding context. (b) Motion out-painting : starting from a single source character (left), LG-Tok extends the motion temporally and spatially, creating smooth continuations at [0 s, 3s] (left red box) and synthesizing dynamic running motions diagonally across the scene at [8 s, 10 s] (right red box). 
+
+## H. More Qualitative Results 
+
+We generate additional qualitative results using our model trained on HumanML3D to demonstrate the effectiveness of our approach further. As shown in Fig. 10, each human motion is accompanied by a corresponding temporal expansion visualization, with key frames highlighted in yellow dashed boxes to emphasize the critical motion phases described in the text prompts. In example (a), the model accurately captures the sequential stepping motion, with the right foot movement clearly visible in the early frames (highlighted) and the subsequent left foot action leading to the final pose with feet side by side .7Example (b) demonstrates precise control over complex balance motions, where the model generates realistic balancing poses on one leg while correctly positioning the hands (highlighted) to maintain equilibrium. In example (c), the generated motion faithfully follows the described sequence: the person first turns to his left , then smoothly transitions into a crawling position (goes down onto a crawl , highlighted), and continues moving on hands and feet. Example (d) showcases the model’s ability to synthesize fine-grained actions, where the person quickly runs forward , executes a precise stopping motion, and performs the detailed action of picking up an object (highlighted) before carrying it away. These results demonstrate that our language-guided tokenization enables the model to generate motions that are not only semantically aligned with text descriptions but also exhibit smooth temporal transitions and accurate correspondence between linguistic emphasis and motion details. 
+
+## I. Application: Motion Editing 
+
+We provide motion editing results to demonstrate that LG-Tok’s benefits extend beyond standard text-to-motion generation to constrained tasks. Following protocols in prior generative models ( e.g ., MoSa [23], MoMask [12]), while preserving the inherent editability of the generative model, we can further enhance precise control by applying an edit mask during the 
+
+detokenization stage to enable language guidance only in designated temporal regions. Specifically, given a binary temporal mask M ∈ { 0, 1}F defining the regions to edit, the detokenizer applies text guidance conditionally: 
+
+ˆm = D( ˆ ml, ˆz, t, M) (7) where mask tokens interact with text embeddings t through cross-attention only in regions where M = 1 , while regions with 
+
+M = 0 rely solely on dequantized embeddings ˆz without text conditioning. This enables precise temporal control for partial generation tasks such as motion editing and in-betweening. As illustrated in Fig. 11, our model successfully performs both motion in-painting and out-painting, seamlessly blending edited regions with the surrounding motion context. These results demonstrate LG-Tok’s capability to maintain motion coherence while adapting to diverse text-guided editing scenarios. 
+
+## J. Evaluation of Average Inference Time               
+
+> MotionDiffuse [46] T2M-GPT [10] MoMask [12] MMM [11] StableMoFusion [82] MoSa [23] MARDM [26] LG-Tok (Ours) 4.086s 0.127s 0.062s 0.085s 0.153s 0.045s 2.109s 0.121s
+> Table 9. Average Inference Time Results Comparison between our method and baseline methods.
+
+To provide a comprehensive evaluation, we assess the computational efficiency of our method in terms of average inference time (AIT). Table 9 reports the efficiency of motion generation over 100 samples on a single Nvidia 4090 device. While LG-Tok achieves superior generation quality across all metrics, it maintains millisecond-scale latency (0.121s), demonstrating an effective balance between generation quality and computational efficiency. 
+
+## K. Limitations 
+
+Unlike convolutional tokenizers ( e.g ., MoMask with 64-frames window size requiring ∼2GB memory), LG-Tok’s attention-based architecture with global attention over motion, text, and latent tokens consumes 10 × more memory. To mitigate this limitation, we introduce mixed-precision training, which enables tokenizer training on a single 24GB GPU (RTX 4090). However, this increased memory footprint inevitably extends training time: tokenizer training requires approximately 2 days on a single RTX 4090, compared to several hours for convolutional baselines. For inference efficiency analysis, please refer to Sec. J. Despite these computational costs, the substantial quality improvements justify this overhead. 81 import torch.nn as nn  
+
+> 2
+
+from torch.nn import functional as F 
+
+> 34
+
+class LGTok(nn.Module):  
+
+> 5
+
+def __init__(self, scales=(2, 4, 6, 9, 12, 16, 20, 25, 30, 36), **kwargs):  
+
+> 6
+
+super (LGTok, self).__init__()  
+
+> 7
+
+# The predefined scale scheduler S = (s_1, s_2, ..., s_N)  
+
+> 8
+
+self.scales = scales  
+
+> 9
+
+self.N = len (scales)  
+
+> 10
+
+self.tokenizer = Tokenizer(**kwargs)  
+
+> 11
+
+self.detokenizer = Detokenizer(**kwargs)  
+
+> 12
+
+self.quantizers = nn.ModuleList([Quantizer(**kwargs) for _ in range (self.N)])  
+
+> 13 14
+
+def forward(self, m, t):  
+
+> 15
+
+# Forward pass for the LG-Tok model.  
+
+> 16
+
+# Args: m: input motion, t: natural language  
+
+> 17
+
+# Returns: m_hat: reconstructed motion, x: multi-scale token set  
+
+> 18
+
+z = self.tokenizer(m, t)  
+
+> 19
+
+z_hat, s_N = 0., self.scales[-1]  
+
+> 20
+
+# Eq (5) in paper, multi-scale token set x = (xˆ(1), xˆ(2), ..., xˆ(N))  
+
+> 21
+
+x = []  
+
+> 22 23
+
+# Multi-scale quantization  
+
+> 24
+
+for n in range (self.N):  
+
+> 25
+
+s_n, quantizer = self.scales[n], self.quantizers[n]  
+
+> 26 27
+
+# Perform downsampling and quantization: xˆ(n) = Qˆ(n)(downsample(zˆ(n), s_n))  
+
+> 28
+
+x_n = quantizer(F.interpolate(z, size=(s_n)))  
+
+> 29 30
+
+# Get corresponding codebook entries, form the dequantized embeddings  
+
+> 31
+
+z_prime_hat_n = quantizer.codebook(x_n)  
+
+> 32 33
+
+# Perform upsampling to bring the embedding scale back to s_N  
+
+> 34
+
+z_hat_n = F.interpolate(z_prime_hat_n, size=(s_N))  
+
+> 35 36
+
+# Compute the residual for the next quantization layer  
+
+> 37
+
+z = z - z_hat_n  
+
+> 38
+
+z_hat += z_hat_n # z_hat = sum of all z_hatˆ(n)  
+
+> 39
+
+x.append(x_n)  
+
+> 40 41
+
+m_hat = self.detokenizer(z_hat, t)  
+
+> 42
+
+return m_hat, x
+
+Listing 1. PyTorch-style pseudocode for multi-scale quantization in LG-Tok. The tokenizer encodes motion with text guidance into latent features z. Multi-scale quantization iteratively performs downsample-quantize-upsample operations across N scales, producing multi-scale token set x = ( x(1) , . . . , x (N )) for SAR training. The final dequantized embeddings ˆz = PNn=1 ˆz(n) are decoded by the detokenizer to reconstruct motion ˆm.
+
+9

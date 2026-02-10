@@ -1,0 +1,3601 @@
+Title: A Kinetic-Energy Perspective of Flow Matching
+
+URL Source: https://arxiv.org/pdf/2602.07928v1
+
+Published Time: Tue, 10 Feb 2026 02:38:48 GMT
+
+Number of Pages: 39
+
+Markdown Content:
+# A Kinetic-Energy Perspective of Flow Matching 
+
+Ziyun Li 1,∗,† Huancheng Hu 2 Soon Hoe Lim 1,9 Xuyu Li 3 Fei Gao 4
+
+Enmao Diao 5 Zezhen Ding 6 Michalis Vazirgiannis 7,8 Henrik Bostr¨ om 1
+
+> 1
+
+KTH Royal Institute of Technology 2Hasso Plattner Institute, University of Potsdam 
+
+> 3
+
+Trinity College Dublin 4Hangzhou Institute of Technology, Xidian University 5DreamSoul 
+
+> 6
+
+The Hong Kong University of Science and Technology  
+
+> 7
+
+´Ecole Polytechnique 8Mohamed bin Zayed University of Artificial Intelligence 9Nordita 
+
+ziyli@kth.se liziyun2014@gmail.com 
+
+Abstract 
+
+Flow-based generative models can be viewed through a physics lens: sampling transports a particle from noise to data by integrating a time-varying velocity field, and each sample corre-sponds to a trajectory with its own dynamical effort. Motivated by classical mechanics, we in-troduce Kinetic Path Energy (KPE) , an action-like, per-sample diagnostic that measures the accumu-lated kinetic effort along an Ordinary Differential Equation (ODE) trajectory. Empirically, KPE ex-hibits two robust correspondences: ( i) higher KPE predicts stronger semantic fidelity; ( ii ) high-KPE trajectories terminate on low-density manifold frontiers. We further provide theoretical guar-antees linking trajectory energy to data density. Paradoxically, this correlation is non-monotonic. At sufficiently high energy, generation can de-generate into memorization. Leveraging the closed-form of empirical flow matching, we show that extreme energies drive trajectories toward near-copies of training examples. This yields a 
+
+Goldilocks principle and motivates Kinetic Tra-jectory Shaping (KTS) , a training-free two-phase inference strategy that boosts early motion and enforces a late-time soft landing, reducing memo-rization and improving generation quality across benchmark tasks. 
+
+1. Introduction 
+
+Flow-based generative models synthesize data by integrat-ing a learned velocity field vθ that transports samples from noise to the data distribution (Lipman et al., 2022; Liu et al., 
+
+> ∗
+
+Core contributor, †Corresponding author. 
+
+Preprint. February 10, 2026. 
+
+2022; Song et al., 2021). Yet we still lack tools to under-stand why individual samples differ in quality . Standard metrics like FID (Heusel et al., 2017) are fundamentally trajectory-blind; they aggregate global statistics but over-look the nuanced dynamics of individual paths (Jayasumana et al., 2024). Sampling, however, can be viewed as naviga-tion in a time-varying flow, where each sample is a particle continuously steered toward the data manifold (Chen et al., 2018; Song et al., 2021). In physics, the accumulation of kinetic energy along a path (the action) is a definitive mea-sure of dynamical effort (Goldstein et al., 1950; Benamou & Brenier, 2000); an analogous per-sample quantity is readily available during flow-based sampling (Finlay et al., 2020; Tong et al., 2024), yet its connection to generation quality remains unexplored. This raises the question: Does the kinetic effort expended reveal the intrinsic properties of the generated sample? 
+
+To address this, we formalize Kinetic Path Energy (KPE) as the time-integral of the squared velocity along a sample’s tra-jectory x(t): E = 12
+
+R 10 ∥vθ (x(t), t )∥2 dt. By formalizing the classical action (Goldstein et al., 1950), KPE provides a zero-overhead diagnostic of individual transport efficiency. It is computed directly during ODE-based sampling, trans-forming complex flow dynamics into a scalar “sampling cost” that enables granular analysis of individual generation paths. KPE exhibits two correspondences with the generated data (§4). (i) Energy as a Proxy for Semantic Fidelity. Higher-energy trajectories produce samples with sharper, class-specific features (Figure 1; §4.1), synthesizing precise se-mantic structure demands sustained high velocity, hence greater accumulated energy. (ii) Energy as a Proxy for Manifold Rarity. High-energy trajectories terminate in low-density regions of the data manifold (§4.2). Under a pos-terior dominance regime 1, instantaneous squared speed is 
+
+> 1
+
+Posterior dominance: for each (z, t ), there exists a dominant 
+
+1
+
+> arXiv:2602.07928v1 [cs.LG] 8 Feb 2026 A Kinetic-Energy Perspective of Flow Matching
+
+affinely bounded by negative log-density (Theorem 4.2). Together, these results establish KPE as a dual indicator 
+
+of semantic fidelity and distributional rarity, a path-level diagnostic inaccessible to endpoint-only metrics. A natural follow-up question arises: Does pushing en-ergy higher always improve generation? Paradoxically, the closed-form empirical flow matching (EFM) solution achieves 1.3×–3.9× higher peak power than neural veloc-ity fields, yet produces near-exact training replicas (98% memorization on CelebA; §5). We show that this failure is structural: the EFM velocity field contains a singular com-ponent that drives energy blow-up and forces trajectories to collide with discrete training atoms (Proposition 5.2). In short, energy is not a monotone knob, at the extreme, energy spikes drive memorization , not better generation. These results suggest a Goldilocks Principle : generation quality benefits from moderate, well-timed kinetic effort, whereas insufficient energy stays in dense regions and exces-sive late-time energy induces terminal blow-up and mem-orization. Guided by this principle, we propose Kinetic Trajectory Shaping (KTS) , a training-free inference strategy with phase-specific velocity modulation (§6). In the early phase ( t < 0.6), Kinetic Launch boosts velocity to raise KPE and push samples toward sparse, semantically rich regions. In the late phase ( t ≥ 0.6), Kinetic Soft-Landing 
+
+dampens velocity to suppress terminal singularities and pre-vent memorization. Experiments on CelebA demonstrate that KTS reduces memorization by 16% (from 37.3% to 31.2%) while improving generation quality (FID 14.35 vs. 16.68 baseline). We summarize our contributions as follows: • We propose Kinetic Path Energy (KPE) , a per-sample, path-level diagnostic that quantifies the kinetic effort ac-cumulated along a generation trajectory. • We show that KPE tracks both semantic fidelity and man-ifold rarity, and we formalize the latter via an energy– density relation: ˆu∗(z, t ) 2 ≍ − log ˆ pt(z) under poste-rior dominance (Theorem 4.2). • We uncover an energy paradox in the regression-optimal EFM, a structural 1/(1 −t) terminal singularity that drives memorization (Proposition 5.2) and motivate a phase-aware remedy via Kinetic Trajectory Shaping (KTS) .
+
+2. Related Work 
+
+Flow matching learns a time-dependent velocity field whose ODE transport maps a base distribution to the data distri-bution (Lipman et al., 2022; Liu et al., 2022; Albergo & Vanden-Eijnden, 2023; Lipman et al., 2024), and can be viewed as a deterministic counterpart to diffusion’s SDE                  
+
+> component i∗with posterior weight λi∗(z, t )≥1−εfor some
+> ε∈(0 ,1/2) , where λi(z, t )∝pt(z|x(i)).
+
+formulations (Song et al., 2021). Our focus here is on flow matching and its empirical counterpart. Energy and action functionals are central in optimal transport and kinetic for-mulations of probability evolution, where probability paths are characterized via kinetic energy or action minimization (Benamou & Brenier, 2000; Shaul et al., 2023). In con-trast to optimal or distribution-level analyses, we introduce KPE as a per-sample, path-level diagnostic computed along individual flow matching trajectories. Recent work has studied memorization and generalization in flow matching and closely related generative approaches (Gao & Li, 2024; Bertrand et al., 2025; Baptista et al., 2025; Bonnaire et al., 2025; Scarvelis et al., 2023; Yoon et al., 2023; Pidstrigach, 2022). We complement these analyses by identifying a trajectory-level mechanism: the regression-optimal empirical flow matching solution exhibits a terminal velocity singularity that induces excessive late-time kinetic energy and drives memorization. Several training-free meth-ods modify inference dynamics using classifier or energy-based signals (Ho & Salimans, 2022; Yu et al., 2023; Xu et al., 2024). Unlike approaches that modulate scores or endpoint objectives, our Kinetic Trajectory Shaping directly controls the velocity field over time, enabling phase-specific regulation of kinetic effort within flow matching models. See Appendix A for a more detailed discussion of related work. 
+
+3. Kinetic Analogy and Trajectory Energy 
+
+3.1. Recall: Conditional Flow Matching (CFM) 
+
+CFM constructs a conditional bridge from noise p0 =
+
+N (0 , I ) to data z ∼ pdata . We adopt the standard linear interpolation (Optimal Transport (OT)-path): 
+
+xt = t z + (1 − t) ϵ, ϵ ∼ N (0 , I ), (1) which defines a conditional flow with velocity field 
+
+ut(x|z) = z − ϵ. CFM learns vθ (x, t ) by minimizing the regression loss: 
+
+L(θ) = Et,z,ϵ [ vθ (xt, t ) − (z − ϵ) 2], (2) where t ∼ U [0 , 1] . The population optimum approximates the conditional expectation v⋆(x, t ) = E[z − ϵ | xt = x].
+
+3.2. Physical Motivation 
+
+In classical mechanics, the evolution of a system is char-acterized by the action functional (Goldstein et al., 1950; Feynman & Hibbs, 1965): 
+
+S[x(·)] = 
+
+Z t1
+
+> t0
+
+L(x(t), ˙x(t), t ) dt, (3) defined over the time interval [t0, t 1], where 
+
+L(x(t), ˙x(t), t ) = T ( ˙ x(t)) − V (x(t)) is the Lagrangian, 2A Kinetic-Energy Perspective of Flow Matching 
+
+given by the difference between the kinetic energy T ( ˙ x)
+
+and the potential energy V (x). This formulation embodies Hamilton’s principle of least action (Goldstein et al., 1950) and Feynman’s path integral framework (Feynman & Hibbs, 1965). For a free particle (i.e., when V (x) = 0 ), the action functional reduces to the kinetic term: 
+
+Sfree =
+
+Z t1
+
+> t0
+
+12 ∥ ˙x(t)∥2 dt. (4) This kinetic form is a fundamental example of an action functional in physics. Inspired by similar analogies in gen-erative modeling (Zhang & Chen, 2023), we adopt a kinetic framework to define trajectory-level diagnostics to gain in-sight into the generation process in flow matching. 
+
+3.3. Kinetic Cost Definition 
+
+We interpret the flow matching sampling process as a parti-cle moving through a velocity field. The sampling trajectory is governed by the learned velocity field vθ (x, t ) via the Ordinary Differential Equation (ODE) (Liu et al., 2022; Lipman et al., 2022; Song et al., 2020; Chen et al., 2018): 
+
+dx dt = vθ (x(t), t ), t ∈ [0 , 1] , x(0) ∼ N (0 , I ), (5) which describes the probability flow (Song et al., 2021) from noise to data distribution. The trajectory represents the path of a particle driven by the velocity field. Inspired by classical mechanics (Goldstein et al., 1950), we define 
+
+kinetic path energy E as: 
+
+E := 12
+
+Z 10
+
+∥vθ (x(t), t )∥2 dt, (6) where we adopt the convention of unit mass ( m = 1 ), stan-dard in the free particle action formulation. 2
+
+Physical Interpretation. The quantity E encapsulates the cumulative kinetic cost incurred during the sampling pro-cess. Conceptually, it quantifies the “energy” required to transport a sample from the noise distribution to the data manifold. A higher E signifies that the model employs greater velocity magnitudes on average, reflecting a more energetically demanding generation process. 
+
+Important Clarification. We stress that E is a kinetic-inspired diagnostic , not literally representing physical en-ergy. It is cheap to compute: during ODE sampling we simply accumulate ∥vθ (x(t), t )∥2, adding negligible over-head. In expectation, when the learned flow realizes optimal transport (Tong et al., 2024; Pooladian et al., 2023), KPE co-incides with the Benamou-Brenier dynamic formulation (Be-namou & Brenier, 2000) of the 2-Wasserstein divergence, grounding our metric in optimal transport theory (Villani et al., 2008).        
+
+> 2Here mdenotes the particle mass in the classical kinetic en-ergy 12m∥v∥2. Setting m= 1 is a unit/scale normalization that simplifies notation without affecting our analysis.
+
+4. Two Findings on KPE 
+
+4.1. KPE E vs. Semantic Strength 
+
+Finding 1: Higher E consistently correlates with stronger semantic alignment and discriminability. 
+
+Setup and Metrics. We examine this relationship on ImageNet-256 using pretrained SiT-XL/2 (Ma et al., 2024), generating 5,000 samples per CFG scale ω ∈ { 1.0, 1.5, 4.0}
+
+and partitioning into low/mid/high KPE groups (0–33%, 33– 67%, 67–100%). We evaluate using CLIP score (semantic alignment) and CLIP margin (semantic discriminability). See Appendix E for details. 
+
+Results. Figure 1 provides a qualitative comparison us-ing paired samples from the same class (top: high-energy; bottom: low-energy). High-energy samples exhibit clearer, more class-specific semantic cues. (Appendix H provides additional visualizations.) Figure 2a and Figure 2b show that both CLIP score and CLIP margin increase with E
+
+across different CFG settings. For instance, at CFG=1.5, the median CLIP score increases from 23.52 (low-energy) to 25.12 (high-energy), and the median CLIP margin rises from 7.05 to 10.02. Additionally, Table 1 shows that the difference between low-energy and high-energy groups is statistically significant for all 6 comparisons ( p < 0.008 ). 
+
+Interpretation. KPE E measures the cumulative kinetic effort along a sampling trajectory. Empirically, within each fixed CFG scale, higher E is associated with higher CLIP score and CLIP margin, indicating that E captures sample-level semantic variation beyond guidance strength.  
+
+> Figure 1. High-energy samples show clearer semantic cues.
+> Paired samples from the same class on ImageNet-256 (CFG=4.0): top is high-energy (high KPE), bottom is low-energy (low KPE). High-energy samples exhibit more salient, class-specific attributes.
+
+3A Kinetic-Energy Perspective of Flow Matching Low 
+
+> (0-33%)
+> Mid
+> (33-67%)
+> CFG = 1.0
+> High
+> (67-100%)
+> Low
+> (0-33%)
+> Mid
+> (33-67%)
+> CFG = 1.5
+> High
+> (67-100%)
+> Low
+> (0-33%)
+> Mid
+> (33-67%)
+> CFG = 2.0
+> High
+> (67-100%)
+> 35
+> 25
+> 15
+> 5
+> Clip Score
+
+(a) CLIP score Low 
+
+> (0-33%)
+> Mid
+> (33-67%)
+> CFG = 1.0
+> High
+> (67-100%)
+> Low
+> (0-33%)
+> Mid
+> (33-67%)
+> CFG = 1.5
+> High
+> (67-100%)
+> Low
+> (0-33%)
+> Mid
+> (33-67%)
+> CFG = 2.0
+> High
+> (67-100%)
+> 20
+> 10
+> 0
+> -10
+> -20
+> Clip Margin
+
+(b) CLIP margin 
+
+Figure 2. KPE correlates with semantic strength and discrim-inability across CFG scales. Box plots of (a) CLIP score and (b) CLIP margin for low/mid/high KPE (0–33%, 33–67%, 67–100%) at CFG 1.0/1.5/4.0. Both metrics increase with KPE (medians labeled). 
+
+4.2. KPE E vs. Data Density 
+
+Finding 2: KPE E is negatively correlated with estimated training-data density. 
+
+Setup. We evaluate the inverse relationship between KPE 
+
+E and estimated training-data density on (i) three syn-thetic 2D datasets with explicit density stratification (dense core + sparse ring, multiscale clusters, sandwich) and (ii) real datasets: CIFAR-10 (OT-CFM (Tong et al., 2024)) and ImageNet-256 (SiT-XL/2 (Ma et al., 2024)). For real datasets, we generate 2,000 samples via Euler integration with N ∈ { 10 , 50 , 150 } steps and estimate local density using 22D descriptors (RGB statistics, Gabor responses, 
+
+Table 1. Higher KPE improves semantic strength and dis-criminability across CFG scales. We compare low-energy (0–33% KPE) vs high-energy (67–100% KPE) groups; all dif-ferences remain significant after Bonferroni correction (6 tests; *** p < 0.008 ). 
+
+CFG Metric Low Energy High Energy ∆μ Cohen’s d
+
+Scale μ±σ μ±σ
+
+1.0 CLIP Score 21 .22 ±5.35 23 .43 ±4.44 +2 .21 0.450 
+
+CLIP Margin 4.15 ±5.99 7.09 ±5.00 +2 .94 0.534 
+
+1.5 CLIP Score 21 .87 ±5.99 24 .62 ±4.29 +2 .75 0.527 
+
+CLIP Margin 5.66 ±6.17 8.93 ±4.54 +3 .27 0.603 
+
+4.0 CLIP Score 23 .23 ±5.89 25 .87 ±4.39 +2 .64 0.509 
+
+CLIP Margin 7.44 ±5.95 10 .82 ±4.40 +3 .38 0.646 
+
+Notes: Values are reported as mean ± std. Cohen’s d is the effect size. Two-sample t-tests are Bonferroni-corrected (α = 0 .05 /6 ≈ 0.008 ); n ≈ 1,333 per group. 
+
+edge density) reduced to 2D via PCA, then evaluated with 
+
+k-NN ( k = 50 ) and Gaussian KDE on training data. See Appendix E for details. Limitation. Estimating density for natural images in pixel space is ill-posed; our k-NN/KDE values are therefore representation-dependent proxies of lo-cal support in the descriptor/PCA space, useful for relative ranking and trends, not calibrated manifold density. 
+
+Results. Figure 3 shows a consistent inverse relation on 2D synthetic data: trajectories whose endpoints fall in low-density regions exhibit higher KPE (KPE vs. density strata). This is accompanied by larger/more persistent instantaneous power ∥v(t)∥2, leading to faster growth and higher final cumulative KPE. On CIFAR-10, Fig. 4 shows (a) density and KPE surfaces that mirror each other (high density aligns with low KPE), and (b) the top 10% highest-KPE samples overlaid on the density surface, concentrating in low-density regions. Table 2 shows consistent evidence under both k-NN and KDE density estimates: on CIFAR-10, correlations strengthen with more steps ( ρ: −0.54 → − 0.61 → − 0.65 , δ:
+
+−0.83 → − 0.89 → − 0.93 for k-NN; similar for KDE), while on ImageNet-256 they remain consistently nega-tive but weaker ( ρ ≈ − 0.31 to −0.42 , δ ≈ − 0.43 to 
+
+−0.58 ). Figure 5 plots KPE against training log-density on CIFAR-10 ( N = 150 , n = 2 ,000 ): Spearman corre-lations are strongly negative under both k-NN and KDE (ρ = −0.65 / − 0.64 ). 
+
+Table 2. KPE is negatively correlated with training density. 
+
+Spearman ρ and Cliff’s δ on CIFAR-10 and ImageNet-256 using 
+
+k-NN and KDE density estimates for N ∈ { 10 , 50 , 150 }. The negative relation strengthens with larger N on CIFAR-10 and remains weaker but consistently negative on ImageNet-256. CIFAR-10 ImageNet-256 Metric N =10 N =50 N =150 N =10 N =50 N =150 
+
+ρ ↓ k-NN −0.54 −0.61 −0.65 −0.38 −0.42 −0.38 
+
+δ ↓ −0.83 −0.89 −0.93 −0.55 −0.58 −0.55 
+
+ρ ↓ KDE −0.54 −0.61 −0.64 −0.31 −0.33 −0.31 
+
+δ ↓ −0.82 −0.88 −0.92 −0.43 −0.47 −0.43 
+
+4.3. Theoretical Analysis 
+
+We analyze empirical flow matching (EFM) with a general schedule γ(t); let z denote the latent variable (i.e., x(t)
+
+in §3) and let {x(i)}Ni=1 ⊂ Rd be the training data. For 
+
+t ∈ [0 , 1] , the conditional (bridge) distribution is 
+
+pt(z | x(i)) = N  z; γ(t)x(i), (1 − γ(t)) 2Id
+
+, (7) where γ : [0 , 1] → [0 , 1] is differentiable, γ(0) = 0 , and 
+
+γ(1) = 1 . Define the mixture density and responsibilities 
+
+ˆpt(z) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+pt(z | x(i)), λi(z, t ) := pt(z|x(i))
+
+PNj=1 pt(z|x(j))
+
+(8) 4A Kinetic-Energy Perspective of Flow Matching Training data FM generations KPE vs. Density Instantaneous Power Cumulative KPE 4 3 2 1 0 1 2 3 4                                                                                  
+
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 4432101234
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 40.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75
+> Total Energy
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> Density
+> Dense
+> Sparse 0.0 0.2 0.4 0.6 0.8
+> Time t
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> Instantaneous Power ||v(t)||²
+> Dense
+> Sparse 0.0 0.2 0.4 0.6 0.8
+> Time t
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> 1.4
+> Cumulative Energy E(t)  Dense
+> Sparse 432101234
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 4432101234
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 40.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5
+> Total Energy
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> Density
+> Dense
+> Sparse 0.0 0.2 0.4 0.6 0.8
+> Time t
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> Instantaneous Power ||v(t)||²
+> Dense
+> Sparse 0.0 0.2 0.4 0.6 0.8
+> Time t
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> Cumulative Energy E(t)  Dense
+> Sparse 432101234
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 4432101234
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 40.0 0.5 1.0 1.5 2.0
+> Total Energy
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> 1.4
+> 1.6
+> Density
+> Dense
+> Sparse 0.0 0.2 0.4 0.6 0.8
+> Time t
+> 0
+> 2
+> 4
+> 6
+> 8
+> Instantaneous Power ||v(t)||²
+> Dense
+> Sparse 0.0 0.2 0.4 0.6 0.8
+> Time t
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> Cumulative Energy E(t)  Dense
+> Sparse
+
+Figure 3. Inverse KPE–density relation on 2D synthetic datasets. Each row corresponds to one distribution ( dense sparse ,
+
+multiscale clusters , sandwich ). Columns (left →right): training data distribution, FM generations, KPE vs. density strata, instantaneous power ∥v(t)∥2 over time, cumulative KPE. Across datasets, trajectories ending in low-density regions accumulate higher KPE (Mann-Whitney U (MWU) test p < 10 −3); details in Appendix F.1. 
+
+(a) KPE vs. density KDE surface (b) High-energy re-gion highlights 
+
+Figure 4. High-KPE samples lie in low-density regions. (a) On CIFAR-10 at 150 steps, the log( density ) surface (left) is anti-aligned with KPE (right): high density corresponds to low energy. (b) The top 10% KPE samples (overlaid) cluster in low-density areas, consistent with Theorem 4.2. 
+
+with λi(z, t ) indicating the contribution of component i at 
+
+(z, t ). Let ˆu∗(z, t ) be the population-optimal velocity under the EFM regression objective (Lipman et al., 2022); when 
+
+γ(t) = t, it reduces to the closed-form expression in §5. 
+
+Lemma 4.1 (Score-Based Velocity Decomposition) . The closed-form empirical flow matching velocity admits the representation (Proof in Appendix B.3.) 
+
+ˆu∗(z, t ) = α(t) ∇z log ˆ pt(z) + β(t) z, (9) 
+
+where α(t) = ˙γ(t)σ2
+
+> t
+
+γ(t)(1 −γ(t)) and β(t) = ˙γ(t)
+
+γ(t) , with σ2
+
+t =(1 − γ(t)) 2.
+
+Theorem 4.2 (Energy-Density Relation) . Under the poste-rior dominance regime , at each (z, t ) there exists a domi-nant component i∗ such that λi∗ (z, t ) ≥ 1 − ε for some ε ∈
+
+(0 , 1/2) , the instantaneous kinetic energy is affinely bounded 
+
+Figure 5. Strong negative correlation between KPE and train-ing density. Scatter plot of KPE versus training log-density on CIFAR-10 ( N = 150 steps, n = 2 ,000 samples). Left: k-NN; right: KDE. Each point represents one generated sample; red line shows linear regression fit. Spearman correlations are strongly negative (k-NN: ρ = −0.65 ; KDE: ρ = −0.64 ), indicating a strong monotonic inverse relationship. 
+
+by the negative log-density (Proof in Appendix B.4.) :
+
+c1(t)  − log ˆ pt(z) − C′
+
+t ≤ ˆu∗(z, t ) 2
+
+≤ c2(t)  − log ˆ pt(z) + C′
+
+t.
+
+(10) 
+
+where the constants satisfy c1(t), c 2(t) = Θ( m(t)2σ2
+
+t ) with 
+
+m(t) = − ˙γ(t)/(1 − γ(t)) , and C′
+
+t ∈ R depends on log N ,
+
+− log(1 − ε), and geometric properties of the dominant component. Remark 4.3 (Explicit Constants and Integrated Form) . The constants in Theorem 4.2 can be chosen explicitly as 
+
+c1(t) = 12 m(t)2σ2
+
+t and c2(t) = 12 m(t)2σ2
+
+t (Appendix B, Theorem B.1). Integrating (10) along a trajectory z0→1 = {z(t)}1
+
+t=0 yields 5A Kinetic-Energy Perspective of Flow Matching 
+
+the kinetic path energy bound 
+
+E(z0→1) = Θ 
+
+Z 10
+
+  − log ˆ pt(z(t))  dt 
+
+
+
++ O(1) . (11) This formalizes the inverse relationship: trajectories travers-ing low-density regions accumulate higher kinetic energy. 
+
+5. When Energy Backfires: Too High-Energy Leads to Memorization 
+
+Section 4 showed higher KPE correlates with better quality. What if we push KPE to the extreme? Using the closed-form empirical flow matching (EFM) solution, the provably optimal velocity field, we find a paradox: we observe em-pirically that EFM reaches 3.9 × higher peak energy than neural fields, yet outputs near exact copies of training data. 
+
+Extreme energy drives memorization, not better generation. 
+
+5.1. Closed-Form Formula 
+
+Let ˆpdata = 1
+
+> n
+
+Pni=1 δx(i) denote the empirical data distri-bution. Under conditional flow matching with Gaussian bridges p(x | z = x(i), t ) = N (tx (i), (1 − t)2Id), the 
+
+empirically optimal velocity field that minimizes expected squared error admits the following closed-form expression (Bertrand et al., 2025) (see derivation in Appendix C): 
+
+ˆu⋆(x, t ) = 
+
+> n
+
+X
+
+> i=1
+
+λi(x, t ) x(i) − x
+
+1 − t ,λi(x, t ) = exp 
+
+
+
+− ∥x−tx (i)∥2
+
+> 2(1 −t)2
+
+Pnj=1 exp 
+
+
+
+− ∥x−tx (j)∥2
+
+> 2(1 −t)2
+
+ .
+
+(12) 
+
+5.2. Why EFM Has Extreme Energy 
+
+The 1/(1 − t) factor in Eq. (12) can create large terminal-time velocities. In particular, if a solution trajectory remains a fixed distance away from the training set on a terminal interval and the softmax weights λi(x(t), t ) concentrate on a unique atom, then ∥ˆu⋆(x(t), t )∥ ≳ (1 − t)−1 and the ter-minal contribution to KPE[ x] = 12
+
+R 10 ∥ ˙x(t)∥2 dt diverges. 
+
+Lemma 5.1 (Terminal energy blow-up, informal version) .
+
+Consider any trajectory segment t ∈ [1 − ε, 1) on which there is a constant c > 0 such that ∥x(t) − x(i)∥ ≥ c for all training samples {x(i)}ni=1 and the terminal posterior concentrates on a unique atom along the segment. Then 
+
+Z 11−ε
+
+∥ˆu⋆(x(t), t )∥2 dt = + ∞. (13) 
+
+Proposition 5.2 (Extreme kinetic energy, informal version) .
+
+The empirical closed-form field can exhibit terminal-time kinetic-energy blow-up; moreover any path that delays clos-ing a terminal gap must incur large terminal kinetic cost. (a) Unbounded terminal energy : For trajectories that do not approach any training point as t → 1 and along which the terminal posterior λi(x(t), t ) concentrates on a unique training atom, the terminal kinetic energy diverges: R 11−ϵ ∥ˆu⋆(x(t), t )∥2dt = + ∞.(b) Minimum terminal cost to close a non-vanishing gap :Any absolutely continuous trajectory with x(1) = x(i)
+
+satisfies R 1 
+
+> t
+
+∥ ˙x(s)∥2ds ≥ ∥ x(i) − x(t)∥22/(1 − t); hence, maintaining a non-vanishing terminal gap forces a blow-up in terminal kinetic cost. 
+
+Physical interpretation. EFM must hit a discrete training atom at t = 1 ; otherwise Lemma 5.1 implies that terminal kinetic energy diverges due to the 1/(1 − t) scaling (see Appendix D for proofs of Lemma 5.1 and Proposition 5.2). Thus exact matching requires a terminal “impulse” (an en-ergy spike). 
+
+5.3. Experimental Validation 
+
+We compare Empirical FM (Eq. (12) ) with Vanilla FM 
+
+(the standard neural FM baseline that learns the velocity field with a neural network) using the same ODE solver (midpoint, 100 steps); Empirical FM uses Eq. (12) with 100 nearest neighbors. 5.3.1. S YNTHETIC 2D D ATASETS 
+
+We test three density-stratified datasets ( dense sparse ,
+
+multiscale clusters , sandwich ); Figure 6 plots cumulative energy (left) and instantaneous power ∥v(t)∥2
+
+(right). The power curves reveal terminal spikes emerging at 
+
+t > 0.50 –0.70 , exactly as predicted by Lemma 5.1. Empiri-cal FM achieves 1.3 ×–3.9 × higher peak power than Vanilla FM (which exhibits no spikes), with corresponding KPE increases of 30%–50% across datasets. 5.3.2. C ELEB A-HQ T RAINING DYNAMICS 
+
+We track CelebA 64 ×64 training dynamics as a U-Net FM model approaches the closed-form optimum, measuring FID, Fmem , and average KPE across checkpoints. We train on a subset of 1,024 images, following (Bonnaire et al., 2025). As shown in Figure 7a, FID improves early (from 
+
+∼ 280 to ∼ 15 ) and then plateaus after 10 4 iterations, while both KPE and Fmem continue to rise. Notably, Fmem in-creases sharply after 10 4 and reaches 98% by 2M iterations, and KPE keeps increasing to 540, indicating that higher kinetic energy correlates with memorization rather than fur-ther quality gains. Figure 7b provides qualitative evidence: each panel pairs generated samples (left) with their nearest training neighbors (right). Early checkpoints show diverse generations with noticeable gaps to neighbors, whereas late checkpoints produce near-copies whose fine details closely match specific training images, consistent with rising Fmem .6A Kinetic-Energy Perspective of Flow Matching Cumulative Energy Instantaneous Power 0.0 0.2 0.4 0.6 0.8     
+
+> Time t
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> Cumulative Energy E(t)  Vanilla FM
+> Empirical FM 0.0 0.2 0.4 0.6 0.8
+> Time t
+> 5
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> Instantaneous Power ||v(t)||²
+> Vanilla FM
+> Empirical FM
+
+dense sparse 0.0 0.2 0.4 0.6 0.8     
+
+> Time t
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> Cumulative Energy E(t)  Vanilla FM
+> Empirical FM 0.0 0.2 0.4 0.6 0.8
+> Time t
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> 12
+> Instantaneous Power ||v(t)||²
+> Vanilla FM
+> Empirical FM
+
+multiscale clusters 0.0 0.2 0.4 0.6 0.8     
+
+> Time t
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> Cumulative Energy E(t)  Vanilla FM
+> Empirical FM 0.0 0.2 0.4 0.6 0.8
+> Time t
+> 5
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> Instantaneous Power ||v(t)||²
+> Vanilla FM
+> Empirical FM
+
+sandwich 
+
+Figure 6. Empirical FM shows terminal-time power spikes de-spite optimal regression loss. Across three synthetic datasets, Em-pirical FM develops late-time spikes at t > 0.50 –0.70 and reaches 
+
+1.3 ×–3.9 × higher peak power than Vanilla FM (Lemma 5.1). Left: cumulative kinetic energy 12
+
+R t 
+
+> 0
+
+∥v(τ )∥2dτ ; Right: instantaneous power ∥v(t)∥2. More visualizations are provided in Appendix G. 
+
+More visualizations are provided in Appendix G. 
+
+6. Kinetic Trajectory Shaping 
+
+Section 5 revealed the energy paradox: extreme terminal kinetic energy causes memorization rather than better gen-eration. How can we leverage the positive KPE-semantic correlation (§4) while avoiding terminal singularities (§5)? 
+
+We propose Kinetic Trajectory Shaping (KTS) , a training-free method for two-phase energy modulation. 
+
+6.1. A Two-Phase Strategy for Escaping Memorization The core insight: Two distinct kinetic regimes. Empirically, early-time kinetic effort correlates with stronger semantics (§4), while late-time terminal power concentration (e.g., 
+
+1/(1 − t) scaling) increases memorization risk (§5); thus we boost early and damp late .
+
+Kinetic Trajectory Shaping (KTS): rescales velocity via time-dependent gain η(t):
+
+˜v(xt, t ) = η(t) · vθ (xt, t ), (14) with phase-specific modulation: 
+
+η(t) = 
+
+(
+
+1 + α(t), t < τ split (Kinetic Launch) 
+
+1 − β(t), t ≥ τsplit (Kinetic Soft-Landing) (15) 
+
+Kinetic Launch ( α > 0) boosts early velocity to raise KPE, pushing samples away from high-density regions toward 10 3 10 4 10 5 10 6
+
+> Training Iterations
+> 0
+> 50
+> 100
+> 150
+> 200
+> 250
+> 300
+> 350
+> FID Score
+> FID
+> Fmem
+> Kinetic Energy
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Memorization Fraction (%)
+> 480
+> 490
+> 500
+> 510
+> 520
+> 530
+> 540
+> 550
+> 560
+> Kinetic Energy
+
+(a) Energy-memorization cor-relation. FID, Fmem , and aver-age KPE across training itera-tions. As the model approaches the closed-form optimum, both memorization and KPE increase in tandem. 
+
+(b) Visual evidence. Left: Early checkpoint (low KPE, high di-versity). Right: Late check-point (high KPE, memoriza-tion). Each shows generated samples (left half) and nearest training neighbors (right half). 
+
+Figure 7. Energy increases lead to memorization on CelebA. 
+
+(a) KPE and Fmem rise throughout training, whereas FID plateaus late. (b) Nearest-neighbor pairs show diverse samples early but near-copies at late checkpoints. 
+
+Algorithm 1 Kinetic Trajectory Shaping (KTS) 
+
+1: Input: vθ , x0 ∼ N (0 , I ), α0, β 0, k, τ split , ∆t
+
+2: Output: x1
+
+3: for t = 0 to 1 with step ∆t do 
+
+4: vt ← vθ (xt, t ) // base velocity 5: if t < τ split then 
+
+6: η(t) ← 1 + α0 · (1 − t/τ split ) // launch 7: else 
+
+8: η(t) ← 1 − β0 · (exp( k(t − τsplit )) − 1) // soft-landing 9: end if 
+
+10: xt+∆ t ← xt + η(t) vt ∆t // Euler step 11: end for 
+
+12: return x1
+
+sparse, semantically rich areas. Kinetic Soft-Landing ( β > 
+
+0) damps late velocity to curb the 1/(1 − t) divergence, pre-venting terminal singularities and memorization. Launch: 
+
+we use a linear decay: α(t) = α0 · max 
+
+
+
+0, 1 − tτsplit 
+
+
+
+, t ∈
+
+[0 , τ split ]. Soft-Landing: we use exponential damping: 
+
+β(t) = β0 · [exp ( k · (t − τsplit )) − 1] , t ∈ [τsplit , 1] . We set τsplit = 0 .6 (aligned with the spike onset in Figure 6) and 
+
+k = 3 . Algorithm 1 outlines the implementation. 
+
+6.2. Experiments Setup. We validate KTS on CelebA at 32 ×32 resolution (1024 grayscale training images similar to (Bonnaire et al., 2025)), and evaluate generation quality and memorization under a controlled setup: we train conditional flow matching models (Lipman et al., 2022) with a U-Net (32 base chan-nels; 3 resolution levels with attention at higher resolutions) using Adam ( 10 −4), batch size 512, for 2 × 10 6 iterations; sample with Euler ODE solver (100 function evaluations); compare baseline FM and KTS (phase split τ = 0 .6) across hyperparameters; and report FID (held-out reference statis-tics) plus memorization fraction Fmem computed via k-NN gap ratio with τgap = 1 /3.7A Kinetic-Energy Perspective of Flow Matching 
+
+Table 3. Performance comparison on CelebA dataset (30K steps). We compare our method (KTS) with varying hyperparame-ters against the FM baseline. Bold indicates the best result. 
+
+Method Hyperparams Metrics 
+
+α0 β0 FID@10k ↓ Fmem ↓ (%) KPE early / KPE late 
+
+FM (Baseline) 0.00 0.00 16.68 37.34 310.6 / 212.8 KTS (Ours) 0.00 0.01 35.04 30.17 311.7 / 202.1 0.00 0.02 86.56 19.36 311.7 / 188.9 0.01 0.00 11.30 37.44 312.8 / 211.1 0.02 0.00 11.27 36.78 315.8 / 211.4 0.01 0.01 14.35 31.22 313.7 / 201.3 
+
+Table 4. Performance comparison on ImageNet 256 dataset. We compare our method (KTS) with varying hyperparameters against the FM baseline. Bold indicates the best result.                                               
+
+> Method Hyperparams Metrics
+> α0β0FID@10K ↓CLIP ↑Prec. ↑Rec. ↑KPE early / KPE late
+> FM (Baseline) 0.00 0.00 11.70 24.11 0.728 0.655 1081.0 / 470.0 KTS (Ours) 0.00 0.01 11.84 24.10 0.728 0.653 1081.0 / 464.4 0.00 0.05 12.45 24.05 0.721 0.657 1081.0 / 442.3 0.01 0.00 11.61 24.16 0.730 0.648 1094.5 / 470.0 0.05 0.00 11.59 24.34 0.731 0.630 1149.8 / 470.0 0.01 0.01 11.63 24.20 0.729 0.653 1094.5 / 464.4
+
+Results. Table 3 reports CelebA results at 30K steps. Com-pared with FM (FID@10k 16.68, Fmem 37.34%), KTS offers a tunable trade-off via α0 and β0: increasing β0 reduces memorization (lowest Fmem 19.36% at α0=0 , β 0=0 .02 )but can degrade quality (FID@10k 86.56), whereas in-creasing α0 improves quality (best FID@10k 11.27 at 
+
+α0=0 .02 , β 0=0 ) with little change in Fmem ; enabling both (α0=β0=0 .01 ) yields a balanced point (FID@10k 14.35, 
+
+Fmem 31.22%). Table 4 summarizes results on ImageNet-256. KTS matches or improves FM, while offering a tunable precision–recall trade-off. Increasing α0 improves quality and alignment: α0=0 .05 gives the best FID ( 11.59 ), CLIP (24.34 ), and precision ( 0.731 ), but lowers recall (0.630). Increasing β0 improves coverage: β0=0 .05 achieves the highest recall ( 0.657 ) with slightly worse FID (12.45) and precision (0.721). Enabling both ( α0=β0=0 .01 ) yields a balanced point (FID 11.63, CLIP 24.20), consistent with KPE trends: α0 increases KPE early and β0 reduces KPE late .
+
+Ablation study on α0 over training iterations. Figure 8 shows the training-time dynamics of ∆FID and ∆Fmem for different α0 values (with β0=0 ). We report per-iteration 
+
+differences relative to the FM baseline at the same iteration (baseline is 0). Negative ∆FID indicates better sample qual-ity (a 27.6–28.3% reduction vs. FM), and negative ∆Fmem 
+
+indicates reduced memorization. Increasing α0 improves FID early and consistently, with gains that gradually sat-urate, while ∆Fmem stays near zero after the early phase (small early fluctuations likely reflect estimator noise). Over-all, α0 mainly accelerates quality acquisition; β0 is needed for stronger memorization suppression. 
+
+Ablation study on β0 over training iterations. Figure 9 10 3 10 4 10 5 10 6    
+
+> Training Iterations
+> 40
+> 30
+> 20
+> 10
+> 0
+> FID (%)
+> -27.6%
+> -28.3%
+> KTS ( =0.01, =0.00)
+> KTS ( =0.02, =0.00)
+
+(a) FID improvement with α10 3 10 4 10 5 10 6     
+
+> Training Iterations
+> 40
+> 30
+> 20
+> 10
+> 0
+> 10
+> 20
+> 30
+> F_mem (%)
+> -0.1%
+> -0.1%
+> KTS ( =0.01, =0.00)
+> KTS ( =0.02, =0.00)
+
+(b) Memorization risk with α
+
+Figure 8. Alpha ablation on α0 over training iterations. We plot the relative changes ∆FID and ∆Fmem with respect to the FM baseline evaluated at the same training iteration (baseline is 0). Negative ∆FID indicates improved sample quality, while positive 
+
+∆Fmem indicates increased memorization. 0 200K 400K 600K 800K 1.0M 1.2M 1.4M 1.6M     
+
+> Training Iterations
+> 0
+> 100
+> 200
+> 300
+> 400
+> FID (%)
+> -31.0%
+> 108.6%
+> KTS ( =0.00, =0.01)
+> KTS ( =0.00, =0.02)
+
+(a) FID change with β10 3 10 4 10 5 10 6     
+
+> Training Iterations
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Memorization Fraction (%)  Baseline
+> KTS ( =0.00, =0.01)
+> KTS ( =0.00, =0.02)
+
+(b) Fmem reduction with β
+
+Figure 9. Beta ablation on β0 over training iterations. We plot the relative changes ∆FID and ∆Fmem with respect to the FM baseline evaluated at the same training iteration (baseline is 0). While excessively high β0 can hurt sample quality (positive 
+
+∆FID), increasing β0 generally reduces memorization (negative 
+
+∆Fmem ), revealing a quality–memorization trade-off that requires careful tuning. 
+
+shows the training-time dynamics of ∆FID and ∆Fmem for different β0 (α0=0 ). We report per-iteration differences relative to the FM baseline at the same iteration (baseline is 0). Increasing β0 yields a clear and sustained reduction in memorization, with the gap widening in the mid-to-late regime (more negative ∆Fmem ). However, too large β0 can over-damp the dynamics and hurt quality: β0=0 .02 reduces memorization the most but makes ∆FID positive, while 
+
+β0=0 .01 keeps both ∆FID and ∆Fmem negative, improving quality and memorization simultaneously. 
+
+7. Conclusions and Limitations 
+
+For flow-based generative models, sampling trajectories (not just endpoints) provide a direct diagnostic of sample difficulty and failure modes. We introduce Kinetic Path Energy (KPE) , an action-like per-sample scalar computed along the ODE path, to quantify the accumulated kinetic effort along each generation trajectory. Empirically, higher KPE is associated with samples of higher semantic fidelity and with trajectories that end in lower-density regions of the data manifold, but the relationship is not monotone : push-ing energy to extremes can instead induce memorization. Concretely, our analysis of the closed-form empirical flow matching solution reveals a structural terminal-time singu-lar component that produces late-time energy spikes and collapses trajectories toward near-copies of training exam-ples. This Goldilocks principle motivates Kinetic Trajectory 
+
+8A Kinetic-Energy Perspective of Flow Matching 
+
+Shaping (KTS) , a lightweight, training-free inference-time procedure that redistributes energy over time (boost early motion, damp late motion) to improve quality while mitigat-ing memorization. Our study focuses on ODE-based flows and specific theoretical regimes; extending energy-based diagnostics and controls to diffusion models and more gen-eral stochastic samplers is an important direction for future work. 
+
+Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning, and more specifically, the theoretical understanding of implicit regularization as a tool for struc-tured recovery problems. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+Acknowledgements 
+
+This work was supported by the Wallenberg AI, Au-tonomous Systems and Software Program (WASP) funded by the Knut and Alice Wallenberg Foundation. We acknowl-edge the computational resources provided by the Alvis cluster. 
+
+References 
+
+Albergo, M. S. and Vanden-Eijnden, E. Stochastic inter-polants: A unifying framework for flows and diffusions. 
+
+arXiv preprint arXiv:2303.08797 , 2023. Baptista, R., Dasgupta, A., Kovachki, N. B., Oberai, A., and Stuart, A. M. Memorization and regularization in genera-tive diffusion models. arXiv preprint arXiv:2501.15785 ,2025. Benamou, J.-D. and Brenier, Y. A computational fluid me-chanics solution to the monge-kantorovich mass transfer problem. Numerische Mathematik , 84(3):375–393, 2000. Bertrand, Q., Gagneux, A., Massias, M., and Emonet, R. On the closed-form of flow matching: Generalization does not arise from target stochasticity. arXiv preprint arXiv:2506.03719 , 2025. Bonnaire, T., Urfin, R., Biroli, G., and M ´ezard, M. Why diffusion models don’t memorize: The role of implicit dynamical regularization in training. In Advances in Neural Information Processing Systems , 2025. NeurIPS 2025. Chen, R. T., Rubanova, Y., Bettencourt, J., and Duvenaud, D. K. Neural ordinary differential equations. In Advances in neural information processing systems , volume 31, 2018. Du, Y., Mao, J., and Tenenbaum, J. B. Learning iterative reasoning through energy diffusion. In International Con-ference on Machine Learning , pp. 11764–11776. PMLR, 2024. Feynman, R. P. and Hibbs, A. R. Quantum Mechanics and Path Integrals . McGraw-Hill, New York, 1965. Finlay, C., Jacobsen, J.-H., Nurbekyan, L., and Oberman, A. M. How to train your neural ode. arXiv preprint arXiv:2002.02798 , 2, 2020. Gao, W. and Li, M. How do flow matching models mem-orize and generalize in sample data subspaces? arXiv preprint arXiv:2410.23594 , 2024. Goldstein, H., Poole, C. P., and Safko, J. Classical mechan-ics , volume 2. Addison-wesley Reading, MA, 1950. Hertrich, J., Chambolle, A., and Delon, J. On the relation between rectified flows and optimal transport. arXiv preprint arXiv:2505.19712 , 2025. Heusel, M., Ramsauer, H., Unterthiner, T., Nessler, B., and Hochreiter, S. Gans trained by a two time-scale update rule converge to a local nash equilibrium. In Advances in Neural Information Processing Systems , volume 30, 2017. Hirono, Y., Tanaka, A., and Fukushima, K. Understanding diffusion models by feynman’s path integral. In Inter-national Conference on Machine Learning , pp. 18324– 18351. PMLR, 2024. Ho, J. and Salimans, T. Classifier-free diffusion guidance. 
+
+arXiv preprint arXiv:2207.12598 , 2022. Ikeda, K., Uda, T., Okanohara, D., and Ito, S. Speed-accuracy relations for diffusion models: Wisdom from nonequilibrium thermodynamics and optimal transport. 
+
+Physical Review X , 15(3):031031, 2025. Jayasumana, S., Ramalingam, S., Veit, A., Glasner, D., Chakrabarti, A., and Kumar, S. Rethinking fid: Towards a better evaluation metric for image generation. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 9307–9315, 2024. Kunkel, L. Distribution estimation via flow matching with Lipschitz guarantees. arXiv preprint arXiv:2509.02337 ,2025. Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. Lipman, Y., Havasi, M., Holderrieth, P., Shaul, N., Le, M., Karrer, B., Chen, R. T., Lopez-Paz, D., Ben-Hamu, H., and Gat, I. Flow matching guide and code. arXiv preprint arXiv:2412.06264 , 2024. 9A Kinetic-Energy Perspective of Flow Matching 
+
+Liu, X., Gong, C., and Liu, Q. Flow straight and fast: Learning to generate and transfer data with rectified flow. 
+
+arXiv preprint arXiv:2209.03003 , 2022. Ma, N., Goldstein, M., Albergo, M. S., Boffi, N. M., Vanden-Eijnden, E., and Xie, S. Sit: Exploring flow and diffusion-based generative models with scalable interpolant trans-formers. In European Conference on Computer Vision ,pp. 23–40. Springer, 2024. Mena, G., Kuchibhotla, A. K., and Wasserman, L. Sta-tistical properties of rectified flow. arXiv preprint arXiv:2511.03193 , 2025. Pidstrigach, J. Score-based generative models detect mani-folds. Advances in Neural Information Processing Sys-tems , 35:35852–35865, 2022. Pooladian, A.-A., Ben-Hamu, H., Domingo-Enrich, C., Amos, B., Lipman, Y., and Chen, R. T. Multisample flow matching: Straightening flows with minibatch cou-plings. In International Conference on Machine Learning ,pp. 28100–28127. PMLR, 2023. Scarvelis, C., Borde, H. S. d. O., and Solomon, J. Closed-form diffusion models. arXiv preprint arXiv:2310.12395 ,2023. Seifert, U. Stochastic thermodynamics, fluctuation theorems and molecular machines. Reports on Progress in Physics ,75(12):126001, 2012. Shaul, N., Chen, R. T., Nickel, M., Le, M., and Lipman, Y. On kinetic optimal probability paths for generative mod-els. In International Conference on Machine Learning ,pp. 30883–30907. PMLR, 2023. Song, J., Meng, C., and Ermon, S. Denoising diffusion implicit models. arXiv preprint arXiv:2010.02502 , 2020. Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Er-mon, S., and Poole, B. Score-based generative modeling through stochastic differential equations. International Conference on Learning Representations , 2021. Tong, A., Fatras, K., Malkin, N., Huguet, G., Zhang, Y., Rector-Brooks, J., Wolf, G., and Bengio, Y. Improv-ing and generalizing flow-based generative models with minibatch optimal transport. Transactions on Machine Learning Research , pp. 1–34, 2024. Villani, C. et al. Optimal transport: old and new , volume 338. Springer, 2008. Wald, C. and Steidl, G. Flow matching: Markov kernels, stochastic processes and transport plans. Variational and Information Flows in Machine Learning and Optimal Transport , 2025. Wan, Z., Wang, Q., Mishne, G., and Wang, Y. Elucidat-ing flow matching ode dynamics via data geometry and denoisers. In Forty-second International Conference on Machine Learning .Xu, M., Geffner, T., Kreis, K., Nie, W., Xu, Y., Leskovec, J., Ermon, S., and Vahdat, A. Energy-based diffusion language models for text generation. In The Thirteenth International Conference on Learning Representations ,2024. Ye, Z., Zhu, Q., Tao, M., and Chen, M. Provable separations between memorization and generalization in diffusion models. arXiv preprint arXiv:2511.03202 , 2025. Yoon, T., Choi, J. Y., Kwon, S., and Ryu, E. K. Diffusion probabilistic models generalize when they fail to memo-rize. In ICML 2023 workshop on structured probabilistic inference and generative modeling , 2023. Yu, J., Wang, Y., Zhao, C., Ghanem, B., and Zhang, J. Free-dom: Training-free energy-guided conditional diffusion model. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 23117–23127. IEEE, 2023. Zhang, Q. and Chen, Y. Path integral sampler: a stochastic control approach for sampling. International Conference on Learning Representations , 2023. Zhou, Z. and Liu, W. An error analysis of flow matching for deep generative modeling. In Forty-second International Conference on Machine Learning .10 A Kinetic-Energy Perspective of Flow Matching 
+
+Appendix A. Related Work 
+
+In this section, we discuss related work and position our paper relative to this. 
+
+Flow Matching and Kinetic Views of Generative Transport. Flow matching formulates generative modeling as learning a time-dependent velocity field whose induced ODE deterministically transports samples from a base distribution to the data distribution (Lipman et al., 2022; Liu et al., 2022; Lipman et al., 2024; Wald & Steidl, 2025). This trajectory-based formulation places flow matching within the broader perspective of dynamical measure transport , where probability measures evolve under continuity equations driven by velocity fields. In optimal transport, the classical Benamou–Brenier formulation characterizes feasible transport paths as solutions of a dynamic optimization problem that minimizes an integrated kinetic energy subject to mass conservation (Benamou & Brenier, 2000; Villani et al., 2008). While flow matching does not explicitly enforce optimality with respect to such action functionals (Hertrich et al., 2025), it induces a learned transport dynamics that maps a base distribution to the data distribution through continuous-time particle motion. Error bounds (Zhou & Liu) and statistical guarantees (Kunkel, 2025; Mena et al., 2025) for flow matching have also been studied recently. This connection highlights both the relevance and the limitation of existing energy-based analyses. Recent work revisits action and kinetic principles in the context of generative modeling by studying kinetically optimal or constrained probability paths (Shaul et al., 2023), and related perspectives from nonequilibrium thermodynamics and path-integral formulations interpret diffusion and transport dynamics through energetic and variational lenses (Seifert, 2012; Hirono et al., 2024; Ikeda et al., 2025). However, these approaches primarily characterize distribution-level or optimal energetic properties. In contrast, trained flow matching models realize specific, sample-dependent transport trajectories whose kinetic behavior is neither optimized nor directly constrained. This gap motivates our focus on analyzing the realized kinetic effort accumulated along individual generation trajectories. 
+
+Memorization and Generalization in Flow-Based Generative Models. A growing body of work investigates memoriza-tion and generalization phenomena in modern generative models, including both diffusion-based and flow-based approaches. Several studies analyze memorization through the lens of implicit regularization, dynamical stability, and generalization theory, characterizing when generative models interpolate or collapse to training data (Baptista et al., 2025; Bonnaire et al., 2025; Ye et al., 2025; Yoon et al., 2023). Complementary work emphasizes the role of data geometry, score structure, or closed-form dynamics in shaping model behavior, revealing how learned generative dynamics interact with low-dimensional manifolds and discrete datasets (Pidstrigach, 2022; Gao & Li, 2024; Bertrand et al., 2025; Wan et al.). While these analyses provide important statistical and structural insights, they largely abstract away the kinematic behavior of the sampling process itself. In particular, they do not directly characterize how individual sampling trajectories evolve in time, nor how energetic properties of these trajectories contribute to memorization. Our work complements this literature by identifying a trajectory-level mechanism specific to empirical flow matching: the optimal velocity field exhibits a structural terminal-time singularity. This singularity concentrates kinetic energy near the end of sampling, forcing trajectories to collapse onto training samples and inducing memorization, even in the absence of model approximation error. This perspective reframes memorization as a dynamical consequence of how kinetic effort is allocated along the generation path. 
+
+Trajectory-Level Diagnostics and Inference-Time Control. Beyond training objectives, several approaches aim to improve generation quality or controllability by modifying inference dynamics without retraining. Examples include classifier-free guidance and energy-guided conditional generation, which bias sampling by scaling scores, adjusting likelihood contributions, or introducing auxiliary energy terms (Ho & Salimans, 2022; Yu et al., 2023; Xu et al., 2024; Du et al., 2024). Such methods provide powerful controls, but they typically operate through local modifications of scores or endpoint objectives, offering limited visibility into the global dynamics of the sampling trajectory. In contrast, our approach is explicitly trajectory-centric. We introduce Kinetic Path Energy as a path-level diagnostic that quantifies the kinetic effort accumulated along each individual generation trajectory. This diagnostic reveals systematic relationships between energy, semantic fidelity, and manifold rarity that are not captured by endpoint-only metrics. Building on these insights, we propose Kinetic Trajectory Shaping , a simple yet effective training-free inference strategy that directly modulates the velocity field over time, redistributing kinetic effort across different phases of sampling. By encouraging exploration early and suppressing terminal energy blow-up late, this framework enables phase-specific control of generation dynamics and provides a unified mechanistic view of sample quality, rarity, and memorization in flow-based models. 11 A Kinetic-Energy Perspective of Flow Matching 
+
+B. KPE and Data Density 
+
+B.1. Preliminaries and Main Result 
+
+B.1.1. C ONNECTION TO MAIN PAPER 
+
+This appendix establishes the theoretical basis for the KPE-density relationship observed in §4. The main result, Theorem B.1, quantifies how instantaneous energy ∥ˆu∗(z, t )∥2 relates to negative log-density − log ˆ pt(z) under posterior dominance. We develop the framework for general γ(t) but focus on the linear case γ(t) = t.B.1.2. N OTATION 
+
+We collect here all notation used throughout this appendix. For clarity, we present the key symbols in tabular form: 
+
+Symbol Definition 
+
+{x(i)}Ni=1 Training data points in Rd
+
+γ(t) Interpolation schedule, γ : [0 , 1] → [0 , 1] with γ(0) = 0 , γ(1) = 1 ˙γ(t) Time derivative of γ(t)
+
+x0 Source random variable, x0 ∼ N (0 , I d)
+
+zt Conditional bridge: zt = (1 − γ(t)) x0 + γ(t)x(i)
+
+pt(z | x(i)) Conditional distribution at time t: N (z; μi(t), σ 2 
+
+> t
+
+Id)
+
+μi(t) Mean of i-th component: μi(t) = γ(t)x(i)
+
+σ2 
+
+> t
+
+Variance: σ2 
+
+> t
+
+= (1 − γ(t)) 2
+
+ˆpt(z) Intermediate mixture density: 1
+
+> N
+
+PNi=1 pt(z | x(i))
+
+λi(z, t ) Posterior responsibility: pt(z|x(i))P 
+
+> jpt(z|x(j))
+
+ˆu∗(z, t ) Empirical optimal velocity field 
+
+α(t) Velocity field coefficient: ˙γ(t)σ2
+
+> t
+> γ(t)(1 −γ(t))
+
+β(t) Velocity field coefficient: ˙γ(t)
+
+> γ(t)
+
+m(t) Combined coefficient: m(t) = β(t) − α(t)
+
+> σ2
+> t
+
+= − ˙γ(t)1−γ(t)
+
+B.1.3. M AIN THEOREM 
+
+Before proceeding to the detailed derivation, we state our main theoretical result, which establishes the quantitative relationship between instantaneous energy and mixture density. 
+
+Theorem B.1 (Instantaneous Energy vs. Mixture Density) . Consider a closed-form flow matching model with intermediate mixture density 
+
+ˆpt(z) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+pt(z | x(i)). (16) 
+
+Fix t ∈ (0 , 1) and z ∈ Rd. Suppose there exists an index i∗ and a parameter ε ∈ (0 , 1/2) such that 
+
+λi∗ (z, t ) := pt(z | x(i∗))
+
+PNj=1 pt(z | x(j)) ≥ 1 − ε. (17) 
+
+Then there exist constants c′
+
+> 1
+
+(t), c ′
+
+> 2
+
+(t) > 0 and C′ 
+
+> t
+
+∈ R, depending only on t, ε, the dimension d, the sample size N , and the data {x(i)}, such that 
+
+c′
+
+> 1
+
+(t)   − log ˆ pt(z) − C′ 
+
+> t
+
+≤ ˆu∗(z, t ) 2 ≤ c′
+
+> 2
+
+(t)   − log ˆ pt(z) + C′
+
+> t
+
+. (18) 
+
+In particular, ∥ˆu∗(z, t )∥2 and − log ˆ pt(z) are monotone equivalent up to multiplicative and additive constants. 
+
+12 A Kinetic-Energy Perspective of Flow Matching 
+
+Moreover, the constants can be chosen explicitly as: 
+
+c′
+
+> 1
+
+(t) = 12 m(t)2σ2 
+
+> t
+
+, c′
+
+> 2
+
+(t) = 12 m(t)2σ2 
+
+> t
+
+, (19) 
+
+where m(t) = − ˙γ(t)1−γ(t) .
+
+The proof of this theorem is deferred to §B.4.1, after we establish the necessary technical lemmas. 
+
+Remark: Theorem B.1 shows that the instantaneous kinetic energy ∥ˆu∗(z, t )∥2 is proportional to the negative log-density 
+
+− log ˆ pt(z) up to multiplicative constants of order Θ(1) and additive constants. This implies that regions of low density (large − log ˆ pt(z)) correspond to regions of high instantaneous energy, and vice versa. Integrating this relationship along a trajectory yields the connection between total kinetic path energy and time-averaged negative log-density, which forms the theoretical basis for Finding 2 in the main paper. B.1.4. P ROOF ROADMAP 
+
+We now outline the overall proof strategy for Theorem B.1 and describe the role of each intermediate lemma. Understanding this roadmap will help the reader navigate the technical derivations that follow. 
+
+Proof Strategy. The core challenge is to establish a quantitative relationship between the instantaneous energy ∥ˆu∗(z, t )∥2
+
+and the negative log-density − log ˆ pt(z) when one mixture component dominates at (z, t ) (i.e., λi∗ (z, t ) ≥ 1 − ε for small 
+
+ε). Our strategy proceeds in four steps: 1. Express velocity in terms of mixture score (Lemma B.2) We first derive a closed-form expression for the optimal velocity field ˆu∗(z, t ) in terms of the mixture score ∇z log ˆ pt(z).Specifically, we show that 
+
+ˆu∗(z, t ) = α(t) ∇z log ˆ pt(z) + β(t) z, (20) where α(t) and β(t) are explicit functions of γ(t). This decomposition is the foundation for all subsequent analysis. 2. Local Gaussian approximation for the mixture density (Lemma B.3) Under the posterior dominance condition, we show that the mixture density ˆpt(z) can be locally approximated by a single dominant Gaussian component. Specifically, we establish that 
+
+− log ˆ pt(z) = 12σ2
+
+> t
+
+z − μi∗ (t) 2 + C(0)  
+
+> t
+
++ Rt(z), (21) where C(0)  
+
+> t
+
+is a constant depending only on t, d, and N , and the remainder Rt(z) is quantitatively bounded in terms of the dominance parameter ε.This lemma establishes the relationship between − log ˆ pt(z) and the quadratic form At(z) := 12σ2
+
+> t
+
+∥z − μi∗ (t)∥2.3. Decompose mixture score into dominant component plus remainder (Lemma B.4) Similarly, we decompose the mixture score as 
+
+∇z log ˆ pt(z) = − 1
+
+σ2
+
+> t
+
+ z − μi∗ (t) + rt(z), (22) where rt(z) is a remainder term that is explicitly bounded in terms of ε and the spread of mixture means. 4. Establish energy bounds in terms of the dominant quadratic form (Lemma B.5) Combining Lemma B.2 and Lemma B.4, we derive explicit upper and lower bounds for the instantaneous energy ∥ˆu∗∥2
+
+in terms of the quadratic form At(z):
+
+c1(t) At(z) − C−(t) ≤ ˆu∗(z, t ) 2 ≤ c2(t) At(z) + C+(t), (23) with explicit constants c1(t), c 2(t), C ±(t).Finally, we combine Lemma B.3 (relating At(z) to − log ˆ pt(z)) and Lemma B.5 (relating ∥ˆu∗∥2 to At(z)) to obtain Theorem B.1, which directly relates ∥ˆu∗∥2 to − log ˆ pt(z).13 A Kinetic-Energy Perspective of Flow Matching 
+
+Organization. The remainder of this section is organized as follows: • §B.2: We define the closed-form linear bridge and intermediate mixture density. • §B.3: We derive the velocity-score representation (Lemma B.2). • §B.4: We establish the energy-density relationship through three technical lemmas (Lemmas B.3, B.4, B.5) and prove the main theorem (Theorem B.1). • §B.5: We specialize the results to the linear bridge γ(t) = t and derive particularly simple explicit constants. With this roadmap in place, we now proceed to the detailed technical development. 
+
+B.2. Closed-Form Linear Bridge and Intermediate Mixture 
+
+We now establish the basic setup by defining the conditional bridge and the intermediate mixture density that will be analyzed throughout this appendix. Let {x(i)}Ni=1 ⊂ Rd be the training data and let x0 ∼ N (0 , I d) be a random variable with the source distribution. For each data point x(i), we consider the linear conditional bridge 
+
+zt = (1 − γ(t)) x0 + γ(t) x(i), t ∈ [0 , 1] , (24) where γ : [0 , 1] → [0 , 1] is differentiable with γ(0) = 0 and γ(1) = 1 . Note that the analysis that follows could also be extended to the more general case of zt = β(t)x0 + γ(t)x(i) for some t-differentiable β(t) and γ(t) satisfying 
+
+β(0) = γ(1) = 1 , β(1) = γ(0) = 0 .For fixed t and x(i), the random variable zt is an affine transformation of x0 and thus follows a Gaussian distribution: 
+
+pt(z | x(i)) = N z; μi(t), Σt
+
+, μi(t) = γ(t)x(i), Σt = σ2 
+
+> t
+
+Id, σ 2 
+
+> t
+
+= (1 − γ(t)) 2. (25) Averaging over the empirical data distribution ˆpdata = 1
+
+> N
+
+P 
+
+> i
+
+δx(i) yields the intermediate mixture 
+
+ˆpt(z) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+pt(z | x(i)). (26) Thus ˆpt is exactly the marginal density of zt under the model where i is sampled uniformly from {1, . . . , N } and x0 ∼N (0 , I d).We denote by ˙γ(t) the time derivative of γ(t) and use σ2 
+
+> t
+
+= (1 − γ(t)) 2 throughout. 
+
+B.3. Empirical Optimal Velocity and the Mixture Score 
+
+We first establish the optimal flow-matching velocity field ˆu∗(z, t ) in terms of the mixture score ∇z log ˆ pt(z). This lemma provides the foundation for all subsequent analysis, as it decomposes the velocity field into a score term (weighted by α(t))and a drift term (weighted by β(t)). The explicit representation derived here will be essential for relating instantaneous energy to density in later sections. Consider the linear bridge (24) and the intermediate mixture (26). For t ∈ (0 , 1) with γ(t) ∈ (0 , 1) and ˙γ(t)̸ = 0 , define 
+
+λi(z, t ) = P(i | z, t ) = pt(z | x(i))
+
+PNj=1 pt(z | x(j)) , (27) the posterior responsibilities of the mixture components. 
+
+Lemma B.2 (Closed-form optimal velocity) . The empirical optimal flow-matching velocity field ˆu∗(z, t ) can be written as 
+
+ˆu∗(z, t ) = α(t) ∇z log ˆ pt(z) + β(t) z, α(t) = ˙γ(t)σ2
+
+> t
+
+γ(t)(1 − γ(t)) , β(t) = ˙γ(t)
+
+γ(t) . (28) 14 A Kinetic-Energy Perspective of Flow Matching 
+
+Proof. By definition of the linear bridge (24), for fixed (x0, x (i)) we have 
+
+zt = (1 − γ(t)) x0 + γ(t)x(i). (29) Differentiating with respect to t yields the conditional velocity 
+
+˙zt = ucond (zt, t, x (i), x 0) = − ˙γ(t) x0 + ˙ γ(t) x(i) = ˙ γ(t) ( x(i) − x0). (30) We now express x0 in terms of (z, t, x (i)) where z = zt. From z = (1 − γ)x0 + γx (i) we obtain 
+
+x0 = γ(t)x(i) − zγ(t) − 1 . (31) Substituting into (30) gives 
+
+x(i) − x0 = x(i) − γx (i) − zγ − 1 = z − x(i)
+
+γ − 1 = x(i) − z
+
+1 − γ(t) , (32) and hence 
+
+ucond (z, t, x (i)) = ˙ γ(t) ( x(i) − x0) = ˙γ(t)1 − γ(t) (x(i) − z). (33) The optimal flow-matching velocity ˆu∗(z, t ) is the conditional expectation of (33) given (z, t ), where the randomness is over the choice of x(i) (equivalently, the index i). Using the posterior weights (27), we obtain 
+
+ˆu∗(z, t ) = Eucond (z, t, x (i)) z, t  =
+
+> N
+
+X
+
+> i=1
+
+λi(z, t ) ucond (z, t, x (i)) = ˙γ(t)1 − γ(t)
+
+> N
+
+X
+
+> i=1
+
+λi(z, t ) ( x(i) − z). (34) We now relate the mixture score ∇z log ˆ pt(z) to the same posterior weights. For the Gaussian mixture ˆpt(z) =
+
+> 1
+> N
+
+P 
+
+> i
+
+N (z; μi(t), Σt) with common covariance Σt = σ2 
+
+> t
+
+Id, the gradient of the log-density can be computed to be: 
+
+∇z log ˆ pt(z) = 
+
+> N
+
+X
+
+> i=1
+
+λi(z, t ) Σ −1
+
+> t
+
+ μi(t) − z, (35) which is the standard expression for the score of a Gaussian mixture. Since Σt = σ2 
+
+> t
+
+Id, we have Σ−1 
+
+> t
+
+= 1
+
+> σ2
+> t
+
+Id, so 
+
+∇z log ˆ pt(z) = 1
+
+σ2
+
+> tN
+
+X
+
+> i=1
+
+λi(z, t )  μi(t) − z, μi(t) = γ(t)x(i). (36) Next, we express the sum S1 := P 
+
+> i
+
+λi(z, t )( x(i) − z) in (34) in terms of the sum S2 := P 
+
+> i
+
+λi(z, t )( μi(t) − z) appearing in (36). Note that 
+
+μi(t) − z = γ(t)x(i) − z, (37) and we can rewrite 
+
+x(i) − z = 1
+
+γ(t)
+
+ γ(t)x(i) − γ(t)z = 1
+
+γ(t)
+
+ μi(t) − z + 1 − γ(t)
+
+γ(t) z. (38) Therefore, 
+
+S1 =
+
+> N
+
+X
+
+> i=1
+
+λi(z, t ) ( x(i) − z) (39) 
+
+=
+
+> N
+
+X
+
+> i=1
+
+λi(z, t )
+
+ 1
+
+γ(t)
+
+ μi(t) − z + 1 − γ(t)
+
+γ(t) z
+
+
+
+(40) 
+
+= 1
+
+γ(t)
+
+> N
+
+X
+
+> i=1
+
+λi(z, t ) μi(t) − z + 1 − γ(t)
+
+γ(t) z
+
+> N
+
+X
+
+> i=1
+
+λi(z, t ) (41) 
+
+= 1
+
+γ(t) S2 + 1 − γ(t)
+
+γ(t) z, (42) 15 A Kinetic-Energy Perspective of Flow Matching 
+
+where we used P 
+
+> i
+
+λi(z, t ) = 1 . Using S2 = σ2 
+
+> t
+
+∇z log ˆ pt(z) from (36), we obtain 
+
+S1 = σ2
+
+> t
+
+γ(t) ∇z log ˆ pt(z) + 1 − γ(t)
+
+γ(t) z. (43) Substituting this into (34) yields 
+
+ˆu∗(z, t ) = ˙γ(t)1 − γ(t) S1 (44) 
+
+= ˙γ(t)1 − γ(t)
+
+ σ2
+
+> t
+
+γ(t) ∇z log ˆ pt(z) + 1 − γ(t)
+
+γ(t) z
+
+
+
+(45) 
+
+= ˙γ(t)σ2
+
+> t
+
+γ(t)(1 − γ(t)) 
+
+| {z }
+
+> α(t)
+
+∇z log ˆ pt(z) + ˙γ(t)
+
+γ(t)
+
+|{z} 
+
+> β(t)
+
+z, (46) which is exactly (28). 
+
+B.4. Instantaneous Energy vs. Negative Log-Density 
+
+We now establish the quantitative relationship between the instantaneous energy ∥ˆu∗(z, t )∥2 and the negative log-density 
+
+− log ˆ pt(z). The key technical ingredient is posterior dominance: at each point (z, t ), we assume there exists a dominant mixture component i∗ such that λi∗ (z, t ) ≥ 1 − ε for some small ε ∈ (0 , 1/2) .Under this condition, we will show that the mixture density ˆpt(z) and mixture score ∇z log ˆ pt(z) can both be well-approximated by the corresponding quantities for the dominant Gaussian component. This local approximation enables us to derive explicit bounds relating the instantaneous energy to the negative log-density. The development proceeds through three lemmas: • Lemma B.3 establishes a local Gaussian approximation for − log ˆ pt(z) in terms of the dominant quadratic form. • Lemma B.4 decomposes the mixture score as the dominant component’s score plus a controlled remainder. • Lemma B.5 combines these results with Lemma B.2 to bound the instantaneous energy. Finally, we combine all lemmas to prove Theorem B.1. 
+
+Lemma 2: Local Gaussian Approximation. The following lemma shows that under posterior dominance, the mixture log-density can be locally approximated by the log-density of a single dominant Gaussian component, with a quantitatively controlled remainder. 
+
+Lemma B.3 (Local Gaussian approximation with quantitative constants) . Fix t ∈ (0 , 1) and z ∈ Rd. Suppose there exists an index i∗ and a parameter ε ∈ (0 , 1/2) such that the posterior responsibility 
+
+λi∗ (z, t ) = pt(z | x(i∗))
+
+PNj=1 pt(z | x(j)) ≥ 1 − ε. 
+
+Let σ2 
+
+> t
+
+= (1 − γ(t)) 2 and μi∗ (t) = γ(t) x(i∗). Then 
+
+− log ˆ pt(z) = 12σ2
+
+> t
+
+z − μi∗ (t) 2 + C(0)  
+
+> t
+
++ Rt(z), (47) 
+
+where 
+
+C(0)  
+
+> t
+
+:= d
+
+2 log(2 π) + d
+
+2 log σ2 
+
+> t
+
++ log N, (48) 
+
+and the remainder Rt(z) satisfies 
+
+log(1 − ε) ≤ Rt(z) ≤ 0, Rt(z) ≤ − log(1 − ε). (49) 16 A Kinetic-Energy Perspective of Flow Matching 
+
+Proof. We have 
+
+ˆpt(z) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+pt(z | x(i)) = 1
+
+N pt(z | x(i∗))
+
+1 + X 
+
+> j̸=i∗
+
+pt(z | x(j))
+
+pt(z | x(i∗))
+
+ .
+
+Define 
+
+δ(z, t ) := X 
+
+> j̸=i∗
+
+pt(z | x(j))
+
+pt(z | x(i∗)) ≥ 0.
+
+Then 
+
+ˆpt(z) = 1
+
+N pt(z | x(i∗)) 1 + δ(z, t ).
+
+The dominance assumption λi∗ (z, t ) ≥ 1 − ε implies 
+
+λi∗ (z, t ) = pt(z | x(i∗))
+
+P 
+
+> k
+
+pt(z | x(k)) ≥ 1 − ε =⇒ X
+
+> k
+
+pt(z | x(k)) ≤ 11 − ε pt(z | x(i∗)).
+
+Hence X 
+
+> j̸=i∗
+
+pt(z | x(j)) ≤ 11 − ε pt(z | x(i∗)) − pt(z | x(i∗)) = ε
+
+1 − ε pt(z | x(i∗)),
+
+which gives 
+
+0 ≤ δ(z, t ) = 1
+
+pt(z | x(i∗))
+
+X 
+
+> j̸=i∗
+
+pt(z | x(j)) ≤ ε
+
+1 − ε .
+
+Thus 
+
+1 ≤ 1 + δ(z, t ) ≤ 11 − ε .
+
+Taking logarithms, 
+
+log ˆ pt(z) = log 1
+
+N + log pt(z | x(i∗)) + log(1 + δ(z, t )) .
+
+For the Gaussian component pt(z | x(i∗)) = N (z; μi∗ (t), σ 2 
+
+> t
+
+Id),
+
+log pt(z | x(i∗)) = − d
+
+2 log(2 π) − d
+
+2 log σ2 
+
+> t
+
+− 12σ2
+
+> t
+
+z − μi∗ (t) 2.
+
+Therefore, 
+
+− log ˆ pt(z) = 12σ2
+
+> t
+
+z − μi∗ (t) 2 + d
+
+2 log(2 π) + d
+
+2 log σ2 
+
+> t
+
++ log N − log  1 + δ(z, t ).
+
+This is (47) with 
+
+C(0)  
+
+> t
+
+:= d
+
+2 log(2 π) + d
+
+2 log σ2 
+
+> t
+
++ log N, Rt(z) := − log  1 + δ(z, t ).
+
+Since 1 ≤ 1 + δ(z, t ) ≤ 1/(1 − ε), we have 
+
+0 ≤ log  1 + δ(z, t ) ≤ log 11 − ε ,
+
+so 
+
+log(1 − ε) ≤ Rt(z) ≤ 0,
+
+and Rt(z) ≤ − log(1 − ε).17 A Kinetic-Energy Perspective of Flow Matching 
+
+Lemma 3: Mixture Score Decomposition. Just as the mixture density can be locally approximated by the dominant component, the mixture score ∇z log ˆ pt(z) can be decomposed as the dominant component’s score plus a small remainder. This decomposition is crucial for controlling the instantaneous energy. 
+
+Lemma B.4 (Mixture score versus dominant component) . Under the assumptions of Lemma B.3, the score of the mixture can be written as 
+
+∇z log ˆ pt(z) = − 1
+
+σ2
+
+> t
+
+ z − μi∗ (t) + rt(z), (50) 
+
+where the remainder rt(z) admits the explicit bound 
+
+rt(z) ≤ εσ2
+
+> t
+
+∆t, ∆t := max  
+
+> 1≤j≤N
+
+μj (t) − μi∗ (t) . (51) 
+
+Proof. By definition of the mixture score with common covariance Σt = σ2 
+
+> t
+
+Id,
+
+∇z log ˆ pt(z) = 1
+
+σ2
+
+> tN
+
+X
+
+> i=1
+
+λi(z, t ) μi(t) − z.
+
+The score of the single Gaussian component N (μi∗ (t), σ 2 
+
+> t
+
+Id) is 
+
+1
+
+σ2
+
+> t
+
+ μi∗ (t) − z = − 1
+
+σ2
+
+> t
+
+ z − μi∗ (t).
+
+Define 
+
+rt(z) := ∇z log ˆ pt(z) + 1
+
+σ2
+
+> t
+
+ z − μi∗ (t).
+
+Substituting the expressions above, 
+
+rt(z) = 1
+
+σ2
+
+> t
+> N
+
+X
+
+> i=1
+
+λi(z, t )μi(t) − μi∗ (t)
+
+!
+
+= 1
+
+σ2
+
+> t
+
+X 
+
+> j̸=i∗
+
+λj (z, t ) μj (t) − μi∗ (t).
+
+Taking norms and using the triangle inequality, 
+
+rt(z) ≤ 1
+
+σ2
+
+> t
+
+X 
+
+> j̸=i∗
+
+λj (z, t ) μj (t) − μi∗ (t) ≤ 1
+
+σ2
+
+> t
+
+
+
+max  
+
+> j
+
+μj (t) − μi∗ (t)
+
+ X 
+
+> j̸=i∗
+
+λj (z, t ).
+
+By the dominance assumption λi∗ (z, t ) ≥ 1 − ε,
+
+X 
+
+> j̸=i∗
+
+λj (z, t ) = 1 − λi∗ (z, t ) ≤ ε. 
+
+Hence 
+
+rt(z) ≤ εσ2
+
+> t
+
+max  
+
+> j
+
+μj (t) − μi∗ (t) = εσ2
+
+> t
+
+∆t.
+
+Lemma 4: Instantaneous Energy Bounds. We now combine Lemma B.2 (velocity-score representation) and Lemma B.4 (score decomposition) to establish explicit upper and lower bounds for the instantaneous energy ∥ˆu∗(z, t )∥2 in terms of the dominant quadratic form At(z) := 12σ2
+
+> t
+
+∥z − μi∗ (t)∥2. This lemma provides the key technical link between energy and the geometric distance from the dominant component. The proof employs careful norm inequalities to derive bounds with explicit multiplicative constants c1(t), c 2(t) and additive constants C±(t). These explicit constants will propagate through to our main theorem. 18 A Kinetic-Energy Perspective of Flow Matching 
+
+Lemma B.5 (Instantaneous energy vs. dominant quadratic form) . Fix t ∈ (0 , 1) and suppose γ(t) ∈ (0 , 1) and ˙γ(t)̸ = 0 .Let σ2 
+
+> t
+
+= (1 − γ(t)) 2 and μi(t) = γ(t)x(i). Assume that at (z, t ) there exists an index i∗ and ε ∈ (0 , 1/2) such that 
+
+λi∗ (z, t ) ≥ 1 − ε.Define the quadratic form 
+
+At(z) := 12σ2
+
+> t
+
+z − μi∗ (t) 2.
+
+Let 
+
+α(t) = ˙γ(t) σ2
+
+> t
+
+γ(t)(1 − γ(t)) , β(t) = ˙γ(t)
+
+γ(t) ,
+
+and 
+
+m(t) := β(t) − α(t)
+
+σ2
+
+> t
+
+= − ˙γ(t)1 − γ(t)̸ = 0 .
+
+Set 
+
+bt := α(t)
+
+σ2
+
+> t
+
+μi∗ (t), ∆t := max  
+
+> j
+
+μj (t) − μi∗ (t) ,Rt := εσ2
+
+> t
+
+∆t, Et := |α(t)| Rt, Ft := ∥bt∥ + Et.
+
+Then the instantaneous energy satisfies, for all z ∈ Rd,
+
+c1(t) At(z) − C−(t) ≤ ˆu∗(z, t ) 2 ≤ c2(t) At(z) + C+(t), (52) 
+
+with explicit constants 
+
+c1(t) = 12 m(t)2 σ2 
+
+> t
+
+, c2(t) = 12 m(t)2 σ2 
+
+> t
+
+,
+
+and 
+
+C−(t) := m(t)2
+
+2 μi∗ (t) 2 + 2 F 2 
+
+> t
+
+,C+(t) := 6 m(t)2 μi∗ (t) 2 + 3  ∥bt∥2 + E2
+
+> t
+
+.
+
+Proof. By Lemma B.2 and Lemma B.4, 
+
+ˆu∗(z, t ) = α(t) ∇z log ˆ pt(z) + β(t) z = α(t)
+
+
+
+− 1
+
+σ2
+
+> t
+
+ z − μi∗ (t) + rt(z)
+
+
+
++ β(t) z. 
+
+Rearrange as 
+
+ˆu∗(z, t ) = 
+
+
+
+β(t) − α(t)
+
+σ2
+
+> t
+
+
+
+z + α(t)
+
+σ2
+
+> t
+
+μi∗ (t) + α(t) rt(z) = Mtz + bt + et(z),
+
+where Mt = m(t)Id, bt = α(t)
+
+> σ2
+> t
+
+μi∗ (t) and et(z) := α(t)rt(z).By Lemma B.4, 
+
+∥rt(z)∥ ≤ Rt = εσ2
+
+> t
+
+∆t, ⇒ ∥et(z)∥ ≤ | α(t)| Rt = Et,
+
+so ∥et(z)∥ is bounded uniformly in z.
+
+Upper bound. Using ∥a + b + c∥2 ≤ 3( ∥a∥2 + ∥b∥2 + ∥c∥2),
+
+ˆu∗(z, t ) 2 = Mtz + bt + et(z) 2 ≤ 3 ∥Mtz∥2 + ∥bt∥2 + ∥et(z)∥2 ≤ 3m(t)2∥z∥2 + 3  ∥bt∥2 + E2
+
+> t
+
+.
+
+Using ∥z∥2 ≤ 2∥z − μi∗ (t)∥2 + 2 ∥μi∗ (t)∥2, we get 
+
+ˆu∗(z, t ) 2 ≤ 3m(t)2 2∥z − μi∗ (t)∥2 + 2 ∥μi∗ (t)∥2 + 3  ∥bt∥2 + E2
+
+> t
+
+,
+
+19 A Kinetic-Energy Perspective of Flow Matching 
+
+hence 
+
+ˆu∗(z, t ) 2 ≤ 6m(t)2∥z − μi∗ (t)∥2 + C+(t),
+
+with C+(t) as stated. Using ∥z − μi∗ (t)∥2 = 2 σ2 
+
+> t
+
+At(z), we obtain 
+
+ˆu∗(z, t ) 2 ≤ 12 m(t)2 σ2 
+
+> t
+
+At(z) + C+(t),
+
+which gives the upper bound in (52) with c2(t) = 12 m(t)2 σ2 
+
+> t
+
+.
+
+Lower bound. Now, expanding the squared norm and using Cauchy-Schwarz inequality, 
+
+ˆu∗(z, t ) 2 = ∥Mtz + bt + et(z)∥2
+
+= ∥Mtz∥2 + 2 ⟨Mtz, b t + et(z)⟩ + ∥bt + et(z)∥2
+
+≥ ∥ Mtz∥2 + 2 ⟨Mtz, b t + et(z)⟩≥ ∥ Mtz∥2 − 2∥Mtz∥ · ∥ bt + et(z)∥ =: A2 − 2AB, 
+
+where A = ∥Mtz∥ and B = ∥bt + et(z)∥.Applying Young’s inequality 2AB ≤ 12 A2 + 2 B2, we obtain: 
+
+ˆu∗(z, t ) 2 ≥ A2 − 2AB 
+
+≥ A2 −
+
+ 12 A2 + 2 B2
+
+
+
+= 12 A2 − 2B2.
+
+We bound B2 ≤ (∥bt∥ + ∥et(z)∥)2 ≤ (∥bt∥ + Et)2 = F 2 
+
+> t
+
+, so 
+
+ˆu∗(z, t ) 2 ≥ 12 ∥Mtz∥2 − 2F 2 
+
+> t
+
+= 12 m(t)2 ∥z∥2 − 2F 2 
+
+> t
+
+.
+
+Next, we relate ∥z∥2 and ∥z − μi∗ (t)∥2. From 
+
+∥z − μi∗ (t)∥2 = ∥z∥2 + ∥μi∗ (t)∥2 − 2⟨z, μ i∗ (t)⟩ ≤ 2∥z∥2 + 2 ∥μi∗ (t)∥2,
+
+we obtain 
+
+∥z∥2 ≥ 12 ∥z − μi∗ (t)∥2 − ∥ μi∗ (t)∥2.
+
+Substituting into the previous bound, 
+
+ˆu∗(z, t ) 2 ≥ 12 m(t)2
+
+ 12 ∥z − μi∗ (t)∥2 − ∥ μi∗ (t)∥2
+
+
+
+− 2F 2
+
+> t
+
+= m(t)2
+
+4 ∥z − μi∗ (t)∥2 − m(t)2
+
+2 ∥μi∗ (t)∥2 − 2F 2 
+
+> t
+
+.
+
+In terms of At(z), we have ∥z − μi∗ (t)∥2 = 2 σ2 
+
+> t
+
+At(z), thus 
+
+m(t)2
+
+4 ∥z − μi∗ (t)∥2 = m(t)2
+
+4 · 2σ2 
+
+> t
+
+At(z) = 12 m(t)2σ2 
+
+> t
+
+At(z).
+
+Therefore 
+
+ˆu∗(z, t ) 2 ≥ 12 m(t)2σ2
+
+> t
+
+| {z }
+
+> c1(t)
+
+At(z) −
+
+ m(t)2
+
+2 ∥μi∗ (t)∥2 + 2 F 2
+
+> t
+
+| {z }
+
+> C−(t)
+
+,
+
+which is the lower bound in (52). 20 A Kinetic-Energy Perspective of Flow Matching 
+
+B.4.1. P ROOF OF THE MAIN THEOREM 
+
+We are now ready to prove Theorem B.1, which establishes the direct relationship between instantaneous energy ∥ˆu∗∥2 and negative log-density − log ˆ pt(z). The proof combines Lemma B.3 (which relates − log ˆ pt to the quadratic form At(z)) with Lemma B.5 (which relates ∥ˆu∗∥2 to At(z)). 
+
+Proof of Theorem B.1. From Lemma B.3, 
+
+− log ˆ pt(z) = At(z) + C(0)  
+
+> t
+
++ Rt(z),
+
+with At(z) = 12σ2
+
+> t
+
+∥z − μi∗ (t)∥2 and Rt(z) ≤ − log(1 − ε) =: C(mix)  
+
+> t
+
+. Thus 
+
+At(z) = − log ˆ pt(z) − C(0)  
+
+> t
+
+− Rt(z),
+
+and hence 
+
+− log ˆ pt(z) − Kt ≤ At(z) ≤ − log ˆ pt(z) + Kt,
+
+where 
+
+Kt := C(0)  
+
+> t
+
++ C(mix)  
+
+> t
+
+= d
+
+2 log(2 π) + d
+
+2 log σ2 
+
+> t
+
++ log N − log(1 − ε).
+
+By Lemma B.5, 
+
+c1(t) At(z) − C−(t) ≤ ∥ ˆu∗(z, t )∥2 ≤ c2(t) At(z) + C+(t),
+
+with explicit c1(t), c 2(t), C ±(t) as in Lemma B.5. For the lower bound, we use At(z) ≥ − log ˆ pt(z) − Kt:
+
+∥ˆu∗(z, t )∥2 ≥ c1(t)  − log ˆ pt(z) − Kt
+
+ − C−(t) = c1(t)  − log ˆ pt(z) −  C−(t) + c1(t)Kt
+
+.
+
+For the upper bound, we use At(z) ≤ − log ˆ pt(z) + Kt:
+
+∥ˆu∗(z, t )∥2 ≤ c2(t)  − log ˆ pt(z) + Kt
+
+ + C+(t) = c2(t)  − log ˆ pt(z) +  C+(t) + c2(t)Kt
+
+.
+
+Therefore (18) holds with 
+
+c′
+
+> 1
+
+(t) := c1(t) = 12 m(t)2σ2 
+
+> t
+
+, c′
+
+> 2
+
+(t) := c2(t) = 12 m(t)2σ2 
+
+> t
+
+,C′ 
+
+> t
+
+:= max C−(t) + c1(t)Kt, C +(t) + c2(t)Kt .
+
+B.4.2. C ONNECTION TO KINETIC PATH ENERGY 
+
+Finally, we connect Theorem B.1 to the kinetic path energy defined in the main paper. For a sample trajectory z0→1 =
+
+{z(t)}1 
+
+> t=0
+
+generated by the flow-matching model, the kinetic path energy is 
+
+E(z0→1) = 12
+
+Z 10
+
+ˆu∗(z(t), t ) 2 dt. (53) Applying the pointwise bounds (18) along the trajectory yields 
+
+12
+
+Z 10
+
+c′
+
+> 1
+
+(t)   − log ˆ pt(z(t))  dt − 12
+
+Z 10
+
+C′ 
+
+> t
+
+dt ≤ E(z0→1) ≤ 12
+
+Z 10
+
+c′
+
+> 2
+
+(t)   − log ˆ pt(z(t))  dt + 12
+
+Z 10
+
+C′ 
+
+> t
+
+dt. (54) In particular, up to a path-independent bias and time-dependent prefactors, the kinetic path energy is proportional to the integral of the negative log-density of the intermediate mixture along the trajectory. Hence, trajectories that spend more time in low-density regions of ˆpt inevitably accumulate higher kinetic energy, which aligns with our empirical findings. 21 A Kinetic-Energy Perspective of Flow Matching 
+
+B.5. Explicit Constants for the Linear Bridge 
+
+The most commonly used choice in practice is the linear interpolation γ(t) = t. For this choice, all the constants in Theorem B.1 can be computed explicitly, yielding particularly simple and interpretable expressions. This special case is important because it corresponds to the standard optimal transport interpolation between the source and data distributions. We now state the main result for the linear bridge as a corollary, and then provide the detailed derivation of the explicit constants. 
+
+Corollary B.6 (Explicit constants for the linear bridge γ(t) = t). Consider the closed-form flow matching model with the linear bridge γ(t) = t. Fix t ∈ (0 , 1) and suppose there exists i∗ and ε ∈ (0 , 1/2) such that λi∗ (z, t ) ≥ 1 − ε. Then the instantaneous energy and the negative log-mixture-density satisfy 
+
+12
+
+  − log ˆ pt(z) − C′ 
+
+> t
+
+≤ ∥ ˆu∗(z, t )∥2 ≤ 12   − log ˆ pt(z) + C′
+
+> t
+
+,
+
+for some C′ 
+
+> t
+
+∈ R depending only on t, ε, the dimension d, the sample size N , and the data {x(i)} (through μi∗ (t) and the spread of the means). In particular, the dominant quadratic term of − log ˆ pt(z) is 
+
+12(1 − t)2 ∥z − μi∗ (t)∥2,
+
+whereas the dominant quadratic term of the instantaneous energy is 
+
+1(1 − t)2 ∥z∥2.
+
+Thus the two leading quadratic forms differ asymptotically only by a factor of 2, and all remaining linear or bounded terms are absorbed into C′
+
+> t
+
+. Consequently, 
+
+∥ˆu∗(z, t )∥2 ≍ − log ˆ pt(z) with explicit Θ(1) constants depending on t.
+
+Derivation of explicit constants for γ(t) = t. We now derive the explicit expressions claimed in Corollary B.6 by specializing the general results to the linear bridge γ(t) = t. Throughout we write 
+
+σ2 
+
+> t
+
+= (1 − t)2, μi(t) = t x (i), pt(z | x(i)) = N (z; μi(t), σ 2 
+
+> t
+
+Id).
+
+Lemma B.2 states that the optimal velocity admits 
+
+ˆu∗(z, t ) = α(t) ∇z log ˆ pt(z) + β(t) z, (55) where 
+
+α(t) = ˙γ(t)σ2
+
+> t
+
+γ(t)(1 − γ(t)) , β(t) = ˙γ(t)
+
+γ(t) . (56) For the linear bridge γ(t) = t and ˙γ(t) = 1 , we obtain 
+
+α(t) = 1 − tt , β(t) = 1
+
+t , (57) and hence 
+
+ˆu∗(z, t ) = 1 − tt ∇z log ˆ pt(z) + 1
+
+t z. (58) In this case, σ2 
+
+> t
+
+= (1 − t)2 and 
+
+m(t) = β(t) − α(t)
+
+σ2
+
+> t
+
+= 1
+
+t − 1 − tt · 1(1 − t)2 = − 11 − t .
+
+22 A Kinetic-Energy Perspective of Flow Matching 
+
+Assume there exists an index i∗ and ε ∈ (0 , 1/2) such that λi∗ (z, t ) ≥ 1 − ε. Then Lemma B.3 gives 
+
+− log ˆ pt(z) = 12(1 − t)2 z − μi∗ (t) 2 + C(0)  
+
+> t
+
++ Rt(z), (59) where C(0)  
+
+> t
+
+depends only on t, d and N , and log(1 − ε) ≤ Rt(z) ≤ 0.Similarly, Lemma B.4 yields 
+
+∇z log ˆ pt(z) = − 1(1 − t)2
+
+ z − μi∗ (t) + rt(z), (60) with 
+
+∥rt(z)∥ ≤ ε
+
+(1 − t)2 ∆t, ∆t := max  
+
+> j
+
+tx (j) − tx (i∗) .
+
+Substituting (60) into (58) and simplifying gives the affine representation 
+
+ˆu∗(z, t ) = − 11 − t z + 1
+
+t(1 − t) μi∗ (t) + ˜ rt(z), (61) where ˜rt(z) is uniformly bounded in z for fixed t, ε and data {x(i)} (as in Lemma B.5). Ignoring the bounded remainder ˜rt(z), the leading quadratic term of the instantaneous energy is 
+
+Bt(z) := 1(1 − t)2 ∥z∥2. (62) On the other hand, from (59) the leading quadratic term of − log ˆ pt(z) is 
+
+At(z) := 12(1 − t)2 z − μi∗ (t) 2. (63) Thus, at the level of leading quadratic forms, 
+
+Bt(z) = 2 At(z) + (lower-order terms) .
+
+Specializing Lemma B.5 to γ(t) = t, we have m(t) = −1/(1 − t) and σ2 
+
+> t
+
+= (1 − t)2, hence 
+
+c1(t) = 12 m(t)2 σ2 
+
+> t
+
+= 12 , c2(t) = 12 m(t)2 σ2 
+
+> t
+
+= 12 .
+
+Combining this with Theorem B.1, we obtain the bounds stated in Corollary B.6. 
+
+C. Derivation of the Empirical Closed-Form Velocity 
+
+For the sake of completeness, this appendix provides a detailed derivation of the closed-form empirical velocity field ˆu⋆(x, t )
+
+used in Section 5. We follow the conditional flow matching setup with a Gaussian bridge, and we explicitly show how the posterior weights become a softmax over training samples. 
+
+C.1. Setup and notation 
+
+Let p0 = N (0 , I d) and the empirical data distribution 
+
+ˆpdata (x) = 1
+
+n
+
+> n
+
+X
+
+> i=1
+
+δx(i) (x). (64) We consider the standard conditional bridge (for t ∈ [0 , 1] ) defined by 
+
+p(x | z = x(i), t ) = N tx (i), (1 − t)2Id
+
+. (65) 23 A Kinetic-Energy Perspective of Flow Matching 
+
+For this bridge, the conditional velocity field can be chosen as 
+
+ucond (x, t ; z = x(i)) = x(i) − x
+
+1 − t . (66) The (empirical) optimal velocity field is the conditional expectation 
+
+ˆu⋆(x, t ) = E[ucond (x, t ; z) | x, t ] = 
+
+> n
+
+X
+
+> i=1
+
+ucond (x, t ; z = x(i)) ˆ p(z = x(i) | x, t ). (67) Thus, it remains to compute the discrete posterior responsibilities ˆp(z = x(i) | x, t ).
+
+C.2. Case I: z ∼ ˆpdata (discrete Bayes posterior) 
+
+Assume z is distributed as ˆpdata , i.e., z takes values in {x(1) , . . . , x (n)} with ˆp(z = x(i)) = 1 /n .
+
+Step 1: Bayes rule on the discrete support. For each i ∈ { 1, . . . , n },
+
+ˆp(z = x(i) | x, t ) = ˆp(x, t, z = x(i))ˆp(x, t ) . (68) Factor the joint as 
+
+ˆp(x, t, z = x(i)) = ˆ p(x | t, z = x(i)) ˆ p(t, z = x(i)). (69) Summing over the discrete support gives 
+
+ˆp(x, t ) = 
+
+> n
+
+X
+
+> j=1
+
+ˆp(x, t, z = x(j)) = 
+
+> n
+
+X
+
+> j=1
+
+ˆp(x | t, z = x(j)) ˆ p(t, z = x(j)). (70) Since t is independent of z and ˆp(z = x(i)) = 1 /n , we have 
+
+ˆp(t, z = x(i)) = ˆ p(t)ˆ p(z = x(i)) = ˆ p(t) · 1
+
+n . (71) Plugging (69)–(71) into (68), the factors ˆp(t) and 1/n cancel, yielding 
+
+ˆp(z = x(i) | x, t ) = ˆp(x | t, z = x(i))
+
+Pnj=1 ˆp(x | t, z = x(j)) . (72) 
+
+Step 2: Plug in the Gaussian likelihood and simplify. From (65), 
+
+ˆp(x | t, z = x(i)) = 1(2 π)d/ 2(1 − t)d exp 
+
+
+
+− ∥x − tx (i)∥22
+
+2(1 − t)2
+
+
+
+. (73) In (72), the prefactor (2 π)−d/ 2(1 − t)−d cancels across i, so 
+
+ˆp(z = x(i) | x, t ) = exp 
+
+
+
+− ∥x−tx (i)∥22
+
+> 2(1 −t)2
+
+Pnj=1 exp 
+
+
+
+− ∥x−tx (j)∥22
+
+> 2(1 −t)2
+
+ . (74) Define λi(x, t ) := ˆ p(z = x(i) | x, t ); equivalently, 
+
+λ(x, t ) = softmax 
+
+
+
+− ∥x − tx (1) ∥22
+
+2(1 − t)2 , . . . , − ∥x − tx (n)∥22
+
+2(1 − t)2
+
+
+
+∈ Rn. (75) 
+
+Step 3: Closed-form velocity. Substituting (66) and (74) into (67), we obtain the closed-form empirical velocity field 
+
+ˆu⋆(x, t ) = 
+
+> n
+
+X
+
+> i=1
+
+λi(x, t ) x(i) − x
+
+1 − t . (76) 24 A Kinetic-Energy Perspective of Flow Matching 
+
+C.3. Case II: z ∼ p0 × ˆpdata (Dirac constraint derivation) 
+
+We now show that the same softmax weights arise when the conditioning variable includes the source draw. Let z = ( x0, x 1)
+
+with x0 ∼ p0 and x1 ∼ ˆpdata , and define the deterministic interpolation 
+
+x = (1 − t)x0 + tx 1. (77) 
+
+Step 1: Conditional density as a Dirac measure. Conditioned on (x0, x 1, t ), x is deterministic, hence 
+
+p(x | t, x 0, x 1) = δ x − (1 − t)x0 − tx 1
+
+. (78) 
+
+Step 2: Marginalize x0 to obtain p(x | t, x 1). Fix x1 = x(i). Then 
+
+p(x | t, x 1 = x(i)) = 
+
+Z
+
+> Rd
+
+δ x − (1 − t)x0 − tx (i) p0(x0) dx 0. (79) Using the scaling identity in Rd, δ(Ay ) = | det A|−1δ(y), with A = (1 − t)Id, we rewrite the Dirac as 
+
+δ x − (1 − t)x0 − tx (i) = 1(1 − t)d δ
+
+
+
+x0 − x − tx (i)
+
+1 − t
+
+
+
+. (80) Plugging (80) into (79) yields 
+
+p(x | t, x 1 = x(i)) = 1(1 − t)d p0
+
+ x − tx (i)
+
+1 − t
+
+
+
+. (81) For p0 = N (0 , I d),
+
+p0(y) = 1(2 π)d/ 2 exp 
+
+
+
+− ∥y∥22
+
+2
+
+
+
+, (82) so (81) becomes 
+
+p(x | t, x 1 = x(i)) = 1(2 π)d/ 2(1 − t)d exp 
+
+
+
+− ∥x − tx (i)∥22
+
+2(1 − t)2
+
+
+
+, (83) which matches the Gaussian likelihood in (73). 
+
+Step 3: Posterior over the discrete index i. Since x1 ∼ ˆpdata is uniform over the n atoms, Bayes rule gives 
+
+ˆp(x1 = x(i) | x, t ) = p(x | t, x 1 = x(i))
+
+Pnj=1 p(x | t, x 1 = x(j)) . (84) Plugging (83) into (84) cancels the same prefactors and recovers exactly the softmax form (74). 
+
+Step 4: Closed-form velocity. For deterministic interpolation (77), 
+
+ucond (x, t ; x0, x 1) = x1 − x0, x0 = x − tx 1
+
+1 − t =⇒ ucond (x, t ; x1) = x1 − x
+
+1 − t . (85) Taking the conditional expectation over x1 | x, t yields the same closed form (76). 
+
+C.4. Summary 
+
+In both cases ( z ∼ ˆpdata or z ∼ p0 × ˆpdata ), the empirical optimal velocity field admits the closed form 
+
+ˆu⋆(x, t ) = 
+
+> n
+
+X
+
+> i=1
+
+λi(x, t ) x(i) − x
+
+1 − t , λi(x, t ) ∝ exp 
+
+
+
+− ∥x − tx (i)∥22
+
+2(1 − t)2
+
+
+
+,
+
+where the proportionality constant is the normalization across i ∈ { 1, . . . , n }.25 A Kinetic-Energy Perspective of Flow Matching 
+
+D. Proofs for Terminal-Time Energy Blow-Up 
+
+This appendix provides a detailed version of Proposition 5.2 and Lemma 5.1, and their proof. 
+
+Notation. Let {x(i)}ni=1 ⊂ Rd denote the (finite) training set and define the closed-form empirical velocity field 
+
+ˆu⋆(x, t ) = 
+
+> n
+
+X
+
+> i=1
+
+λi(x, t ) x(i) − x
+
+1 − t ,
+
+> n
+
+X
+
+> i=1
+
+λi(x, t ) = 1 , λ i(x, t ) ≥ 0, (86) with softmax weights 
+
+λi(x, t ) = exp 
+
+
+
+− ∥x−tx (i)∥2
+
+> 2(1 −t)2
+
+Pnj=1 exp 
+
+
+
+− ∥x−tx (j)∥2
+
+> 2(1 −t)2
+
+ . (87) For a trajectory x(·), we write λi(t) := λi(x(t), t ) for brevity. 
+
+D.1. A softmax concentration lemma Lemma D.1 (Terminal-time posterior concentration under a margin) . Fix any trajectory x(·) and define the bridge scores 
+
+si(t) := ∥x(t) − tx (i)∥2. Assume there exist constants t0 ∈ [0 , 1) , m > 0, and an index i⋆ ∈ { 1, . . . , n } such that for all 
+
+t ∈ [t0, 1) and all j̸ = i⋆,
+
+sj (t) − si⋆ (t) ≥ m. (88) 
+
+Then for all t ∈ [t0, 1) ,
+
+1 − λi⋆ (t) ≤ (n − 1) exp 
+
+
+
+− m
+
+2(1 − t)2
+
+
+
+. (89) 
+
+Proof. By (87), 
+
+λi⋆ (t) = 11 + P  
+
+> j̸=i⋆
+
+exp 
+
+
+
+− sj (t)−si⋆ (t)2(1 −t)2
+
+ .
+
+Thus, using (88), we have: 
+
+1 − λi⋆ (t) = 
+
+P  
+
+> j̸=i⋆
+
+exp 
+
+
+
+− sj (t)−si⋆ (t)2(1 −t)2
+
+
+
+1 + P  
+
+> j̸=i⋆
+
+exp 
+
+
+
+− sj (t)−si⋆ (t)2(1 −t)2
+
+ ≤ X 
+
+> j̸=i⋆
+
+exp 
+
+
+
+− m
+
+2(1 − t)2
+
+
+
+,
+
+which yields (89). 
+
+D.2. A Detailed Lemma on Terminal Energy Blow-Up 
+
+The following is a detailed version of Lemma 5.1 from the main paper. 
+
+Lemma D.2. Consider a trajectory segment t ∈ [1 − ε, 1) such that: (i) ( non-collision ) there is a constant c > 0 such that min i ∥x(t) − x(i)∥2 ≥ c for all t ∈ [1 − ε, 1) ;(ii) ( bounded geometry ) max i ∥x(i)∥2 ≤ R for some constants R > 0;(iii) (terminal posterior concentration ) there exist t0 ∈ [1 − ε, 1) and i⋆ such that the margin condition (88) holds on [t0, 1) 
+
+for some m > 0.Then there exists ¯t ∈ [t0, 1) such that for all t ∈ [¯ t, 1) ,
+
+∥ˆu⋆(x(t), t )∥2 ≥ c
+
+2(1 − t) . (90) 
+
+Consequently, the terminal contribution to KPE diverges as an improper integral: 
+
+Z 1¯t
+
+∥ˆu⋆(x(t), t )∥22 dt = + ∞. (91) 26 A Kinetic-Energy Perspective of Flow Matching 
+
+Proof of Lemma D.2. Since Pni=1 λi(t) = 1 for t ∈ [0 , 1) , we have: 
+
+> n
+
+X
+
+> i=1
+
+λi(t) ( x(i) − x(t)) = λi⋆ (t)( x(i⋆) − x(t)) + X 
+
+> j̸=i⋆
+
+λj (t)( x(j) − x(t)) = λi⋆ (t)( x(i⋆) − x(t)) + X 
+
+> j̸=i⋆
+
+λj (t)(x(j) − x(i⋆)) + ( x(i⋆) − x(t)) 
+
+=
+
+
+
+λi⋆ (t) + X 
+
+> j̸=i⋆
+
+λj (t)
+
+
+
+(x(i⋆) − x(t)) + X 
+
+> j̸=i⋆
+
+λj (t)( x(j) − x(i⋆))= ( x(i⋆) − x(t)) + X 
+
+> j̸=i⋆
+
+λj (t)( x(j) − x(i⋆)).
+
+Taking norms and applying the reverse triangle inequality, followed by the triangle inequality, we obtain: 
+
+> n
+
+X
+
+> i=1
+
+λi(t) ( x(i) − x(t)) ≥ ∥ x(i⋆) − x(t)∥ − X 
+
+> j̸=i⋆
+
+λj (t) ∥x(j) − x(i⋆)∥≥ c − X 
+
+> j̸=i⋆
+
+λj (t)  ∥x(j)∥ + ∥x(i⋆)∥
+
+≥ c − 2R X 
+
+> j̸=i⋆
+
+λj (t) = c − 2R (1 − λi⋆ (t)) .
+
+By Lemma D.1, 1 − λi⋆ (t) → 0 as t → 1 and in fact satisfies (89) . Hence we can choose ¯t ∈ [t0, 1) such that for all 
+
+t ∈ [¯ t, 1) we have 2R(1 − λi⋆ (t)) ≤ c/ 2. Then 
+
+> n
+
+X
+
+> i=1
+
+λi(t) ( x(i) − x(t)) ≥ c/ 2.
+
+Plugging this into (86) gives (90). Finally, Z 1¯t
+
+∥ˆu⋆(x(t), t )∥22 dt ≥ c2
+
+4
+
+Z 1¯t
+
+(1 − t)−2 dt. 
+
+Interpreting the right-hand side as an improper integral, 
+
+Z 1¯t
+
+(1 − t)−2 dt := lim 
+
+> δ→0+
+
+Z 1−δ
+
+> ¯t
+
+(1 − t)−2 dt = lim 
+
+> δ→0+
+
+ 1
+
+δ − 11 − ¯t
+
+
+
+= ∞,
+
+which proves (91). 
+
+D.3. A Detailed Version of Proposition 5.2 
+
+The following is a detailed version of Proposition 5.2 from the main paper. 
+
+Proposition D.3 (Terminal-time kinetic energy blow-up and a universal lower bound) . Let {x(i)}ni=1 ⊂ Rd and define ˆu⋆
+
+and λi as in (86) –(87) .(a) Blow-up for the empirical EFM field under non-collision and posterior concentration. Let x : [0 , 1) → Rd be a trajectory segment on [1 − ε, 1) satisfying assumptions (i)–(iii) of Lemma D.2. Then there exists ¯t ∈ [1 − ε, 1) such that 
+
+Z 1¯t
+
+∥ˆu⋆(x(t), t )∥22 dt = + ∞ (improper integral) .
+
+(b) Universal lower bound for any absolutely continuous path. Let x : [0 , 1] → Rd be absolutely continuous and assume 
+
+x(1) = x(i) for some i. Then for every t < 1,
+
+Z 1
+
+> t
+
+∥ ˙x(s)∥22 ds ≥ ∥x(i) − x(t)∥22
+
+1 − t . (92) 27 A Kinetic-Energy Perspective of Flow Matching 
+
+In particular, if there exist ε > 0 and c > 0 such that ∥x(i) − x(t)∥2 ≥ c for all t ∈ [1 − ε, 1) , then R 11−ε ∥ ˙x(s)∥22 ds =+∞ (improper integral). Proof of Proposition D.3. Part (a). This is an immediate corollary of Lemma D.2. More precisely, under the assumptions of Lemma D.2, we have ∥ˆu⋆(x(t), t )∥ ≥ c 
+
+> 2(1 −t)
+
+for all t sufficiently close to 1 and therefore the terminal kinetic energy diverges by (91). 
+
+Part (b) (minimum terminal growth needed to close a non-vanishing gap). Let x : [0 , 1] → Rd be absolutely continuous with x(1) = x(i) for some i. For any t < 1, by Cauchy–Schwarz, 
+
+∥x(i) − x(t)∥22 =
+
+Z 1
+
+> t
+
+˙x(s) ds 22
+
+≤ (1 − t)
+
+Z 1
+
+> t
+
+∥ ˙x(s)∥22 ds. (93) Thus, Z 1
+
+> t
+
+∥ ˙x(s)∥22 ds ≥ ∥x(i) − x(t)∥22
+
+1 − t . (94) In particular, if there exist ε > 0 and c > 0 such that ∥x(i) − x(t)∥2 ≥ c for all t ∈ [1 − ε, 1) (i.e., the trajectory does not approach the terminal point until time 1), then (94) implies 
+
+Z 11−ε
+
+∥ ˙x(s)∥22 ds ≥
+
+Z 11−ε
+
+c2
+
+1 − s ds = ∞ (improper integral) .
+
+Therefore, to realize exact terminal matching with finite kinetic energy, the terminal gap ∥x(i) −x(t)∥ must vanish sufficiently fast as t → 1; conversely, maintaining a non-vanishing gap forces a terminal-time blow-up in kinetic cost. 28 A Kinetic-Energy Perspective of Flow Matching 
+
+E. Experimental Setup Details 
+
+This appendix provides complete experimental configurations for the findings presented in §4. 
+
+E.1. Finding 1: Semantic Quality Experiments Model and Dataset. We use the pretrained SiT-XL/2 flow matching model (Ma et al., 2024), a class-conditional transformer-based flow matching model trained on ImageNet-256 at 256 × 256 resolution. 
+
+CLIP score measures semantic alignment as 100 × the maximum cosine similarity between normalized image features and the true-class text features. CLIP margin measures semantic discriminability as the gap between the true-class similarity and the best competing-class similarity: Margin = Sim true − max c∈C others Sim (c), where Cothers denotes competing classes. Higher margins imply stronger class-specific semantics. 
+
+Sampling Configuration. 
+
+• ODE solver : Forward Euler integration with N = 10 steps • CFG scales : ω ∈ { 1.0, 1.5, 4.0} interpolating between unconditional and class-conditional generation • Sample size : 4,000 samples per CFG (12,000 in total) • Random seeds : Each sample generated from independent Gaussian noise z0 ∼ N (0 , I ) with distinct random seed • Class selection : Uniformly sampled from 1,000 ImageNet classes 
+
+KPE Computation. For each trajectory {z(t)}1
+
+> t=0
+
+, we compute kinetic path energy via discrete approximation: 
+
+E = 12 
+
+> N−1
+
+X
+
+> i=0
+
+∥vθ (z(ti), t i)∥2 · ∆t, ∆t = 1 /N. (95) 
+
+Energy Stratification. We partition samples into three groups based on KPE percentiles: • Low energy : 0–33% percentile ( n = 1 , 333 per energy group, 4,000 in total) • Mid energy : 33–67% percentile ( n = 1 , 333 per energy group, 4,000 in total) • High energy : 67–100% percentile ( n = 1 , 333 per energy group, in 4,000 total) 
+
+CLIP Evaluation. 
+
+• Model : CLIP ViT-L/14 with frozen weights • CLIP Score : Score = 100 × max c∈C CosineSim (Embed img , Embed text (c)) where text prompt is “a photo of a [class]” • CLIP Margin : Margin = Sim true − max c∈C\{ true } Sim (c) measuring discriminability 
+
+Statistical Testing. Independent two-sample t-tests comparing low vs. high energy groups. Bonferroni correction applied for 6 comparisons (2 metrics × 3 CFG scales): corrected α = 0 .05 /6 ≈ 0.008 . Cohen’s d for effect size. 29 A Kinetic-Energy Perspective of Flow Matching 
+
+F. Detailed Synthetic Dataset Specifications 
+
+This appendix provides complete specifications for the synthetic 2D datasets used to validate the KPE-density relationship under controlled conditions (§4.2). 
+
+F.1. Dataset Descriptions 
+
+We design four synthetic 2D datasets with explicitly controlled density stratification: 
+
+1. Dense Core + Sparse Ring ( dense sparse ). 
+
+• Dense core : 60% of samples from N (0, σ 2
+
+> core
+
+I) with σcore = 0 .15 
+
+• Sparse ring : 40% of samples uniformly distributed on annulus with radius r ∈ [2 .3, 2.7] , perturbed by N (0 , σ 2
+
+> ring
+
+I) with 
+
+σring = 0 .5
+
+• Density ratio : Core density ≈ 15 × higher than ring density 
+
+2. Multiscale Clusters ( multiscale clusters ). 
+
+• Sparse center : 20% from N (0, 0.62I)
+
+• Dense peripheral clusters : 20% each from N (ci, 0.08 2I) for i ∈ { 1, 2, 3, 4}
+
+• Cluster centers : c1 = (2 , 0) , c2 = (0 , 2) , c3 = ( −2, 0) , c4 = (0 , −2) 
+
+• Density ratio : Peripheral clusters ≈ 50 × denser than center 
+
+3. Sandwich ( sandwich ). 
+
+• Dense middle band : 60% from uniform x ∈ [−3, 3] , y ∈ [−0.3, 0.3] plus N (0 , 0.12I)
+
+• Sparse top band : 20% from uniform x ∈ [−3, 3] , y ∈ [1 .5, 2.5] plus N (0 , 0.32I)
+
+• Sparse bottom band : 20% from uniform x ∈ [−3, 3] , y ∈ [−2.5, −1.5] plus N (0 , 0.32I)
+
+• Density ratio : Middle band ≈ 10 × denser than outer bands 
+
+F.2. Training Details 
+
+For each synthetic dataset, we train a standard flow matching model with the following configuration: 
+
+Model Architecture. 
+
+• Network : 4-layer MLP with hidden dimensions [128, 256, 256, 128] • Activation : SiLU (Swish) activation functions • Input : Concatenation of [z, t ] where z ∈ R2 and t ∈ [0 , 1] 
+
+• Output : Velocity field vθ (z, t ) ∈ R2
+
+• Time encoding : Sinusoidal positional encoding for t (16 dimensions) 
+
+Training Hyperparameters. 
+
+• Optimizer : AdamW with learning rate 3 × 10 −4, weight decay 10 −4
+
+• Batch size : 256 • Training steps : 50,000 iterations • Loss : Standard flow matching loss L = Et,x 0,x 1 ∥∥ vθ (zt, t ) − (x1 − zt)/(1 − t)∥∥ 2
+
+• Training data : N = 1 ,000 samples per dataset 30 A Kinetic-Energy Perspective of Flow Matching 
+
+Sampling and Evaluation. 
+
+• ODE solver : Forward Euler with T = 100 steps • Test samples : M = 500 trajectories per dataset • Density estimation : Ground-truth KDE with Gaussian kernel, bandwidth h = 0 .1
+
+• KPE computation : E = 12
+
+PT −1 
+
+> i=0
+
+∥vθ (z(ti), t i)∥2 · ∆t
+
+31 A Kinetic-Energy Perspective of Flow Matching 
+
+G. Additional Visualizations: Toy 2D Generation and Dynamics 
+
+Real Data Distribution Vanilla FM (NN) Samples Empirical FM (Closed-form) Samples 4 3 2 1 0 1 2 3 4                
+
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 4432101234
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 4432101234
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 4
+
+dense sparse 4 3 2 1 0 1 2 3 4                
+
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 4432101234
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 4432101234
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 4
+
+multiscale clusters 4 3 2 1 0 1 2 3 4                
+
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 4432101234
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 4432101234
+> 4
+> 3
+> 2
+> 1
+> 0
+> 1
+> 2
+> 3
+> 4
+
+sandwich 
+
+Figure 10. Toy 2D generations: Real vs. Vanilla FM vs. Empirical FM. For each dataset (row), we compare the target distribution (left) with samples generated by a neural vanilla FM (middle) and the empirical closed-form FM solution (right), using the same bridge family. 
+
+32 A Kinetic-Energy Perspective of Flow Matching Trajectories Velocity fields 
+
+dense sparse 
+
+multiscale clusters 
+
+sandwich 
+
+Figure 11. Toy 2D dynamics: trajectories and velocity fields. For each dataset (row), we visualize sampled trajectories under the learned/closed-form flows (left) and the corresponding velocity field structure (right). These dynamics complement the power/energy plots in the main text by showing where and how the flows move mass over time. 
+
+33 A Kinetic-Energy Perspective of Flow Matching 
+
+H. Additional Visualizations of KPE vs. Semantic Strength 
+
+We provide qualitative visual comparisons across diverse ImageNet-256 classes to demonstrate the consistent semantic quality differences between high-energy and low-energy trajectories. E=3494 
+
+> CLIP=17.50
+> E=3447
+> CLIP=17.80
+> E=3357
+> CLIP=18.22
+> E=2135
+> CLIP=9.59
+> E=2227
+> CLIP=8.33
+> E=2257
+> CLIP=9.76
+> E=3872
+> CLIP=14.40
+> E=3542
+> CLIP=15.85
+> E=3451
+> CLIP=14.60
+> E=2279
+> CLIP=10.38
+> E=2293
+> CLIP=8.69
+> E=2308
+> CLIP=9.54
+> E=6098
+> CLIP=13.59
+> E=5739
+> CLIP=13.73
+> E=5533
+> CLIP=13.69
+> E=2604
+> CLIP=10.59
+> E=2718
+> CLIP=10.33
+> E=2748
+> CLIP=10.17
+> CFG=1.0
+> CFG=1.5
+> CFG=4.0
+
+Figure 12. Macaw (ImageNet-256): High-KPE (left) vs. low-KPE (right) across CFG scales 1.0, 1.5, 4.0. Higher KPE yields richer semantic details, vibrant colors, and sharper textures. 
+
+34 A Kinetic-Energy Perspective of Flow Matching E=4658 
+
+CLIP=30.41 
+
+E=4081 
+
+CLIP=30.19 
+
+E=3851 
+
+CLIP=30.70 
+
+E=2226 
+
+CLIP=24.17 
+
+E=2398 
+
+CLIP=25.06 
+
+E=2485 
+
+CLIP=24.00 
+
+E=4595 
+
+CLIP=30.92 
+
+E=4472 
+
+CLIP=32.81 
+
+E=4408 
+
+CLIP=31.80 
+
+E=2585 
+
+CLIP=24.58 
+
+E=2653 
+
+CLIP=25.66 
+
+E=2799 
+
+CLIP=25.38 
+
+E=7272 
+
+CLIP=30.89 
+
+E=6911 
+
+CLIP=30.02 
+
+E=6795 
+
+CLIP=31.03 
+
+E=4565 
+
+CLIP=26.02 
+
+E=4672 
+
+CLIP=27.16 
+
+E=4833 
+
+CLIP=26.70 
+
+CFG=1.0 
+
+CFG=1.5 
+
+CFG=4.0 
+
+Figure 13. Hot Air Balloon (ImageNet-256): High-KPE (left) vs. low-KPE (right) across CFG scales 1.0, 1.5, 4.0. Higher KPE shows clearer structures and better color saturation. 
+
+35 A Kinetic-Energy Perspective of Flow Matching E=3251 
+
+CLIP=29.47 
+
+E=3194 
+
+CLIP=28.84 
+
+E=3171 
+
+CLIP=28.39 
+
+E=2435 
+
+CLIP=15.09 
+
+E=2464 
+
+CLIP=11.61 
+
+E=2467 
+
+CLIP=12.51 
+
+E=3590 
+
+CLIP=31.25 
+
+E=3475 
+
+CLIP=29.52 
+
+E=3437 
+
+CLIP=29.53 
+
+E=2468 
+
+CLIP=21.88 
+
+E=2522 
+
+CLIP=14.91 
+
+E=2593 
+
+CLIP=23.67 
+
+E=5608 
+
+CLIP=30.47 
+
+E=5305 
+
+CLIP=30.89 
+
+E=5203 
+
+CLIP=30.69 
+
+E=3524 
+
+CLIP=25.34 
+
+E=3543 
+
+CLIP=25.69 
+
+E=3578 
+
+CLIP=25.77 
+
+CFG=1.0 
+
+CFG=1.5 
+
+CFG=4.0 
+
+Figure 14. Golden Retriever (ImageNet-256): High-KPE (left) vs. low-KPE (right) across CFG scales 1.0, 1.5, 4.0. Higher KPE produces finer textures and clearer facial features. 
+
+36 A Kinetic-Energy Perspective of Flow Matching E=3283 
+
+CLIP=29.88 
+
+E=3123 
+
+CLIP=29.69 
+
+E=3111 
+
+CLIP=29.70 
+
+E=2159 
+
+CLIP=16.47 
+
+E=2213 
+
+CLIP=16.23 
+
+E=2222 
+
+CLIP=17.20 
+
+E=4107 
+
+CLIP=29.91 
+
+E=3738 
+
+CLIP=29.91 
+
+E=3598 
+
+CLIP=30.16 
+
+E=2340 
+
+CLIP=21.03 
+
+E=2384 
+
+CLIP=21.41 
+
+E=2388 
+
+CLIP=18.72 
+
+E=6377 
+
+CLIP=30.16 
+
+E=6314 
+
+CLIP=29.94 
+
+E=6279 
+
+CLIP=32.03 
+
+E=3818 
+
+CLIP=25.36 
+
+E=3885 
+
+CLIP=26.38 
+
+E=4118 
+
+CLIP=26.38 
+
+CFG=1.0 
+
+CFG=1.5 
+
+CFG=4.0 
+
+Figure 15. African Elephant (ImageNet-256): High-KPE (left) vs. low-KPE (right) across CFG scales 1.0, 1.5, 4.0. Higher KPE shows more defined features and better skin texture. 
+
+37 A Kinetic-Energy Perspective of Flow Matching E=3751 
+
+CLIP=27.47 
+
+E=3438 
+
+CLIP=26.69 
+
+E=3422 
+
+CLIP=27.09 
+
+E=2391 
+
+CLIP=15.50 
+
+E=2404 
+
+CLIP=15.02 
+
+E=2429 
+
+CLIP=14.42 
+
+E=4071 
+
+CLIP=27.02 
+
+E=3800 
+
+CLIP=25.95 
+
+E=3708 
+
+CLIP=27.42 
+
+E=2415 
+
+CLIP=18.48 
+
+E=2565 
+
+CLIP=16.70 
+
+E=2660 
+
+CLIP=17.17 
+
+E=5545 
+
+CLIP=27.38 
+
+E=5336 
+
+CLIP=26.19 
+
+E=5332 
+
+CLIP=26.64 
+
+E=3255 
+
+CLIP=21.11 
+
+E=3465 
+
+CLIP=20.44 
+
+E=3547 
+
+CLIP=21.61 
+
+CFG=1.0 
+
+CFG=1.5 
+
+CFG=4.0 
+
+Figure 16. Valley (ImageNet-256): High-KPE (left) vs. low-KPE (right) across CFG scales 1.0, 1.5, 4.0. Higher KPE generates more detailed terrain and better depth perception. 
+
+38 A Kinetic-Energy Perspective of Flow Matching E=3157 
+
+CLIP=28.50 
+
+E=3080 
+
+CLIP=28.08 
+
+E=3026 
+
+CLIP=27.25 
+
+E=2032 
+
+CLIP=16.98 
+
+E=2301 
+
+CLIP=16.59 
+
+E=2302 
+
+CLIP=15.58 
+
+E=3395 
+
+CLIP=28.84 
+
+E=3134 
+
+CLIP=29.84 
+
+E=3055 
+
+CLIP=28.88 
+
+E=2126 
+
+CLIP=21.66 
+
+E=2379 
+
+CLIP=18.84 
+
+E=2423 
+
+CLIP=21.94 
+
+E=4252 
+
+CLIP=29.14 
+
+E=3996 
+
+CLIP=29.12 
+
+E=3994 
+
+CLIP=30.44 
+
+E=2928 
+
+CLIP=24.59 
+
+E=3029 
+
+CLIP=24.77 
+
+E=3038 
+
+CLIP=24.78 
+
+CFG=1.0 
+
+CFG=1.5 
+
+CFG=4.0 
+
+Figure 17. Otter (ImageNet-256): High-KPE (left) vs. low-KPE (right) across CFG scales 1.0, 1.5, 4.0. Higher KPE shows sharper outlines and more realistic details. 
+
+39

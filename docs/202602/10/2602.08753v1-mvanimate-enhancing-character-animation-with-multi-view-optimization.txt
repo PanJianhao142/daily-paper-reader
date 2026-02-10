@@ -1,0 +1,911 @@
+Title: MVAnimate: Enhancing Character Animation with Multi-View Optimization
+
+URL Source: https://arxiv.org/pdf/2602.08753v1
+
+Published Time: Tue, 10 Feb 2026 03:19:06 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+> 1
+
+# MVAnimate: Enhancing Character Animation with Multi-View Optimization 
+
+Tianyu Sun, Zhoujie Fu, Bang Zhang, Guosheng Lin 
+
+Abstract —The demand for realistic and versatile character animation has surged, driven by its wide-ranging applications in various domains. However, the animation generation algo-rithms modeling human pose with 2D or 3D structures all face various problems, including low-quality output content and training data deficiency, preventing the related algorithms from generating high-quality animation videos. Therefore, we introduce MVAnimate, a novel framework that synthesizes both 2D and 3D information of dynamic figures based on multi-view prior information, to enhance the generated video quality. Our approach leverages multi-view prior information to produce temporally consistent and spatially coherent animation outputs, demonstrating improvements over existing animation methods. Our MVAnimate also optimizes the multi-view videos of the target character, enhancing the video quality from different views. Experimental results on diverse datasets highlight the robustness of our method in handling various motion patterns and appearances. 
+
+Index Terms —Character Animation, Multi-View Generation. 
+
+I. I NTRODUCTION 
+
+# CHARACTER animation is a crucial area of research with wide-ranging implications for various fields, including virtual reality, video editing, video games, etc [1]–[5]. By enabling the creation of realistic and dynamic human avatars, this technology enhances immersive experiences and presents new opportunities for creating multimedia content [6], [7]. As the demand for high-quality, lifelike human videos grows, research in this domain becomes increasingly vital for driving innovation and meeting the needs of diverse applications. Despite recent advances, existing character animation al-gorithms still face two major challenges that limit their generalization and visual quality. One major problem is that the model implemented for pose representation remains a significant bottleneck [8], [9]. Many prior works adopt 2D pose estimation models such as OpenPose [10], Dense-Pose [11], or DWPose [12], which offer fast and dense annotations. However, unlike other tasks [13], [14], these 2D representations often lack sufficient spatial structure or depth cues, making it difficult to preserve the 3D consistency of the animated human figure, especially under complex poses. The first example in Fig. 1 shows a result of DWPose-based MimicMotion [15], which fails to acquire the 3D information from the reference video. Some other 3D parametric models, such as SMPL [16] or SMPL-X [17], can provide full-body pose and shape estimations in 3D space, but they represent the human body as a mesh with fixed topology, struggling to accurately model detailed appearance, resulting in unnatural or     
+
+> Tianyu Sun, Zhoujie Fu, and Guosheng Lin are with the College of Computing and Data Science (CCDS), Nanyang Technological University. Bang Zhang is with Alibaba Group. Ref Image Ref Video Output
+> MagicAnimate LHM MimicMotion
+> Fig. 1. Some common problems in related research works. Here we show three examples of some of the SOTA animation algorithms. In the first row, when the reference video involves complex gestures, it is common for the performance to get relatively poor. In the second row, the texture of the reference video occasionally affects the output video and distorts the generated frame texture.
+
+overly rigid animations, such as the second displayed output of LHM [18] with a SMPL-X extractor. These limitations motivate the need for a hybrid pose encoding strategy that can effectively combine the structural robustness of 3D mod-els with the appearance-aware detail of 2D representations. 
+
+Another major problem is that texture distortion remains an unresolved issue [19]. In many diffusion-based animation pipelines, the training scheme involves conditioning on both the reference image and reference video [15], [20], [21]. When the training reference image is adopted from the reference video itself, the model may inadvertently learn to entangle the temporal texture patterns from the reference video with the static appearance of the target character, leading to visible artifacts and degraded visual fidelity during inference peri-ods. As shown in the third row of Fig. 1, this operation of MagicAnimate [21] exerts a ”contamination” effect that often manifests as unwanted texture transfer, especially when the reference video contains strong shadows, motion blur, or inconsistent lighting. To address these challenges, we posit that the multi-view prior not only enhances 3D coherence but also regularizes 
+
+> arXiv:2602.08753v1 [cs.CV] 9 Feb 2026 2
+
+texture consistency across viewpoints. Therefore, we propose MVAnimate, a novel character animation framework based on multi-view optimization. Instead of relying solely on a single modality for pose representation, MVAnimate integrates both 2D and 3D pose features to leverage their respective strengths. We also incorporate multi-view information of the target character using pre-trained view synthesis models, en-abling us to build a spatial-temporal encoder that preserves cross-frame coherence. Furthermore, we introduce a dedicated optimization scheme that decouples pose and appearance dur-ing training, effectively mitigating texture distortion issues. Finally, to address texture distortion caused by the mostly used training technique in character animation, we introduce a possible solution to augment existing datasets and refine the final results. Our pipeline supports both 2D and 3D output video gener-ation and is built upon a diffusion model backbone enhanced with temporal and multi-view awareness. Compared with existing methods [15], [21], [22], our approach offers more stable results on challenging sequences, including fast motion, occlusions, and diverse clothing. In summary, our main contributions are:  
+
+> •
+
+We propose a multi-view character animation method that combines 2D and 3D pose representations, addressing the limitations of each and improving structural accuracy across diverse human motions.  
+
+> •
+
+We introduce a training strategy to alleviate texture dis-tortion by decoupling temporal video features from target appearance, resulting in cleaner and more consistent visual outputs.  
+
+> •
+
+Besides fine 2D video editing function, our method also offers an optimization module to output multi-view videos of the character with higher quality. II. R ELATED WORKS 
+
+A. Character Animation 
+
+In recent years, significant advancements have been made in the field of character animation. Hu et al. [22] introduced Animate Anyone, a framework designed to transform char-acter images into animated videos controlled by desired pose sequences. Chang et al. [20] proposed MagicPose, a diffusion-based model for 2D human pose and facial expression re-targeting, which maintains the identity of the subject while allowing for realistic pose and expression changes. Zhang et al. [15] designed MimicMotion, a high-quality human motion video generation framework that uses confidence-aware pose guidance to achieve temporal smoothness and robustness in generated videos. Despite these advancements, a common limitation among these algorithms is their struggle with generating long, tem-porally coherent videos without artifacts, and the need for extensive training data to achieve high-quality results. Unlike MagicPose [20], which relies on single-view consistency, our approach explicitly optimizes across views. Unlike MimicMo-tion [15], which assumes uniform confidence across frames, our method learns per-view reliability via adaptive weighting (Proposition IV.1). 
+
+B. Multi-View Video Generation 
+
+Recent achievements in multi-view video generation have significantly improved the quality and realism [23], [24]. Xie et al. [25] proposed the SV4D algorithm, which generates dynamic 3D content with multi-frame and multi-view con-sistency. The method simplifies the generation process and enhances the coherence of the resulting 3D content. There have also been a number of 3D human generation pipelines recently, such as SinGS [26], HumanRef [27], Human4DiT [28], etc. These works manage to generate novel views from the original one or more views of a human video. These works collectively offer new insights and methodologies for creating high-quality multi-view human motion videos. III. P RELIMINARY 
+
+A. Task Setting 
+
+Character animation is mainly a controllable video genera-tion task, with the input of images, videos, and occasionally text, audio, etc. In our case, let I be the image space and V
+
+the space of N -frame videos. Given a target (reference) image 
+
+Iref ∈ I and a driving (reference) video Vref = [ f1, . . . , f N ] ∈V, MVAnimate seeks a generator Gθ : I × V → V such that 
+
+Vθ = Gθ (Iref , V ref ) preserves the identity and background of 
+
+Iref while following the pose/motion of Vref . A pretrained multi-view synthesizer S (SV4D 2.0) provides M coarse novel-view videos {V (m)ref }Mm=1 = S(Vref ) used as guidance features. Denote pose extractor Φ (DWPose) and feature encoder Ψ. As for the background of the output, we keep it consistent with that of the reference image Iref .In our work, we adopt SV4D 2.0 [29], a pre-trained 3D video generation model, to generate a coarse multi-view video. This multi-view video is first implemented in the spatiotem-poral guidance encoder to train the diffusion model. This coarse multi-view video is then optimized in the multi-view optimization module to enhance the quality of the 2D video output and the multi-view video output. 
+
+B. Diffusion Model Training 
+
+Diffusion models (DM) in video generation tasks are often implemented as the backbone network, so we follow suit in our image encoding module. We adopt the vanilla variational autoencoder [30] to map the reference image to the latent space. Based on the unified formulation of the Denoising Diffusion Probabilistic Model [31], the input Iref adds t step of noise to get It. DM also introduces Gaussian latent noise 
+
+N (0, I) to the latent space feature z0 and produces a noisy latent zt at step t. In this case, we can denote the loss of our diffusion model as: 
+
+L = EIt,G,N (0,I),t|| ϵ − ϵθ (It|G , t)|| 22, (1) where G denotes the multi-view guidance from multi-view videos Vref , and ϵθ marks a denoising function parameterized with parameter θ. This will be the training objective of the diffusion backbone of our method. 3Reference Video    
+
+> Reference Image
+> Masked Video
+> Background
+> Masked Image
+> VAE
+> Encoder
+> Noise Latent
+> Reference
+> Multi -View Video
+> Coarse Masked Output Coarse MV Video
+> MV Opt
+> Denoising UNet
+> ReferenceNet
+
+## Input 
+
+> Final Output
+
+## Output        
+
+> VAE
+> Decoder
+> Refined MV Video
+> Video Image Feature
+> MV Pose
+> Guidance ResNet Cross Attn MV Guidance
+> FineTuned
+> Frozen
+> Fig. 2. Overview of the inference pipeline of our MVAnimate. Our MVAnimate consists of two stages: 1) multi-view guided coarse video generation, which includes a ReferenceNet branch to extract appearance features from the reference image, and a denoising UNet branch to learn the multi-view pose features from the reference multi-view videos, and 2) multi-view optimization, which refines the coarse video output. We add the legends of the basic modules and data flow on the bottom right.
+
+Furthermore, to justify the introduction of multi-view guid-ance G, we need to examine the statistical optimality of conditioning on G based on Proposition III.1. Note that for the propositions and theorems introduced in our paper, we provide the missing proofs in the supplementary material. 
+
+Proposition III.1 (Optimal denoiser as conditional score) . Let 
+
+zt = z0 + σtϵ with ϵ ∼ N (0 , I ) and condition G given by multi-view features. The minimizer ϵ⋆θ = arg min θ E∥ϵ −
+
+ϵθ (zt, G, t )∥22 satisfies ϵ⋆θ (zt, G, t ) = E[ϵ | zt, G, t ], equivalently a scaled conditional score ∝ ∇ zt log p(zt | G , t ).
+
+In this case, the orthogonality of the implemented MMSE estimators under the squared loss leads to Proposition III.1, which proves that our pose injection at every layer improves the conditional score estimate. IV. M ETHODOLOGY 
+
+In this section, we elaborate on our MVAnimation and the crucial modules, including the Multi-View Pose Guidance Network and Multi-View Optimization Module. 
+
+A. Pipeline Overview 
+
+Figure 2 shows the pipeline of our MVAnimation. The objective of our method is to output a high-quality video of the character from the reference image to dance in the same pose sequence as the reference video. We employ a vanilla LDM-based backbone, adopting the ReferenceNet structure [32] to guide the diffusion and denoising process, following most generation methods [1], [15], [33] for human character anima-tion. The VAE encoder operates on the reference images and generates the latent feature, which interacts with the Denoising UNet. To adapt to video tasks, we inflate the 2D U-Net [21] for image-related tasks to a 3D U-Net. We add temporal attention layers to the Denoising U-Net by implementing self-attention in the time dimension. This will enhance the temporal consistency of the generated video. For the training process, to reduce data requirements and computational overhead, we build upon the pre-trained Stable Video Diffusion (SVD), an open-source image-to-video diffusion model trained on a large-scale video dataset, which demonstrates strong per-formance in both video quality and diversity compared to contemporary methods. The architecture of MVAnimate is designed to incorporate SVD as a backbone and fine-tune its parameters based on the LoRA scheme [34]. Following most of the pipelines requiring segmentation [35], [36], we apply Segment Anything Model 2 (SAM2) [37] to separate the character and the surrounding background. Additionally, to maintain a stable background in the output video, we adopt the Stable Diffusion v2 inpainting model to obtain the background texture from the reference image. Considering that the camera views might be dynamic, we apply patch matching to the inpainted background to ensure the necessary movement of the background in the final output. 
+
+B. Multi-View Pose Guidance Network a) Motivation for Adaptive View Weighting: Before in-troducing our attention weighting formulation, we first estab-lish a theoretical foundation for why different views should contribute unequally during feature fusion. To justify our motivation, we form the attention block as a kernel regression 4
+
+process. Let qt ∈ Rd be the query token from the main-view latent at step t, and {k(m) 
+
+> t
+
+, v (m) 
+
+> t
+
+}Mm=1 the (key,value) pairs from M guided views. Our MV attention outputs 
+
+ˆvt =
+
+> M
+
+X
+
+> m=1
+
+α(m) 
+
+> t
+
+v(m) 
+
+> t
+
+, α(m) 
+
+> t
+
+= eω(m)⟨qt,k (m) 
+
+> t⟩
+
+PMj=1 eω(j)⟨qt,k (j) 
+
+> t⟩
+
+, (2) where ω(m) > 0 are learned per-view importance weights (Sec. IV-C). Interpreting v(m) 
+
+> t
+
+as noisy measurements of a latent “canonical” feature v⋆t with Var[ v(m) 
+
+> t
+
+] = σ2
+
+> m
+
+I, the following holds. Under this setting, each view’s latent embedding can be regarded as a noisy observation of an underlying “true” canonical feature, with varying reliability depending on factors such as visibility and occlusion. To quantify this intuition, we derive an optimal estimator that minimizes the reconstruc-tion error under a Gaussian noise assumption. This analysis leads to Proposition IV.1, which shows that the optimal fu-sion weights are inversely proportional to each view’s noise variance—thereby providing a principled justification for the adaptive weighting strategy used in our multi-view attention module. 
+
+Proposition IV.1 (Inverse-variance optimality of view weight-ing) . Let v⋆t ∈ Rd be the latent canonical feature and suppose we observe v(m) 
+
+> t
+
+= v⋆t + ε(m) 
+
+> t
+
+for m = 1 , . . . , M , where the noise vectors ε(m) 
+
+> t
+
+are independent and distributed as 
+
+ε(m) 
+
+> t
+
+∼ N (0 , σ 2
+
+> m
+
+Id) with σ2 
+
+> m
+
+> 0. Consider linear estimators of the form 
+
+ˆvt =
+
+> M
+
+X
+
+> m=1
+
+βmv(m) 
+
+> t
+
+subject to 
+
+> M
+
+X
+
+> m=1
+
+βm = 1 .
+
+Then the coefficients minimizing the mean squared error 
+
+E∥ˆvt − v⋆t ∥22 are 
+
+βm = σ−2
+
+> m
+
+PMj=1 σ−2
+
+> j
+
+, m = 1 , . . . , M. 
+
+In practice, our network does not know σ2 
+
+> m
+
+explicitly. However, the attention score ω(m)⟨qt, k (m) 
+
+> t
+
+⟩ increases for reliable views (high similarity), so the softmax over these scores acts as a learned proxy for the inverse-variance rule in Proposition IV.1. Hence, the learned attention can be viewed as a differentiable inverse-variance estimator. 
+
+b) Network Details: On account of a need to acquire prior multi-view information from the monocular input, we utilize SV4D 2.0 [29] to generate coarse multi-view videos of the character from the reference video and to train the MV Pose Guidance Network with them. We select SV4D 2.0 instead of its previous version due to the clear boundary it generates, improving the pose detection accuracy for our MV-Opt module, which will be further explained later. The view number is empirically set to 8 so that we can obtain a fine geometric relation between these views. In most recent works [21], [38], spatial and temporal fea-tures extracted from animation videos have been implemented to maintain unified frame and pixel-wise characteristics. When considering the input of multi-view character videos, the DWPose 
+
+> AdaLIN
+> Multi -Head
+> Attention
+> AdaLIN
+
+# ..
+
+# .
+
+> 𝑧 𝑇 −1
+> 𝑧 𝑇
+> Cross
+> Attention
+> Multi -View
+> DWpose
+
++
+
+> Multi -View
+> Attention
+> Attention
+> Alignment
+> MV
+> Attn
+
++
+
+> Temporal
+> Attn
+> Multi -View
+> Weight
+
+(a)  (b)       
+
+> Fig. 3. Attention Alignment in Denoising U-Net. The module aligns temporal attention and MV attention for the reference videos. (a) depicts the structure of the multi-view attention scheme in the Multi-View Pose Guidance Network, and (b) is an overview of the attention alignment in Denoising U-Net.
+
+spatial and temporal consistency should be measured from dif-ferent views [39]. Moreover, the traditional spatial consistency applied mainly in the 2D domain is “upgraded” to 3D due to the geometric prior brought by the inter-relation of the multi-view video frames. Therefore, we conduct a multi-view attention block and align the MV attention with temporal attention. Multi-view at-tention is shown in Fig. 3 (a). Inspired by spatial attention [38], [40], our target is to keep consistency in video texture. We apply multi-head attention to compute a weighted sum of the input, followed by a cross-attention model to compute the frame token zt−1 from the main view with the multi-view features. The multi-view videos are given a multi-view weight and then computed into this MV attention block. In the middle of the Multi-View Attention block, we utilize AdaLIN [41] to implement normalization, which is widely implemented in style transfer [42] and content generation [43] tasks, to replace the more common Linear Normalization to ensure the attention method is robust to shape or texture variation. 
+
+c) Theoretical Justification for Attention Alignment: 
+
+While the additive alignment between temporal and multi-view attentions (Fig. 3 (b)) appears heuristic, it can be interpreted as a principled optimization process. We justify this intuition by introducing the following setting and proposition. Let Atemp and Amv be the (row-stochastic) temporal and multi-view attention maps at a given block. Define the latent update as zt−1 = ( I − η∇E )( zt) that performs one gradient step on 
+
+E(z) = 12 ∥z − Atemp z∥22 + λ 
+
+> 2
+
+∥z − Amv z∥22. (3) Then the additive alignment Ajoint = 11+ λ (Atemp + λA mv )
+
+is the first-order optimality condition for the above proximal 5
+
+step. We introduce a proposition to examine the convexity of the optimization process. 
+
+Proposition IV.2 (Convex surrogate) . If Atemp and Amv are nonexpansive (spectral norms ≤ 1), then E is convex and the additive alignment is a nonexpansive averaged operator. 
+
+Proposition IV.2 theoretically justifies the additive attention alignment used in our denoising U-Net, showing that it mini-mizes a convex joint energy and ensures stable, non-expansive updates in feature space. 
+
+C. Multi-View Optimization Module 
+
+With the coarse 2D animation result, we implement our multi-view optimization method to generate a refined multi-view animation video of the character. This helps us obtain 3D animation videos with higher quality. Therefore, this module is trained independently of the previous modules and then implemented in the inference period. In the optimization process, we first refine the main (front) view video frame 
+
+ft with the timestamp t, then optimize the novel views at the same timestamp from front to back, and then move to the frames with timestamp t + 1 . For each timestamp, the optimization operation is implemented 8 times before moving on to the next timestamp. Considering that the novel views with smaller angles be-tween the original ones share more pixels in common [44], [45], we choose to maintain a tensor ωmv for the multiple views as the input for the optimization process, and the views with smaller angles have larger weights on the semantic difference evaluation. The initial weights of front views are set higher, where ωmv is initiated with [0 .25 , 0.25 , 0.1, .., 0.1] , and the initial value of the closest views shares the highest values. 
+
+ωmv is trained throughout the denoising steps, and then frozen to be implemented in the MV-Opt module afterwards. The elements of this tensor form a mask of all pixels that have a weight share on the original view. In the optimization process, to balance the multi-view and temporal prior restrictions, we design a loss function integrating these features: 
+
+L = ω1 ∗ L temp + ω2 ∗ L mvP + ω3 ∗ L mvS . (4) The loss function consists of three sub-losses. Temporal loss 
+
+Ltemp computes the MSE loss on DWPose difference between the current frame ft and the previous frame ft−1:
+
+Ltemp = || DW P ose (ft) − DW P ose (ft−1)|| 22.
+
+Multi-view pose loss LmvP computes the MSE loss on the corresponding DWPose keypoints vertically between the current frame ft and the previous frame ft−1. For this element, we offer the sub-loss from each view with the same weight: 
+
+LmvP = X
+
+> m
+
+|| DW P ose (f (m) 
+
+> t
+
+) − DW P ose (f (m) 
+
+> t−1
+
+)|| 22.
+
+The multi-view semantic loss LmvS computes the multi-view pixel-wise difference in multi-view frames and adds up under different weights ωmv :
+
+LmvS = X
+
+> m
+
+|| f (m) 
+
+> t
+
+− ft|| 22.
+
+The coefficients ω1, ω2, ω3 balance temporal smoothness, pose coherence, and semantic similarity, respectively, and are tuned empirically ( ω1 = 1, ω2 = 0.1, ω3 = 0.02). Moreover, we need to guarantee the justification of the optimization process with this loss design. Therefore, we construct a Theorem IV.3 to discuss the descent feature of the MV-Opt minimization. 
+
+Theorem IV.3 (Monotone descent of MV-Opt (block coordi-nate minimization)) . Let F (V ) = ω1Ltemp (V ) + ω2LmvP (V ) + 
+
+ω3LmvS (V ) be the multi-view optimization objective in Sec. IV-C, where each loss is nonnegative and continuously differen-tiable. Consider the cyclic MV-Opt schedule that (i) fixes all frames except t and updates ft, and (ii) within ft fixes all views except m and updates f (m) 
+
+> t
+
+, sweeping m = 1 , . . . , M ,and then proceeds to t + 1 . Assume that every block update produces a sufficient decrease, i.e. 
+
+F (xk+1 ) ≤ F (xk) − c∥xk+1 − xk∥2
+
+for some c > 0, and that F has bounded level sets. Then the sequence {F (xk)} is nonincreasing and convergent, and every limit point of {xk} is a block-coordinate stationary point of 
+
+F .
+
+This result guarantees that the alternating updates in the MV-Opt module yield a stable and monotonically decreasing objective, ensuring convergence without oscillation. It provides theoretical support for the consistent improvement observed during multi-view refinement in MVAnimate. V. E XPERIMENTAL RESULTS 
+
+In this section, we introduce the experimental results of our algorithm. We also elaborate on the ablation studies of our method based on the results on several datasets. Some more 2D and multi-view video results are disclosed in the video supplementary material. 
+
+A. Implementation Details 
+
+The experiments are carried out on the Ubuntu platform, with 8 NVIDIA Tesla V100 for training and a single NVIDIA RTX 6000 Ada for inference. As for the augmentation process, we apply virtual try-on algorithms to generate training video pairs in order to alleviate possible texture distortion. In most previous works, researchers tend to train each video clip with the first frame as a reference image. Although they make sure the data for training, testing, and evaluation has no intersection, the widely used TikTok [49] and TED-talks [50] datasets have too few samples to train a generative model. Most researchers tend to collect new video datasets from the Internet [15], [21], [22], but this would bring an enormous workload for data labeling or calibration. Therefore, we find a simple yet effective way to generate large-scale training 6
+
+TABLE I 
+
+2D C HARACTER ANIMATION RESULTS ON TIK TOK DATASET . RED MARKS THE BEST ALGORITHM , AND BLUE STANDS FOR THE SECOND -BEST ALGORITHM .Method Image Video PSNR ↑ SSIM ↑ LPIPS ↓ FID ↓ FID-VID ↓ FVD ↓
+
+DreamPose [46] 28.01 0.509 0.242 38.81 78.77 379.57 MimicMotion [15] 28.97 0.747 0.240 33.62 40.21 153.72 DisCo [47] 29.09 0.674 0.285 28.31 55.17 267.75 MagicAnimate [21] 29.16 0.714 0.239 32.09 39.76 147.09 Animate-x [48] 29.39 0.730 0.242 27.16 40.26 139.05 MagicPose [20] 29.53 0.752 0.292 25.50 46.30 165.71 MVAnimate 29.96 0.775 0.240 30.16 39.11 132.90 MagicAnimate  MimicMotion  MVAnimate   
+
+> Reference Image
+> ①
+> ②
+> ③
+> ①②③
+
+Fig. 4. Qualitative results on TikTok dancing dataset. We compare our method with two other SOTA character animation algorithms on different reference images and video frames from the TikTok dataset. 
+
+datasets by augmenting the original dataset with virtual try-on [51] methods, which can address the problem of data deficiency to some extent. The main metrics we utilize measure the quality of the output from the dimension of the image(video frame) and video, including PSNR, SSIM [52], LPIPS [53], FID [54], FID-VID [55], and FVD [56]. Additionally, more details on the augmentation method and examples of the TikTok dataset for training are disclosed in the supplementary materials. 
+
+B. 2D Animation Results on TikTok Dataset 
+
+In this section, we present the 2D animation results of our method on the TikTok dancing dataset [49]. The quantitative results are shown in Tab. I, showing that our MVAnimate has better results compared to other SOTA methods. In Fig. 4, we show some qualitative results compared with the mainstream methods MagicAnimate [21] and MimicMotion [15]. Our MVAnimate shows a better performance in the three reference 
+
+TABLE II 
+
+2D C HARACTER ANIMATION RESULTS ON TED-TALKS DATASET . THE BEST AND SECOND -BEST METRICS ARE IN RED AND BLUE .Method Video Image FVD ↓ FID ↓ PSNR ↑
+
+MimicMotion [15] 145.67 26.80 30.5 DreamPose [46] 140.12 24.80 30.8 
+
+HumanVid [57] 138.90 27.50 29.8 MagicPose [20] 136.19 25.72 30.1 MagicAnimate [21] 131.51 22.78 30.5 MVAnimate 129.66 22.01 30.7 
+
+images and videos. In the marked areas, our MVAnimate generates clearer motions, gestures, and stable backgrounds. 
+
+C. 2D Animation Result on Ted-talks Dataset 
+
+In this section, we present the 2D animation results of our method on the TED-talks dataset [50]. Since TED-talk videos contain limited camera motion, methods designed for dance-style datasets (e.g., DisCo [47], Animate-X [48]) were omitted 7MagicAnimate  MVAnimate 
+
+Reference Image 
+
+①
+
+②
+
+① ②                
+
+> Fig. 5. Qualitative results on TED-talks dataset. We compare our method with two other SOTA character animation algorithms on different reference images and video frames from the TED-talks dataset. Main View Front Left Front Right Back
+> Coarse Refined
+> Back Left
+> Coarse Refined Coarse Refined Coarse Refined SV4D SV4D SV4D SV4D
+> Fig. 6. Multi-View Video Generation. Here we show some example frames of the output multi-view videos from our MV-Opt module. The refined outputs show a higher quality compared with the results of SV4D and SV4D 2.0.
+
+due to incompatibility with frontal-speaking sequences. We report representative baselines (MimicMotion [15], MagicAn-imate [21]) and metrics to ensure fair comparison. The qualitative results are shown in Tab. II. Our MVAnimate achieves the best metrics for FVD, FID, and is second-best for PSNR. In Fig. 5, we show some qualitative results compared with the mainstream methods Animate Anyone and MagicAnimate. Our MVAnimate performs better in the example reference images and videos. The marked regions show that the character and background sequences of our results are more consistent. 
+
+D. Multi-View Video Optimization 
+
+In the multi-view optimization module, besides enhancing the quality of the 2D character animation video, the multi-view animation videos are also refined through the optimization pro-cess, generating higher-quality multi-view animation videos of the character. In this section, we make a comparison between the coarse multiview videos and the refined ones, together with the first version of the SV4D model [25]. Some example multi-view frames are shown in Fig. 6, where we pick 4 out of 7 novel views for display, with the main views listed aside. The results unveil some interesting facts, which prove the 8                                                                                                  
+
+> TABLE III
+> ABLATION STUDY ON MULTI -V IEW OPTIMIZATION LOSS DESIGN .WE TEST OUR MV-O PT MODULE IN DIFFERENT LOSS FUNCTION CONDITIONS ON THE TIK TOK DANCING DATASET . T HE BEST METRICS ARE MARKED IN BOLD .
+> Ltemp LmvP LmvS Image Video PSNR ↑SSIM ↑LPIPS ↓FID ↓FID-VID ↓FVD ↓
+> ✓28.16 0.722 0.255 32.89 39.51 151.67
+> ✓✓29.31 0.752 0.253 31.33 39.33 143.59
+> ✓✓✓29.96 0.775 0.240 30.16 39.11 132.90
+> TABLE IV
+> ABLATION STUDY ON MULTI -V IEW ATTENTION .WE COMPARE ATTENTION BLOCKS UNDER DIFFERENT SETTINGS TO SUBSTITUTE OUR MV-A TTN .THE BEST METRICS ARE MARKED IN BOLD .Attention Block Setting FID-VID ↓FVD ↓PSNR ↑SSIM ↑
+> LN+MHA+LN+CA 42.79 (+3.68) 137.41 (+4.51) 28.61 (-1.35) 0.707 (-0.068) IN+MHA+IN+CA 40.67 (+1.56) 135.90 (+3.00) 29.04 (-0.92) 0.699 (-0.076) Ada+MHA+Ada+SA 39.36 (+0.26) 133.82 (+0.92) 29.13 (-0.83) 0.752 (-0.023) Ada+MHA+Ada+CA (Ours) 39.11 132.90 29.96 0.775
+> TABLE V
+> ABLATION STUDY ON BACKGROUND INPAINTING .WE COMPARE OUR MVA NIMATE WITH THE CONDITION WITHOUT BACKGROUND INPAINTING ON THE TIK TOK DATASET . T HE BEST METRICS ARE MARKED IN BOLD .Background Inpainting FID-VID ↓FVD ↓PSNR ↑SSIM ↑
+> w39.11 132.90 29.96 0.775
+> w/o 39.15 (+0.04) 133.67 (+0.77) 29.54 (-0.42) 0.759 (-0.016)
+
+effectiveness of our model. The novel views from the front are more exquisite than those from the back, showing more details on facial expression, pose position, and clothing textures. It indicates that the views closer to the main view gain more advantage from the optimization process and, as a result, have larger weights during the optimization process. Views from the back, although not as detailed as the front ones, also show an obvious enhancement compared with the coarse ones. Even the darker lighting condition caused by the biased prior information has been corrected by the optimization process, which is quite obvious in the examples of the first two rows. 
+
+E. Ablation Study 
+
+In this section, we prove the effectiveness of the design of our algorithm by implementing several experiments for com-parison. We also explain the phenomena in the experimental performances. Note that we place more ablation studies in the supplemented article and video files. 
+
+1) Multi-View Optimization Loss Design: The 3 loss func-tions in the multi-view optimization module are largely based on the previous studies on multi-view shape or 3D model reconstruction. Therefore, we carry out experimental com-parisons on these 3 sub-losses. As shown in Tab. III, our loss design shows a more promising result on the test set of the TikTok dancing dataset than the other incomplete loss expressions. 
+
+2) Multi-View Attention Evaluation: We provide the abla-tion study results of our Multi-View Attention block, where different attention blocks are compared altogether. In Tab. IV, we show the results with different MV-Attention layers implemented in the MVAnimate backbone. LN , IN ,
+
+Ada each represents Linear Normalization, Instance Normal-ization, and AdaLIN [41]. M HA , SA , CA stand for Multi-Head Attention, Self-Attention, and Cross Attention. The results show that the setting we implement for MV-Attention gains an advantage over other attention policies. 
+
+3) Background Inpainting: We implement the background inpainting operation because of the fact that most animation video generation algorithms [15], [22] tend to blur the back-ground and create a changing background texture throughout the video. In this case, the background of the generated video is unified to a certain texture. Besides, the application of camera motion transfer to the output helps the generation result stick to the camera view motion and can adapt to dynamic scenes. We make a quantitative experiment in Tab. V to test the performance of background inpainting. We compare the results of our MVAnimate with another pipeline, where the reference image is sent into the ReferenceNet module as a whole, and no further background operation is implemented after the MV-Opt module. The results in Tab. V show that, although our inpainting method is more similar to a grafted model onto our algorithm, it indeed enhances our overall performance on the dataset. We also make some visualized comparisons in the supplementary materials. VI. C ONCLUSION 
+
+In this work, we propose MVAnimate, an algorithm to generate high-quality character animation videos. Our method addresses existing problems of 2D or 3D pose modeling-based animation algorithms, including complex gestures, clothing distortion, texture contamination, etc. We also propose an optimization algorithm for higher-quality multi-view video generation, setting up an example for multi-view character animation. We hope that our work will inspire other multi-view-based algorithms in character animation or other related research areas. 9
+
+REFERENCES [1] Shuyuan Tu, Zhen Xing, Xintong Han, Zhi-Qi Cheng, Qi Dai, Chong Luo, and Zuxuan Wu. Stableanimator: High-quality identity-preserving human image animation. arXiv preprint arXiv:2411.17697 , 2024. [2] Yue Ma, Yingqing He, Xiaodong Cun, Xintao Wang, Siran Chen, Xiu Li, and Qifeng Chen. Follow your pose: Pose-guided text-to-video generation using pose-free videos. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 38, pages 4117–4125, 2024. [3] Xunzhi Xiang, Haiwei Xue, Zonghong Dai, Di Wang, Minglei Li, Ye Yue, Fei Ma, Weijiang Yu, Heng Chang, and Fei Richard Yu. Remask-animate: Refined character image animation using mask-guided adapters. In Proceedings of the AAAI Conference on Artificial Intelli-gence , volume 39, pages 8628–8636, 2025. [4] Minglu Zhao, Wenmin Wang, Tongbao Chen, Rui Zhang, and Ruochen Li. Ta2v: Text-audio guided video generation. IEEE Transactions on Multimedia , 26:7250–7264, 2024. [5] Meng Wang, Richang Hong, Xiao-Tong Yuan, Shuicheng Yan, and Tat-Seng Chua. Movie2comics: Towards a lively video content presentation. 
+
+IEEE Transactions on Multimedia , 14(3):858–870, 2012. [6] Guy Yariv, Itai Gat, Sagie Benaim, Lior Wolf, Idan Schwartz, and Yossi Adi. Diverse and aligned audio-to-video generation via text-to-video model adaptation. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 38, pages 6639–6647, 2024. [7] Yaosi Hu, Chong Luo, and Zhenzhong Chen. A benchmark for control-lable text-image-to-video generation. IEEE Transactions on Multimedia ,26:1706–1719, 2023. [8] Jingyun Xue, Hongfa Wang, Qi Tian, Yue Ma, Andong Wang, Zhiyuan Zhao, Shaobo Min, Wenzhe Zhao, Kaihao Zhang, Heung-Yeung Shum, et al. Follow-your-pose v2: Multiple-condition guided character image animation for stable pose control. arXiv preprint arXiv:2406.03035 ,2024. [9] Xiang Wang, Shiwei Zhang, Changxin Gao, Jiayu Wang, Xiaoqiang Zhou, Yingya Zhang, Luxin Yan, and Nong Sang. Unianimate: Taming unified video diffusion models for consistent human image animation. 
+
+arXiv preprint arXiv:2406.01188 , 2024. [10] Zhe Cao, Tomas Simon, Shih-En Wei, and Yaser Sheikh. Realtime multi-person 2d pose estimation using part affinity fields. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 7291–7299, 2017. [11] Rıza Alp G¨ uler, Natalia Neverova, and Iasonas Kokkinos. Densepose: Dense human pose estimation in the wild. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 7297– 7306, 2018. [12] Zhendong Yang, Ailing Zeng, Chun Yuan, and Yu Li. Effective whole-body pose estimation with two-stages distillation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 4210– 4220, 2023. [13] Tianyu Sun, Guodong Zhang, Wenming Yang, Jing-Hao Xue, and Guijin Wang. Trosd: A new rgb-d dataset for transparent and reflective object segmentation in practice. IEEE Transactions on Circuits and Systems for Video Technology , 33(10):5721–5733, 2023. [14] Bo-Wen Yin, Jiao-Long Cao, Dan Xu, Ming-Ming Cheng, and Qibin Hou. Dformer++: Improving rgbd representation learning for semantic segmentation. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2026. [15] Yuang Zhang, Jiaxi Gu, Li-Wen Wang, Han Wang, Junqi Cheng, Yuefeng Zhu, and Fangyuan Zou. Mimicmotion: High-quality human motion video generation with confidence-aware pose guidance. In International Conference on Machine Learning , 2025. [16] Matthew Loper, Naureen Mahmood, Javier Romero, Gerard Pons-Moll, and Michael J. Black. SMPL: A skinned multi-person linear model. 
+
+ACM Trans. Graphics (Proc. SIGGRAPH Asia) , 34(6):248:1–248:16, October 2015. [17] Georgios Pavlakos, Vasileios Choutas, Nima Ghorbani, Timo Bolkart, Ahmed AA Osman, Dimitrios Tzionas, and Michael J Black. Expressive body capture: 3d hands, face, and body from a single image. In 
+
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10975–10985, 2019. [18] Lingteng Qiu, Xiaodong Gu, Peihao Li, Qi Zuo, Weichao Shen, Junfei Zhang, Kejie Qiu, Weihao Yuan, Guanying Chen, Zilong Dong, et al. Lhm: Large animatable human reconstruction model from a single image in seconds. arXiv preprint arXiv:2503.10625 , 2025. [19] Haiwei Xue, Xiangyang Luo, Zhanghao Hu, Xin Zhang, Xunzhi Xiang, Yuqin Dai, Jianzhuang Liu, Zhensong Zhang, Minglei Li, Jian Yang, et al. Human motion video generation: A survey. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [20] Di Chang, Yichun Shi, Quankai Gao, Hongyi Xu, Jessica Fu, Guoxian Song, Qing Yan, Yizhe Zhu, Xiao Yang, and Mohammad Soleymani. Magicpose: realistic human poses and facial expressions retargeting with identity-aware diffusion. In Proceedings of the 41st International Conference on Machine Learning , pages 6263–6285, 2024. [21] Zhongcong Xu, Jianfeng Zhang, Jun Hao Liew, Hanshu Yan, Jia-Wei Liu, Chenxu Zhang, Jiashi Feng, and Mike Zheng Shou. Magicanimate: Temporally consistent human image animation using diffusion model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1481–1490, 2024. [22] Li Hu. Animate anyone: Consistent and controllable image-to-video synthesis for character animation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8153– 8163, 2024. [23] Xuanyu Yi, Zike Wu, Qiuhong Shen, Qingshan Xu, Pan Zhou, Joo-Hwee Lim, Shuicheng Yan, Xinchao Wang, and Hanwang Zhang. Mvgamba: Unify 3d content generation as state space sequence modeling. arXiv preprint arXiv:2406.06367 , 2024. [24] Xuanyu Yi, Zike Wu, Qingshan Xu, Pan Zhou, Joo-Hwee Lim, and Hanwang Zhang. Diffusion time-step curriculum for one image to 3d generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 9948–9958, 2024. [25] Yiming Xie, Chun-Han Yao, Vikram Voleti, Huaizu Jiang, and Varun Jampani. Sv4d: Dynamic 3d content generation with multi-frame and multi-view consistency. arXiv preprint arXiv:2407.17470 , 2024. [26] Yufan Wu, Xuanhong Chen, Wen Li, Shunran Jia, Hualiang Wei, Kairui Feng, Jialiang Chen, Yuhan Li, Ang He, Weimin Zhang, Bingbing Ni, and Wenjun Zhang. Sings: Animatable single-image human gaussian splats with kinematic priors. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition (CVPR) , pages 5571–5580, June 2025. [27] Jingbo Zhang, Xiaoyu Li, Qi Zhang, Yanpei Cao, Ying Shan, and Jing Liao. Humanref: Single image to 3d human generation via reference-guided diffusion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1844–1854, 2024. [28] Ruizhi Shao, Youxin Pang, Zerong Zheng, Jingxiang Sun, and Yebin Liu. 360-degree human video generation with 4d diffusion transformer. 
+
+ACM Transactions on Graphics (TOG) , 43(6):1–13, 2024. [29] Chun-Han Yao, Yiming Xie, Vikram Voleti, Huaizu Jiang, and Varun Jampani. Sv4d 2.0: Enhancing spatio-temporal consistency in multi-view video diffusion for high-quality 4d generation. arXiv preprint arXiv:2503.16396 , 2025. [30] Diederik P Kingma. Auto-encoding variational bayes. arXiv preprint arXiv:1312.6114 , 2013. [31] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion prob-abilistic models. Advances in neural information processing systems ,33:6840–6851, 2020. [32] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. Adding conditional control to text-to-image diffusion models. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 3836– 3847, 2023. [33] Daizong Liu, Jiahao Zhu, Xiang Fang, Zeyu Xiong, Huan Wang, Renfu Li, and Pan Zhou. Conditional video diffusion network for fine-grained temporal sentence grounding. IEEE Transactions on Multimedia ,26:5461–5476, 2023. [34] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. ICLR , 1(2):3, 2022. [35] Shangchen Zhou, Chongyi Li, Kelvin CK Chan, and Chen Change Loy. Propainter: Improving propagation and transformer for video inpainting. In Proceedings of the IEEE/CVF international conference on computer vision , pages 10477–10486, 2023. [36] Jianhao Li, Tianyu Sun, Zhongdao Wang, Enze Xie, Bailan Feng, Hongbo Zhang, Ze Yuan, Ke Xu, Jiaheng Liu, and Ping Luo. Segment, lift and fit: Automatic 3d shape labeling from 2d prompts. In European Conference on Computer Vision , pages 407–423. Springer, 2025. [37] Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman R¨ adle, Chloe Rolland, Laura Gustafson, et al. Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 , 2024. [38] Daquan Zhou, Weimin Wang, Hanshu Yan, Weiwei Lv, Yizhe Zhu, and Jiashi Feng. Magicvideo: Efficient video generation with latent diffusion models. arXiv preprint arXiv:2211.11018 , 2022. 10 
+
+[39] Jinhui Yi, Syed Talal Wasim, Yanan Luo, Muzammal Naseer, and Juergen Gall. Video-panda: Parameter-efficient alignment for encoder-free video-language models. arXiv preprint arXiv:2412.18609 , 2024. [40] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weis-senborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, et al. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 , 2020. [41] Junho Kim, Minjae Kim, Hyeonwoo Kang, and Kwanghee Lee. U-gat-it: Unsupervised generative attentional networks with adaptive layer-instance normalization for image-to-image translation. arXiv preprint arXiv:1907.10830 , 2019. [42] Yingxue Pang, Jianxin Lin, Tao Qin, and Zhibo Chen. Image-to-image translation: Methods and applications. IEEE Transactions on Multimedia , 24:3859–3881, 2021. [43] Tianyu Sun, Dingchang Hu, Yixiang Dai, and Guijin Wang. Diffusion-based depth inpainting for transparent and reflective objects. IEEE Transactions on Circuits and Systems for Video Technology , 2024. [44] Minye Wu, Yuehao Wang, Qiang Hu, and Jingyi Yu. Multi-view neural human rendering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1682–1691, 2020. [45] Alberto J. Perez, Javier Perez-Soler, Juan-Carlos Perez-Cortes, and Jose-Luis Guardiola. Alignment and improvement of shape-from-silhouette reconstructed 3d objects. IEEE Access , 12:76975–76985, 2024. [46] Johanna Karras, Aleksander Holynski, Ting-Chun Wang, and Ira Kemelmacher-Shlizerman. Dreampose: Fashion image-to-video synthe-sis via stable diffusion. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 22623–22633. IEEE, 2023. [47] Tan Wang, Linjie Li, Kevin Lin, Yuanhao Zhai, Chung-Ching Lin, Zhengyuan Yang, Hanwang Zhang, Zicheng Liu, and Lijuan Wang. Disco: Disentangled control for realistic human dance generation. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 9326–9336, 2024. [48] Shuai Tan, Biao Gong, Xiang Wang, Shiwei Zhang, Dandan Zheng, Ruobing Zheng, Kecheng Zheng, Jingdong Chen, and Ming Yang. Animate-x: Universal character image animation with enhanced motion representation. arXiv preprint arXiv:2410.10306 , 2024. [49] Yasamin Jafarian and Hyun Soo Park. Learning high fidelity depths of dressed humans by watching social media dance videos. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 12753–12762, 2021. [50] Aliaksandr Siarohin, Oliver J Woodford, Jian Ren, Menglei Chai, and Sergey Tulyakov. Motion representations for articulated animation. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 13653–13662, 2021. [51] Yisol Choi, Sangkyung Kwak, Kyungmin Lee, Hyungwon Choi, and Jinwoo Shin. Improving diffusion models for authentic virtual try-on in the wild. In European Conference on Computer Vision , pages 206–235. Springer, 2025. [52] Zhou Wang, Alan C Bovik, Hamid R Sheikh, and Eero P Simoncelli. Image quality assessment: from error visibility to structural similarity. 
+
+IEEE transactions on image processing , 13(4):600–612, 2004. [53] Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shechtman, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 586–595, 2018. [54] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner, Bernhard Nessler, and Sepp Hochreiter. Gans trained by a two time-scale update rule converge to a local nash equilibrium. Advances in neural information processing systems , 30, 2017. [55] Yogesh Balaji, Martin Renqiang Min, Bing Bai, Rama Chellappa, and Hans Peter Graf. Conditional gan with discriminative filter generation for text-to-video synthesis. In IJCAI , volume 1, page 2, 2019. [56] Thomas Unterthiner, Sjoerd Van Steenkiste, Karol Kurach, Raphael Marinier, Marcin Michalski, and Sylvain Gelly. Towards accurate generative models of video: A new metric & challenges. arXiv preprint arXiv:1812.01717 , 2018. [57] Zhenzhi Wang, Yixuan Li, Yanhong Zeng, Youqing Fang, Yuwei Guo, Wenran Liu, Jing Tan, Kai Chen, Tianfan Xue, Bo Dai, et al. Human-vid: Demystifying training data for camera-controllable human image animation. arXiv preprint arXiv:2407.17438 , 2024. [58] Qilin Wang, Zhengkai Jiang, Chengming Xu, Jiangning Zhang, Yabiao Wang, Xinyi Zhang, Yun Cao, Weijian Cao, Chengjie Wang, and Yanwei Fu. Vividpose: Advancing stable video diffusion for realistic human image animation. arXiv preprint arXiv:2405.18156 , 2024. [59] Hugo Bertiche, Meysam Madadi, and Sergio Escalera. Cloth3d: clothed 3d humans. In European Conference on Computer Vision , pages 344– 359. Springer, 2020. [60] Hyeongjin Nam, Donghwan Kim, Jeongtaek Oh, and Kyoung Mu Lee. Decloth: Decomposable 3d cloth and human body reconstruction from a single image. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 5636–5645, 2025. [61] Paul Tseng. Convergence of a block coordinate descent method for nondifferentiable minimization. Journal of optimization theory and applications , 109(3):475–494, 2001. [62] Jianhao Li, Tianyu Sun, Xueqian Zhang, Zhongdao Wang, Bailan Feng, and Ke Xu. Efficient 3d perception on multi-sweep point cloud with gumbel spatial pruning. In 2025 IEEE International Conference on Robotics and Automation (ICRA) , pages 15726–15732. IEEE, 2025. [63] Jia-Wei Liu, Yan-Pei Cao, Jay Zhangjie Wu, Weijia Mao, Yuchao Gu, Rui Zhao, Jussi Keppo, Ying Shan, and Mike Zheng Shou. Dynvideo-e: Harnessing dynamic nerf for large-scale motion-and view-change human-centric video editing. In Proceedings of the IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition , pages 7664–7674, 2024. 11   
+
+> Fig. 7. Some Examples of Augmentation Results. Here we show some examples (the second and third rows) augmented from the original TikTok dataset (the first row). These data make up the AugTik we implement as the training dataset.
+
+In our supplementary material, we make a more thorough analysis of our algorithm design, provide more details about our dataset augmentation methods, show more qualitative results to evaluate the background inpainting operation, intro-duce more experimental results on our MV-Opt module, and give more discussions on the limitations of our MVAnimate. Some more video examples are also attached to the supple-mentary material. VII. E XTENDED METHODOLOGY 
+
+In this appendix section, we give a detailed explanation of the design of our MVAnimate, including the comparison with some previous SOTA methods, and some more theoretical or experimental analysis. 
+
+A. SVD Backbone Design 
+
+As stated in the main paper, there are numerous algorithms for character animation achieving promising results. Among all these methods, our MVAnimate shows various differences from other SVD-based algorithms. 
+
+Modal Selection : For most previous methods, the pose sequence extracted from the reference video is operated in an encoder and then directed into the denoising U-Net. Numerous methods only extract one type of pose from the video, such as MimicMotion [15], MagicAnimate [21], LHM [18], etc. There are only a few of them, such as VividPose [58], which implements two pose detection methods, including DWPose and SMPL-X, to separately encode and add up to the noising latent. However, SMPL-X only estimates the character with the parameters of pose θ, shape β, and facial expression ϕ,without a parameterization of clothing. Although there are some other 3D human models that fix this problem based on SMPL, such as Cloth3D [59] or DeClotH [60], they usually build a new model for cloth meshes and introduce a much more time-consuming reconstruction model. Considering that we only need the cloth features from certain views to generate the cloth status from the reference image, a multi-view 2D prior is more suitable for our setting. 
+
+Pose Guidance : In our MVAnimate, we choose to insert the pose guidance module into every layer of the denoising U-Net to enhance the effectiveness of human pose guidance in the video generation process. This multi-layer integration allows the pose signal to influence the generation hierarchically across different spatial resolutions, ensuring that both coarse struc-tural layout and fine-grained motion details are consistently aligned with the target pose throughout the denoising process. By distributing the guidance across the network, our approach mitigates the risk of pose information being diluted or lost in deeper layers [15], [20], which can occur when conditioning is applied only once at the input. This helps our method achieve stronger pose fidelity and more temporally coherent motion, 12 
+
+particularly in complex or high-frequency motion scenarios. 
+
+B. Input View Number 
+
+The input number is a predetermined hyper-parameter, and we set it to 8, considering the neat geometric relation we can obtain. We implement an experiment with different view numbers. Note that when the view number is 1, the MV Attention block is degraded to a zero-tensor generator, distributing nothing to the diffusion backbone.                                       
+
+> Num FID ↓FVD ↓PSNR ↑SSIM ↑
+> 146.93 159.67 28.62 0.651 241.50 149.61 28.82 0.720 342.26 157.40 28.73 0.721 440.91 137.69 29.11 0.755 8* 39.11 132.90 29.96 0.775
+> 940.71 146.72 29.10 0.759 TABLE VI
+> RESULTS ON TIK TOK DATASET WITH DIFFERENT VIEW NUMBERS .
+> WE SELECT FOUR MAIN METRICS TO MEASURE THE OUTPUT QUALITY . *
+> STANDS FOR THE FINALLY IMPLEMENTED VERSION . T HE BEST METRICS ARE MARKED IN BOLD .
+
+The results shown in Tab. VI prove our hypothesis and help us find a proper balance at the view number of 8. Moreover, with this view number, the detection of the gesture and the formation of spatial-temporal features can be more reasonable. For instance, our premise that opposite views should have the same pixel distribution fails when the view number is odd. This is one of the outcomes for our operation to add horizontal MSE pose loss from the opposite view, which is only possible when the view number is even. Otherwise, only vertical MSE loss will be available. VIII. D ATASET IMPLEMENTATION DETAIL 
+
+In this appendix section, we give a detailed description of the measures we take to implement our method on the TikTok dataset [49], as shown in Fig. 7. As mentioned in the main paper, due to data deficiency in the TikTok dataset, data augmentation is necessary to address texture contamination. The TED-talks dataset [50], another implemented dataset in our work, does not need augmentation thanks to its large data quantity. We believe this method can be practical for many situations where data deficiency is the main bottleneck. 
+
+A. VTO-Based Data Augmentation 
+
+As mentioned in the main paper, the training data for char-acter animation tasks requires a large amount of annotation operations. This leads to the dilemma that most related datasets have a relatively small quantity compared to other computer vision or graphics tasks. Therefore, various researchers have tried to offer a proper solution to address this problem. Some researchers seek more data from other sources on the Internet [15], [21], [22], [47]. Some others just implement their training and testing on a small-scale dataset [20]. Considering the quantity of data we utilize is less than that used in other large-model-based methods, we decide to apply data augmentation for our dataset, even if the post-processed data quantity can still hardly match up of them. We consider that each video can be applied with a virtual-try-on algorithm so that the output videos will share the same pose sequence and have different image/video content. After testing different methods, we apply the IDM-VTON algorithm [51] to complete the augmentation. 
+
+B. TikTok Augmentation 
+
+We make augmentation on the TikTok dataset [49], due to the deficiency of data quantity, unlike the TED-talks dataset [50], which has a substantial amount of data available. In Fig. 7, we display some examples augmented from the TikTok dataset. These samples show fine performance during the inference process. We generate AugTik with only 310 of the original TikTok dataset so that the training will not include the other 30 video clips. Theoretically, for each video clip, when we generate 
+
+n new video clips with new clothes, there should be C2
+
+> n+1
+
+video pairs that can be implemented in the training process. However, considering the fact that not all original videos can have high-quality new video clips, we set the number of new video pairs to no more than 10. This will keep the number of new video pairs generated from a certain original one at the same level, preventing some of them from taking too large a percentage in the new AugTik. After augmentation, the AugTik dataset consists of 1,500 training video pairs and is utilized to train our MVAnimate. IX. P ROOF SUPPLEMENT 
+
+In this section, we provide the supplementary proofs for the propositions and theorems in the main paper. 
+
+A. Proof for Proposition IV.1 Proof. By substituting v(m) 
+
+> t
+
+= v⋆t + ε(m) 
+
+> t
+
+into the estimator, 
+
+ˆvt =
+
+> M
+
+X
+
+> m=1
+
+βm(v⋆t + ε(m) 
+
+> t
+
+) = 
+
+ MX
+
+> m=1
+
+βm
+
+
+
+v⋆t +
+
+> M
+
+X
+
+> m=1
+
+βmε(m) 
+
+> t
+
+.
+
+Under the constraint PMm=1 βm = 1 , this simplifies to 
+
+ˆvt − v⋆t =
+
+> M
+
+X
+
+> m=1
+
+βmε(m) 
+
+> t
+
+.
+
+Hence, the mean squared error is 
+
+E∥ˆvt − v⋆t ∥22 = E
+
+> M
+
+X
+
+> m=1
+
+βmε(m)
+
+> t
+> 22
+
+.
+
+Because the noises are zero-mean, independent, and isotropic, 
+
+E
+
+> M
+
+X
+
+> m=1
+
+βmε(m)
+
+> t
+> 22
+
+=
+
+> M
+
+X
+
+> m=1
+
+β2 
+
+> m
+
+E∥ε(m) 
+
+> t
+
+∥22
+
+=
+
+> M
+
+X
+
+> m=1
+
+β2 
+
+> m
+
+E∥N (0 , σ 2
+
+> m
+
+Id)∥22.13 Re ference Image  Generated Frames 
+
+> w/o Background Inpainting MVAnimate
+
+Re ference Video 
+
+# +  
+
+> Fig. 8. An Observation on the Effect of Background Inpainting. We make a comparison without the background inpainting operation, especially on the background texture in several frames.
+
+For ε ∼ N (0 , σ 2
+
+> m
+
+Id) we have E∥ε∥22 = trace( σ2
+
+> m
+
+Id) = dσ 2
+
+> m
+
+.Thus, 
+
+E∥ˆvt − v⋆t ∥22 = d
+
+> M
+
+X
+
+> m=1
+
+β2
+
+> m
+
+σ2
+
+> m
+
+.
+
+Since d > 0 is a constant factor, minimizing the MSE is equivalent to minimizing 
+
+J(β) = 
+
+> M
+
+X
+
+> m=1
+
+β2
+
+> m
+
+σ2 
+
+> m
+
+subject to 
+
+> M
+
+X
+
+> m=1
+
+βm = 1 .
+
+This is a convex quadratic program with a linear constraint. Form the Lagrangian 
+
+L(β, λ ) = 
+
+> M
+
+X
+
+> m=1
+
+β2
+
+> m
+
+σ2 
+
+> m
+
++ λ
+
+ MX
+
+> m=1
+
+βm − 1
+
+
+
+.
+
+Taking the derivative with respect to βm and setting it to zero gives 
+
+∂L
+
+∂β m
+
+= 2 σ2
+
+> m
+
+βm + λ = 0 ⇒ βm = − λ
+
+2σ2
+
+> m
+
+.
+
+Plugging this into the constraint PMm=1 βm = 1 yields 
+
+> M
+
+X
+
+> m=1
+
+
+
+− λ
+
+2σ2
+
+> m
+
+
+
+= 1 ⇒ − λ
+
+2
+
+> M
+
+X
+
+> m=1
+
+σ−2 
+
+> m
+
+= 1 
+
+⇒ λ = − 2
+
+PMm=1 σ−2
+
+> m
+
+.
+
+Therefore, 
+
+βm = 1
+
+σ2
+
+> m
+
+· 1
+
+PMj=1 σ−2
+
+> j
+
+= σ−2
+
+> m
+
+PMj=1 σ−2
+
+> j
+
+.
+
+This shows that the MSE-minimizing linear estimator assigns weights inversely proportional to the per-view noise variances, completing the proof. 
+
+B. Proof for Proposition IV.2 Proof. Each term is a convex quadratic with Hessian (I −
+
+A)⊤(I−A) ⪰ 0 when ∥A∥2 ≤ 1. The sum is convex; averaged operators with coefficients summing to one and nonexpansive summands remain nonexpansive. 
+
+C. Proof for Theorem IV.3 Proof. By construction of F , each term Ltemp , LmvP , LmvS is a finite sum of squared or ℓ1 distances between frames/views (see Eq. 4), hence F ≥ 0 and F is bounded below. Moreover, the MV-Opt schedule updates one block (either a frame or a view inside a frame) at a time while keeping all other blocks fixed. By the sufficient-decrease assumption, every block update strictly decreases F unless the current block is already optimal, so {F (xk)} is a monotonically nonincreasing sequence bounded below, hence it converges. Since F has bounded level sets, the generated sequence 
+
+{xk} is bounded and thus admits limit points. Standard results on cyclic block coordinate descent for continuously differen-tiable objectives with sufficient decrease [61] then imply that 14 
+
+every limit point is block-coordinate stationary, i.e., for each block there is no feasible descent direction when all other blocks are fixed. X. A BLATION STUDY SUPPLEMENT 
+
+A. Background Inpainting Evaluation 
+
+In Fig. 8, we compare the results with our method without background inpainting, which did not exclude or inpaint the background during the generation process. We also explicate the details of the preprocessing on the right by magnifying the red-box regions to make the comparison more obvious. The result indicates that the generated video clip with background inpainting shows a more stable background, mak-ing it closer to reality, which is the same as we expected. Considering that the inpainting process also quantitatively improves the method, we believe it is effective overall. We also place some dynamic experimental results in the video attached to the supplementary material. Moreover, implementing background inpainting on other SOTA character animation method [15] can also stabilize the background and benefit the generation process. 
+
+B. Multi-View Optimization Evaluation 
+
+In this section, we show a figure to help illustrate our proposal to implement different weight values on the novel views. During the optimization process of the main view, novel views should be assigned with different weights, as shown in Fig. 9. This also explains why the novel views from the back are less affected in the MV-Opt module. M  
+
+> a
+> i
+> n
+> V
+> i
+> e
+> w
+> L
+> o
+> w
+> W
+> e
+> i
+> g
+> h
+> t
+> H
+> i
+> g
+> h
+> W
+> e
+> i
+> g
+> h
+> t
+> H
+> i
+> g
+> h
+> W
+> e
+> i
+> g
+> h
+> t
+> Fig. 9. Multi-View Weight Distribution. The novel views closer to the main view have higher weights during training and are more impacted in return. For novel views in the back, it is the opposite situation.
+
+XI. D ISCUSSIONS 
+
+A. Corner Case Performance 
+
+As mentioned in the submitted main body, there are two common types of failure in character animation algorithms’ performances, including complex poses and texture contami-nation. Complex poses with twists or turns can greatly harm the performance of the character animation model. Our MVAni-mate can reduce this damage to some extent with the guidance of multi-view video inputs. Reference Image  MimicMotion  MVAnimate  Reference Video   
+
+> Fig. 10. Corner Cases. We display some common corner cases in character animation tasks, including texture contamination and complex poses.
+
+As shown in the first example of Fig. 10, we display some examples of the inference results of our MVAnimate addressing the problem of texture contamination. The output of MVAnimate shows a unified dressing texture throughout the whole output video. We also mention the problem of texture contamination in several cases, and we introduce the improvement of our model in these corner cases. As shown in the second example in Fig. 10, our MVAnimate generates a clear motion gesture for the inference image. Although our model still has flaws in some frames or video clips due to the absence of this type of training sample, it still shows a relatively high enhancement compared with that of other methods. Some more corner cases are also shown in the video supplementary material. 
+
+B. Limitations 
+
+Although we obtain 3D information with the pre-trained models’ multi-view videos, certain problems still remain un-solved. 
+
+Multiple Characters. Our MVAnimate is only designed for a one-character scenario, which means that the Openpose-based multi-view guidance network would be misled, causing MVAnimate to be unable to generate new animation videos. More methods will be introduced to address such problems in the future. 
+
+Dynamic Scenes. We implement some tricks, such as background inpainting, which might be degraded for dynamic or outdoor scenes [62], [63]. The TikTok dataset [49] and the TED-talks dataset [50] only contain a few dynamic scenes, making this problem less severe in our experiments. However, these problems will surely make certain other scenarios tough for our MVAnimate.

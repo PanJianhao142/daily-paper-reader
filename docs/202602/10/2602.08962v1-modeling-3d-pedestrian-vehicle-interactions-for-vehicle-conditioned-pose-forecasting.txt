@@ -1,0 +1,383 @@
+Title: Modeling 3D Pedestrian-Vehicle Interactions for Vehicle-Conditioned Pose Forecasting
+
+URL Source: https://arxiv.org/pdf/2602.08962v1
+
+Published Time: Tue, 10 Feb 2026 03:35:21 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# MODELING 3D P EDESTRIAN -V EHICLE INTERACTIONS FOR 
+
+# VEHICLE -C ONDITIONED POSE FORECASTING 
+
+Guangxun Zhu ∗ Xuan Liu ∗ Nicolas Pugeault ∗ Chongfeng Wei † Edmond S. L. Ho ∗‡
+
+# ABSTRACT 
+
+Accurately predicting pedestrian motion is crucial for safe and reliable autonomous driving in complex urban environments. In this work, we present a 3D vehicle-conditioned pedestrian pose forecasting framework that explicitly incorporates surrounding vehicle information. To support this, we enhance the Waymo-3DSkelMo dataset with aligned 3D vehicle bounding boxes, enabling realistic modeling of multi-agent pedestrian–vehicle interactions. We introduce a sampling scheme to categorize scenes by pedestrian and vehicle count, facilitating training across varying interaction complexities. Our proposed network adapts the TBIFormer architecture with a dedicated vehicle encoder and pedestrian–vehicle interaction cross-attention module to fuse pedestrian and vehicle features, allowing predictions to be conditioned on both historical pedestrian motion and surrounding vehicles. Extensive experiments demonstrate substantial improvements in forecasting accuracy and validate different approaches for modeling pedestrian–vehicle interactions, highlighting the importance of vehicle-aware 3D pose prediction for autonomous driving. Code is available at: 
+
+https://github.com/GuangxunZhu/VehCondPose3D 
+
+Keywords First keyword · Second keyword · More 
+
+# 1 Introduction 
+
+Autonomous driving has attracted significant attention for its potential to revolutionize transportation, but it still faces numerous challenges in complex urban environments [ 1]. Among these, pedestrian prediction is particularly critical, as pedestrians are common, vulnerable, and highly dynamic road users, whose flexible and sometimes unpredictable behaviors pose significant challenges for perception systems [ 2 ]. Accurately understanding these behaviors is therefore essential for safe navigation and planning. A main challenge in pedestrian prediction lies in modeling their interactions with other agents. Pedestrian behavior is influenced by other road users (e.g., pedestrians, vehicles, cyclists) [ 3], and insufficient or overly coarse modeling of these interactions can result in inaccurate trajectory predictions, potentially leading autonomous vehicles to adopt inappropriate responses. Most prior studies [ 4, 5, 6, 7, 8, 9, 10 ] model pedestrian interactions using 2D representations such as locations and 2D poses. For handling data captured from the bird’s-eye view, SocialCircle [ 4 ] introduces an angle-based representation to capture relative spatial layouts for interaction modeling, and SocialMOIF [ 5] leverages multi-order intention fusion to enhance trajectory prediction. TrajCLIP [ 6] proposed to improve the continuity in the predicted pedestrian trajectories using contrastive learning to improve the consistency between the feature spaces of the historical and future trajectories. Social Value Orientation (SVO), which is a concept in Psychology for a person’s preferences for allocating resources between themselves and others, has been incorporated into Reinforcement Learning (RL) frameworks [ 7 , 8] for modeling different behaviours between pedestrians and drivers. While these methods explicitly consider social interactions, they remain limited to 2D numerical coordinates, which restricts their ability to capture fine-grained 3D motion dynamics. Another stream of existing research in pedestrian-vehicle interactions focused on analysing ego-centric view data available in public datasets such as TITAN [ 11 ], JAAD [ 12 , 13 ] and PIE [ 14 ]. A recent work, namely PedVLM [ 15 ], 
+
+> ∗
+
+School of Computing Science, University of Glasgow, Glasgow, United Kingdom 
+
+> †
+
+James Watt School of Engineering, University of Glasgow, Glasgow, United Kingdom 
+
+> ‡
+
+Corresponding author Shu-Lim.Ho@glasgow.ac.uk 
+
+> arXiv:2602.08962v1 [cs.CV] 9 Feb 2026
+
+Running Title for Header 𝑃 ! 𝑃 " 𝑃 #
+
+# 𝑉 ! 𝑉 "
+
+# 𝑃 ! 𝑃 "𝑃 #
+
+# 𝑉 ! 𝑉 "
+
+# Input pedestrians and vehicles Output pedestrian s
+
+# Vehicle -conditioned 
+
+# pose forecasting 
+
+Figure 1: Illustration of our Vehicle-conditioned pedestrian pose forecasting. Pedestrian predictions are not only based on their historical motion but are also influenced by surrounding vehicle information. predicts the intention (i.e. crossing or not crossing) of the pedestrian by feeding the RGB image and the corresponding optical flow computed from the ego-centric view alongside the textual description of the scene to a large visual-language models (VLM). PedFormer [ 9] fuse multimodal features, including 2D coordinates of pedestrians from the ego-centric view, ego-vehicle motion and semantic segmentation of the scene for pedestrian behavior prediction. Further to multimodal sensor fusion, PIP-Net [ 10 ] takes advantage of fusing features extracted from multi-camera views (left, front, and right) captured using on-board cameras provided in the new Urban-PIP dataset to better model the contextual information when modeling pedestrian-vehicle interactions. Although some approaches may leverage a combination of multiple modalities, such as images, vehicle ego-motion, 2D pedestrian poses, or vehicle 2D bounding boxes, they are limited in capturing fine-grained pedestrian behaviors and motion dynamics, which may result in inaccurate predictions and unsafe planning decisions for autonomous vehicles. More recently, several works have explored the use of 3D human poses to better capture motion dynamics [ 16 , 17 ]. Compared to 2D data, 3D poses provide richer spatial structures and depth information, thereby providing a stronger basis for fine-grained interaction modeling. Nevertheless, these approaches focus only on pedestrian–pedestrian interactions and do not consider the influence of multiple types of agents in autonomous driving scenarios, primarily due to the scarcity of 3D pose datasets captured in real driving environments. For example, many works rely on MuPoTS-3D [ 18 ], which provides 3D poses estimated only from RGB images and is collected in non-driving contexts, limiting realism. Wang et al. [ 19 ] attempted to synthesize three-person interactions by combining single- and two-person motion sequences from the high-quality CMU-Mocap dataset [ 20 ], recorded using an optical motion capture system. However, this produces a synthetic dataset with limited diversity and lacks realistic multi-agent interactions in traffic scenarios. The most recent dataset, JRDB-GlobMultiPose (JRDB-GMP) [ 21 ], is collected in real-world environments using a moving robot platform, yet the 3D poses are obtained purely via RGB-based pose estimation, Moreover, these datasets lack aligned 3D data from real autonomous driving scenarios, making it difficult for models trained on them to generalize to realistic interactions in such environments. To address this challenge, Crosato et al. [ 22 ] proposed a VR platform for capturing interactions between a pedestrian and a vehicle controlled by human subjects in 3D in a virtual environment. However, the data was not captured in real-world and only contains limited scenarios with 1 pedestrian and 1 vehicle. More recently, Waymo-3DSkelMo [ 23 ]was constructed from the Waymo Open Dataset Perception Benchmark (hereafter referred to as Waymo) [ 24 ], a large-scale autonomous driving dataset, to provide 3D pedestrian skeletal motion data. Specifically, 3D human shapes (estimated using LiDAR-HMR [ 25 ] with SMPL [ 26 ]) and motion priors (Neural Motion Fields (NeMF) [ 27 ]) were used to reconstruct high-quality and natural 3D skeletal motion from the raw LiDAR range images in Waymo. Waymo-3DSkelMo significantly increases the number of 3D skeletal poses from approximately 10k in Waymo to over 2.4 million and is aligned with other data modalities, such as 3D vehicle bounding boxes and LiDAR point clouds, making it possible to model full-scene interactions. However, only 3D skeletal motion is benchmarked in Waymo-3DSkelMo, which limits its usage for broader autonomous driving applications. In this paper, we extend the Waymo-3DSkelMo dataset by incorporating the 3D bounding box information of each vehicle from the Waymo dataset. Through aligning the vehicle and skeletal motion in a common 3D space, 3D data representing the interactions between multiple pedestrians and vehicles can be obtained. We further propose 2Running Title for Header a sampling scheme to divide the scenes into different categories to facilitate the training of interaction modeling networks with different complexity levels (i.e. different numbers of vehicles and pedestrians). Finally, we propose a 3D Vehicle-conditioned pedestrian pose forecasting network by incorporating the vehicle information and adapting the TBIFormer [ 28 ] architecture. In this network, pedestrian predictions not only rely on their historical motion but are also conditioned on surrounding vehicle information, as illustrated in Fig. 1. Extensive experimental results are obtained to demonstrate the benefits of including the vehicle information in the 3D pose forecasting of the pedestrians. Our contributions can be summarized as follows: • We enhance the Waymo-3DSkelMo dataset by incorporating 3D vehicle bounding boxes and introducing a scene-level sampling scheme that categorizes interactions based on the number of pedestrians and vehicles, enabling more realistic and structured modeling of pedestrian–vehicle interactions. • We propose a new 3D pedestrian pose forecasting network that incorporates vehicle information, allowing pedestrian predictions to be conditioned on both historical pedestrian motion and surrounding vehicles. • We provide extensive benchmarking results, demonstrating the benefits of incorporating vehicle information for accurate 3D pose forecasting, and validating different approaches to modeling interactions between pedestrians and vehicles. The enhanced dataset, experimental protocol (e.g. data split) and code will be available. 
+
+# 2 Dataset 
+
+In this section, we first introduce the enhancement of the Waymo-3DSkelMo [ 23 ] dataset by incorporating vehicle information in Section 2.1. Next, we present the scene segmentation strategy in Section 2.2, which is designed to sample diverse data for the experiments. 
+
+2.1 Incorporating Vehicle Information 
+
+We employ Waymo-3DSkelMo [ 23 ] and Waymo Open Dataset (Perception) [ 24 ] to train and validate pedestrian–vehicle interaction models. In particular, Waymo-3DSkelMo contains 2,438,145 3D skeletal poses of the pedestrian recon-structed from the raw LiDAR range images provided by the Waymo dataset. The naturalness of the reconstructed pedestrian motions was further enhanced using NeMF [ 27 ] as the human motion prior. Waymo-3DSkelMo provides 3D keypoints of all pedestrians in real-world scenes, which can be spatially and temporally aligned with the vehicle 3D bounding boxes in Waymo in this study. Waymo-3DSkelMo contains 837 scenes with an overall duration of 4 hours ,covering a diverse set of urban scenarios and capturing a large number of pedestrian–vehicle interactions. 
+
+2.2 Scene Segmentation 
+
+Because different scenes contain varying numbers of agents with diverse spatial and temporal distributions, it is difficult to utilize all scenes as a single training dataset due to the large difference in spatial density. As a result, further segmentation of the scenes is necessary to provide more meaningful training data for downstream tasks. In particular, we segmented the scenes based on the distance between pedestrians and vehicles nearby. Specifically, as illustrated in Fig. 2, we first apply a KDTree [ 29 ], a data structure that enables efficient nearest-neighbor searches in multi-dimensional space, to quickly find pedestrian groups that are closest to each other based on the average root joint positions over a temporal window. In this work, we focus on the extracted scenes with the number of pedestrians between 1 and 3 since the number of scenes decreases sharply above this range as indicated in the statistics presented in Table 1. A sliding window is then employed to select temporally overlapping segments. For each segment, we compute the maximum pairwise distance between pedestrians’ root positions at each timestamp and then take the minimum over all timestamps, denoted as R:
+
+R = min 
+
+> t=1 ,...,T
+
+
+
+max  
+
+> i,j ∈{ 1,...,N p},i ̸=j
+
+∥ri(t) − rj (t)∥2
+
+
+
+(1) Here, ri(t) represents the 3D root position of the i-th pedestrian at time t, Np is the number of pedestrians in the segment, and T is the total number of frames in a time window. We retain the segment if R is below a threshold of 18 m which is the maximum distance used in the TBIFormer [28] training dataset CMU-Mocap (UMPM) [20, 30]. Since the number of surrounding vehicles varies across pedestrian samples, this inconsistency introduces challenges for training and validation. To address this, we select the set of vehicles Vselected whose average distance to the nearest 3Running Title for Header 
+
+Figure 2: Illustration of pedestrians and vehicles in a scene with their trajectories and inter-agent distances. Table 1: Number of segmented scenes (training + validation) with different numbers of pedestrians and vehicles within 0–15 m in the dataset. 
+
+> # of Veh.
+
+Number of Pedestrian(s) 1 2 3 40 17762 + 8236 8236 + 2232 5160 + 1333 3503 + 875 1 15446 + 7534 7534 + 2005 4975 + 1355 3541 + 977 2 14336 + 7321 7321 + 1782 5077 + 1233 3810 + 883 3 12982 + 6815 6815 + 1733 4903 + 1245 3764 + 902 4 10683 + 6192 6192 + 1272 4351 + 944 3393 + 738 pedestrian over the frames in the time window T is below a predefined threshold th :
+
+Vselected =
+
+(
+
+i ∈ V 1
+
+|T |
+
+X
+
+> t∈T
+
+min  
+
+> j∈P
+
+∥rj (t) − vi(t)∥2 ≤ th 
+
+)
+
+where rj (t) and vi(t) denote the positions of pedestrian j and vehicle i at frame t, respectively. As shown in Fig. 3, the number of training samples associated with different vehicle counts varies under different distance thresholds. From Fig. 3, we can see that if the distance threshold is too small, the number of available samples decreases sharply as the number of vehicles increases. Conversely, if the threshold is too large, the number of samples becomes nearly uniform across different vehicle counts, but intuitively, vehicles that are too far away are unlikely to interact meaningfully with pedestrians. Therefore, to maximize the amount of realistic interaction data while keeping the experimental setup manageable, we select scenes with 1–4 vehicles within a 0–15 m range for one-, two-, and three-person scenes, resulting in a total of 3 × 4 experimental conditions. The number of segmented scenes for each condition is summarized in Table 1. In summary, the processed dataset for training and validation includes all possible pedestrian combinations together with the actual number of vehicles within a fixed range. Although the proposed scene segmentation approach may limit the potential for capturing pedestrian–pedestrian interactions, the inclusion of real vehicle information makes it well-suited for evaluating pedestrian–vehicle interactions. 4Running Title for Header 
+
+Figure 3: Number of pedestrian–vehicle interaction training samples under varying numbers of surrounding vehicles and different distance thresholds for scenarios ranging from one to three pedestrians. 
+
+# 3 Method 
+
+In this section, we will introduce our proposed vehicle-conditioned pedestrian pose forecasting network as illustrated in Fig. 4. We first define the problem in Section 3.1 then present the overall framework in Section 3.2, and further describe its core components in the following subsections. D    
+
+> C
+> T
+> 1: T×𝑁 !
+> T
+> B
+> P
+> M
+> ×𝑁 !
+> TBIFormer
+> Block
+> ×𝑁 "
+> 1: T×𝑁 #×𝑁 #
+> MLP
+> Pedestrian -Vehicle
+> Interaction  Cross
+> Attention
+> TRPE (P -P)
+> R
+> Transformer Decoder
+> FC
+> I
+> D
+> C
+> T
+
++
+
++               
+
+> 𝑄
+> 𝐾 ,𝑉
+> 𝐾 ,𝑉
+> T+ 1: T+ N
+> ×𝑁 !
+> ×𝑁 !
+> 𝑄
+> 𝑃 !
+> 𝑃 "
+> 𝑉 !
+> 𝑉 "
+> 𝐿 ×𝐵 #𝐿 ×𝐵 $
+> 𝑃 −𝑃 𝑃 −𝑉
+> 𝑉 −𝑃 𝑉 −𝑉
+> TRPE (P -V)
+> RTPEIE
+> TPEIE
+
+Figure 4: Overview of the proposed Vehicle-conditioned pedestrian pose forecasting network. The model receives 3D pedestrian poses and 3D vehicle bounding box data, transforms them into displacement sequences, and applies Discrete Cosine Transform (DCT) to discard high-frequency components for a more compact representation. Pedestrian and vehicle features are then processed through separate encoders and fused via cross-attention before being decoded into future pedestrian poses. 
+
+3.1 Problem Definition 
+
+Consider P pedestrians with observed 3D skeletal poses over T + 1 frames, denoted as X1: T +1  
+
+> p
+
+= {x1
+
+> p
+
+, x 2
+
+> p
+
+, . . . , x T +1  
+
+> p
+
+}
+
+for p = 1 , . . . , P . To capture motion dynamics, we represent pedestrian motion as frame-to-frame displacements 5Running Title for Header 
+
+yi = xi+1 − xi, forming the displacement sequence Y 1: T = {y1, . . . , y T }. Similarly, for K surrounding vehicles, we observe their 3D trajectories V 1: T +1 = {v1: T +1 1 , . . . , v 1: T +1  
+
+> K
+
+} in the same coordinate space, where each vtk
+
+contains the 8 corner points of the vehicle’s 3D bounding box at frame t, and convert them to displacement sequences 
+
+U 1: T = {u1, . . . , u T } with uik = vi+1  
+
+> k
+
+−vik. The goal is to leverage both pedestrian and vehicle displacement sequences, 
+
+(Y 1: T , U 1: T ), to predict the N future pedestrian displacements Y T +1: T +N , which are then transformed back into 3D poses XT +2: T +N +1 .
+
+3.2 Overall Framework 
+
+As illustrated in Fig. 4, we extend TBIFormer[ 28 ], which effectively captures long-term temporal dependencies and fine-grained body-part dynamics, to incorporate vehicle information for pedestrian 3D pose forecasting. For the pedestrian branch, our network retains the core TBIFormer architecture, including stacked TBIFormer blocks and the Temporal Body Partition Module (TBPM). To leverage vehicle information, we introduce an additional vehicle branch that processes displacement sequences of vehicles in the same 3D coordinate space as pedestrians. Pedestrian and vehicle features are then fused through a Pedestrian–Vehicle Interaction Cross-Attention (PVI-CA) module, which models interactions between pedestrian body parts and vehicle groups. Notably, we extend the Trajectory-Aware Relative Position Encoding (TRPE) to the pedestrian–vehicle cross attention, providing discriminative spatial and temporal cues for accurate pose prediction. The fused representation is subsequently fed into the traditional Transformer decoder [ 31 ] to predict future pedestrian poses. Overall, our model explicitly integrates vehicle motion while preserving the temporal, spatial, and social modeling capabilities of TBIFormer. 
+
+3.3 Vehicle Encoder 
+
+To incorporate vehicle information into the same 3D space as pedestrians, we design a Vehicle Encoder that converts 3D vehicle bounding box data into a compact feature representation suitable for interaction modeling. Each vehicle is represented by the 8 corner points of its 3D bounding box. These corner points are first used to compute a displacement sequence, capturing the vehicle’s temporal motion across consecutive frames. The displacement sequence is then transformed via Discrete Cosine Transformation (DCT) [ 32 ], which suppresses high-frequency components and yields a more compact representation in the displacement trajectory space, preserving the primary motion trends while reducing noise and redundancy. The resulting sequence is downsampled along the temporal dimension to length L. Following this, the 8 corner points are divided into BV = 12 logical groups (12 edges of the bounding box) , a choice motivated by the ablation study in Section 4.5 and analogous to the body-part division (Temporal Body Partition Module) used for pedestrians as in TBIFormer (i.e. 3D keypoints of each pedestrian are divided into 5 groups to represent the trunk and 4 limbs), allowing the network to model localized motion patterns within the vehicle structure. For NV
+
+vehicles in the scene, concatenating all groups across all vehicles forms a Multi-Vehicle Feature sequence of length 
+
+U = Nv × Bv × L with feature dimension D. Temporal positional encoding (TPE) and identity encoding (IE) are applied to each sequence in the same manner as the pedestrian branch, ensuring temporal dynamics and individual vehicle identity are preserved. The Multi-Vehicle Feature sequence is then processed through a two-layer MLP to extract high-dimensional embeddings, ensuring the same feature dimension as the pedestrian branch, which facilitates seamless integration in the subsequent cross-attention module, enabling effective fusion of pedestrian and vehicle information for interaction-aware 3D pose forecasting. 
+
+3.4 Pedestrian–Vehicle Interaction Cross-Attention 
+
+To effectively incorporate vehicle information into pedestrian motion forecasting, we extend the original Trajectory-Aware Relative Position Encoding (TRPE) to model interactions between pedestrians and vehicles. The extended TRPE encodes trajectory-aware relational information between each pedestrian and surrounding vehicles, capturing both spatial and temporal context, as illustrated in Fig. 4. The resulting trajectory-aware relative position embeddings are then integrated into a cross-attention mechanism, referred to as Pedestrian-Vehicle Interaction Cross-Attention (PVI-CA). Given the pedestrian features Hp from the pedestrian branch and vehicle features Hv from the vehicle branch, the cross-attention computes: 
+
+Q = HpWQ, K = Hv WK , V = Hv WV , (2) PVI-CA (Q, K, V ) = softmax 
+
+ QK ⊤ + BTRPE 
+
+√dz
+
+
+
+V, (3) where BTRPE is the contextual bias derived from the extended TRPE between pedestrian and vehicle features (see Fig. 4). By integrating both spatial and trajectory-aware relational information, PVI-CA allows the model to selectively attend to vehicles that are most relevant to each pedestrian’s motion. 6Running Title for Header 
+
+3.5 Decoder 
+
+As illustrated in Fig. 4, we follow the standard Transformer decoder design [ 31 ]. Specifically, the joint coordinates of the last observed pedestrian sub-sequence are concatenated and down-sampled by a 1D convolution to form global body query tokens, while the fused pedestrian–vehicle features from the PVI-CA module serve as keys and values. The decoder encodes the relations between the current queries and historical context, conditioned on pedestrian and vehicle information. Finally, two fully connected layers followed by an Inverse Discrete Cosine Transformation (IDCT) [ 32 ]generate the future motion trajectory XT +2: T +N +1 for each pedestrian. 
+
+3.6 Training Objective 
+
+We treat the vehicle motion as a conditioning signal and therefore do not predict its future trajectory. As a result, the training objective is applied only to pedestrian poses. We optimize the model using a reconstruction loss based on the Mean Per Joint Position Error (MPJPE). For a single training sample, the loss is defined as 
+
+Lrec = 1
+
+J ∗ N 
+
+> T+N
+
+X 
+
+> t=T+1
+> J
+
+X
+
+> j=1
+
+∥ˆyt,j − yt,j ∥2 , (4) where ˆyt,j and yt,j denote the estimated and ground-truth pose displacements of joint j at time step t, respectively, and 
+
+J is the number of body joints. 
+
+# 4 Experiment 
+
+4.1 Implementation Details 
+
+We implement our framework in PyTorch, and the experiments are performed on a single Nvidia GeForce RTX 4090 GPU. We train our model for 50 epochs using the Adam optimizer with a batch size of 32, a learning rate of 2 × 10 −5,and a dropout rate of 0.2. All other settings remain consistent with TBIFormer [ 28 ], with the model trained for 2 s (50 frames) and evaluated for 1 s (25 frames) prediction. 
+
+4.2 Baselines 
+
+Since no prior work directly addresses 3D pose forecasting with vehicle context, we adapt the state-of-the-art multi-agent 3D pose forecasting method TBIFormer [ 28 ] as our baseline. Both TBIFormer and our model are trained and evaluated on the one-, two-, and three-pedestrian scenarios extracted from Waymo-3DSkelMo and the Waymo Dataset, following the dataset procedure described in Section 2.2. In each scenario, TBIFormer is applied in the pedestrian-only setting, while our model uses pedestrian + vehicle(s). For both methods, we use a 2 s input and predict 1 s ahead, with training and evaluation conducted under varying numbers of vehicles. 
+
+4.3 Metrics 
+
+We evaluate our predictions using three widely used metrics, which capture different aspects of pose and trajectory accuracy. 
+
+JPE (Joint Position Error): Evaluates both global and local pose predictions by averaging the L2 distance of all joints at each predicted timestep: JPE = 1
+
+T · NjTX
+
+> t=1
+> Nj
+
+X
+
+> j=1
+
+∥ˆp(j) 
+
+> t
+
+− p(j) 
+
+> t
+
+∥2 (5) where T is the number of predicted timesteps, Nj is the number of joints, ˆp(j) 
+
+> t
+
+and p(j) 
+
+> t
+
+are the predicted and ground-truth positions of joint j at timestep t, respectively. 
+
+APE (Aligned Pose Error): Evaluates the forecasted local motion by measuring the average L2 distance of all joints, after removing global translation to capture pure pose error: APE = 1
+
+T · NjTX
+
+> t=1
+> Nj
+
+X
+
+> j=1
+
+∥(ˆ p(j) 
+
+> t
+
+− ˆrt) − (p(j) 
+
+> t
+
+− rt)∥2 (6) 7Running Title for Header where ˆrt and rt are the predicted and ground-truth root positions at timestep t.
+
+FDE (Final Displacement Error): Measures the accuracy of the forecasted global trajectory by computing the L2
+
+distance of the root position at the final predicted timestep. FDE = ∥ˆrT − rT ∥2 (7) 
+
+4.4 Results 
+
+Table 2: Evaluation metrics (in millimeters) for different prediction horizons under varying numbers of vehicles. Results compare one-, two-, and three-pedestrian scenarios, showing performance with and without surrounding vehicle information. Metrics include MPJPE, APE, and FDE at the prediction frames of 0.2s, 0.6s, and 1.0s. Bold face indicates best performance.                                                                                                                                                                                                                                                 
+
+> #of Veh.
+> Metric 1 Pedestrian Scene 2 Pedestrians Scene 3 Pedestrians Scene [28] (Ped. only) Ours [28] (Ped. only) Ours [28] (Ped. only) Ours
+> 0.2s 0.6s 1.0s 0.2s 0.6s 1.0s 0.2s 0.6s 1.0s 0.2s 0.6s 1.0s 0.2s 0.6s 1.0s 0.2s 0.6s 1.0s
+> 1
+> MPJPE ↓84 232 316 78 225 311 88 228 324 79 216 304 97 251 361 82 215 299
+> APE ↓53 109 118 49 107 115 54 110 116 52 107 115 57 112 119 55 111 119
+> FDE ↓57 183 273 54 179 271 63 181 283 55 170 265 72 206 323 55 165 255 2
+> MPJPE ↓88 227 302 82 224 303 86 225 313 78 205 275 94 238 334 80 208 283
+> APE ↓56 112 118 53 111 117 54 112 120 53 110 117 59 118 127 55 114 123
+> FDE ↓61 178 259 56 175 259 60 175 273 52 152 229 66 187 290 53 155 236 3
+> MPJPE ↓87 220 300 79 213 293 89 231 323 76 208 285 93 237 334 79 201 272
+> APE ↓54 114 123 52 113 121 56 115 124 52 112 122 57 117 125 56 115 125
+> FDE ↓61 168 254 53 161 248 61 178 276 50 155 236 65 184 284 50 147 221 4
+> MPJPE ↓83 206 277 77 205 285 92 242 348 76 202 278 99 253 364 78 207 279
+> APE ↓54 112 121 52 110 119 55 113 122 51 109 119 58 119 131 54 115 125
+> FDE ↓55 152 229 51 155 241 67 197 307 50 151 230 71 203 316 52 152 229
+
+We conduct experiments separately for one-, two-, and three-pedestrian scenarios, comparing prediction performance with and without surrounding vehicles under varying numbers of vehicles. The evaluation metrics at different prediction horizons are summarized in Table 2. From the results, several observations can be made. Firstly, the inclusion of vehicles consistently improves overall prediction accuracy across all metrics. For example, in the one-pedestrian scenario with a single vehicle, the MPJPE decreases from 84–316 mm (pedestrian only) to 78–311 mm (ours), corresponding to an improvement of around 1.5%–7%. Similar improvements are observed for APE and FDE, with reductions of around 0.7%–7.5% overall. This trend holds across different numbers of vehicles and all pedestrian scenarios, with overall improvements ranging from 1.5%-21% for MPJPE, 1.8%-12% for APE, and 0.7%-15% for FDE, depending on the number of vehicles in the scenes. However, in the one-pedestrian scenario with four vehicles, the prediction performance at 1.0s slightly decreases. Secondly, comparing the one-, two-, and three-pedestrian scenarios, the overall improvements generally increase with the number of pedestrians. For example, in the one-pedestrian scenario with a single vehicle, the average MPJPE across 0.2s, 0.6s, and 1.0s decreases from 211 mm (pedestrian only) to 205 mm (ours), corresponding to an improvement of about 2.9%. In the two-pedestrian scenario with one vehicle, the average MPJPE decreases from 213 mm to 200 mm ( ∼ 6.4% improvement), and in the three-pedestrian scenario with one vehicle, it decreases from 236 mm to 199 mm ( ∼ 15 .9% improvement). This trend is likely because multi-pedestrian scenes involve more complex interactions, allowing vehicle information to provide stronger contextual cues, whereas in single-pedestrian scenes, the interaction context from vehicles is more limited. Thirdly, we examine the effect of increasing vehicle count within each scenario by focusing on relative improvements, as absolute metrics are not directly comparable due to differences in the underlying training data for each vehicle count. We observe that, overall, relative improvements increase with the number of vehicles. For instance, in the two-pedestrian scenario, increasing the number of surrounding vehicles leads to steadily larger improvements in overall MPJPE, with the improvement growing from approximately 6% with one vehicle to around 18% with four vehicles. A similar trend is observed in the three-pedestrian scenario, where additional vehicles also result in substantial performance gains. In contrast, in the one-pedestrian scenario, the improvements are relatively small and even show slight decreases when adding more than three vehicles, indicating that the contribution of vehicle information is limited when only a single pedestrian is present. 8Running Title for Header Overall, the results confirm that vehicle information plays a positive role in improving pedestrian trajectory predic-tion. Compared with the baseline, our model more effectively leverages such contextual cues, leading to consistent performance gains. Table 3: Ablation studies on different components of Our model. Our full method and its variants are evaluated on the 2 pedestrians and 3 vehicles subdataset (averaged over 0.2s, 0.4s, 0.6s, 0.8s, 1.0s). Bold face indicates best performance. 
+
+Method MPJPE ↓ APE ↓ FDE ↓
+
+TBIFormer 218.8 103.0 173.4 + Vehicle Center 224.4 105.2 177.8 + Veh Branch w/o TRPE 195.4 100.4 150.2 + Veh Branch w TRPE 1 group 195.4 100.2 150.0 2 group 194.8 100.2 150.6 4 group 195.4 100.2 150.0 6 group 195.6 100.4 150.6 8 group 195.4 100.0 150.2 12 group 194.8 100.0 149.8 Full Model (with TRPE) 194.8 100.0 149.8 4.5 Ablation Studies 
+
+Table 3 shows ablation studies on the two-pedestrian, three-vehicle subset. Simply treating the vehicle center as a pseudo pedestrian body part and applying the original TBIFormer [ 28 ] increases MPJPE, APE, and FDE by roughly 2.5% each, indicating that naively treating the vehicle as a pedestrian provides insufficient cues for accurate pedestrian–vehicle interaction modeling. Introducing a dedicated vehicle branch with conventional cross-attention but without TRPE in it substantially reduces errors, with MPJPE and FDE decreasing by about 10 .7% and 13 .4% , respectively, demonstrating that explicit vehicle modeling effectively improves performance. Adding TRPE within the cross-attention, thereby forming PVI-CA, brings marginal but consistent improvements under different grouping configurations of the vehicle bounding box corners. Here, 1 group treats all 8 corners as a single group; 2 groups split the corners into front and back faces; 4 groups 
+
+represent the four vertical edges of the bounding box; 6 groups treat each face of the bounding box as a group; 8 groups 
+
+treat each corner individually; and 12 groups consider each bounding box edge as a separate group. It can be seen that the performance differences across different groupings are small, and our full model adopts the 12 groups setting, though all group configurations are supported. 
+
+4.6 Visualization 
+
+We visualize one scenario involving three pedestrians and four vehicles, and compare the predictions of TBIFormer [ 28 ]without vehicles and our model with vehicles. From the qualitative results in Fig. 5, we observe that both TBIFormer and our model perform well for short-duration predictions (0.2s), while our model shows clear advantages for longer-duration predictions (0.6s and 1s). TBIFormer’s predictions tend to lead the ground truth by a noticeable margin, whereas our predictions more accurately follow the true trajectories. In particular, in the 1.0s prediction, TBIFormer predicts more conservative, delayed motion trends. In contrast, our model better respects the positions of surrounding vehicles and predicts more accurate motions that align more closely with the ground truth, highlighting the importance of incorporating vehicle information and explicitly modeling pedestrian–vehicle interactions. 
+
+# 5 Conclusion 
+
+In this work, we address the critical problem of 3D pedestrian pose forecasting in autonomous driving scenarios, emphasizing the often-overlooked influence of interactions between 3D pedestrian poses and 3D vehicles on pedestrian behavior. We enhance the Waymo-3DSkelMo dataset by incorporating 3D vehicle bounding boxes and a sampling strategy, enabling realistic modeling of pedestrian–vehicle interactions. Building on the TBIFormer architecture, we propose a Vehicle-conditioned 3D pose forecasting network, where pedestrian predictions are conditioned on not only their historical motion but also the surrounding vehicle context. Extensive experiments demonstrate that incorporating 9Running Title for Header Input 0.2s -2s 0s 0.6s 1s 
+
+> Scenario 1
+> Scenario 2
+> Scenario 3
+
+Figure 5: Qualitative comparison between TBIFormer [ 28 ] and our model. Ground truth trajectories are shown in green, TBIFormer predictions in blue, and ours in red. Black boxes denote surrounding vehicles used by our model as input, whereas TBIFormer does not use vehicle information. vehicle information significantly improves the accuracy of predicted pedestrian poses and validates different approaches for modeling pedestrian–vehicle interactions. Our work highlights the importance of multi-agent context, particularly vehicles, in accurate pedestrian motion prediction and provides a foundation for safer autonomous driving systems. 
+
+# Acknowledgments 
+
+Guangxun Zhu is supported by the funding from the China Scholarship Council (CSC). 
+
+# References 
+
+[1] Yuqi Wang, Jiawei He, Lue Fan, Hongxin Li, Yuntao Chen, and Zhaoxiang Zhang. Driving into the future: Multiview visual forecasting and planning with world model for autonomous driving. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 14749–14759, 2024. [2] Je-Seok Ham, Dae Hoe Kim, NamKyo Jung, and Jinyoung Moon. Cipf: Crossing intention prediction network based on feature fusion modules for improving pedestrian safety. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops , pages 3666–3675, June 2023. [3] Luca Crosato, Kai Tian, Hubert P. H. Shum, Edmond S. L. Ho, Yafei Wang, and Chongfeng Wei. Social interaction-aware dynamical models and decision-making for autonomous vehicles. Advanced Intelligent Systems ,6(3):2300575, 2024. [4] Conghao Wong, Beihao Xia, Ziqian Zou, Yulong Wang, and Xinge You. Socialcircle: Learning the angle-based social interaction representation for pedestrian trajectory prediction. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 19005–19015, 2024. [5] Kai Chen, Xiaodong Zhao, Yujie Huang, Guoyu Fang, Xiao Song, Ruiping Wang, and Ziyuan Wang. Socialmoif: Multi-order intention fusion for pedestrian trajectory prediction. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 22465–22475, 2025. [6] Pengfei Yao, Yinglong Zhu, Huikun Bi, Tianlu Mao, and Zhaoqi Wang. Trajclip: Pedestrian trajectory prediction method using contrastive learning and idempotent networks. Advances in Neural Information Processing Systems ,37:77023–77037, 2024. [7] Luca Crosato, Chongfeng Wei, Edmond S. L. Ho, and Hubert P. H. Shum. Human-centric autonomous driving in an av-pedestrian interactive environment using svo. In 2021 IEEE 2nd International Conference on Human-Machine Systems (ICHMS) , pages 1–6, 2021. 10 Running Title for Header [8] Luca Crosato, Hubert P. H. Shum, Edmond S. L. Ho, and Chongfeng Wei. Interaction-aware decision-making for automated vehicles using social value orientation. IEEE Transactions on Intelligent Vehicles , 8(2):1339–1349, 2023. [9] Amir Rasouli and Iuliia Kotseruba. Pedformer: Pedestrian behavior prediction via cross-modal attention modula-tion and gated multitask learning. In 2023 IEEE International Conference on Robotics and Automation (ICRA) ,pages 9844–9851, 2023. [10] Mohsen Azarmi, Mahdi Rezaei, and He Wang. Pip-net: Pedestrian intention prediction in the wild. IEEE Transactions on Intelligent Transportation Systems , 26(7):9824–9837, 2025. [11] Srikanth Malla, Behzad Dariush, and Chiho Choi. Titan: Future forecast using action priors. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 11186–11196, 2020. [12] Amir Rasouli, Iuliia Kotseruba, and John K Tsotsos. Are they going to cross? a benchmark dataset and baseline for pedestrian crosswalk behavior. In Proceedings of the IEEE International Conference on Computer Vision Workshops , pages 206–213, 2017. [13] Amir Rasouli, Iuliia Kotseruba, and John K Tsotsos. Agreeing to cross: How drivers and pedestrians communicate. In IEEE Intelligent Vehicles Symposium (IV) , pages 264–269, 2017. [14] Amir Rasouli, Iuliia Kotseruba, Toni Kunic, and John K. Tsotsos. Pie: A large-scale dataset and models for pedestrian intention estimation and trajectory prediction. In International Conference on Computer Vision (ICCV) ,2019. [15] Farzeen Munir, Shoaib Azam, Tsvetomila Mihaylova, Ville Kyrki, and Tomasz Piotr Kucner. Pedestrian vision language model for intentions prediction. IEEE Open Journal of Intelligent Transportation Systems , 6:393–406, 2025. [16] Jaewoo Jeong, Seohee Lee, Daehee Park, Giwon Lee, and Kuk-Jin Yoon. Multi-modal knowledge distillation-based human trajectory forecasting. In 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. [17] Saeed Saadatnejad, Yang Gao, Kaouther Messaoud, and Alexandre Alahi. Social-transmotion: Promptable human trajectory prediction. In International Conference on Learning Representations (ICLR) , 2024. [18] Dushyant Mehta, Oleksandr Sotnychenko, Franziska Mueller, Weipeng Xu, Srinath Sridhar, Gerard Pons-Moll, and Christian Theobalt. Single-Shot Multi-person 3D Pose Estimation from Monocular RGB . In 2018 International Conference on 3D Vision (3DV) , pages 120–130, Los Alamitos, CA, USA, September 2018. IEEE Computer Society. [19] Jiashun Wang, Huazhe Xu, Medhini Narasimhan, and Xiaolong Wang. Multi-person 3d motion prediction with multi-range transformers. In Proceedings of the 35th International Conference on Neural Information Processing Systems , NIPS ’21, Red Hook, NY, USA, 2021. Curran Associates Inc. [20] CMU. Cmu graphics lab motion capture database, 2003. [21] Jaewoo Jeong, Daehee Park, and Kuk-Jin Yoon. Multi-agent long-term 3d human pose forecasting via interaction-aware trajectory conditioning. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 16975–16984, 2024. [22] Luca Crosato, Chongfeng Wei, Edmond S. L. Ho, Hubert P. H. Shum, and Yuzhu Sun. A virtual reality framework for human-driver interaction research: Safe and cost-effective data collection. In Proceedings of the 2024 ACM/IEEE International Conference on Human-Robot Interaction , HRI ’24, page 167–174, New York, NY, USA, 2024. Association for Computing Machinery. [23] Guangxun Zhu, Shiyu Fan, Hang Dai, and Edmond S. L. Ho. Waymo-3dskelmo: A multi-agent 3d skeletal motion dataset for pedestrian interaction modeling in autonomous driving. In Proceedings of the 33rd ACM International Conference on Multimedia , MM ’25, New York, NY, USA, 2025. Association for Computing Machinery. [24] Waymo open dataset: An autonomous driving dataset, 2019. [25] Bohao Fan, Wenzhao Zheng, Jianjiang Feng, and Jie Zhou. Lidar-hmr: 3d human mesh recovery from lidar. arXiv preprint arXiv:2311.11971 , 2023. [26] Matthew Loper, Naureen Mahmood, Javier Romero, Gerard Pons-Moll, and Michael J Black. Smpl: A skinned multi-person linear model. In Seminal Graphics Papers: Pushing the Boundaries, Volume 2 , pages 851–866. 2023. [27] Chengan He, Jun Saito, James Zachary, Holly Rushmeier, and Yi Zhou. Nemf: Neural motion fields for kinematic animation. In S. Koyejo, S. Mohamed, A. Agarwal, D. Belgrave, K. Cho, and A. Oh, editors, Advances in Neural Information Processing Systems , volume 35, pages 4244–4256. Curran Associates, Inc., 2022. 11 Running Title for Header [28] Xiaogang Peng, Siyuan Mao, and Zizhao Wu. Trajectory-aware body interaction transformer for multi-person pose forecasting. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 17121–17130, 2023. [29] Jon Louis Bentley. Multidimensional binary search trees used for associative searching. Communications of the ACM , 18(9):509–517, 1975. [30] N.P. van der Aa, X. Luo, G.J. Giezeman, R.T. Tan, and R.C. Veltkamp. Umpm benchmark: A multi-person dataset with synchronized video and motion capture data for evaluation of articulated human motion and interaction. In 
+
+2011 IEEE International Conference on Computer Vision Workshops (ICCV Workshops) , pages 1264–1269, 2011. [31] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems , 30, 2017. [32] Nasir Ahmed, T_ Natarajan, and Kamisetty R Rao. Discrete cosine transform. IEEE transactions on Computers ,100(1):90–93, 2006. 12

@@ -1,0 +1,719 @@
+Title: Efficient and Stable Reinforcement Learning for Diffusion Language Models
+
+URL Source: https://arxiv.org/pdf/2602.08905v1
+
+Published Time: Tue, 10 Feb 2026 03:30:56 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# Efficient and Stable Reinforcement Learning for Diffusion Language Models 
+
+Jiawei Liu 1 2 Xiting Wang 3 Yuanyuan Zhong 4 Defu Lian 1 Yu Yang 2
+
+## Abstract 
+
+Reinforcement Learning (RL) is crucial for unlocking the complex reasoning capabilities of Diffusion-based Large Language Models (dLLMs). However, applying RL to dLLMs faces unique challenges in efficiency and sta-bility. To address these challenges, we pro-pose Spatio-Temporal Pruning (STP), a frame-work designed to simultaneously improve the ef-ficiency and stability of RL for dLLMs. STP compresses the redundancy in the generative pro-cess through: (1) spatial pruning , which con-strains the exploration space using static priors; and (2) temporal pruning , which bypasses re-dundant late-stage refinement steps. Our theo-retical analysis demonstrates that STP strictly reduces the variance of the log-likelihood esti-mation, thereby ensuring more stable policy up-dates. Extensive experiments demonstrate that STP surpasses state-of-the-art baselines in both efficiency and accuracy. Our code is available at 
+
+https://github.com/Lolo1222/STP .
+
+## 1. Introduction 
+
+Diffusion-based large language models (dLLMs) have emerged as an alternative paradigm for generative model-ing (Nie et al., 2025; Ou et al., 2025; Yang et al., 2025). By iteratively refining sequences through a denoising process, dLLMs offer a non-autoregressive alternative that breaks the left-to-right sequential generation constraint inherent to traditional autoregressive (AR) models (Lou et al., 2024). Open-weight dLLMs like LLaDA (Nie et al., 2025) now demonstrate performance competitive with AR models of comparable scale, while closed-source models such as Mer-
+
+> 1
+
+State Key Laboratory of Cognitive Intelligence, University of Science and Technology of China, Hefei, China 2City Uni-versity of Hong Kong, Hong Kong, China 3Gaoling School of Artificial Intelligence, Renmin University of China, Beijing, China 4School of Software and Microelectronics, Peking Uni-versity, Beijing, China. Correspondence to: Xiting Wang <xit-ingwang@ruc.edu.cn >, Defu Lian <liandefu@ustc.edu.cn >, Yu Yang <yuyang@cityu.edu.hk >.
+
+Preprint. February 10, 2026. Table 1. Comparison of RL algorithms for dLLMs. STP (Ours) achieves the best efficiency and accuracy empirically with a unique theoretical guarantee on stability. Symbols ✗, ✓, and ✓✓ denote 
+
+limited , good , and state-of-the-art performance, respectively. Method Efficiency Stability Accuracy Standard GRPO ✗ ✓ ✓
+
+Diffu-GRPO ✓ ✗ ✗
+
+UniGRPO ✓ ✗ ✗
+
+STP (Ours) ✓✓ 1 ✓✓ 2 ✓✓ 31 +13.1% training speedup over the fastest baseline.  
+
+> 2
+
+Theoretically provable variance reduction (see Section 4).  
+
+> 3
+
+Up to 81.7% relative improvement on logic reasoning tasks. 
+
+cury (Khanna et al., 2025) and Gemini Diffusion (Deep-Mind., 2025) achieve more than an order-of-magnitude gen-eration speed-up over AR models. Applying reinforcement learning (RL) to dLLMs is essen-tial for improving their reasoning abilities and ensuring safety (Guo et al., 2025; Wang et al., 2024). However, the integration of RL with diffusion-based language models dif-fers fundamentally from the autoregressive (AR) setting. In AR models, token probabilities are factorized along a single left-to-right generation order, enabling exact log-likelihood computation via the chain rule (Radford et al., 2018). In contrast, diffusion language models generate sequences with bidirectional context, where tokens can be updated in multi-ple orders. This makes the exact likelihood computation – which marginalizes over a combinatorial set of generation trajectories – intractable and typically approximated via multi-step Monte Carlo sampling (Zhao et al., 2025; Zhu et al., 2025). This reliance on estimation has led to two challenges for RL training: • C1. Efficiency. Likelihood estimation relies on multi-step Monte Carlo sampling over diffusion timesteps, in-creasing the computational cost of trajectory generation. • C2. Stability. Stochastic estimation over both diffusion time and token states introduces variance into the policy gradient estimator, which destabilizes the RL training process (Zhao et al., 2025; Wang et al., 2025). As summarized in Table 1, existing RL methods for dLLMs fail to simultaneously achieve high computational efficiency and training stability. Standard GRPO is computationally ex-1
+
+> arXiv:2602.08905v1 [cs.AI] 9 Feb 2026
+
+Efficient and Stable Reinforcement Learning for Diffusion Language Models Step 1                  
+
+> (Fully Masked)
+> !=0
+> !=1
+> Time
+> Step 2
+> Step 3
+> Step 4
+> Step 5
+> Step 6
+> (Completed)
+> (a) Standard Generation (Iterative Denoising)
+> Prompt Response
+> Step 1
+> (Partially Masked)
+> !=0
+> !=1−&
+> Step 2
+> Step 3
+> Step 4
+> (Completed)
+> (b) Ours –STP ( Spatio -Temporal Pruning)
+> Prompt Strategy 1: Spatial Pruning
+> Strategy 2:
+> Temporal Pruning
+> One Step
+> Decodin g
+> !=!cuto ff
+> Mask token Fixed token
+
+Figure 1. Comparing (a) standard sequence generation with iterative denoising with (b) our generation process with spatio-temporal purning, which reduces computational cost and ELBO variance theoretically while improving empirical accuracy. 
+
+pensive due to multi-step Evidence Lower Bound (ELBO) estimation. To mitigate this burden, efficiency-oriented approaches like Diffu-GRPO (Zhao et al., 2025) and Un-iGRPO (Yang et al., 2025) employ a one-step denoising strategy to approximate token likelihoods. Although these methods improve efficiency, they introduce estimation vari-ance, which leads to unstable gradient updates and subopti-mal accuracy (see experimental results in Table 2). We propose an alternate method that improves the effi-ciency by reducing sampling redundancy across Spatial 
+
+(sequence length) and Temporal (diffusion steps) dimen-sions. As shown in Table 1, our method achieves the best efficiency and has a theoretically guaranteed variance reduc-tion, leading to better stability and state-of-the-art accuracy. Moreover, our method is complementary to current RL im-provements and can be combined with them to achieve greater improvements (see experimental results in Table 3). More specifically, our framework, Spatio-Temporal Prun-ing (STP) , consists of two pruning strategies as shown in Figure 1: (1) spatial pruning , which incorporates the 
+
+semi-offline strategy (Chen et al., 2023) by mixing offline data with online generation, thereby constraining the search space to prevent inefficient exploration; and (2) temporal pruning , which leverages the non-autoregressive nature of dLLMs to compress redundant refinement steps in the late stage. This is based on the insight that later steps are pri-marily dedicated to local syntactic refinement (Huang et al., 2025), allowing for redundancy reduction without compro-mising generation quality. Our main contributions are summarized as follows: • We propose Spatio-Temporal Pruning (STP), which is, to the best of our knowledge, the first work to simultane-ously optimize the computational efficiency and training stability of RL training for dLLMs. • We provide a theoretical analysis demonstrating that STP not only reduces computational cost of trajectory sam-pling but also lowers the variance of the log-likelihood estimation, thereby enabling more stable and efficient reinforcement learning for dLLMs. • Extensive experiments demonstrate the effectiveness of STP: it reduces training time by 13.1% vs. the fastest baseline ( Diffu-GRPO ) while consistently outperform-ing the strongest baseline ( GRPO w/ ELBO ), achieving steady gains on math benchmarks and up to 81.7% rela-tive improvement on logic benchmarks. 
+
+## 2. Preliminaries 
+
+2.1. GRPO for dLLMs 
+
+Although our framework is suitable for various RL al-gorithms, we adopt Group Relative Policy Optimization (GRPO) (Shao et al., 2024; Guo et al., 2025) as our base RL algorithm for its memory efficiency and its prevalence in RL for dLLMs (Zhao et al., 2025; Yang et al., 2025). 
+
+Objective Formulation. GRPO samples a group of G out-puts {o1, . . . , o G} from the old policy πθold for each prompt. For each output oi, a group-relative advantage is computed as ˆAi = ( R(oi) − μR)/σ R, where R is the reward function, 
+
+μR and σR are the mean and standard deviation of rewards within the group. The objective maximizes: 
+
+JGRPO (θ) = E{oi}Gi=1 ∼πold 
+
+"  1
+
+G
+
+> G
+
+X
+
+> i=1
+
+1
+
+|oi|
+
+> |oi|
+
+X
+
+> k=1
+
+min 
+
+
+
+ρki Aki ,
+
+clip  ρki , 1 − ε, 1 + ε Aki
+
+ 
+
+− βD KL [πθ ∥πref ]
+
+#
+
+(1) where ρki = πθ (oki |c,o <k i )    
+
+> πθold (oki|c,o <k i)
+
+is the importance sampling ratio for the k-th token of output i, ϵ and β are hyper-parameters, and πref is a fixed reference policy. This objective encour-ages the policy to increase the probability of tokens that 2Efficient and Stable Reinforcement Learning for Diffusion Language Models 
+
+yield high advantages Aki , while the clipping mechanism and KL penalty jointly ensure training stability by constrain-ing the policy update. 
+
+2.2. Masked Diffusion Large Language Models 
+
+Masked dLLMs (Austin et al., 2021; Shi et al., 2024; Nie et al., 2025) generate text x0 = ( x10, . . . , x L 
+
+> 0
+
+) of length L
+
+through an iterative denoising process indexed by continu-ous time t ∈ [0 , 1] . The forward process q(xt|x0) indepen-dently masks tokens in the clean sequence x0. Following the standard linear schedule (Nie et al., 2025; Sahoo et al., 2024), the conditional distribution for each token at time t
+
+is given by: 
+
+q(xit|xi
+
+> 0
+
+) = 
+
+(
+
+1 − t, xit = xi
+
+> 0
+
+t, xit = [MASK] . (2) Thus, t equals to the proportion of masks in the sequence, 
+
+x1 is a fully masked sequence, and x0 is the clean data. The reverse generative process recovers x0 from x1 by iter-atively sampling xs from xt (s < t ) using a mask predictor 
+
+πθ (x0|xt).
+
+Intractability and ELBO. Unlike AR models where like-lihood is factorizable, the exact log-likelihood log πθ (x0)
+
+of Masked dLLMs requires marginalizing over all possible high-dimensional latent trajectories x1: T , which is compu-tationally intractable (Zhao et al., 2025; Wang et al., 2025). Therefore, optimization is performed on the Evidence Lower Bound (ELBO), which serves as a tractable surrogate. For a given sequence x0, the ELBO is defined as: 
+
+Bπθ (x0) ≜ E t∼U (0 ,1) 
+
+> xt∼q(xt|x0)
+
+ 1
+
+t
+
+> L
+
+X
+
+> i=1
+
+I(xit = [MASK] )
+
+· log πθ (xi
+
+> 0
+
+|xt)
+
+
+
+,
+
+(3) In practice, we expend considerable computation to mitigate the high variance inherent in its Monte Carlo estimation (Nie et al., 2025). 
+
+Applying GRPO to dLLMs For dLLMs, the final clean data x0 obtained after the denoising process serves as the trajectory o for the subsequent RL training. The intractable token likelihoods in ρki is approximated using the exponen-tial of the token-wise ELBO derived from Eq. (3): 
+
+ρki (θ) ≈ exp 
+
+
+
+Bπθ (oki ) − B πθold (oki )
+
+
+
+. (4) As shown in Figure 2, the ELBO estimator enables the application of policy gradient methods to diffusion models. However, this approximation suffers from high variance, which destabilizes RL training. This motivates us to modify the trajectory generation process to reduce variance by STP Sampler, leading to more stable and efficient policy learning. Prompt      
+
+> Dataset( !)
+> Static Dataset
+> (for Spatial
+> Pruning)
+> STP Sampler
+> (Ours)
+> Shortened
+> Sampling
+> Process
+> Generated
+> Trajectories
+> ("!)
+> Policy
+> #"
+> Advantage
+> A!
+> ELBO
+> Estimator
+> RL
+> Update
+> Lower Variance
+> Estimates
+> Reinforcement Learning Training Loop for dLLMs with STP
+
+Figure 2. Replacing standard sampling with STP accelerates tra-jectory generation for exploration. Furthermore, by constraining the sampling space, STP yields lower-variance ELBO estimates, facilitating stable policy updates. 
+
+## 3. Spatio-Temporal Pruning 
+
+The generative process of a dLLM can be formulated as a trajectory within a spatio-temporal lattice L × T , where 
+
+L = {1, . . . , L } denotes spatial token indices and T =[0 , 1] represents diffusion time. To accelerate this process and reduce variance, we propose Spatio-Temporal Pruning (STP) . STP unifies two pruning strategies corresponding to the two dimensions of the lattice: Spatial Pruning (reducing the effective action space) and Temporal Pruning (reducing the integration steps). 
+
+3.1. Spatial Pruning 
+
+Spatial pruning constrains the search space to prevent inef-ficient exploration. This is theoretically motivated by the 
+
+Semi-Offline RL paradigm (Chen et al., 2023), which theo-retically demonstrates that mixing offline data with online generation can balance exploration efficiency and gener-ation quality. Compared to AR models, this paradigm is particularly well-suited for dLLMs due to their inherent ability to handle internal masks. We reformulate the denoising process in dLLMs from a single trajectory into a two-stage procedure, parameterized by the spatial pruning ratio γ . Unlike the conventional schedule where timestep t decreases uniformly from 1 to 0 in steps of ∆t, the transition between our two stages is determined by ((1 − γ).
+
+Stage 1 (Spatially-pruned Initialization, 1 ≥ t ≥ γ): 
+
+xit =
+
+(
+
+[MASK] , if ei = 1 
+
+xi
+
+> fixed
+
+, if ei = 0 (5) where ei ∼ Bernoulli (γ) controls whether exploration is performed for the i-th token, and xi 
+
+> fixed
+
+denotes an anchor sequence from a static dataset, which may come from refer-3Efficient and Stable Reinforcement Learning for Diffusion Language Models 
+
+ence solutions or prior model generations. 
+
+Stage 2 (Spatially-pruned Denoising, γ > t ≥ 0): 
+
+xit =
+
+
+
+ˆxit, if ei = 1 and mi = 0 
+
+[MASK] , if ei = 1 and mi = 1 
+
+xi
+
+> fixed
+
+, if ei = 0 
+
+(6) where ˆxit ∼ πθ (·| xt+∆ t), mi = I(i ∈ Smaxconf ), and 
+
+Smaxconf = argmax (πθ (·| xt+∆ t)) corresponds to the low-confidence decoding strategy (Nie et al., 2025). In the corresponding forward process used by the ELBO esti-mator, the conditional distribution for each token at time t
+
+is defined as: 
+
+qSP (xit|xi
+
+> 0
+
+) = 
+
+
+
+1 − t, if i / ∈ Sfixed and xit = xi
+
+> 0
+
+t, if i / ∈ Sfixed and xit = [MASK] 
+
+1, if i ∈ Sfixed and xit = xi
+
+> fixed
+
+.
+
+(7) where Sfixed = {i|ei = 0 }. Thus |Sfixed | = γL .By fixing these tokens, we reduce the space of the policy πθ
+
+from VL to VL−| Sfixed | and shorten the sequence length for ELBO estimation from L to L−| Sfixed |. This accelerates the sampling process and lowers the variance of the estimator as derived in Theorem 4.1 and Theorem 4.3. 
+
+3.2. Temporal Pruning 
+
+While spatial pruning operates on the spatial dimension, temporal pruning operates on the temporal dimension. Stan-dard diffusion is inherently a fully observable Markovian process: the transition to state xt−∆t requires explicit obser-vation of the immediate predecessor xt. This necessitates a rigorous, step-by-step diffusion until t = 0 .We propose accelerating late-stage denoising via a partially observable process (Chen et al., 2023) since the later steps are primarily dedicated to local syntactic refinement (Huang et al., 2025). The intermediate states between a cutoff time 
+
+tcutoff and 0 are treated as unobserved variables, allowing the model to bypass the iterative chain and directly predict the final outcome. Specially, we decompose the Stage 2 in Section 3.1 into two sub-stages, controlled by a temporal cutoff tcutoff > 0.
+
+Stage 2a (Spatially-pruned Denoising, γ > t ≥ tcutoff ): 
+
+xit =
+
+
+
+ˆxit, if ei = 1 and mi = 0 
+
+[MASK] , if ei = 1 and mi = 1 
+
+xi
+
+> fixed
+
+, if ei = 0 
+
+(8) is equivalent to the undivided Stage 2. 
+
+Stage 2b (Temporally-pruned Denoising, tcutoff > t ≥ 0): 
+
+xit =
+
+(
+
+˜xit, if ei = 1 
+
+xi
+
+> fixed
+
+, if ei = 0 (9) where ˜xit = argmax (πθ (·| xtcutoff )) .This design leverages the inherent advantage of the masked dLLM architecture, which enables the simultaneous decod-ing of tokens at all positions in one single forward pass. By pruning the redundant steps t ∈ (tcut , 0] , we reduce the computational cost of the trajectory sampling from T steps to T × (1 − tcut ) steps. 
+
+## 4. Theoretical Analysis 
+
+In this section, we provide a theoretical grounding for Spatio-Temporal Pruning (STP). We analyze its impact on sampling efficiency and the variance of the Evidence Lower Bound (ELBO) estimator. Furthermore, we explicitly con-nect these properties to the stability of GRPO training. 
+
+4.1. Sampling Efficiency 
+
+The standard sampling process for a dLLM requires N
+
+iterative denoising steps to transition from t = 1 to t = 0 .Let Cstep denote the computational cost of a single forward pass (which is roughly constant). 
+
+Theorem 4.1. (Computational Complexity Reduction) Let 
+
+N be the total number of diffusion steps, γ be the spatial pruning ratio, and tcutoff ∈ (0 , 1) be the temporal pruning cutoff. The standard sampling cost is Cstd = N · C step . Under STP, the sampling cost is reduced to: 
+
+CSTP ≈ ((1 − γ − tcutoff ) · N + 1) · C step . (10) This linear reduction in temporal complexity directly trans-lates to wall-clock speedup, as sampling time is dominated by the number of forward passes. 
+
+4.2. Variance Reduction of the ELBO Estimator 
+
+A core contribution of STP is the stabilization of the RL training signal. The ELBO estimator ˆBπθ (y) used in opti-mization is stochastic due to the sampling of time steps t
+
+and the noise in the diffusion process. 
+
+Assumption 4.2. (Boundedness of ELBO Estimator) We assume the ELBO estimator difference ∆ ˆB = ˆBπθ (y) −
+
+ˆBπold (y) is bounded. Specifically, there exists a constant 
+
+K > 0 such that |∆ ˆB| ≤ K.This assumption is reasonable because πold and πθ are sep-arated by only a few training steps, and constraints like clipping and KL regularization explicitly ensure their close-ness. Based on this assumption, we analyze the variance reduction of ELBO estimator via STP. 
+
+Theorem 4.3. (Variance Reduction in ELBO) Let ˆBST P πθ (y)
+
+denote the ELBO estimator computed under the STP frame-work. The variance of the estimator is strictly bounded by 
+
+4Efficient and Stable Reinforcement Learning for Diffusion Language Models 
+
+the variance of the standard estimator: 
+
+V[ ˆBST P πθ (y)] < V[ ˆBstandard πθ (y)] . (11) This theorem guarantees that STP reduces the variance of ELBO estimation, thereby stabilizing RL training. The proof is provided in Appendix A.1. 
+
+4.3. Impact on GRPO Stability 
+
+GRPO relies on importance sampling to estimate policy gradients off-policy. In Masked dLLMs, the likelihood ratio is approximated via ELBOs: ρi ≈ exp( Bπθ (oi) −Bπθold (oi)) . Let ˆLGRPO-E be the empirical GRPO loss using ELBO estimates. Let ∆ ˆB = ˆBπθ − ˆBπold be the random variable representing the estimator difference, and ∆B be the true ELBO difference. 
+
+Theorem 4.4. (Bias and Variance Reduction in GRPO) Under Assumption 4.2, the bias and variance induced by the ELBO estimation are strictly bounded by the variance of the ELBO difference estimator V[∆ ˆB]:
+
+E[ ˆLGRPO-E ] − L GRPO-E ≤ C1 · Edata [V[∆ ˆB]]+ 
+
+C2 · Edata [
+
+q
+
+V[∆ ˆB]] 
+
+(12) 
+
+V[ ˆLGRPO-E ] ≤ Vdata + C3 · Edata [V[∆ ˆB]] 
+
+where C1, C 2, C 3 are constants depending on the advantage 
+
+A and the bound K.
+
+The full proof is provided in Appendix A.2. This confirms that reducing the variance of the ELBO estimator ( V[∆ ˆB])directly tightens the bounds on both bias and variance of the GRPO objective. High variance in ELBO estimation leads to an overestima-tion of the importance weights, potentially causing explod-ing gradients and unstable updates in GRPO. By reducing 
+
+V[ ˆB] via Theorem 4.3, STP minimizes this bias and the variance of the gradient estimator, thereby enabling more stable and efficient reinforcement training. 
+
+## 5. Experiments 
+
+In this section, we present a series of comprehensive ex-periments designed to validate the effectiveness of Spatio-Temporal Pruning (STP) 
+
+5.1. Experimental Setup 
+
+We conduct our experiments based on LLaDA-8B-Instruct (Nie et al., 2025) model. To comprehensively assess reasoning capabilities, we evaluate performance on four challenging benchmarks: GSM8K (Cobbe et al., 2021) and MATH (Hendrycks et al., 2021) for mathematical reasoning, Countdown (Pan et al., 2025) for logical reasoning. We compare our proposed method against the following representative reinforcement learning baselines for dLLMs: • GRPO w/ ELBO : A direct adaptation of GRPO (Shao et al., 2024) for dLLMs. It employs the standard Evidence Lower Bound (ELBO) estimator as a surrogate for the intractable likelihood to compute policy gradients. • Diffu-GRPO (Zhao et al., 2025): An efficiency-oriented algorithm that approximates the likelihood via a one-step unmasking strategy, reducing the computational overhead compared to ELBO-based estimation. 
+
+5.2. Implementation Details Training Configuration. We conduct all experiments on NVIDIA A800 GPUs (80GB). Following the baselines, we employ Low-Rank Adaptation (LoRA) for parameter-efficient fine-tuning with rank r = 128 and scaling factor 
+
+α = 64 . We optimize the model using AdamW with a learn-ing rate of 3 × 10 −6. Detailed hyperparameters are listed in Table 8 in Appendix B. 
+
+STP Configuration. For our Spatio-Temporal Pruning (STP), we utilize the model’s own pre-generations as the source for the static dataset. To prevent reward hacking, tokens enclosed within specific answer delimiters (e.g., 
+
+<answer> ... </answer> ) are excluded from the fixed set. Unless otherwise stated, we set the spatial pruning ratio to γ = 0 .05 (representing the proportion of fixed tokens) and the temporal pruning cutoff to tcutoff = 0 .05 .
+
+Optimization and Evaluation. Our training objective adopts the reinforcement learning formulation from Difu-GRPO (Zhao et al., 2025), incorporating KL divergence penalty and gradient clipping for stability. We do not apply prompt masking during training. To ensure consistency, the generation sequence length is fixed to L = 256 for both training and evaluation. We report performance on the final checkpoint. 
+
+5.3. Main Results 
+
+We report the GRPO training accuracy, total training wall-clock time (in seconds), and relative importvement with the best baseline (imporv.) on the evaluated reasoning bench-marks in Table 2. The results demonstrate that STP achieves a superior trade-off, surpassing the state-of-the-art in both dimensions simultaneously. 
+
+Superior Computational Efficiency. As shown in the bottom row of Table 2, STP consistently reduces training la-5Efficient and Stable Reinforcement Learning for Diffusion Language Models                                              
+
+> Table 2. Main results on reasoning benchmarks. We report the test accuracy (Acc., %) and total training wall-clock time (Time, s). The base model is LLaDA-8B-Instruct. Bold indicates the best performance. The last row shows the relative accuracy gain and relative time reduction of our method compared to the best baseline. METHODS MATH GSM8K COUNTDOWN
+> ACC .TIME (S)ACC .TIME (S)ACC .TIME (S)LL ADA-8B-I NSTRUCT 32.80% -77.79% -16.80% -GRPO W/ ELBO 34.20% 126,045 80.52% 163,035 36.33% 164,657 DIFFU -GRPO 32.80% 113,358 80.21% 146,641 25.39% 147,100
+> STP (O URS )36.20% 98,537 80.97% 144,536 66.02% 142,055
+> Improv. (vs. Best Baseline) +5.85% -13.07% +0.56% -1.44% +81.72% -3.43%
+
+tency, even when compared to the efficiency-oriented Diffu-GRPO baseline. We observe relative time reductions of 
+
+13.07% on MATH and 3.43% on Countdown. This con-firms that STP’s pruning strategy effectively eliminates re-dundant computations, making it the fastest training method among all compared approaches while maintaining full op-timization capability. 
+
+State-of-the-Art Effectiveness. In terms of reasoning accu-racy, STP outperforms the strong GRPO w/ ELBO baseline across all tasks.On the MATH benchmark, STP achieves an accuracy of 36.20% , exceeding the best baseline by 2.0% 
+
+in absolute terms. On GSM8K, our method maintains a steady advantage, pushing the accuracy to 80.97% . Most notably, on the Countdown task, STP achieves a transfor-mative relative improvement of 81.72% (from 36.33% to 66.02%). This confirms that STP gains efficiency without compromising training effectiveness. 
+
+5.4. Analysis of ELBO Variance Reduction 
+
+We theoretically analyzed that STP reduces the variance of the ELBO estimator, thereby stabilizing the policy gradient in Theorem 4.3 and Theorem 4.4. To empirically verify this, we tracked the estimation variance throughout the training process on the MATH dataset. We record 1000 training steps ELBO estimator values for each sampled trajectory and cal-culate the variance. We compare the variance distribution of the standard GRPO w/ ELBO against STP . Figure 3 presents the results. As shown in Fig. 3a, the standard ELBO estimator exhibits high and fluctuating variance throughout training, whereas STP maintains consistently low variance. This stability is crucial for importance-sampling-based methods like GRPO, as high-variance likelihood estimates can cause unstable gradient updates. Furthermore, the boxplot in Fig. 3b confirms that the vari-ance reduction achieved by STP is statistically significant. STP not only lowers the median variance but also substan-tially narrows the interquartile range and reduces outliers. These empirical results are consistent with our theoretical                  
+
+> Table 3. Compatibility of STP with advanced RL algorithms on MATH. STP consistently improves both accuracy and training speed when integrated with Diffu-GRPO and SPG. METHOD ACCURACY TIME (S)SPEEDUP
+> DIFFU -GRPO 32.80% 113,358 -
+> + STP 34.40% 79,529 +29.8%
+> SPG 36.10% 89,525 -
+> + STP 36.60% 82,830 +7.5%
+
+analysis in Section 4, and corroborate the performance im-provements shown in Section 5.3. This confirms that STP reduces the variance of the ELBO estimator, enabling more stable and efficient reinforcement learning. 
+
+5.5. Compatibility with Other RL Algorithms 
+
+Since STP optimizes the fundamental trajectory sampling process on the spatio-temporal dimension, it functions as an orthogonal acceleration module compatible with other enhanced RL algorithms on dLLMs. To verify this, we inte-grated STP on the MATH dataset with Diffu-GRPO (Zhao et al., 2025) and SPG (Wang et al., 2025). SPG mitigates gradient bias by leveraging both an upper and a lower bound of the true log-likelihood. As shown in Table 3, STP consistently boosts both efficiency and performance. Notably, integrating STP with Diffu-GRPO yields a significant accuracy improvement (+1.6%) and a ∼30% speedup, suggesting that the high-quality priors from Spatial Pruning help correct the optimization direction. For SPG, STP further pushes the performance boundary to 36.60% while reducing training time by 7.5%. This confirms that STP is compatible with other enhanced RL algorithms on dLLMs, providing complementary benefits by reducing the sampling overhead and ELBO variance. 
+
+5.6. STP as Guided Exploration: Leveraging Static Solutions 
+
+Beyond efficiency, STP mitigates the ”cold start” explo-ration challenge in challenging tasks by injecting high-6Efficient and Stable Reinforcement Learning for Diffusion Language Models 0 200 400 600 800 1000   
+
+> Training Steps
+> 10 2
+> 10 1
+> 10 0
+> ELBO Variance (log scale)
+> ELBO Estimator Variance During Training
+> GRPO w/ ELBO
+> STP (Ours)
+
+(a) Variance over Training Steps GRPO w/ ELBO STP (Ours)  
+
+> Method
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> ELBO Variance
+> Overall Distribution of ELBO Estimation Variance
+
+(b) Variance Distribution 
+
+Figure 3. Empirical Verification of Variance Reduction. (a) The ELBO estimation variance recorded during training dynamics. STP (Orange) consistently exhibits lower variance compared to the standard method GRPO w/ ELBO (Blue). (b) The aggregate distribution of variance shows that STP significantly lowers the median variance and suppresses extreme outliers, validating our theoretical bounds in Theorem 4.3. 
+
+Table 4. Comparison of exploration sources on the MATH dataset. Using ground truth (GT) solutions yields the highest accuracy, demonstrating the SFT-like benefit of STP in guiding exploration for difficult tasks. METHOD SOURCE ACC . TIME (S)GRPO W/ ELBO - 34.20% 126,045 STP (O URS ) MODEL GENS 36.20% 98,537 
+
+STP (O URS ) GT S OLUTIONS 36.60% 99,756 
+
+quality priors. Unlike standard RL which decodes from scratch, STP utilizes Spatial Pruning to fix a subset of tokens based on static data, effectively acting as guided exploration akin to Supervised Fine-Tuning (SFT). To validate this, we compare STP using self-generated pri-ors versus ground-truth (GT) solutions in Table 4. While STP with model generations already surpasses the baseline (+2.0%) due to variance reduction, using GT solutions fur-ther boosts accuracy to 36.60%. This demonstrates that STP successfully leverages external signals to navigate the vast solution space of difficult reasoning tasks, providing SFT-like benefits with negligible computational overhead (99k vs. 98k seconds). 
+
+5.7. Ablation Study 
+
+To rigorously understand the individual contributions of our proposed components and the impact of hyperparame-ter choices, we conduct a series of ablation studies on the MATH dataset. 
+
+Table 5. Ablation of STP components on MATH. TP maximizes accuracy, while the combined STP offers the best efficiency-performance trade-off. METHOD SP TP ACC . TIME (S)GRPO W/ ELBO × × 34.20% 126,045 SPATIAL ONLY ✓ × 35.20% 102,553 TEMPORAL ONLY × ✓ 36.60% 102,190 STP (O URS ) ✓ ✓ 36.20% 98,537 
+
+5.7.1. I MPACT OF PRUNING COMPONENTS 
+
+We isolate the effects of Spatial Pruning (SP) and Temporal Pruning (TP) to evaluate their distinct roles in the trade-off between efficiency and performance. Table 5 presents the results. Applying Spatial Pruning alone improves accuracy over the baseline ( 34 .20% → 35 .20% ) and reduces train-ing time by approximately 18%, confirming that anchoring the generation with high-confidence static tokens stabilizes the exploration. Temporal Pruning alone yields the highest accuracy ( 36 .60% ), suggesting that the early-exit mecha-nism effectively filters out the noisy tail of the diffusion process without compromising the quality of the genera-tion. The combined STP framework achieves the lowest training time ( 98 , 537 s, a ∼21.8% speedup) while maintain-ing competitive accuracy ( 36 .20% ), demonstrating that the two strategies are complementary: SP reduces the spatially inefficient exploration, while TP reduces redundancy on temporal dimension. 7Efficient and Stable Reinforcement Learning for Diffusion Language Models 
+
+5.7.2. H YPERPARAMETER SENSITIVITY 
+
+We investigate the sensitivity of STP to two key hyperparam-eters: the Spatial pruning ratio (γ) and the Temporal prun-ing cutoff (tcutoff ). We compare aggressive pruning settings (0.1) against conservative ones ( 0.05 ). As shown in Table 6, setting γ = 0 .1 degrades performance to baseline levels (34 .20% ), likely because an overly aggressive fixing strat-egy hurts the diversity of the generated sequences. Decreas-ing γ to 0.05 recovers accuracy to 35 .20% . Similarly, for Temporal Pruning, a lower cutoff tcutoff = 0 .05 yields better accuracy than tcutoff = 0 .1. These results indicate that a con-servative pruning strategy strikes a better balance, ensuring sufficient exploration and generation quality. We therefore adopt 0.05 for both parameters in our main experiments.                         
+
+> Table 6. Sensitivity analysis of hyperparameters γand tcutoff on MATH. Conservative pruning ( 0.05 ) consistently outperforms ag-gressive pruning( 0.1).
+> γtCUTOFF ACC .TIME (S)0.10 0.00 34.20% 100,935 0.05 0.00 35.20% 102,553 0.00 0.10 35.20% 102,165 0.00 0.05 36.60% 102,190 0.05 0.05 36.20% 98,537
+
+5.7.3. S PATIAL PRUNING STRATEGY 
+
+Finally, we examine the token selection strategy for Spa-tial Pruning by comparing Random Selection against Low Confidence Retention . In the latter strategy, we use tokens with high-confidence as fixed tokens. Table 7 shows that Low Confidence Retention significantly outperforms Ran-dom Selection ( 35 .20% vs. 34 .60% ). The superiority of this strategy stems from its ability to intelligently allocate the exploration budget: by fixing the “easy” tokens that the model has already mastered, it forces the model to focus its exploration on positions with higher uncertainty, thereby op-timizing the learning efficiency for complex reasoning steps.            
+
+> Table 7. Comparison of Spatial Pruning strategies ( γ= 0 .05 ). Retaining low-confidence tokens for exploration yields superior results. STRATEGY ACC .TIME (S)RANDOM 34.60% 98,234
+> LOW CONFIDENCE (O URS )35.20% 102,553
+
+## 6. Related Work 
+
+Diffusion Models for Text Generation. Diffusion mod-els have recently expanded from continuous domains to discrete text generation. Early approaches modeled text in continuous embedding spaces (Li et al., 2022; Gong et al., 2022). Recently, Masked Diffusion Models (MDMs) that operate directly on discrete tokens such as LLaDA (Nie et al., 2025) and Dream (Ye et al., 2025), demonstrate gen-eration capabilities competitive with autoregressive models with superior efficiency. 
+
+Reinforcement Learning for Diffusion Language Mod-els. While Reinforcement Learning (RL) algorithms like PPO and GRPO are standard for enhancing autoregressive models (Schulman et al., 2017; Shao et al., 2024), applying them to dLLMs is non-trivial due to the intractability of the exact likelihood. Recent advancements focus on adapting GRPO by approximating likelihoods concentrating on large time comsumption and high variance of the estimation: both DiffuGRPO (Zhao et al., 2025) and UniGRPO (Yang et al., 2025) employ a one-step unmasking approximation to im-prove the efficiency of likelihoods estimation. To mitigate the high variance of the estimation, methods like wd1 (Tang et al., 2025) and DiffuCoder (Gong et al., 2025) propose weighted objectives or coupled sampling schemes. Unlike these approaches which primarily focus on estimator formu-lation, our STP constrains the sampling trajectory in both spatial and temporal dimensions, reducing the variance of the estimation fundamentally while simultaneously lower-ing the computational cost. 
+
+## 7. Conclusion and Future Work 
+
+We propose STP, a principled framework that tackles the critical bottlenecks of efficiency and stability in Reinforce-ment Learning for dLLMs. By effectively identifying and pruning redundancy across both spatial and temporal dimen-sions, STP significantly reduces the computational overhead of trajectory sampling. More importantly, we theoretically and empirically demonstrated that STP lowers the variance of the ELBO estimator, providing a high-quality training signal that is essential for stable policy optimization. Our results on reasoning tasks confirm that STP not only ac-celerates training but also serves as a guided exploration mechanism, enabling the model to achieve state-of-the-art performance. Furthermore, STP is orthogonal to other algo-rithmic advancements, making it a versatile plug-and-play module for future dLLM research. Future work includes exploring adaptive scheduling strategies that dynamically adjust pruning based on instance difficulty and extending this paradigm to multimodal diffusion settings. 
+
+## Impact Statements 
+
+This paper presents work whose goal is to advance the field of machine learning. There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. 8Efficient and Stable Reinforcement Learning for Diffusion Language Models 
+
+## References 
+
+Austin, J., Johnson, D. D., Ho, J., Tarlow, D., and Van Den Berg, R. Structured denoising diffusion models in discrete state-spaces. Advances in neural information processing systems , 34:17981–17993, 2021. Chen, C., Wang, X., Jin, Y., Dong, V. Y., Dong, L., Cao, J., Liu, Y., and Yan, R. Semi-offline reinforcement learning for optimized text generation. In International Confer-ence on Machine Learning , pp. 5087–5103. PMLR, 2023. Cobbe, K., Kosaraju, V., Bavarian, M., Chen, M., Jun, H., Kaiser, L., Plappert, M., Tworek, J., Hilton, J., Nakano, R., et al. Training verifiers to solve math word problems. 
+
+arXiv preprint arXiv:2110.14168 , 2021. DeepMind., G. Gemini diffusion is our new experimen-tal research model. Technical report, Google Deep-Mind, https://blog.google/innovation-and-ai/models-and-research/google-deepmind/gemini-diffusion/, 2025. Gong, S., Li, M., Feng, J., Wu, Z., and Kong, L. Diffuseq: Sequence to sequence text generation with diffusion mod-els. arXiv preprint arXiv:2210.08933 , 2022. Gong, S., Zhang, R., Zheng, H., Gu, J., Jaitly, N., Kong, L., and Zhang, Y. Diffucoder: Understanding and improving masked diffusion models for code generation. arXiv preprint arXiv:2506.20639 , 2025. Guo, D., Yang, D., Zhang, H., Song, J., Wang, P., Zhu, Q., Xu, R., Zhang, R., Ma, S., Bi, X., et al. Deepseek-r1 incentivizes reasoning in llms through reinforcement learning. Nature , 645(8081):633–638, 2025. Hendrycks, D., Burns, C., Kadavath, S., Arora, A., Basart, S., Tang, E., Song, D., and Steinhardt, J. Measuring math-ematical problem solving with the math dataset. arXiv preprint arXiv:2103.03874 , 2021. Huang, Z., Chen, Z., Wang, Z., Li, T., and Qi, G.-J. Rein-forcing the diffusion chain of lateral thought with diffu-sion language models. arXiv preprint arXiv:2505.10446 ,2025. Khanna, S., Kharbanda, S., Li, S., Varma, H., Wang, E., Birnbaum, S., Luo, Z., Miraoui, Y., Palrecha, A., Ermon, S., et al. Mercury: Ultra-fast language models based on diffusion. arXiv preprint arXiv:2506.17298 , 1, 2025. Li, X., Thickstun, J., Gulrajani, I., Liang, P. S., and Hashimoto, T. B. Diffusion-lm improves controllable text generation. Advances in neural information process-ing systems , 35:4328–4343, 2022. Lou, A., Meng, C., and Ermon, S. Discrete diffusion mod-eling by estimating the ratios of the data distribution. In 
+
+Proceedings of the 41st International Conference on Ma-chine Learning , pp. 32819–32848, 2024. Nie, S., Zhu, F., You, Z., Zhang, X., Ou, J., Hu, J., ZHOU, J., Lin, Y., Wen, J.-R., and Li, C. Large language diffusion models. In ICLR 2025 Workshop on Deep Generative Model in Machine Learning: Theory, Principle and Effi-cacy , 2025. Ou, J., Nie, S., Xue, K., Zhu, F., Sun, J., Li, Z., and Li, C. Your absorbing discrete diffusion secretly models the conditional distributions of clean data. In The Thirteenth International Conference on Learning Representations ,2025. Pan, J., Zhang, J., Wang, X., Yuan, L., Peng, H., and Suhr, A. Tinyzero. https://github.com/Jiayi-Pan/TinyZero, 2025. Accessed: 2025-01-24. Radford, A., Narasimhan, K., Salimans, T., Sutskever, I., et al. Improving language understanding by generative pre-training. 2018. Sahoo, S., Arriola, M., Schiff, Y., Gokaslan, A., Marroquin, E., Chiu, J., Rush, A., and Kuleshov, V. Simple and effective masked diffusion language models. Advances in Neural Information Processing Systems , 37:130136– 130184, 2024. Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. Proximal policy optimization algorithms. 
+
+arXiv preprint arXiv:1707.06347 , 2017. Shao, Z., Wang, P., Zhu, Q., Xu, R., Song, J., Bi, X., Zhang, H., Zhang, M., Li, Y., Wu, Y., et al. Deepseekmath: Push-ing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. Shi, J., Han, K., Wang, Z., Doucet, A., and Titsias, M. Simplified and generalized masked diffusion for discrete data. Advances in neural information processing systems ,37:103131–103167, 2024. Tang, X., Dolga, R., Yoon, S., and Bogunovic, I. wd1: Weighted policy optimization for reasoning in diffusion language models. arXiv preprint arXiv:2507.08838 ,2025. Wang, C., Rashidinejad, P., Su, D., Jiang, S., Wang, S., Zhao, S., Zhou, C., Shen, S. Z., Chen, F., Jaakkola, T., et al. Spg: Sandwiched policy gradient for masked diffu-sion language models. arXiv preprint arXiv:2510.09541 ,2025. Wang, Z., Bi, B., Pentyala, S. K., Ramnath, K., Chaudhuri, S., Mehrotra, S., Mao, X.-B., Asur, S., et al. A compre-hensive survey of llm alignment techniques: Rlhf, rlaif, ppo, dpo and more. arXiv preprint arXiv:2407.16216 ,2024. 9Efficient and Stable Reinforcement Learning for Diffusion Language Models 
+
+Yang, L., Tian, Y., Li, B., Zhang, X., Shen, K., Tong, Y., and Wang, M. Mmada: Multimodal large diffusion language models. arXiv preprint arXiv:2505.15809 , 2025. Ye, J., Xie, Z., Zheng, L., Gao, J., Wu, Z., Jiang, X., Li, Z., and Kong, L. Dream 7b: Diffusion large language models. arXiv preprint arXiv:2508.15487 , 2025. Zhao, S., Gupta, D., Zheng, Q., and Grover, A. d1: Scaling reasoning in diffusion large language models via rein-forcement learning. arXiv preprint arXiv:2504.12216 ,2025. Zhu, F., Wang, R., Nie, S., Zhang, X., Wu, C., Hu, J., Zhou, J., Chen, J., Lin, Y., Wen, J.-R., et al. Llada 1.5: Variance-reduced preference optimization for large language diffu-sion models. arXiv preprint arXiv:2505.19223 , 2025. 10 Efficient and Stable Reinforcement Learning for Diffusion Language Models 
+
+## A. Proofs of Theoretical Analysis 
+
+A.1. Proof of Theorem 4.3 
+
+Proof. We analyze the variance of the ELBO estimator. Recall the standard estimator definition: 
+
+ˆB(y) = 1
+
+K
+
+> K
+
+X
+
+> k=1
+
+ℓ(θ, y, t k, ϵ k) (13) where tk ∼ U [0 , 1] and ℓ is the reweighted loss at step t. By the Law of Total Variance, we can decompose the variance into two terms: variance due to time step sampling ( Vt) and variance due to noise sampling conditioned on time ( Vnoise ): 
+
+V[ ˆB] = Vt[Eϵ[ℓ|t]] + Et[Vϵ[ℓ|t]] . (14) 
+
+1. Effect of Spatial Pruning: In STP, we fix a set of tokens Sf ixed . The loss function becomes a sum over only the non-fixed tokens i / ∈ Sf ixed . Let L be the sequence length and L′ = L − | Sf ixed |. Assuming token-wise losses have bounded covariance, the variance of the sum scales with the number of terms. Let Lf ull = PLi=1 ℓi and Lpruned = P 
+
+> i / ∈Sf ixed
+
+ℓi.
+
+Vϵ[Lpruned |t] ≈ L′
+
+L Vϵ[Lf ull |t] < Vϵ[Lf ull |t]. (15) Thus, spatial pruning directly reduces the second term Et[Vϵ[ℓ|t]] .
+
+2. Effect of Temporal Pruning: Tokens generated via temporal pruning are still treated as ”generated” tokens. During the ELBO calculation for the RL update, these tokens follow the standard probabilistic formulation. Therefore, the decrease in variance strictly originates from Spatial Pruning. Combining both effects, V[ ˆBST P ] < V[ ˆBstandard ].
+
+A.2. Proof of Theorem 4.4 Lemma A.1. (Bias and Variance of Exponential Transformation) Let X be a random variable satisfying |X| ≤ K with mean μ = E[X] and variance V[X]. Let f (x) = ex. Then the transformed variable Y = f (X) satisfies: 
+
+|E[f (X)] − f (μ)| ≤ Cexp 
+
+2 V[X] (16) 
+
+V[f (X)] ≤ C2exp V[X] (17) 
+
+where Cexp = eK is the Lipschitz constant of ex on [−K, K ].Proof. Consider the second-order Taylor expansion of f (X) around μ:
+
+f (X) = f (μ) + f ′(μ)( X − μ) + 12 f ′′ (ξ)( X − μ)2
+
+where ξ lies between X and μ. Taking the expectation on both sides: 
+
+E[f (X)] = f (μ) + f ′(μ) E[X − μ]
+
+| {z }
+
+> 0
+
++ 12 E[f ′′ (ξ)( X − μ)2]
+
+Since f (x) = ex, we have f ′′ (x) = ex. Given the boundedness assumption |X| ≤ K, implies |ξ| ≤ K, thus |f ′′ (ξ)| ≤ 
+
+eK = Cexp .
+
+|E[f (X)] − f (μ)| = 12 E[f ′′ (ξ)( X − μ)2] ≤ Cexp 
+
+2 E[( X − μ)2] = Cexp 
+
+2 V[X]
+
+Since f (x) = ex is continuously differentiable and bounded on [−K, K ], it is Lipschitz continuous with constant L =sup z∈[−K,K ] |f ′(z)| = eK = Cexp . Using the standard property of Lipschitz functions on variance: 
+
+V[f (X)] = E[( f (X) − E[f (X)]) 2] ≤ E[( f (X) − f (μ)) 2]
+
+11 Efficient and Stable Reinforcement Learning for Diffusion Language Models 
+
+Since f is Cexp -Lipschitz: 
+
+|f (X) − f (μ)| ≤ Cexp |X − μ|
+
+Squaring both sides and taking expectations: 
+
+E[( f (X) − f (μ)) 2] ≤ C2exp E[( X − μ)2] = C2exp V[X]
+
+Thus, V[f (X)] ≤ C2exp V[X].
+
+Lemma A.2. (Lipschitz Continuity of GRPO Objective) Let r be the importance ratio and A be the advantage. The per-sample GRPO objective function g(r; A) = min( rA, clip (r, 1 − ϵ, 1 + ϵ)A) is Lipschitz continuous with respect to r.Specifically, for a fixed advantage A, there exists a constant Cclip = |A| such that: 
+
+|g(r1; A) − g(r2; A)| ≤ Cclip |r1 − r2| (18) 
+
+Proof. The function g(r; A) is a composition of linear scaling, clipping, and the minimum operator. • The function h1(r) = rA is Lipschitz with constant |A|.• he function h2(r) = clip (r, 1 − ϵ, 1 + ϵ)A is Lipschitz with constant 0 (in clipped regions) or |A| (in unclipped regions), hence bounded by |A|.• The minimum of two Lipschitz functions is Lipschitz with a constant equal to the maximum of their Lipschitz constants. Thus, g(r; A) is |A|-Lipschitz continuous w.r.t r.
+
+Proof. (Theorem 4.4: Bias and Variance in GRPO Estimates) For a single sample tuple (x, y ) with advantage A, let ˆr = e∆ ˆB and r∗ = e∆B. The loss is L(ˆ r) = g(ˆ r; A).
+
+1. Bias Analysis: We aim to bound |E[L(ˆ r)] − L(r∗)|. By triangle inequality: 
+
+|E[L(ˆ r)] − L(r∗)| ≤ | E[L(ˆ r)] − L(E[ˆ r]) |
+
+| {z } 
+
+> Jensen gap of L
+
++ |L(E[ˆ r]) − L(r∗)|
+
+| {z }
+
+> Bias from exponential
+
+Using Lemma A.2, the first term is bounded: |E[L(ˆ r)] − L(E[ˆ r]) | ≤ Cclip E[|ˆr − E[ˆ r]|] ≤ Cclip 
+
+pV[ˆ r]. From Lemma A.1, 
+
+V[ˆ r] ≤ C2exp V[∆ ˆB]. So, Term 1 ≤ Cclip Cexp 
+
+q
+
+V[∆ ˆB].For the second term, using the Lipschitz property of L: |L(E[ˆ r]) − L(r∗)| ≤ Cclip |E[ˆ r] − r∗|. Recall r∗ = e∆B = eE[∆ ˆB]
+
+(since ∆ ˆB is unbiased (Zhu et al., 2025)). This is exactly the bias of the exponential function bounded in Lemma A.1: 
+
+|E[e∆ ˆB] − eE[∆ ˆB]| ≤ Cexp  
+
+> 2
+
+V[∆ ˆB]. So, Term 2 ≤ Cclip Cexp  
+
+> 2
+
+V[∆ ˆB].Combining both terms gives the bias bound dependent on V[∆ ˆB] and 
+
+q
+
+V[∆ ˆB].
+
+2. Variance Analysis: Using the law of total variance: 
+
+V[ ˆL] = Vdata [Eest [ ˆL]] + Edata [Vest [ ˆL]] 
+
+Focusing on the estimation variance term Vest [ ˆL]: Since L is Cclip -Lipschitz w.r.t r:
+
+Vest [L(ˆ r)] ≤ C2
+
+> clip
+
+Vest [ˆ r]
+
+From Lemma A.1, Vest [ˆ r] ≤ C2exp V[∆ ˆB]. Thus, the total variance is bounded by the intrinsic data variance plus a term proportional to V[∆ ˆB]. This confirms that reducing the variance of the ELBO estimator ( V[∆ ˆB]) directly tightens the bounds on both bias and variance of the GRPO objective. 
+
+## B. Detailed Hyperparameters 
+
+Table 8 lists the detailed hyperparameters used in our experiments. We largely align our settings with SPG (Wang et al., 2025), while adopting the KL penalty coefficients from Diffu-GRPO (Zhao et al., 2025). 12 Efficient and Stable Reinforcement Learning for Diffusion Language Models  
+
+> Table 8. Hyperparameters for Training.
+
+Hyperparameter Value 
+
+Base Model LLaDA-8B-Instruct LoRA Rank ( r) 128 LoRA Alpha ( α) 64 Temperature 0.9 Learning Rate 3 × 10 −6
+
+Optimizer AdamW 
+
+β1 0.9 
+
+β2 0.99 Weight Decay 0.1 Batch Size 6Gradient Accumulation Steps 2Inner Updates ( μ) 4Clip Ratio ( ϵ) 0.2 KL Coefficient ( β) 0.04 Prompt Masking ( pmask ) 0.0 Number of Completions per Prompt 6Number of Monte Carlo Estimation Samples 3Sequence Length ( L) 256 Spatial Pruning Ratio ( γ) 0.05 Temporal Pruning Cutoff ( tcutoff ) 0.05 Static Source Model Pre-generations 13

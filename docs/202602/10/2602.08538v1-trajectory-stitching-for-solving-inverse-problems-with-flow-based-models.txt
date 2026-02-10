@@ -1,0 +1,1523 @@
+Title: Trajectory Stitching for Solving Inverse Problems with Flow-Based Models
+
+URL Source: https://arxiv.org/pdf/2602.08538v1
+
+Published Time: Tue, 10 Feb 2026 03:03:36 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+Alexander Denker 1 Moshe Eliasof 2 Zeljko Kereta 1 Carola-Bibiane Sch¨ onlieb 2
+
+## Abstract 
+
+Flow-based generative models have emerged as powerful priors for solving inverse problems. One option is to directly optimize the initial latent code (noise), such that the flow output solves the in-verse problem. However, this requires backprop-agating through the entire generative trajectory, incurring high memory costs and numerical insta-bility. We propose MS-Flow, which represents the trajectory as a sequence of intermediate la-tent states rather than a single initial code. By enforcing the flow dynamics locally and coupling segments through trajectory-matching penalties, MS-Flow alternates between updating intermedi-ate latent states and enforcing consistency with observed data. This reduces memory consump-tion while improving reconstruction quality. We demonstrate the effectiveness of MS-Flow over existing methods on image recovery and inverse problems, including inpainting, super-resolution, and computed tomography. 
+
+## 1. Introduction 
+
+Inverse problems in imaging, such as super-resolution, in-painting, and compressed sensing, aim to recover a high-fidelity signal x ∈ Rn from noisy, indirect measurements 
+
+y ∈ Rm. This process is typically modeled by the forward equation y = Ax +η, where A is a known forward operator and η represents measurement noise. Due to the ill-posed nature of this problem, relying solely on data consistency is insufficient, and regularization is required to constrain the solution space to valid images (Engl et al., 1996). Deep generative models have emerged as powerful regular-ization methods (Duff et al., 2024). By learning a mapping 
+
+gθ : Rn → Rn that pushes a simple latent distribution 
+
+pz (e.g., N (0 , I)) to a complex data distribution px, these models act as powerful, learned priors. A common strategy 
+
+> 1
+
+Department of Computer Science, University College London 
+
+> 2
+
+Department of Applied Mathematics and Theoretical Physics, University of Cambridge. Correspondence to: Alexander Denker 
+
+<a.denker@ucl.ac.uk >.
+
+Preprint. February 10, 2026. 2 4 8 16 32 
+
+Number of Timesteps 
+
+> 0
+> 5
+> 10
+> 15
+> Memory (GB)
+> GPU Memory vs. Number of Timesteps
+> D-Flow
+> MS-Flow
+
+Figure 1. Peak GPU memory for D-Flow vs MS-Flow (Ours) using Euler discretization of the ODE on CelebA. D-Flow scales linearly with the number of timesteps, while MS-Flow is constant. 
+
+for leveraging these priors is Latent Space Optimization (LSO) (Bora et al., 2017; Menon et al., 2020). LSO seeks a reconstruction ˆx = gθ (ˆ z) by optimizing the latent code via 
+
+ˆz ∈ arg min  
+
+> z∈Rn
+
+Φ( gθ (z)) + λR(z), (1) where Φ enforces data consistency (e.g., Φ( x) = 12 ∥Ax −
+
+y∥2 under Gaussian noise), and R acts as a regularizer for the latent code, ensuring that z remains within high-density regions of the latent space. LSO has achieved remarkable success in imaging inverse problems. Key examples are super-resolution (Menon et al., 2020), compressed sensing (Bora et al., 2017), or inpaint-ing (Asim et al., 2020), leveraging a range of deep genera-tive models, e.g., normalizing flows (Rezende & Mohamed, 2015), variational autoencoders (Kingma & Welling, 2013), or generative adversarial networks (Goodfellow et al., 2014), as backbones. LSO has also been used in conjunction with diffusion models (Wang et al., 2024a; Chihaoui et al., 2024). Importantly, LSO is not limited to inverse problems but also underlies tasks such as classifier-guided or conditional sampling, where Φ encodes semantic constraints rather than data-consistency. In continuous-time generative models, such as continuous normalizing flows (Chen et al., 2018; Grathwohl et al., 2019) or flow-based models (Lipman et al., 2022), the generator 
+
+gθ is not given in closed form. Instead, samples are defined 1
+
+> arXiv:2602.08538v1 [eess.IV] 9 Feb 2026 Trajectory Stitching for Solving Inverse Problems with Flow-Based Models
+
+as the solutions of an ordinary differential equation (ODE) 
+
+dx(t)
+
+dt = vθ (x(t), t ), x(0) = z, t ∈ [0 , 1] , (2) where vθ is a trained model. Substituting Equation (2) into Equation (1) turns LSO into an ODE-constrained optimiza-tion problem (Lions, 1971; Hinze et al., 2008). The current state of the art, D-Flow (Ben-Hamu et al., 2024), tackles LSO via a single-shooting strategy, in which the ODE is discretized, and gradients are backpropagated through the resulting trajectory. While effective, this approach suffers from two critical limitations: 
+
+(L1) High Memory Cost. Backpropagation through the full ODE trajectory requires storing, or recomputing, intermediate states. Checkpointing (Chen et al., 2016) trades memory for compute, while adjoint methods (Chen et al., 2018) require solving an additional back-ward ODE, increasing the computational cost. 
+
+(L2) Poor Conditioning. The generated image x(1) de-pends nonlinearly on the initial latent code z = x(0) .Optimizing through a long composition of neural net-works can cause vanishing or exploding gradients, degrading convergence and reconstruction quality. To overcome these limitations, we propose MS-Flow, a 
+
+multiple-shooting framework for LSO with flow-based gen-erative models. MS-Flow decomposes the ODE trajectory into short segments and replaces the hard global ODE con-straint with soft stitching penalties. This yields: 1. Decoupled Optimization. We employ an alternating minimization strategy that separates the neural dynam-ics from data-consistency updates. 2. Reduced Memory Footprint. Optimization avoids backpropagation through the full time horizon, result-ing in memory usage that is constant with respect to the ODE discretization. Moreover, we introduce a Jacobian-free update for trajectory variables, further reducing memory and computational cost, resulting in a fast, scalable and stable method. See Figure 1 and Section 5 for details. Further, we compare with other recently proposed inverse problem solvers making use of flow models. We discuss related works in Appendix A. 
+
+## 2. Background and Preliminaries 
+
+In this section, we provide an overview of the definitions and methodologies used throughout this paper. 
+
+2.1. Flow-based Models 
+
+Flow Matching (FM) (Lipman et al., 2022) trains continu-ous normalizing flows using a simulation-free objective. In FM, a time-dependent vector field vθ : Rn × [0 , 1] → Rn
+
+that induces a probability path pt transporting a simple base distribution, e.g., a standard Gaussian, to the data distribu-tion p1 is learned. The training objective is to align vθ with a ground-truth velocity field ut that generates the target path 
+
+pt, leading to the flow matching objective 
+
+LFM (θ) = Et, x∼pt(x)∥vθ (x, t ) − ut(x)∥2. (3) However, as the evaluation of the marginal velocity ut is generally intractable, FM adopts a conditional formulation. Conditional FM training matches a conditional velocity field 
+
+LCFM (θ) = Et, x0,x1,∥vθ (xt, t ) − ut(xt | x0, x1)∥2, (4) with xt ∼ pt(xt | x0, x1). The gradients of the condi-tional and marginal objectives coincide, i.e., ∇θ LCFM (θ) = 
+
+∇θ LFM (θ) (Lipman et al., 2022; Tong et al., 2023). Sam-pling is obtained by simulating the ODE in Equation (2). In practice, the conditional path is often defined via affine inter-polation between a source sample x0 ∼ p0 and a target data point x1 ∼ p1, e.g., with an optimal transport displacement 
+
+xt = (1 − t)x0 + tx1 (Liu, 2022), which yields a con-stant conditional velocity ut(xt|x0, x1) = x1 − x0. With 
+
+xt = (1 − t)x0 + tx1, this simplifies the CFM objective to 
+
+LCFM (θ) = Et, x0,x1,∥vθ (xt, t ) − (x1 − x0)∥2. (5) 
+
+2.2. ODE-constrained Optimization 
+
+Many optimization problems in control, inverse problems, and machine learning involve objectives that depend on the solution of a dynamical system. A standard form of ODE-constrained optimization is 
+
+min  
+
+> u
+
+Φ( x(T ), u ), s.t. dx(t)
+
+dt = v(x(t), t, u ), x(0) = x0
+
+where t ∈ [0 , T ], x(t) ∈ Rn is the system state, and u
+
+represents controls, parameters, or initial conditions (Lions, 1971; Hinze et al., 2008). In flow-based generative mod-els, the dynamics vθ are learned and the initial condition 
+
+x(0) = z is optimized. Since the objective depends on the terminal state x(T ), gradient computation is inherently coupled to ODE integration. Two widely used frameworks for addressing this class of problems are: 
+
+Single-Shooting enforces the dynamics exactly by parametrizing the entire trajectory through x(0) . While con-ceptually simple, it is memory-intensive and often poorly conditioned for nonlinear dynamics (Betts, 2010). 
+
+Multiple-Shooting lifts the problem by introducing interme-diate states {xk}Kk=0 at time points {tk}Kk=0 (Bock & Plitt, 1984). Dynamics are enforced locally on each subinterval, while continuity is imposed via constraints or penalties. This breaks a long trajectory into shorter segments, improves con-ditioning, and enables structured optimization methods such as alternating minimization or block coordinate descent, without differentiating through the full time horizon. 2Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+## 3. Multiple-Shooting Flow 
+
+We now present MS-Flow, our multiple-shooting approach for solving inverse problems with flow-based models. 
+
+3.1. From Single- to Multiple-Shooting 
+
+Existing approaches, such as D-Flow (Ben-Hamu et al., 2024), consider a single-shooting approach and aim to solve the constrained optimization problem 
+
+min 
+
+> x0
+
+Φ( x(1)) , s.t. dx
+
+dt = vθ (x, t ),t ∈ [0 , 1] , x(0) = x0, (6) where vθ is a pre-trained (frozen) flow matching model. In particular, the optimization is done with respect to the initial value of the ODE, i.e., x(0) . As discussed in Section 1, while viable, this approach comes with a high memory cost because it requires gradients to be backpropagated through the full discretized trajectory, and in particular through vθ .To address these limitations, we adopt the multiple shooting principle (Bock & Plitt, 1984; Wirsching et al., 2007). We partition the time interval [0 , 1] into K segments with grid points 0 = t0 < t 1 < · · · < t K = 1 . That is, instead of optimizing a single trajectory generated from x0, we opti-mize over a collection of decision variables {x0, . . . , xK },representing intermediate states, also referred to as shooting points, along the trajectory. Therefore, we call our approach MS-Flow, whose objective reads 
+
+min  
+
+> x∗,x0: K
+
+Φ( x∗)
+
+| {z } 
+
+> Data Consistency
+
++ λR(x0) + α
+
+2 ∥x∗ − xK ∥2
+
+| {z }
+
+> Regularization
+
++ γ
+
+2
+
+> K
+
+X
+
+> k=1
+
+∥xk − Fk−1,k (xk−1)∥2
+
+| {z }
+
+> Trajectory Consistency
+
+,
+
+(7) where Fk−1,k (x) = odeint (x, v θ , [tk−1, t k]) denotes the ODE integration from time tk−1 to tk starting from state x.This reformulation decouples optimization from exact ODE feasibility at every iteration. By relaxing trajectory con-tinuity through quadratic penalties, the optimization no longer requires differentiating through the full time hori-zon, improving numerical conditioning (Wright et al., 1999). Moreover, the auxiliary variable x∗ further separates data-consistency from trajectory integration, enabling the termi-nal state to deviate from the ODE solution and providing a trade-off between adherence to the dynamics and data con-sistency. Overall, MS-Flow decomposes the optimization problem into the following three components. 
+
+(i) Data Consistency. The term Φ( x∗) encodes the desired behavior of model output x∗. In the context of inverse problems we choose Φ( x) = 12 ∥Ax − y∥2, enforcing data consistency. 
+
+(ii) Regularization. The coupling term ∥x∗ − xK ∥2 encour-ages the predicted inverse problem solution x∗ to lie near the manifold of images generated by the flow model. The initial point regularizer R(x0) encourages the trajectory to start from high-probability regions of the latent distribu-tion. A common choice is the negative log-likelihood of the base distribution, R(x0) = − log p(x0). For a standard Gaussian, this yields R(x0) = 12 ∥x0∥2 (Bora et al., 2017). However, this regularizer concentrates all the mass at the origin, even though typical samples from a Gaussian lie at a radius O(√d), see, e.g., (Bishop & Nasrabadi, 2006). We in-stead employ a radial Gaussian prior (Farquhar et al., 2020; Samuel et al., 2023; Ben-Hamu et al., 2024), in which the ra-dius r = ∥x0∥ follows a χd distribution. The corresponding negative log-likelihood is 
+
+R(x0) = ( d − 1) log ∥x0∥ − ∥x0∥2
+
+2 + c, (8) where c is a constant independent of x0. This choice aligns the regularizer with the typical set of the latent distribution, so that the optimization is not biased to atypical latent codes. 
+
+(iii) Trajectory Consistency. The trajectory penalty en-forces continuity between shooting points, ensuring consis-tency with the underlying flow dynamics. Finally, for practical implementation, we employ an explicit Euler step for the discretization of Fk−1,k with step size 
+
+∆k = tk − tk−1, that is further discussed in Appendix B. In this case, the objective simplifies to 
+
+min  
+
+> x∗,x0: K
+
+Φ( x∗) + α
+
+2 ∥x∗ − xK ∥2 + λR(x0)+ γ
+
+2
+
+> K
+
+X
+
+> k=1
+
+∥xk − [xk−1 + ∆ kvθ (xk−1, t k−1)] ∥2.
+
+(9) 
+
+3.2. Optimizing the MS-Flow Objective 
+
+In this section, we discuss the optimization of our MS-Flow objective in Equation (7), which lends itself to an alternating minimization strategy (Wright et al., 1999) that decouples the trajectory consistency from the data consis-tency. That is, we iterate between solving for the shooting points Xi := [ xi
+
+> 0
+
+, . . . , xiK ] and for the final inverse problem solution estimate xi
+
+> ∗
+
+, where i is the iteration index, as 
+
+Xi+1 = arg min  
+
+> [x0,..., xK]
+
+α
+
+2 ∥xi 
+
+> ∗
+
+− xK ∥2 + λR(x0)+ γ
+
+2
+
+> K
+
+X
+
+> k=1
+
+∥xk − Fk−1,k (xk−1)∥2,
+
+(10a) 
+
+xi+1  
+
+> ∗
+
+= arg min 
+
+> x∗
+
+Φ( x∗) + α
+
+2 ∥x∗ − xi+1  
+
+> K
+
+∥2. (10b) The overall procedure for optimizing these problems is sum-marized in Algorithm 1. In what follows, we provide details and discussions on the different components in Algorithm 1. 3Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+Solving Trajectory Consistency (Equation (10a)). Define 
+
+J (x0, . . . , xK ) := α
+
+2 ∥xi 
+
+> ∗
+
+− xK ∥2 + λR(x0)+ γ
+
+2
+
+> K
+
+X
+
+> k=1
+
+∥xk − Fk−1,k (xk−1)∥2.
+
+(11) We see that the gradient of Equation (11) with respect to xk
+
+depends only on the intermediate neighbors xk−1 and xk+1 .This motivates using coordinate descent, a common choice in such cases (Wright et al., 1999). That is, we perform a 
+
+backward sweep from the terminal point xK to the initial point x0, iteratively updating each shooting point xk with a gradient descent step with step size η > 0, and using the most recently updated neighbors, as described in Lines 6–14 in Algorithm 1. When the transition maps Fk,k +1 
+
+are discretized using explicit Euler with step size ∆k =
+
+tk+1 − tk, the coordinate-descent updates involve vector– Jacobian products (VJPs) with: 
+
+JFk,k +1 (x) = I + ∆ k Jvθ (x,t k ). (12) To avoid back-propagation of the flow model, we use a 
+
+Jacobian-free approximation via JFk,k +1 (x) ≈ I. We ana-lyze the convergence properties of this choice in Section 4.2. 
+
+Solving Data Consistency (Equation (10b)). The data consistency step (Lines 15–17 in Algorithm 1) consists of solving a Tikhonov-regularized optimization problem that balances the objective Φ with proximity to the current shoot-ing point xi+1  
+
+> K
+
+. We can consider two special cases: 1. If Φ is a closed proper convex function, we can iden-tify Equation (10b) with the proximal operator (Parikh et al., 2014). In particular, this allows us to apply MS-Flow to non-smooth convex objective functions, e.g., those arising in inverse problems with salt-and-pepper or impulse noise (Nikolova, 2004). 2. For linear inverse problems with additive noise, the common choice is Φ( x) = 12 ∥Ax − y∥2, and the solution of Equation (10b) is given in explicit form as 
+
+xi+1  
+
+> ∗
+
+= ( AT A + αI )−1(AT y + αxi+1  
+
+> K
+
+). (13) 
+
+3.3. Complexity of MS-Flow 
+
+We compare the time and space complexity of MS-Flow with the single-shooting baseline D-Flow, focusing on the trajectory-consistency subproblem in Equation (10a). The data-consistency update in Equation (10b) is shared across methods. In particular, its cost depends on Φ; for quadratic 
+
+Φ( x) = 12 ∥Ax − y∥2 it reduces to solving a linear system. Let n be the state dimension, and nt the number of time-discretization steps for integrating the flow ODE. MS-Flow partitions the interval into K shooting segments (with K =
+
+nt for explicit Euler). We denote by Cfwd and Cvjp the cost 
+
+Algorithm 1 Alternating Minimization with Coordinate Descent Trajectory Optimization of the MS-Flow Objective  
+
+> 1:
+
+Input: forward operator A, data y, flow model vθ ,hyperparameters α, γ, λ , number of trajectory update steps L, step size η. 
+
+> 2:
+
+Initialize: Initial inverse solution x0
+
+> ∗
+
+, initial trajectory sequence X0 = [ x00, . . . , x0 
+
+> K
+
+]. 
+
+> 3:
+
+i ← 0 
+
+> 4:
+
+while not converged do  
+
+> 5:
+
+// 1. Backward Sweep of Trajectory Coordinates  
+
+> 6:
+
+Initialize trajectory iterate X(ℓ=0) ← Xi 
+
+> 7:
+
+for ℓ = 1 to L do  
+
+> 8:
+
+Update x(ℓ) 
+
+> K
+
+using xi 
+
+> ∗
+
+and x(ℓ−1)  
+
+> K−1
+
+(Eq. 23)  
+
+> 9:
+
+for k = K − 1 down to 1 do  
+
+> 10:
+
+Update x(ℓ) 
+
+> k
+
+using x(ℓ−1)  
+
+> k−1
+
+and x(ℓ) 
+
+> k+1
+
+(Eq. 24)  
+
+> 11:
+
+end for  
+
+> 12:
+
+Update x(ℓ)0 using x(ℓ)1 (Eq. 25)  
+
+> 13:
+
+end for  
+
+> 14:
+
+Set Xi+1 ← X(L) 
+
+> 15:
+
+// 2. Data Consistency Optimization  
+
+> 16:
+
+Update inverse solution estimate: 
+
+xi+1  
+
+> ∗
+
+= arg min 
+
+> x∗
+
+Φ( x∗) + α
+
+2 ∥x∗ − xi+1  
+
+> K
+
+∥2. 
+
+> 17:
+
+i ← i + 1  
+
+> 18:
+
+end while  
+
+> 19:
+
+Output: Reconstructed image xi 
+
+> ∗
+
+and trajectory Xi.of one forward and one VJP through vθ , and by Mnet the network’s peak activation memory. See Appendix C for time and memory complexity calculation details. 
+
+Time complexity. As summarized in Table 1, D-Flow costs O(nt(Cfwd + Cvjp )) per iteration, due to forward integration followed by backpropagation through the en-tire discretized trajectory. In contrast, one outer iter-ation of MS-Flow with L backward sweep steps costs 
+
+O(LK (Cfwd + Cvjp )) , scaling linearly in the number of shooting points while avoiding global backpropagation through time. The Jacobian-free variant further reduces the cost to O(LK Cfwd ).
+
+Memory complexity. The cost for D-Flow arises from storing intermediate activations across nt solver steps, lead-ing to peak memory O(nt Mnet ), unless adjoint methods are used (Chen et al., 2018). MS-Flow introduces state variables 
+
+{xk}Kk=0 , but does not require storing the full computational graph. Each shooting interval is processed locally, yielding peak memory O(Mnet ) + O(Kn ), which is constant w.r.t. the discretization when network activations dominate. This is evaluated in Figure 1. For example, the activations of the model in Section 5.2 require about 550 MB, whereas one state xk only requires 0.19 MB of GPU memory. 4Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+Table 1. Time and memory complexity comparison between D-Flow and MS-Flow. Here n is the state dimension, nt the number of ODE discretization steps, K the number of shooting intervals (with K = nt for explicit Euler), L the number of inner iterations, 
+
+Cfwd and Cvjp the costs of one forward and backward pass through 
+
+vθ , and Mnet the peak activation memory of the network.                   
+
+> Method Time per iteration Peak memory
+> D-Flow (single shooting) O(nt(Cfwd +Cvjp )) O(ntMnet )
+> D-Flow (adjoint) O(nt(Cfwd +Cvjp )) O(Mnet )
+> MS-Flow (exact gradients) O(LK (Cfwd +Cvjp )) O(Mnet )
+> MS-Flow (Jacobian-free) O(LK Cfwd )O(Mnet )
+
+Parallelization. Because the trajectory continuity is en-forced locally, MS-Flow admits parallel computation across shooting intervals Fk,k +1 . Forward evaluations of vθ can be batched to trade memory for computation time. In contrast, single-shooting methods are inherently sequential in time and do not admit such parallelism. We demonstrate the parallelization of MS-Flow in Figure 3. 
+
+## 4. Properties of MS-Flow 
+
+We now establish key theoretical properties of MS-Flow. We first revisit the stability benefits of multiple shooting. Then, we prove that the inner trajectory updates in Algo-rithm 1 converge. This is important because MS-Flow is an inference-time optimization procedure: convergence en-sures the trajectory objective decreases reliably, yielding sta-ble and reproducible reconstructions. Finally, we show that the memory-efficient implementation based on approximate (Jacobian-free) gradients retains convergence guarantees by enforcing a sufficient-decrease condition. 
+
+4.1. Stability of Multiple-Shooting 
+
+A standard difficulty with single shooting is long-horizon sensitivity: if vθ is L-Lipschitz in x (uniformly in t), then by Gr¨ onwall’s inequality the flow map satisfies 
+
+∥x(t; x1) − x(t; x2)∥2 ≤ eLt ∥x1 − x2∥2. (14) Thus, perturbations can be exponentially amplified over the full time horizon (Hairer et al., 1993). Multiple shooting alleviates this by splitting the time interval into shorter seg-ments 0 = t0 < · · · < t K = 1 and enforcing dynamics locally. On each interval [tk, t k+1 ] of length ∆k, the same bound applies with t replaced by ∆k, yielding a local ampli-fication factor eL∆k (Hairer et al., 1993). In MS-Flow, this translates into better-conditioned trajectory updates: the de-fect penalties ∥xk+1 − Fk,k +1 (xk)∥22 control errors locally rather than allowing them to accumulate across the entire trajectory. 
+
+4.2. Convergence of Trajectory Updates 
+
+We now study the convergence properties of the coordi-nate descent algorithm used to solve the trajectory update in Equation (10a). At the i-th outer iteration of the opti-mization, we fix the estimate xi 
+
+> ∗
+
+and update the trajectory 
+
+X := [ x0, . . . , xK ] by minimizing Equation (11). The back-ward sweep in Algorithm 2 achieves that by performing a cyclic block update in Gauss-Seidel order: for ℓ = 1 , . . . , L ,we update blocks k = K, K − 1, . . . , 0 as 
+
+x(ℓ) 
+
+> k
+
+= x(ℓ−1)  
+
+> k
+
+− ηk ∇xk Ji(X(ℓ,k )). (15) Above X(ℓ,k ) = [ x(ℓ−1) 0 ,. . ., x(ℓ−1)  
+
+> k−1
+
+, x(ℓ−1)  
+
+> k
+
+, x(ℓ)
+
+> k+1
+
+, . . . , x(ℓ) 
+
+> K
+
+]
+
+denotes the Gauss-Seidel iterate with blocks 0 to k at ℓ−1
+
+and blocks k + 1 to K at ℓ. That is, to update xℓk we use the most recently updated trajectory points at later time indices 
+
+{x(ℓ)
+
+> k+1
+
+, . . . , x(ℓ) 
+
+> K
+
+}. We emphasize that Equation (15) refers to the exact partial gradient of Equation (11). When using efficient approximations such as Jacobian-free updates, we enforce a sufficient decrease condition via a standard backtracking line search on Ji, as discussed in Remark 4.2. We now formalize the behavior of the backward sweep used in MS-Flow. In Proposition 4.1, we show that under reg-ularity assumptions and appropriate step sizes, the cyclic Gauss-Seidel updates are guaranteed to decrease the trajec-tory objective Ji at every sweep. Moreover, the updates asymptotically stabilize, and any accumulation point of in-ner iterates is a first-order stationary point of Ji. The proof is given in Section D. 
+
+Proposition 4.1 (Monotone descent and stationarity with MS-Flow) . Under regularity assumption (Assumption D.1), the iterates {X(ℓ)}ℓ≥0 generated by Equation (15) satisfy: 1. Monotone decrease: Ji(X(ℓ+1) ) ≤ J i(X(ℓ)) for all ℓ.2. Vanishing steps: P
+
+> ℓ≥0
+
+PKk=0 ∥x(ℓ+1)  
+
+> k
+
+− x(ℓ) 
+
+> k
+
+∥22 < ∞,hence ∥x(ℓ+1)  
+
+> k
+
+− x(ℓ) 
+
+> k
+
+∥2 → 0 for every k.3. Stationarity of limit points: every accumulation point 
+
+¯X of {X(ℓ)} is a first-order stationary point of Ji, that is, ∇J i( ¯X) = 0 .Remark 4.2 (Inexact and Jacobian-free updates) . Replacing 
+
+∇xk Ji in Equation (15) by an approximation removes the guarantee of descent for Equation (11). However, Proposi-tion 4.1 still holds if ηk is chosen via an Armijo backtracking line search that enforces a uniform sufficient decrease in the true objective Ji (Nocedal & Wright, 2006; Wright et al., 1999). More generally, these inexact Gauss-Seidel steps can be interpreted as block updates on a local upper model (first-order surrogate plus a quadratic term), similar to majorization and proximal methods, for which standard sufficient-decrease arguments imply that bounded iterates converge to stationary points (Parikh et al., 2014; Nocedal & Wright, 2006; Wright et al., 1999). We empirically validate this in Figure 3. 5Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 0 500 1000 1500 2000 2500                   
+
+> iteration
+> 20
+> 22
+> 24
+> 26
+> 28
+> 30
+> PSNR (dB)
+> MS-Flow λ= 0.01 ,γ= 0.01
+> MS-Flow λ= 0.01 ,γ= 0.001
+> MS-Flow λ= 0.001 ,γ= 0.01
+> D-Flow λ= 0.01
+> D-Flow λ= 0.1
+> D-Flow λ= 1.0
+
+(a) Changing the regularization terms. 0 500 1000 1500 2000 2500              
+
+> iteration
+> 20
+> 22
+> 24
+> 26
+> 28
+> 30
+> PSNR (dB)
+> MS-Flow nt= 3
+> MS-Flow nt= 6
+> MS-Flow nt= 12
+> D-Flow nt= 3
+> D-Flow nt= 6
+> D-Flow nt= 12
+
+(b) Changing the time discretization nt.
+
+Figure 2. Evaluation on the OrganCMNIST for sparse-angle CT. Left: The effect of regularization terms. Right: Comparison of MS-Flow with D-Flow across temporal resolutions. Shaded areas represent the standard deviation over the 10 images. 0 250 500 750 1000 1250 1500 1750 2000  
+
+> Inner Step ℓ
+> 10 0
+> 10 1
+> Loss  (x0, …,  xk) (Equation 11)  MS-Flow with JFB
+> MS-Flow without JFB
+> MS-Flow with Gradient Descent
+
+Figure 3. Convergence of the trajectory loss in Equation (11) for coordinate descent (with and without the Jacobian-free approxima-tion) and full gradient descent. 
+
+## 5. Experiments 
+
+In this section, we evaluate the performance of our MS-Flow across a wide range of applications, including computed tomography, deblurring, inpainting, and super-resolution. We consider various baselines described in each experiment. Our goal is to address the following questions: 
+
+(Q1) How stable is MS-Flow, and how does it compare with existing techniques? 
+
+(Q2) How efficient is MS-Flow? 
+
+(Q3) What is the downstream performance of MS-Flow compared with leading methods for solving inverse problems with flow-based models? Throughout all experiments, we optimize the objective defined in Equation (7). We provide additional informa-tion on our experimental settings in Section E. The code will be publicly available at: https://github.com/ alexdenker/MS-Flow 
+
+5.1. Empirical Convergence and Efficiency Analysis 
+
+We first validate the convergence properties of our optimiza-tion scheme and demonstrate the robustness and computa-
+
+Table 2. Average computation time (seconds per image) over 500 iterations for different temporal discretizations ( nt), averaged over 5 images and 10 runs per image. 
+
+Method nt = 3 nt = 6 nt = 12 
+
+D-Flow 7.43 17.06 175.57 MS-Flow w/ JFB ( L = 1 ) 2.44 2.63 4.44 MS-Flow w/ JFB ( L = 10 ) 18.65 22.00 40.10 MS-Flow w/o JFB ( L = 1 ) 9.30 19.61 41.05 MS-Flow w/o JFB ( L = 10 ) 86.65 190.70 405.47 MS-Flow w/ GD ( L = 1 ) 4.35 5.36 9.42 MS-Flow w/ GD ( L = 10 ) 38.64 48.23 89.09 
+
+tional efficiency of MS-Flow. 
+
+Setup. We consider sparse-angle tomography on the Or-ganCMNIST dataset (Yang et al., 2021; 2023) to study al-gorithmic design choices and to compare with D-Flow. The forward operator is the Radon transform with 18 equidistant angles across [0 , π ), adding random Gaussian noise with a 
+
+σnoise = 0 .01 . The training is implemented using the Flow Matching library (Lipman et al., 2022). We use this dataset to study both (Q1) and (Q2) and provide ablations. 
+
+Empirical Convergence. We provide an empirical valida-tion for the convergence result in Proposition 4.1 in Figure 3. In particular, we compare three methods for optimizing the trajectory term in Equation (11): (i) Coordinate descent with the Jacobian-free approximation (CD with JFB); (ii) Coordinate descent with exact gradients (CD without JFB); and (iii) Gradient descent. We note that, in early iterations, the convergence is similar and only in later iterations we observe an advantage (albeit minor) of using exact gradients. However, performance is dominated by the first few updates, where all three methods behave similarly. In all experiments, we use L ≤ 10 , and we adopt CD with JFB as the default inner-loop optimizer for the remainder of the paper. This choice is supported by both theory and practice: in many al-ternating optimization settings, subproblems do not need to be solved exactly to ensure overall convergence, and a small 6Trajectory Stitching for Solving Inverse Problems with Flow-Based Models                                                            
+
+> Ground truth Observed Data Flow-Prior OT-ODE PnP-Flow D-Flow MS-Flow (Ours)
+> Figure 4. Comparison of the reconstructions for the three image recovery tasks on CelebA. First row: Gaussian deblurring. Second row: Inpainting. Third row: Super-resolution.
+> Table 3. Quantitative comparison of different reconstruction methods across three image recovery tasks. The best results per task and metric (PSNR ↑, SSIM ↑) are highlighted in bold , and the second-best are underlined.
+> Method Flow-Prior OT-ODE PnP-Flow D-Flow MS-Flow (Ours) Task ↓/ Metric →PSNR ( ↑)SSIM ( ↑)PSNR ( ↑)SSIM ( ↑)PSNR ( ↑)SSIM ( ↑)PSNR ( ↑)SSIM ( ↑)PSNR ( ↑)SSIM ( ↑)Gaussian Deblurring 36.12 0.961 37.51 0.969 36.19 0.962 33.17 0.890 38.02 0.958 Box-Inpainting 36.79 0.984 34.26 0.975 36.43 0.985 33.96 0.979 36.30 0.980 Super-Resolution 34.47 0.946 35.21 0.956 34.73 0.948 34.36 0.942 36.46 0.957
+
+number of gradient steps per subproblem is often sufficient to make consistent progress, and is computationally efficient (Eckstein & Bertsekas, 1992; Boyd et al., 2011). We can show convergence for CD with JFB when a line search is employed for the step size, see Remark 4.2. Empirically, we observe that a constant step size suffices to obtain stability. 
+
+Scaling and Robustness Analysis. We also study the con-vergence for various choices of the number of discretization points nt (equal to the number of shooting points K) and the choice of the regularization strength λ for the radial Gaussian prior in Equation (8). The results are reported in Figure 2, showing that MS-Flow is stable for a wide range of hyperparameters. While D-Flow can achieve a similar peak PSNR, we often see a performance deterioration over the iterations. We further compare the computational time in Table 2 for different choices of nt and different numbers of inner coordinate descent iterations for MS-Flow ( L = 1 
+
+and L = 10 ). We see that because of the end-to-end na-ture of D-Flow, its computational time increases drastically with the number of discretization points nt. In contrast, our MS-Flow with the Jacobian-free approximation is the fastest method and scales gracefully with the number of discretization points nt.
+
+5.2. Image Recovery Tasks 
+
+Next, we demonstrate that MS-Flow is competitive with other recently proposed flow-based inverse problem solvers. 
+
+Setup. In this set of experiments, we consider three common image recovery tasks on the CelebA dataset (Yang et al., 2015). Specifically, we evaluate on: (i) image deblurring with a Gaussian blur with intensity σ = 1 and kernel size 61; (ii) super-resolution with bicubic interpolation with scale factor 2; and (iii) inpainting with a central box mask of size 
+
+32 × 32 pixels. In all cases we add Gaussian noise with 
+
+σnoise = 0 .01 . We use standard imaging metrics, namely PSNR and SSIM (Wang et al., 2004), and report the values obtained for the reconstruction over 50 images from CelebA. This setting both addresses (Q3) as well as provides a direct comparison with several flow-based inverse problem solvers, including Flow-Prior (Zhang et al., 2024), OT-ODE (Pokle et al., 2024), PnP-Flow (Martin et al., 2025), and D-Flow. 
+
+Results. Experimental results are summarized in Table 3 and reconstructions are provided in Figure 4. For both Gaus-sian deblurring and super-resolution, MS-Flow achieves the highest PSNR, with a small drop in SSIM. This can be explained by our data-consistency step in (10b) , which 7Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+includes a regularizer penalizing deviations from the termi-nal shooting point xK . The deviation is measured with the Euclidean norm, which also promotes smoothness, result-ing in a higher (better) PSNR. For Gaussian deblurring and super-resolution, we show the initialization of the shooting points and the final converged trajectory in Figures 7 and 8. 
+
+## 6. Latent Flow Models 
+
+We now demonstrate that in addition to standard flow-matching networks, our MS-Flow scales to modern large-scale latent flow models by evaluating it on Stable Diffusion 3.5 (Esser et al., 2024). 
+
+Setup. We compare our MS-Flow with FlowDPS (Kim et al., 2025), a flow-based inverse problem solver that avoids backpropagation through the flow and therefore scales to large latent flow architectures. For MS-Flow, we again consider the Jacobian-free gradient approximation for the trajectory update. We consider Gaussian deblurring with blur standard deviation σ = 3 .0.In latent flow models, the flow operates in latent space while observations are defined in pixel space. Let D : Z → X 
+
+denote the decoder mapping latent variables to images, with 
+
+Z as the latent space and X as the pixel space. In this setting the data-consistency update from Equation (10b) becomes 
+
+zi+1  
+
+> ∗
+
+= arg min 
+
+> z∗
+
+12 ∥AD(z∗) − y∥22 + α
+
+2 ∥z − zi+1  
+
+> K
+
+∥22.
+
+All optimization variables are defined in latent space and are denoted by z. The final image reconstruction is obtained as 
+
+x∗ = D(z∗). As the decoder D is nonlinear, the objective no longer admits a closed-form solution. We therefore solve it using a small number of gradient descent steps with Adam (Kingma & Ba, 2015). We refer to Appendix F for more details. 
+
+Results. Our results are reported in Table 4 for different noise levels, σnoise = 0 .01 and σnoise = 0 .1. We report both the mean PSNR and mean SSIM, averaged over the first 10 
+
+images of the FFHQ dataset (Karras et al., 2019). Across both settings, MS-Flow consistently outperforms FlowDPS in terms of PSNR and SSIM. Qualitative reconstructions are shown in Figure 5. These results further show the contribu-tion of MS-Flow as an efficient and effective approach for utilizing flow-based models for solving inverse problems. 
+
+## 7. Discussion and Conclusions 
+
+We introduce MS-Flow, a multiple-shooting framework for LSO with flow-based models. By representing the trajec-tory as a sequence of intermediate shooting states and en-forcing the flow dynamics locally via trajectory-matching constraints, MS-Flow overcomes two key limitations of single-shooting approaches: high memory consumption and                          
+
+> Ground truth Observed Data FlowDPS MS-Flow
+> Figure 5. Reconstruction for Gaussian deblurring on FFHQ with
+> σnoise = 0 .01 .
+> Table 4. Comparison for Gaussian deblurring on FFHQ, with FlowDPS, and the degraded image as a comparison.
+> σnoise = 0 .01 σnoise = 0 .1
+> Method PSNR ( ↑)SSIM ( ↑)PSNR ( ↑)SSIM ( ↑)Degraded Image 26.66 0.767 23.29 0.334 FlowDPS 28.16 0.756 27.34 0.710 MS-Flow (Ours) 31.23 0.841 29.91 0.786
+
+poor conditioning. Empirically, MS-Flow achieves competi-tive or improved reconstruction performance across a range of imaging inverse problems. It maintains constant memory usage regardless of the number of ODE discretization steps, making it significantly more efficient than common exist-ing techniques. This positions MS-Flow as a well-suited approach for high-resolution problems and fine-grained tem-poral discretizations, such as image restoration for FFHQ with Stable Diffusion 3.5, where single-shooting approaches become impractical. Relaxing the global ODE constraint in MS-Flow naturally introduces a small set of design choices, most notably the penalty weights and the number of shooting points. In prac-tice, we found that simple fixed penalties work reliably across tasks, indicating that MS-Flow is robust to these set-tings. Moreover, for inverse problems, which are at the focus of this work, the intermediate shooting states act as auxiliary variables, so performance is governed primarily by the terminal state rather than full-trajectory fidelity. Build-ing on this, incorporating adaptive penalty updates, as in splitting-based optimization methods (Boyd et al., 2011), in this context, is an interesting future work direction. A promising next step is to extend MS-Flow to SDE-based generative models, including diffusion and score-based methods (Song et al., 2021). By introducing appropriate stochastic consistency constraints across segments, MS-Flow could provide a practical route to memory-efficient conditional sampling in these models. 8Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+## Acknowledgments 
+
+AD acknowledges support from the EPSRC (EP/V026259/1). ZK acknowledges support from the EPSRC (EP/X010740/1). 
+
+## Impact Statement 
+
+This work aims to enhance controllability in flow-based gen-erative models. While improved control could potentially be misused to produce misleading or harmful content, includ-ing deepfakes, the method does not expand the underlying generative capacity beyond existing models. 
+
+## References 
+
+Ardizzone, L., Kruse, J., Rother, C., and K ¨othe, U. Analyz-ing inverse problems with invertible neural networks. In 
+
+International Conference on Learning Representations ,2019. Asim, M., Daniels, M., Leong, O., Ahmed, A., and Hand, P. Invertible generative models for inverse problems: mitigating representation error and dataset bias. In Inter-national conference on machine learning , pp. 399–409. PMLR, 2020. Ben-Hamu, H., Puny, O., Gat, I., Karrer, B., Singer, U., and Lipman, Y. D-Flow: Differentiating through flows for controlled generation. In Forty-first International Conference on Machine Learning , 2024. Betts, J. T. Practical methods for optimal control and esti-mation using nonlinear programming . SIAM, 2010. Bishop, C. M. and Nasrabadi, N. M. Pattern recognition and machine learning , volume 4. Springer, 2006. Bock, H. G. and Plitt, K.-J. A multiple shooting algorithm for direct solution of optimal control problems. IFAC Proceedings Volumes , 17(2):1603–1608, 1984. Bora, A., Jalal, A., Price, E., and Dimakis, A. G. Com-pressed sensing using generative models. In Precup, D. and Teh, Y. W. (eds.), Proceedings of the 34th Interna-tional Conference on Machine Learning , volume 70 of 
+
+Proceedings of Machine Learning Research , pp. 537–546. PMLR, 06–11 Aug 2017. Boyd, S., Parikh, N., Chu, E., Peleato, B., Eckstein, J., et al. Distributed optimization and statistical learning via the alternating direction method of multipliers. Foundations and Trends® in Machine learning , 3(1):1–122, 2011. Chen, R. T., Rubanova, Y., Bettencourt, J., and Duvenaud, D. K. Neural ordinary differential equations. Advances in neural information processing systems , 31, 2018. Chen, T., Xu, B., Zhang, C., and Guestrin, C. Training deep nets with sublinear memory cost. arXiv preprint arXiv:1604.06174 , 2016. Chihaoui, H., Lemkhenter, A., and Favaro, P. Blind image restoration via fast diffusion inversion. Advances in Neu-ral Information Processing Systems , 37:34513–34532, 2024. Chung, H., Kim, J., Mccann, M. T., Klasky, M. L., and Ye, J. C. Diffusion posterior sampling for general noisy inverse problems. In The Eleventh International Confer-ence on Learning Representations , 2023. Dhariwal, P. and Nichol, A. Diffusion models beat gans on image synthesis. Advances in neural information processing systems , 34:8780–8794, 2021. Duff, M., Campbell, N. D., and Ehrhardt, M. J. Regularis-ing inverse problems with generative machine learning models. Journal of Mathematical Imaging and Vision , 66 (1):37–56, 2024. Eckstein, J. and Bertsekas, D. P. On the douglas—rachford splitting method and the proximal point algorithm for maximal monotone operators. Mathematical program-ming , 55(1):293–318, 1992. Eliasof, M., Haber, E., and Treister, E. Drip: deep regu-larizers for inverse problems. Inverse Problems , 40(1): 015006, 2023. Engl, H. W., Hanke, M., and Neubauer, A. Regularization of Inverse Problems . Mathematics and Its Applications. Springer, Dordrecht, 1996. Esser, P., Kulal, S., Blattmann, A., Entezari, R., M ¨uller, J., Saini, H., Levi, Y., Lorenz, D., Sauer, A., Boesel, F., et al. Scaling rectified flow transformers for high-resolution image synthesis. In Forty-first international conference on machine learning , 2024. Farquhar, S., Osborne, M. A., and Gal, Y. Radial bayesian neural networks: Beyond discrete support in large-scale bayesian deep learning. In International Conference on Artificial Intelligence and Statistics , pp. 1352–1362. PMLR, 2020. Goodfellow, I. J., Pouget-Abadie, J., Mirza, M., Xu, B., Warde-Farley, D., Ozair, S., Courville, A., and Bengio, Y. Generative adversarial nets. Advances in neural informa-tion processing systems , 27, 2014. Grathwohl, W., Chen, R. T. Q., Bettencourt, J., Sutskever, I., and Duvenaud, D. Ffjord: Free-form continuous dy-namics for scalable reversible generative models. Inter-national Conference on Learning Representations , 2019. 9Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+Hairer, E., Wanner, G., and Nørsett, S. P. Solving ordi-nary differential equations I: Nonstiff problems . Springer, 1993. Hinze, M., Pinnau, R., Ulbrich, M., and Ulbrich, S. Op-timization with PDE constraints , volume 23. Springer Science & Business Media, 2008. Ho, J. and Salimans, T. Classifier-free diffusion guidance. 
+
+arXiv preprint arXiv:2207.12598 , 2022. Karras, T., Laine, S., and Aila, T. A style-based generator architecture for generative adversarial networks. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 4401–4410, 2019. Kim, J., Kim, B. S., and Ye, J. C. Flowdps : Flow-driven posterior sampling for inverse problems. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 12328–12337, October 2025. Kingma, D. P. and Ba, J. Adam: A method for stochastic optimization. In International Conference on Learning Representations (ICLR) 2015, , 2015. Kingma, D. P. and Welling, M. Auto-encoding variational bayes. arXiv preprint arXiv:1312.6114 , 2013. Lions, J. L. Optimal control of systems governed by partial differential equations , volume 170. Springer, 1971. Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. Liu, Q. Rectified flow: A marginal preserving approach to optimal transport. arXiv preprint arXiv:2209.14577 ,2022. Liu, X., Wu, L., Zhang, S., Gong, C., Ping, W., and Liu, Q. Flowgrad: Controlling the output of generative odes with gradients. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 24335– 24344, 2023. Martin, S., Gagneux, A., Hagemann, P., and Steidl, G. Pnp-flow: Plug-and-play image restoration with flow match-ing. In International Conference on Learning Represen-tations (ICLR) , 2025. Massaroli, S., Poli, M., Sonoda, S., Suzuki, T., Park, J., Yamashita, A., and Asama, H. Differentiable multiple shooting layers. In Beygelzimer, A., Dauphin, Y., Liang, P., and Vaughan, J. W. (eds.), Advances in Neural Infor-mation Processing Systems , 2021. Menon, S., Damian, A., Hu, S., Ravi, N., and Rudin, C. Pulse: Self-supervised photo upsampling via latent space exploration of generative models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 2437–2445, 2020. Nikolova, M. A variational approach to remove outliers and impulse noise. Journal of Mathematical Imaging and Vision , 20(1):99–120, 2004. Nocedal, J. and Wright, S. J. Numerical optimization .Springer, 2006. Parikh, N., Boyd, S., et al. Proximal algorithms. Founda-tions and trends® in Optimization , 1(3):127–239, 2014. Patel, M., Wen, S., Metaxas, D. N., and Yang, Y. Flowchef: Steering of rectified flow models for controlled genera-tions. In Proceedings of the IEEE/CVF International Con-ference on Computer Vision (ICCV) , pp. 15308–15318, October 2025. Pokle, A., Muckley, M. J., Chen, R. T. Q., and Karrer, B. Training-free linear image inverses via flows. Transac-tions on Machine Learning Research (TMLR) , 2024. Poole, B., Jain, A., Barron, J. T., and Mildenhall, B. Dream-fusion: Text-to-3d using 2d diffusion. arXiv preprint arXiv:2209.14988 , 2022. Rezende, D. and Mohamed, S. Variational inference with normalizing flows. In International conference on ma-chine learning , pp. 1530–1538. PMLR, 2015. Samuel, D., Ben-Ari, R., Darshan, N., Maron, H., and Chechik, G. Norm-guided latent space exploration for text-to-image generation. Advances in Neural Informa-tion Processing Systems , 36:57863–57875, 2023. Song, J., Meng, C., and Ermon, S. Denoising diffusion implicit models. arXiv preprint arXiv:2010.02502 , 2020. Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Er-mon, S., and Poole, B. Score-based generative modeling through stochastic differential equations. In International Conference on Learning Representations , 2021. Tong, A., Fatras, K., Malkin, N., Huguet, G., Zhang, Y., Rector-Brooks, J., Wolf, G., and Bengio, Y. Improving and generalizing flow-based generative models with mini-batch optimal transport. arXiv preprint arXiv:2302.00482 ,2023. Turan, E. M. and J ¨aschke, J. Training neural odes using multiple shooting: a benchmark on time series, 2021. Wang, H., Zhang, X., Li, T., Wan, Y., Chen, T., and Sun, J. Dmplug: A plug-in method for solving inverse problems with diffusion models. Advances in Neural Information Processing Systems , 37:117881–117916, 2024a. 10 Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+Wang, L., Cheng, C., Liao, Y., Qu, Y., and Liu, G. Training free guided flow matching with optimal control, 2024b. arXiv:2410.18070 (revised 2025). Wang, Z., Bovik, A. C., Sheikh, H. R., and Simoncelli, E. P. Image quality assessment: from error visibility to struc-tural similarity. IEEE transactions on image processing ,13(4):600–612, 2004. Wirsching, L., Ferreau, H. J., Bock, H. G., and Diehl, M. An online active set strategy for fast adjoint based nonlinear model predictive control. IFAC Proceedings Volumes , 40 (12):234–239, 2007. Wright, S., Nocedal, J., et al. Numerical optimization. 
+
+Springer Science , 35(67-68):7, 1999. Yan, Y., Zhang, Y., Meng, X., and Zhao, Z. Fig: Flow with interpolant guidance for linear inverse problems. In 
+
+International Conference on Learning Representations (ICLR) , 2025. Yang, J., Shi, R., and Ni, B. Medmnist classification de-cathlon: A lightweight automl benchmark for medical image analysis. In IEEE 18th International Symposium on Biomedical Imaging (ISBI) , pp. 191–195, 2021. Yang, J., Shi, R., Wei, D., Liu, Z., Zhao, L., Ke, B., Pfister, H., and Ni, B. Medmnist v2-a large-scale lightweight benchmark for 2d and 3d biomedical image classification. 
+
+Scientific Data , 10(1):41, 2023. Yang, S., Luo, P., Loy, C.-C., and Tang, X. From facial parts responses to face detection: A deep learning approach. In Proceedings of the IEEE international conference on computer vision , pp. 3676–3684, 2015. Zhang, Y., Yu, P., Zhu, Y., Chang, Y., Gao, F., Wu, Y. N., and Leong, O. Flow priors for linear inverse problems via iterative corrupted trajectory matching. Advances in Neural Information Processing Systems , 37:57389– 57417, 2024. 11 Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+## A. Related Work 
+
+Latent-Space Optimization with Diffusion Models Recent work has made use of diffusion models for LSO to solve inverse problems. BIRD (Chihaoui et al., 2024) applies this concept for blind image restoration and estimate jointly the reconstruction and the parameters of the (unknown) degradation operator. They use the deterministic DDIM (Song et al., 2020) sampling scheme and optimize the initial noise input. They directly backpropagate the gradients through the DDIM sampling scheme and make use of 10 sampling steps in most of their experiments. DMPlug (Wang et al., 2024a) proposes a similar framework, i.e., optimizing the initial latent code such that the output of the deterministic DDIM sampler is consistent to measurements. In their experiments the authors make use of 3 DDIM sampling steps to parametrise the reverse process. The memory requirements of both approaches scales in the same way a D-Flow (Ben-Hamu et al., 2024), see Section 3.3. 
+
+Flow-based Solvers for Inverse Problems. A growing line of work uses pre-trained flow-matching and rectified-flow models as implicit priors for inverse problems by modifying the sampling dynamics to incorporate data consistency, rather than retraining the model. In the setting of linear inverse problems, Pokle et al. (2024) propose a training-free solver for inverse problems using pre-trained flow models, with theoretically motivated weighting and conditional optimal transport (OT) paths. More recently, guidance schemes specialized to flow matching have appeared: Yan et al. (2025) introduce interpolant guidance (FIG) that steers reverse-time sampling using measurement interpolants; and Kim et al. (2025) adapt posterior-sampling ideas to flows by decomposing the flow ODE into clean/noise components (via a flow analogue of Tweedie-based relations) and injecting likelihood gradients and stochasticity to sample from the posterior (Chung et al., 2023). Complementary to guidance-based posterior sampling, plug-and-play hybrids have also been explored: Martin et al. (2025) defines a time-dependent denoiser induced by a pre-trained flow-matching model and alternates data-fidelity updates with projections/denoising along the learned path. Finally, conditional and invertible modeling has a longer history in inverse problems: Ardizzone et al. (2019) uses conditional invertible neural networks to represent inverse maps and uncertainty, illustrating the tradeoff between task-specific conditional training and test-time inference with a fixed unconditional prior. 
+
+Guidance and Optimal Control for Generative Flows. Beyond inverse problems, several works formulate controlled generation for ODE-based generators as test-time trajectory optimization, often by differentiating through the sampler. Liu et al. (2023) shows how to backpropagate guidance gradients to intermediate times of a generative ODE, enabling controllable generation without retraining, while Ben-Hamu et al. (2024) (D-Flow) differentiates through the flow sampler to optimize control objectives over the generated sample. Patel et al. (2025) propose a gradient-free steering and inversion strategy for rectified-flow models and demonstrate applications including linear inverse problems and editing. From an optimal-control perspective, Wang et al. (2024b) presents a training-free guided flow-matching framework derived from optimal control, interprets backprop-through-ODE guidance as special cases, and provides algorithms and analysis for guided generation. 
+
+Multiple-Shooting/Single-Shooting in ML. Single-shooting is the default in neural ODEs and generative flows: one optimizes parameters (and possibly an initial latent) while enforcing dynamics by a single forward solve over the full time horizon (Chen et al., 2018). This can become numerically unstable for long horizons, stiff dynamics, or when strong guidance terms create sharp transients. Multiple-shooting, a classical remedy from optimal control (Bock & Plitt, 1984), introduces intermediate states as optimization variables and enforces continuity constraints between segments, improving stability and enabling time-parallelism. In modern ML, Massaroli et al. (2021) formalize differentiable multiple-shooting layers as implicit models with parallelizable root finding, and Turan & J ¨aschke (2021) study multiple-shooting training for neural ODEs on time-series benchmarks. Our approach aligns with this viewpoint by splitting the generative trajectory into segments and enforcing (soft) continuity, trading a larger but better-conditioned optimization for improved robustness in inverse-problem guidance. The recently proposed DRIP framework (Eliasof et al., 2023) also implement a similar backward sweep to our Algorithm 2. However, we use a fixed pre-trained flow model, whereas DRIP also learns the underlying dynamics. 12 Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+## B. Numerical Details 
+
+B.1. Explicit Euler Discretization 
+
+In Algorithm 2 we used the notation Fk,k +1 (xk) for the integration of the dynamics from tk to tk+1 starting at xk. We can realize this using a single explicit Euler step with ∆k = tk+1 − tk:
+
+F EE 
+
+> k+1 ,k
+
+(x) := x + ∆ kvθ (x, t k). (16) Substituting this into the trajectory loss in Equation Equation (11), we obtain 
+
+J EE (x0, . . . , xK ) := α
+
+2 ∥xi 
+
+> ∗
+
+− xK ∥2 + λR(x0) + γ
+
+2
+
+> K
+
+X
+
+> k=1
+
+∥xk − [xk−1 + ∆ k−1vθ (xk−1, t k−1)] ∥2. (17) Following the coordinate-wise backward sweep introduced in Section 3.2, we have to solve the following optimization problem 
+
+˜xk = arg min 
+
+> u
+
+Jk(u) := γ
+
+2 ∥u − zk∥22 + γ
+
+2 ∥˜xk+1 −(u+∆ kvθ (u, t k)) ∥2 (18) for k = K −1, . . . , 1 and zk = F EE 
+
+> k−1,k
+
+(xk−1). The gradient is given by 
+
+∇uJk(u) = ( u − zk) − (I + ∆ kJvθ (u)) T (˜ xk+1 − (u + ∆ kvθ (u, t k))) , (19) with ˜xk+1 being the minimizer for Jk+1 . Computing this gradient directly requires one backward pass of the flow model. However, in our experiments, we observe that we can approximate I + ∆ tkJvθ ≈ I. In diffusion models, neglecting the Jacobian of the model is quite standard, see e.g. (Poole et al., 2022). Note that this approximation also gets better if ∆tk ≈ 0,i.e., if we increase the number of shooting points. Using this approximation, we obtain a Jacobian-free gradient surrogate 
+
+∇uJk(u) ≈ (u − zk) − (˜ xk+1 − (u + ∆ kvθ (u, t k))) ,
+
+which numerically still gives stable convergence. 
+
+B.2. Trajectory Optimization 
+
+We compute the gradient for all intermediate control points as: 
+
+∇xK J = −α(xi 
+
+> ∗
+
+− xK ) + γ(xK − Fk−1,k (xk−1)) , (20) 
+
+∇xk J = −γJ Fk,k +1 (xk)T (xk+1 − Fk,k +1 (xk)) + γ(xk − Fk−1,k (xk−1)) , k = 1 , . . . , K −1, (21) 
+
+∇x0 J = −γJ F0,1 (x0)T (x1 −F0,1(x0))+ γ∇R (x0) (22) Here JFk,k +1 denotes the Jacobian of the flow update from tk to tk+1 . Given the trajectory {x(ℓ−1) 0 , . . . , x(ℓ−1)  
+
+> K
+
+} and step size η.1. Update the Final Shooting Point: The gradient for xK is: 
+
+∇xK J = −α(xi 
+
+> ∗
+
+− xK ) + γ(xK − FK−1,K (x(ℓ−1)  
+
+> K−1
+
+)) 
+
+The update rule is: 
+
+x(ℓ) 
+
+> K
+
+← x(ℓ−1)  
+
+> K
+
+− η · ∇ xK J (x(ℓ−1)  
+
+> K
+
+, x(ℓ−1)  
+
+> K−1
+
+) (23) 2. Backward Sweep for Intermediate Shooting Points: We iterate backward, using the newly computed neighbour 
+
+x(ℓ) 
+
+> k+1
+
+in the gradient calculation. For k = K −1, K −2, . . . , 1:
+
+∇xk J = −γJ Fk,k +1 (xk)T (x(ℓ) 
+
+> k+1
+
+− Fk,k +1 (xk)) + γ(xk − Fk−1,k (x(ℓ−1)  
+
+> k−1
+
+)) 
+
+The update rule is: 
+
+x(ℓ) 
+
+> k
+
+← x(ℓ−1)  
+
+> k
+
+− η · ∇ xk J (x(ℓ−1)  
+
+> k
+
+,x(ℓ−1)  
+
+> k−1
+
+,x(ℓ)
+
+> k+1
+
+) (24) 13 Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+Algorithm 2 A single iteration of coordinate descent for trajectory optimization 
+
+1: Input: Initial trajectory (xold  
+
+> 0
+
+, . . . , xold  
+
+> K
+
+), target state xi
+
+> ∗
+
+, dynamics Fk−1,k , weights α, λ, γ , step size η.
+
+2: {Forward Sweep: Compute consistency targets zk using old trajectory. }
+
+3: for k = 1 to K do 
+
+4: zk ← Fk−1,k (xold 
+
+> k−1
+
+)
+
+5: end for 
+
+6: {Backward Sweep: Update control points from K down to 0 using updated neighbors. }
+
+7: for k = K down to 0 do 
+
+8: if k = K then 
+
+9: Compute ∇xK J using zK :
+
+10: ∇xK J = −α(xi 
+
+> ∗
+
+− xold  
+
+> K
+
+) + γ(xold  
+
+> K
+
+− zK )
+
+11: xnew  
+
+> K
+
+← xold  
+
+> K
+
+− η∇xK J
+
+12: else if 0 < k < K then 
+
+13: Compute ∇xk J using xnew  
+
+> k+1
+
+and zk:
+
+14: ∇xk J = γ(xold  
+
+> k
+
+− zk) − γJ Fk,k +1 (xold  
+
+> k
+
+)T (xnew  
+
+> k+1
+
+− Fk,k +1 (xold  
+
+> k
+
+)) 
+
+15: xnew  
+
+> k
+
+← xold  
+
+> k
+
+− η∇xk J
+
+16: else if k = 0 then 
+
+17: Compute ∇x0 J using xnew  
+
+> 1
+
+:
+
+18: ∇x0 J = −γJ 0,1(xold  
+
+> 0
+
+)T (xnew  
+
+> 1
+
+− F0,1(xold  
+
+> 0
+
+)) + λ∇R (xold  
+
+> 0
+
+)
+
+19: xnew  
+
+> 0
+
+← xold  
+
+> 0
+
+− η∇x0 J
+
+20: end if 
+
+21: xold  
+
+> k
+
+← xnew  
+
+> k
+
+{Store new value for subsequent steps }
+
+22: end for 
+
+23: Output: Updated trajectory (xnew  
+
+> 0
+
+, . . . , xnew  
+
+> K
+
+).3. Update the Initial Shooting Point: The update for x0 uses the newly computed x(ℓ)1 and includes the regularization gradient ∇R (x0).
+
+∇x0 J = −γJ F0,1 (x0)T (x(ℓ)1 − F0,1(x0)) + λ∇R (x0)
+
+The update rule is: 
+
+x(ℓ)0 ← x(ℓ−1) 0 − η · ∇ x0 J (x(ℓ−1) 0 , x(ℓ)1 ) (25) The trajectory for the next iteration is then {x(ℓ)0 , . . . , x(ℓ) 
+
+> K
+
+}. This process is repeated until convergence. The algorithm is also described in Algorithm 2. 
+
+## C. Detailed Complexity Analysis of MS-Flow 
+
+This appendix provides a detailed breakdown of time and memory for the summary in Section 3.3. 
+
+C.1. Single-Shooting D-Flow 
+
+A gradient update in D-Flow optimizes the initial state x0 of the ODE-constrained problem in Equation (6). This requires: (i) forward integration of the ODE for nt discretization steps, and (ii) differentiation through the entire solver. With standard reverse-mode differentiation, the resulting cost per iteration is O(nt(Cfwd + Cvjp )) , while peak memory scales as O(nt Mnet ), due to storing intermediate states and network activations. Adjoint methods reduce memory to 
+
+O(Mnet ) but introduce additional backward ODE solves and increased wall-clock time. 14 Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+C.2. Multiple-Shooting MS-Flow 
+
+We consider one outer iteration of Algorithm 1, focusing on the trajectory update Equation (10a). Using L inner coordinate-descent sweeps, each sweep consists of: (i) a forward sweep computing Fk−1,k (xk−1) for k = 1 , . . . , K , and (ii) a backward sweep updating the block variables {xk} using only local neighbors. For explicit Euler with ∆k = tk+1 − tk the transition map Fk,k +1 is given as 
+
+Fk,k +1 (x) = x + ∆ k vθ (x, t k).
+
+Evaluating all Fk,k +1 costs O(K Cfwd ). Exact gradient updates additionally require computing VJPs JFk,k +1 (xk)⊤v.Hence, one sweep costs O(K(Cfwd + Cvjp )) , and one outer iteration costs O(LK (Cfwd + Cvjp )) .
+
+Jacobian-Free Updates The Jacobian for the explicit Euler is given as 
+
+JFk,k +1 (x) = I + ∆ kJvθ (x,t k ).
+
+As discussed in the main text, we omit Jvθ (x,t k ) and use the approximation JFk,k +1 (x) ≈ I, which eliminates the VJP computation. Under this approximation, one sweep costs O(K Cfwd ).
+
+Memory Scaling MS-Flow stores the explicit trajectory variables {xk}Kk=0 , requiring O(Kn ) memory, which is negligible compared to network activations in most networks, as the number of parameters is often orders of magnitude larger than the input dimension. Crucially, gradients depend only on local segments, so the full computational graph is never materialized. The resulting peak activation memory is O(Mnet ), independent of K, as observed empirically in Figure 1. 
+
+## D. Assumptions and Proofs 
+
+In this section, we outline the assumptions and proofs of our results and discussions of the properties of MS-Flow in Section 4. 
+
+Assumption D.1 (Regularity for block Gauss-Seidel descent) . For the fixed outer iterate xi
+
+> ∗
+
+, assume: 1. Ji is bounded below on Rn(K+1) .2. Ji is continuously differentiable. 3. (Block Lipschitz gradients) For each k ∈ { 0, . . . , K } there exists Lk > 0 such that, for any vectors u, v ∈ Rn and any fixed values of the other blocks, 
+
+∇xk Ji(. . . , u, . . . ) − ∇ xk Ji(. . . , v, . . . ) 2 ≤ Lk∥u − v∥2.
+
+4. The step sizes satisfy 0 < η k ≤ 1/L k for all k (or are chosen by backtracking line search guaranteeing sufficient decrease). 
+
+Proof of Proposition 4.1. For a fixed outer iterate xi
+
+> ∗
+
+, consider the inner objective Ji and one Gauss-Seidel sweep ℓ. For notational convenience, define the intermediate Gauss-Seidel iterates within sweep ℓ by 
+
+X(ℓ,K ) := X(ℓ−1) , X(ℓ, −1) := X(ℓ),
+
+and for each k = K, K − 1, . . . , 0 let X(ℓ,k ) be the pre-update iterate used in Equation (15), 
+
+X(ℓ,k ) = [ x(ℓ−1) 0 , . . . , x(ℓ−1)  
+
+> k−1
+
+, x(ℓ−1)  
+
+> k
+
+, x(ℓ)
+
+> k+1
+
+, . . . , x(ℓ) 
+
+> K
+
+],
+
+and let X(ℓ,k −1) denote the post-update iterate obtained after updating block k (so X(ℓ,k −1) differs from X(ℓ,k ) only in block k). 15 Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+Step 1: Descent for a single block update. Fix a sweep index ℓ and a block index k. Define the single-block function 
+
+φk(u) := Ji(x(ℓ−1) 0 , . . . , x(ℓ−1)  
+
+> k−1
+
+, u, x(ℓ)
+
+> k+1
+
+, . . . , x(ℓ) 
+
+> K
+
+).
+
+By Assumption D.1(3), ∇φk is Lk-Lipschitz. The update Equation (15) is exactly a gradient step on φk:
+
+x(ℓ) 
+
+> k
+
+= x(ℓ−1)  
+
+> k
+
+− ηk∇φk(x(ℓ−1)  
+
+> k
+
+), 0 < η k ≤ 1
+
+Lk
+
+.
+
+By the descent lemma for Lk-smooth functions, for any y,
+
+φk(y) ≤ φk(x) + ⟨∇ φk(x), y − x⟩ + Lk
+
+2 ∥y − x∥22.
+
+Applying this with x = x(ℓ−1)  
+
+> k
+
+and y = x(ℓ) 
+
+> k
+
+= x − ηk∇φk(x) yields 
+
+φk(x(ℓ) 
+
+> k
+
+) ≤ φk(x(ℓ−1)  
+
+> k
+
+) − ηk∥∇ φk(x(ℓ−1)  
+
+> k
+
+)∥22 + Lkη2
+
+> k
+
+2 ∥∇ φk(x(ℓ−1)  
+
+> k
+
+)∥22
+
+= φk(x(ℓ−1)  
+
+> k
+
+) −
+
+
+
+ηk − Lkη2
+
+> k
+
+2
+
+
+
+∥∇ φk(x(ℓ−1)  
+
+> k
+
+)∥22
+
+= φk(x(ℓ−1)  
+
+> k
+
+) −
+
+ 1
+
+ηk
+
+− Lk
+
+2
+
+
+
+∥x(ℓ) 
+
+> k
+
+− x(ℓ−1)  
+
+> k
+
+∥22,
+
+where in the last line we used x(ℓ) 
+
+> k
+
+− x(ℓ−1)  
+
+> k
+
+= −ηk∇φk(x(ℓ−1)  
+
+> k
+
+). Translating back to Ji, this is 
+
+Ji
+
+ X(ℓ,k −1)  ≤ J i
+
+ X(ℓ,k ) − ck ∥x(ℓ) 
+
+> k
+
+− x(ℓ−1)  
+
+> k
+
+∥22, (26) with ck := 1 
+
+> ηk
+
+− Lk 
+
+> 2
+
+> 0.
+
+Step 2: Monotone decrease and square-summable steps. Summing Equation (26) over k = K, K − 1, . . . , 0 telescopes the intermediate objectives: 
+
+Ji(X(ℓ)) = Ji
+
+ X(ℓ, −1)  ≤ J i
+
+ X(ℓ,K ) −
+
+> K
+
+X
+
+> k=0
+
+ck∥x(ℓ) 
+
+> k
+
+− x(ℓ−1)  
+
+> k
+
+∥22.
+
+Since X(ℓ,K ) = X(ℓ−1) , we obtain the per-sweep descent inequality 
+
+Ji(X(ℓ)) ≤ J i(X(ℓ−1) ) −
+
+> K
+
+X
+
+> k=0
+
+ck∥x(ℓ) 
+
+> k
+
+− x(ℓ−1)  
+
+> k
+
+∥22. (27) This implies monotone decrease, proving item (1). Moreover, by Assumption D.1(1), Ji is bounded below, so summing Equation (27) over ℓ = 1 , 2, . . . , T and letting T → ∞ yields 
+
+X
+
+> ℓ≥1
+> K
+
+X
+
+> k=0
+
+ck∥x(ℓ) 
+
+> k
+
+− x(ℓ−1)  
+
+> k
+
+∥22 ≤ J i(X(0) ) − inf Ji < ∞.
+
+Since each ck > 0, it follows that P
+
+> ℓ≥1
+
+PKk=0 ∥x(ℓ) 
+
+> k
+
+− x(ℓ−1)  
+
+> k
+
+∥22 < ∞, and therefore ∥x(ℓ) 
+
+> k
+
+− x(ℓ−1)  
+
+> k
+
+∥2 → 0 for every k,proving item (2). 
+
+Step 3: Stationarity of accumulation points. Let ¯X be any accumulation point of {X(ℓ)}ℓ≥0. Then there exists a subsequence {ℓj } such that X(ℓj ) → ¯X as j → ∞ . Fix any block index k. By the definition of X(ℓ,k ), the only blocks in which X(ℓ,k ) and X(ℓ) can differ are 0, 1, . . . , k , hence 
+
+∥X(ℓ,k ) − X(ℓ)∥2 ≤
+
+> k
+
+X
+
+> r=0
+
+∥x(ℓ−1)  
+
+> r
+
+− x(ℓ) 
+
+> r
+
+∥2.
+
+16 Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+By item (2), the right-hand side converges to 0 as ℓ → ∞ , so along the subsequence we also have X(ℓj ,k ) → ¯X.Next, the block update Equation (15) can be rewritten as 
+
+∇xk Ji
+
+ X(ℓ,k ) = 1
+
+ηk
+
+
+
+x(ℓ−1)  
+
+> k
+
+− x(ℓ)
+
+> k
+
+
+
+.
+
+By item (2), the right-hand side tends to 0 as ℓ → ∞ , hence ∇xk Ji(X(ℓj ,k )) → 0 as j → ∞ . Since Ji is continuously differentiable (Assumption D.1(2)) and X(ℓj ,k ) → ¯X, we may pass to the limit to obtain ∇xk Ji( ¯X) = 0 . Because k was arbitrary, this holds for all blocks k = 0 , . . . , K , and therefore ∇J i( ¯X) = 0 . This proves item (3). 
+
+## E. Experimental Settings 
+
+E.1. Computed Tomography 
+
+The OrganCMNIST dataset (Yang et al., 2021; 2023) contains 23 582 abdominal CT images of size 64 × 64 pixels, split into 
+
+12 975 training, 2392 validation, and 8216 test images. We adopt the affine flow path xt = (1 − t)x0 + tx 1 and parameterize the flow with a time-dependent UNet (Dhariwal & Nichol, 2021) consisting of approximately 8M parameters. For D-Flow and MS-flow the initial estimate of x0 is computed following (Ben-Hamu et al., 2024), as 
+
+x0 = pβ w(0) + p1 − β z,
+
+where z ∼ N (0 , I ), and w(0) = w + R 01 vθ (w(t), t ) with w being the filtered back-projection computed from the observed data y. For MS-Flow, by first propagating x0 with the given flow vθ , using the explicit Euler scheme, and then linearly interpolating between the x0 and the end-point of that trajectory. In doing so, the trajectory consistency loss is not equal to zero at the start. The initial x∗ is computed as the endpoint of that trajectory. The average run times in Table 2 were computed on the same machine with a single NVIDIA GeForce RTX 5090 GPU.  
+
+> Figure 6. Example reconstructions on OrganCMnist. First row: filtered back-projection (baseline reconstruction). Second row: MS-Flow (our) reconstruction. Third row: Ground truth.
+
+E.2. Image recovery 
+
+CelebA dataset (Yang et al., 2015) consists of more than 200 000 images resized to 128 × 128 pixels. As the flow model, we use the pretrained model obtained from https://github.com/annegnx/PnP-Flow . The parameters for all methods are tuned on a small set of test-images. The quality metrics are then evaluated on the first 50 images from the validation set. 17 Trajectory Stitching for Solving Inverse Problems with Flow-Based Models        
+
+> Table 5. Hyperparameter settings across image restoration tasks. For Flow-Prior we give (η, λ ), for OT-ODE (t0, γ ), for PnP-Flow (α),for D-Flow (nt, λ )and for MS-Flow (nt, L, γ, α, η, λ )
+
+Image restoration tasks 
+
+Method CT Super-res Gaussian Debl. Box-inpaint Flow-Priors – (0.01, 1e4) (0.01, 1e4) (0.01, 1e4) OT-ODE – (0.2, constant) (0.4, √t) (0.1, √t)PnP-Flow – (0.01) (0.01) (0.01) D-Flow (3, 0.05) (3, 0.05) (3, 1) (3, 1) MS-Flow (6, 1, 0.01, 0.1, 5, 0.0001) (6, 5, 0.01, 0.1, 5, 0.0001) (6, 1, 0.01, 0.1, 5, 0.0001) (12, 1, 0.01, 1, 5, 0.000) Similarly to above, for D-Flow and MS-flow the initial estimate of x0 is computed following (Ben-Hamu et al., 2024), as 
+
+x0 = pβ w(0) + p1 − β z,
+
+where z ∼ N (0 , I ), and w(0) = w + R 01 vθ (w(t), t ) with w computed from the observed data y, depending on the given task (as the noisy observation y for gaussian deblurring, by applying the adjoint of the forward operator to y for super-resolution, and as a random image for box-inpainting). The initial trajectory and the initial x∗ are then computed in the same way as for Computed Tomography. In Table 5 we provide the parameter choices for all methods and each restoration setting. 
+
+Flow-Priors (Zhang et al., 2024) We consider the hyperparameters η and λ, corresponding to the step size for gradient descent and the weighting of the data-consistency term. We to a grid search over η ∈ { 0.001 , 0.01 , 0.1} and λ ∈{1 × 10 2, 1 × 10 3, 1 × 10 4, 1 × 10 5}. We use N = 100 discretization steps. 
+
+OT-ODE (Pokle et al., 2024) We consider the hyperparameters t0 (initial time), learning rate type γ. We do a grid search over t0 ∈ { 0.1, 0.2, 0.3, 0.4} and γ ∈ { constant , √t}. We again use N = 100 discretization steps. 
+
+PnP-Flow (Martin et al., 2025) We consider the hyperparameters α (exponent of learning rate) and search over α ∈{0.01 , 0.1, 0.3, 0.5, 0.8, 1.0}. We use N = 100 discretization steps. Following Martin et al. (2025), we use the average of 5
+
+evaluations of the flow field in every step. 
+
+E.3. Further Results 
+
+Results in Table 6 investigate the stability over the optimization trajectory for D-Flow and MS-Flow. In particular, we compare the average highest PSNR over the optimization trajectory with the average PSNR of the converged trajectory (evaluated at the last iteration). As previously discussed, D-Flow often shows a comparably high maximum PSNR, but afterward it tends to overfit and deteriorate in performance. In comparison, MS-Flow shows a stable performance with small differences between the best PSNR and the PSNR of the converged image.  
+
+> Table 6. Reconstruction quality comparison for CelebA: D-Flow vs. MS-Flow. We show the best PSNR over iterations and the PSNR of the converged image.
+
+PSNR ↑ SSIM ↑
+
+Task Method Converged Best Converged Best Box Inpainting D-Flow 33.96 35.84 0.9792 0.9736 MS-Flow 36.30 36.46 0.9799 0.9800 Super-resolution D-Flow 34.67 34.69 0.9314 0.9322 MS-Flow 36.46 36.46 0.9570 0.9570 Gaussian Deblurring D-Flow 33.48 34.66 0.8696 0.9102 MS-Flow 38.02 38.40 0.9587 0.9636 18 Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+Figure 7. Top: initial shooting-point initialization. Bottom: converged shooting points after optimization. Results shown for Gaussian deblurring, alongside the measurements and ground-truth image. 
+
+Figure 8. Top: initial shooting-point initialization. Bottom: converged shooting points after optimization. Results shown for super-resolution, alongside the measurements and ground-truth image. 
+
+## F. Application to Latent Flow Models 
+
+In latent flow models, the dynamics of the flow model are defined in latent space. We refer to the image space X and the latent space with Z. We define the encoder at E : X → Z and the decoder as D : Z → X . The trained flow model 
+
+vθ : Z × [0 , 1] → Z acts only in latent space. Sample generation is then performed via 
+
+dz
+
+dt = vθ (z, t ), t ∈ [0 , 1] , z(0) = z0, (28) with our final sample as x = D(z(1)) . So, the dynamics are fully in latent space, and only at the final step do we decode back to the image space. For Latent MS-Flow, we introduce latent control points 
+
+{z0, . . . , zK }, 0 = t0 < · · · < t K = 1 (29) and a terminal variable z∗ in latent space. The augmented objective is then 
+
+Zi+1 = arg min  
+
+> [z0,..., zK]
+
+α
+
+2 ∥zi 
+
+> ∗
+
+− zK ∥2 + λR(z0) + γ
+
+2
+
+> K
+
+X
+
+> k=1
+
+∥zk − Fk−1,k (zk−1)∥2 (30a) 
+
+zi+1  
+
+> ∗
+
+= arg min 
+
+> z∗
+
+Φ( D(z∗)) + α
+
+2 ∥z∗ − zi+1  
+
+> K
+
+∥2. (30b) As the terminal loss Φ is usually defined in image space, the data-consistency step requires backpropagation of the decoder. 19 Trajectory Stitching for Solving Inverse Problems with Flow-Based Models 
+
+F.1. Implementation Details 
+
+Stable Diffusion 3.5 1 is trained via classifier-free guidance (CFG) (Ho & Salimans, 2022). We use a CFG weight of 2.0
+
+and use the prompt “a high quality image of a face.” as the conditional text input, both for FlowDPS (Kim et al., 2025) and MS-Flow. For MS-Flow, we initialize z0 
+
+> ∗
+
+as a zero vector. We then initialize the shooting points [z0, . . . , zK ] as a linear interpolation between z0 ∼ N (0 , I ) and z0
+
+> ∗
+
+. We use K = 29 shooting points, which is the number of integration steps usually chosen for Stable Diffusion 3.5. We use 10 inner steps and 25 alternating minimization steps in total, with 
+
+α = γ = 0 .06 .
+
+> 1https://huggingface.co/stabilityai/stable-diffusion-3.5-medium
+
+20

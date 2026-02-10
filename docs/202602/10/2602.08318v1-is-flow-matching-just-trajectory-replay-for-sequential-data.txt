@@ -1,0 +1,2993 @@
+Title: Is Flow Matching Just Trajectory Replay for Sequential Data?
+
+URL Source: https://arxiv.org/pdf/2602.08318v1
+
+Published Time: Tue, 10 Feb 2026 03:06:41 GMT
+
+Number of Pages: 51
+
+Markdown Content:
+# Is Flow Matching Just Trajectory Replay for Sequential Data? 
+
+Soon Hoe Lim, 1,2∗ Shizheng Lin, 1,2∗
+
+Michael W. Mahoney, 3,4,5 N. Benjamin Erichson 4,51 Department of Mathematics, KTH Royal Institute of Technology  
+
+> 2
+
+Nordita, KTH Royal Institute of Technology and Stockholm University  
+
+> 3
+
+Department of Statistics, University of California at Berkeley  
+
+> 4
+
+International Computer Science Institute  
+
+> 5
+
+Lawrence Berkeley National Laboratory 
+
+Abstract 
+
+Flow matching (FM) is increasingly used for time-series generation, but it is not well-understood whether it learns a general dynamical structure or simply performs an effective “trajectory replay”. We study this question by deriving the velocity field targeted by the em-pirical FM objective on sequential data, in the limit of perfect function approximation. For the Gaussian conditional paths commonly used in practice, we show that the implied sampler is an ODE whose dynamics constitutes a nonparametric, memory-augmented continuous-time dynamical system. The optimal field admits a closed-form expression as a similarity-weighted mixture of instantaneous velocities induced by past transitions, making the dataset dependence explicit and interpretable. This perspective positions neural FM models trained by stochastic optimization as parametric surrogates of an ideal nonparametric solution. Us-ing the structure of the optimal field, we study sampling and approximation schemes that improve the efficiency and numerical robustness of ODE-based generation. On nonlinear dynamical system benchmarks, the resulting closed-form sampler yields strong probabilistic forecasts directly from historical transitions, without training. 
+
+# 1 Introduction 
+
+Continuous-time models, such as normalizing flows defined by ordinary differential equations (ODEs) [20, 59], have emerged as a powerful and flexible paradigm in generative modeling [98, 64]. These models specify a generative process through a velocity field vθ(z, t ) in the ODE, which is described by the process: z(0) ∼ p0,
+
+dz (t)
+
+dt = vθ(t, z (t)) , z(t) ∈ Rd, t ∈ [0 , 1] ,
+
+which transports a simple base distribution p0 at t = 0 to a complex data distribution p1 at 
+
+t = 1. However, training such models remains challenging and often requires simulation-based objectives or the computationally expensive adjoint method. Flow matching (FM) methods [71, 72] (including closely related approaches such as Rectified Flow [74] and Stochastic Interpolants [1]) address these challenges by providing a simulation-free regression objective for learning the velocity field. FM constructs a target probability path pt(z) and an associated guiding field u(t, z ) that transports samples along this path. The model is then trained with regression loss E∥vθ(t, z ) − u(t, z )∥2, where vθ denotes a neural 
+
+> ∗Equal contribution.
+
+1
+
+> arXiv:2602.08318v1 [stat.ML] 9 Feb 2026
+
+Figure 1: What Dynamical System Are FM Forecasters Actually Sampling From? 
+
+For sequential data, optimal empirical FM induces a nonparametric, memory-augmented ODE, enabling training-free forecasting by replaying historical transitions. Inspired by this theoretical insight, we propose an ODE sampler dZ t 
+
+> dt
+
+= GtZt + h(t, Z t; DM ) (see (13)), where the velocity field combines a global linear drift GtZt with a data-adaptive nonlinear memory term h. This nonlinear forcing is computed by attending to residual velocities yj (t), weighted by a kernel attention mechanism αj (t, z ). By initializing Z0 from a Gaussian distribution around the current state xτ , integrating this ODE gives a next-step forecast Z1 ≈ xτ +1 , and the method inherently supports generating an ensemble of forecasts to quantify uncertainty. network with parameter θ, leading to highly effective and practically scalable continuous-time generative models. Sequence modeling is a natural and increasingly important application domain for FM; see our discussion of related work in App. A. Sequential data are often viewed as discretizations of underlying continuous-time processes. FM formulations can therefore be used to learn generative models of full trajectories using a memory bank of observed one-step transitions [70, 107]. Despite promising results, the implicit bias of FM models is not well understood. This raises a question: 
+
+When FM is applied to sequence modeling, what is the velocity field ˆv∗(t, z ) that a perfectly expressive neural network would learn, given a finite number of data samples? 
+
+In this work, we derive this optimal empirical model, studying its structure in detail, and ex-ploring the implications. For the Gaussian path construction commonly used in FM, we show that ˆ v∗(t, z ) admits a closed-form expression . Remarkably, this gives us a training-free, inter-pretable sampler which can be viewed as a nonparametric, memory-augmented continuous-time dynamical system defined directly by the dataset of historical transitions. Through this lens, neural FM models trained on sequential data can be reinterpreted as parametric approximations of this ideal nonparametric model. This perspective unifies continuous-time flow-based gener-ative modeling with nonparametric dynamical systems, offering a principled and data-driven foundation for memory-based sequence modeling. In more detail, our main contributions are as follows: 
+
+• Theoretical Derivation of the Optimal Velocity Field. We derive the closed-form minimizer of the empirical FM objective for historical transition data (see Sec. 2). We show that for Gaussian conditional paths, the optimal velocity depends on a similarity-weighted 2average of certain data-dependent instantaneous velocities. We further study the behavior of the resulting ODE sampler; see App. E. 
+
+• A Principled Training-Free Sampler. Motivated by the theoretical insight, we propose a training-free model (FreeFM), see Fig. 1, that takes advantage of the entire dataset as a memory bank. This sampler operates as a nonparametric dynamical system that blends historical dynamics based on proximity to the current state. We analyze the numerical properties of the ODE sampler, and propose approximation schemes to address computational scalability and stability (see Sec. 3). Proofs of the presented theoretical results are provided in App. D. 
+
+• Empirical Validation. Focusing on sequential data arising in nonlinear dynamics [29, 12], we validate the theoretical insight and demonstrate the effectiveness of the proposed sampler on standard benchmark tasks (see Sec. 4). Our results show that this nonparametric “trajectory replay” mechanism can perform competitively with trained neural networks (see Fig. 2), challenging the necessity of deep parameterization. Source code is available at 
+
+https://github.com/shoelim/FreeFM .
+
+# 2 Training-Free Models for Dynamical Systems 
+
+In this section, we specialize FM and conditional FM (CFM) (see App. B for the background) to the setting of sequential data whose underlying dynamics come from a dynamical system. We then study empirical FM and use the optimal solution to derive a training-free model for probabilistic forecasting. Finally, we discuss various interpretations of this model and connect it to existing approaches. 
+
+Observed trajectories and transition dataset. We are given N independent realizations of the trajectory of states in Rd, each sampled at equidistant intervals: 
+
+x(n) 
+
+> τ
+
+∈ Rd : τ = 0 , . . . , T n − 1 , n = 1 , . . . , N, 
+
+where x(n) 
+
+> τ
+
+is the realization of the state Xτ at time index τ . From each realized trajectory, we extract all consecutive one-step transitions ( x(n) 
+
+> τ
+
+, x (n) 
+
+> τ+1
+
+). Collecting these transitions across all trajectories yields the transition dataset :
+
+DM := X(j) Mj=1 , M =
+
+> N
+
+X
+
+> n=1
+
+(Tn − 1) .
+
+Here, we introduce a single transition index j ∈ { 1, . . . , M } via a bijective mapping j 7 −→  τ (j), n (j). Each j indexes a specific realized transition pair: 
+
+X(j) =  x(n(j))   
+
+> τ(j)
+
+, x (n(j))  
+
+> τ(j)+1
+
+ =:  X(j)1 , X (j)2
+
+,
+
+realized from the random variable X. This flattened representation DM = { X(j)1 , X (j)2
+
+}Mj=1 
+
+serves as the memory bank for the empirical CFM sampler introduced later. 
+
+Underlying deterministic dynamics. We assume that the trajectories are generated by a common (nonlinear) map via: 
+
+Xτ +1 = F (Xτ ), F : Rd → Rd,
+
+with the initial condition X0 ∼ μ0, where μ0 is often assumed to be an invariant distribution of the map F [47]. Each trajectory is therefore a deterministic function of its initial state, and 
+
+Xτ = F τ (X0), X0 ∼ μ0.
+
+3Here F τ denotes the τ -fold composition of F with itself. Continuous-time dynamics dX t =
+
+f (Xt) dt are naturally included in this framework via their discrete-time flow map F (·) = Φ ∆t(·), where ∆ t denotes the step size. The population transition law for one-step transitions is the pushforward measure, PX =(Id , F )#μ0 on Rd×Rd, supported on the graph manifold M = (x, F (x)) : x ∈ supp( μ0) ⊂ R2d.
+
+Since M is a d-dimensional submanifold embedded in R2d, PX is singular (has no density) with respect to the Lebesgue measure on R2d. Thus, every pair observed ( X(j)1 , X (j)2 ) in our memory bank is a sample of PX , representing a deterministic transition on M. Our empirical procedure will not attempt to learn F directly. Instead, it will construct a continuous-time velocity field whose flow interpolates between the neighborhoods of X(j)1 and X(j)2 for all transitions in DM .Next, we address the earlier question for the transition data setting and derive a training-free model driven by a closed-form velocity field. 
+
+2.1 General Affine Conditional Probability Paths 
+
+We instantiate the general FM framework for our transition dataset. Let the conditioning vari-able be a transition pair X := ( X1, X 2) ∼ PX . We associate with each transition a probability path on the state space Rd.Let Z ∈ Rd be a base random variable with probability density function (PDF) K. For each transition X, we define an affine conditional flow map ψt(· | X) : Rd → Rd as: 
+
+ψt(Z | X) = mt(X) + σt(X) Z, (1) where mt : [0 , 1] × R2d → Rd, σ t : [0 , 1] × R2d → (0 , ∞) are differentiable in t. Defining the random variable Zt := ψt(Z | X) for t ∈ [0 , 1], the induced conditional density is given by the change of variable formula: 
+
+pt(z | X) = 1
+
+σt(X)d K
+
+ z − mt(X)
+
+σt(X)
+
+
+
+. (2) This flow is generated by a vector field v(t, z | X) that is affine with respect to z. More precisely, the (unique) vector field that generates ψt via the ODE ddt ψt(Z | X) = v(t, ψ t(Z | X) | X) is: 
+
+v(t, z | X) = at(X) z + bt(X), with: (3) 
+
+at(X) = ∂tσt(X)
+
+σt(X) , bt(X) = ∂tmt(X) − at(X) mt(X).
+
+The population mixture path is defined as the marginal density: 
+
+pt(z) = 
+
+Z
+
+pt(z | X = x) dP X (x), (4) where PX is the transition distribution on the product space. Our goal is to find a velocity field 
+
+v(t, z ) that generates this marginal path, so that the constructed flow transports p0 to p1 along 
+
+{pt}t∈[0 ,1] .
+
+2.2 Empirical CFM and Closed-Form Solution 
+
+The transition dataset DM defines an empirical joint law ˆ p1 = 1
+
+> M
+
+PMj=1 δX(j) on R2d. Equiv-alently, we may introduce a discrete latent index C ∈ { 1, . . . , M } with the uniform prior 
+
+π(j) = 1 /M and set X = X(C). This choice corresponds to a paired (diagonal) coupling be-tween consecutive states, in contrast to an independent or optimal transport coupling between marginal endpoint samples. 4When the underlying dynamics are stationary and ergodic, ˆ p1 provides a Monte Carlo ap-proximation of the population one-step transition law; otherwise, it is interpreted as a purely empirical, data-driven measure. Although transitions within a single trajectory are temporally dependent, ergodicity or mixing ensures convergence of their empirical distribution along long trajectories (see App. B.5 for details), while transitions across trajectories are independent by construction. We therefore treat DM as a valid Monte Carlo–type approximation for minimizing the objective. Substituting the population measure PX with the empirical measure ˆ p1, the corresponding empirical marginal path becomes a mixture of the conditional densities: ˆpt(z) = 1
+
+M
+
+> M
+
+X
+
+> j=1
+
+pt(z | X(j)).
+
+We define the empirical responsibilities (or posterior weights) wj (t, z ) as the normalized contri-bution of the j-th transition to the density at location z and time t:
+
+wj (t, z ) = pt(z | X(j))
+
+PMk=1 pt(z | X(k)) , j = 1 , . . . , M. (5) Let the conditioning variable X ∼ ˆp1 on RD, where D = 2 d for the transition setting, and let the conditional flow pt(z|X) be a path on Rd. The following proposition provides the analytic minimizer for the FM objective under this mixture model, answering the earlier question. 
+
+Proposition 1 (Closed-Form Empirical FM) . For the affine conditional flow generated by 
+
+v(t, z |X) = at(X)z + bt(X) (where at : RD → R, bt : RD → Rd), the (unique) minimizer of the empirical CFM (equivalently FM) objective 
+
+ˆLCFM [v′] = Et EX EZt ∥v′(t, Z t) − v(t, Z t | X)∥2, (6) 
+
+where the expectation is over t ∼ U [0 , 1] , X ∼ ˆp1 and Zt ∼ pt(· | X), admits the closed-form expression 
+
+ˆv∗(t, z ) = 
+
+> M
+
+X
+
+> j=1
+
+wj (t, z )  at(X(j)) z + bt(X(j)), (7) 
+
+where the weights wj (t, z ) are given by (5) .
+
+The optimal velocity field ˆ v∗ is a weighted mixture of the affine velocity fields per-transition attached to each observed transition, with weights determined by the posterior probability that the point z at time t belongs to the conditional path originating from X(j). The formula (7) allows us to evaluate the vector field at any point ( t, z ) simply by summing the data set, without explicit optimization (training-free). 
+
+2.3 Gaussian Bridge Conditional Path 
+
+We now specialize the general framework to the Gaussian path proposed in [70]; see Fig. 6 for an illustration. Although the specific probability path is a modeling choice, we take it as our canonical model due to its principled motivation from dynamical optimal transport. For each transition X(j) := ( X(j)1 , X (j)2 ), we define 
+
+Z(j) 
+
+> t
+
+= (1 − t)X(j)1 + tX (j)2 + ctξ, ξ ∼ N (0 , I d), (8) 5where c2 
+
+> t
+
+= σ2min + σ2t(1 − t) with σ ≥ 0 and σmin > 0 (which prevents degeneracy of the posterior responsibilities near t = 0 , 1). For this specific Gaussian path, the optimal empirical CFM velocity field becomes, by Proposition 1: ˆv∗(t, z ) = Gtz + h(t, z ; DM ), (9) where 
+
+h(t, z ; DM ) = 
+
+> M
+
+X
+
+> j=1
+
+αj (t, z )yj (t). (10) Here, yj (t) = ˙ m(j) 
+
+> t
+
+− Gtm(j) 
+
+> t
+
+, where m(j) 
+
+> t
+
+= (1 − t)X(j)1 + tX (j)2 , ˙m(j) 
+
+> t
+
+= X(j)2 − X(j)1 ,Gt = g(t)Id := σ2(1 − 2t)2( σ2min + σ2t(1 − t)) Id, (11) 
+
+wj (t, z ) = αj (t, z ) = exp 
+
+
+
+− ∥z−m(j) 
+
+> t∥2
+> 2c2
+> t
+
+PMk=1 exp 
+
+
+
+− ∥z−m(k) 
+
+> t∥2
+> 2c2
+> t
+
+ . (12) This velocity decomposes into a global linear term Gtz and a local data-dependent nonlinear term h(t, z ; DM ) weighted by Gaussian-kernel attention. In general, different choices of the conditional path give rise to a different form of ˆ v∗ 
+
+> t
+
+and thus to a different sampler. This allows us to engineer paths tailored to specific data and sampler properties. 
+
+Continuous-time memory-based sampler. The closed-form empirical CFM velocity ˆ v∗(t, z )derived earlier yields a training-free sampler that uses the entire dataset as a memory bank. Given an initial state xτ ∈ Rd at discrete time τ , we evolve the continuous-time state Zt
+
+according to dZ t
+
+dt = GtZt + h(t, Z t; DM ), Z 0 ∼ N (xτ , σ 2min Id), (13) for some σmin > 0, to obtain an estimate Z1 for the next state xτ +1 . Iterating this map produces a multi-step forecaster, Φ0→1
+
+ Φ0→1(· · · Φ0→1(xτ ) · · · ) ≈ xτ +m, (14) where Φ 0→1 is the flow induced by the ODE (13). Using this training-free, closed-form model, we can generate ensembles of new samples by numerically integrating the ODE. Importantly, by performing Monte-Carlo multi-step generation by propagating multiple particles through the ODE, we obtain both mean predictions and full predictive distributions for uncertainty estimation. This sampler operates as a nonparametric memory-augmented dynamical system : the velocity field at each ( t, z ) is computed by applying soft attention to the stored transitions, effectively blending historical dynamics based on proximity to the current ODE state. Although rem-iniscent of continuous-time RNNs [44] in their state evolution, the mechanism more closely resembles kernel-based nonparametric regression or memory-based prediction. It can be viewed as a continuous-time analogue of Empirical Dynamic Modeling (EDM) [95, 77], which relies on Takens’ embedding [46] and nearest-neighbors geometry. While EDM obtains a locally weighted estimator of the discrete-time map via nonparametric regression, our formulation yields, in closed form, the corresponding locally weighted estimator of a velocity field whose flow reproduces the transitions. Our probabilistic approach goes beyond EDM (which is fundamentally deterministic and geo-metric) and admits principled extensions that allow for uncertainty quantification. Moreover, 6the closed-form CFM velocity ˆ v∗(t, z ) can also be used as the drift coefficient in an SDE to generate estimates for the next state xτ +1 conditional on xτ :
+
+dZ t = ˆ v∗(t, Z t)dt + Σ( t)dW t, Z0 ∼ N (xτ , σ 2min Id),
+
+where Σ( t) is the diffusion coefficient and Wt is a Wiener process. The diffusion coefficient Σ( t) introduces stochasticity, enabling the model to sample the full conditional distribution and improving sample diversity, while the drift ˆ v∗ ensures the flow follows the mean path. We can connect the velocity field with the empirical score function ˆ s∗(t, z ) := ∇z log ˆ pt(z) [93]: ˆv∗(t, z ) = 
+
+> M
+
+X
+
+> j=1
+
+wj (t, z ) ˙ mt(X(j)) − σ2(1 − 2t)2 ˆs∗(t, z ).
+
+This shows that the optimal CFM drift is the sum of the data’s velocity mixture and a force that pushes the flow along the steepest ascent of the log-density (the score function). 
+
+2.4 Interpretations of the Training-Free Model 
+
+Closed-form, data-adaptive model. For any admissible affine conditional path, the empiri-cal CFM minimizer ˆ v∗(t, z ) is available in closed form and depends on the data only through the weights wj (t, z ) and per-transition velocity labels v(t, z | X(j)) (Proposition 1). In particular, no parametric training or optimization is required: the sampler drift is computed directly from the transition memory bank. 
+
+Kernel conditional expectation and attention. In the Gaussian-bridge specialization, the optimal drift decomposes as ˆ v∗(t, z ) = Gtz + PMj=1 αj (t, z ) yj (t), where yj (t) = ˙m(j) 
+
+> t
+
+− Gtm(j) 
+
+> t
+
+.For each fixed t, the nonlinear term z 7 → P 
+
+> j
+
+αj (t, z ) yj (t) coincides with a Nadaraya–Watson estimator [82] of the conditional expectation of the velocity label given Zt = z, using a Gaussian kernel over the bridge cloud {mt(X(j))}Mj=1 . Equivalently, the weights αj (t, z ) = softmax j
+
+
+
+− 12c2
+
+> t
+
+∥z − mt(X(j))∥2
+
+
+
+define a soft attention mechanism over a memory bank of tran-sitions {X(j)}Mj=1 , so that the empirical velocity ˆ vt(z) = PMj=1 αj (t, z ) ut(X(j)) is a similarity-weighted average of historical instantaneous velocities. This yields a data-driven sampler with Gaussian-kernel fading memory. 
+
+Operator-theoretic and diffusion map connection. The ODE sampler has a unique solu-tion for all t ∈ [0 , 1] and admits a Duhamel representation that separates global linear transport from a data-driven forcing term. After a co-moving change of variables, the forcing at each sam-pler time is exactly given by a Nystr¨ om extension of a row-stochastic diffusion-map operator [22] applied to intrinsic velocity labels; see Appendix E for more details. 
+
+Trajectory replay and local modeling. The operator representation shows that the sampler evolves by continuously averaging and replaying intrinsic velocity segments of stored transitions, with kernel weights determined by proximity in state space at the current sampler time. In the small-bandwidth regime, the forcing approaches nearest-neighbor replay of individual transition segments, recovering a local model of the dynamics. Larger bandwidths produce smoother, more global averaging. 
+
+# 3 Practical Considerations 
+
+The proposed ODE model supports training-free probabilistic forecasting by numerical inte-gration. However, there are practical challenges associated with numerical integration and scalability, which we address in this section. 73.1 Numerical Stiffness and Integration Schemes 
+
+For each fixed t ∈ [0 , 1], the (spatial) Lipschitz constant of a map f (t, ·) : Rd → Rd is defined as (see App. D.2): Lip z (f )( t) := sup  
+
+> z̸=z′
+
+∥f (t, z ) − f (t, z ′)∥∥z − z′∥ ∈ [0 , ∞].
+
+The following spatial Lipschitz bound for the velocity field exposes a stiffness issue associated with numerical integration of the proposed ODE sampler. 
+
+Proposition 2 (Lipschitz bound) . Let t ∈ [0 , 1] and DM be given. Assume that σ > 0 and, for all j, t , ∥ ˙m(j) 
+
+> t
+
+∥ ≤ R1 and ∥m(j) 
+
+> t
+
+∥ ≤ Rm. Then, the z-Lipschitz constant of h is dominated by 
+
+c−4 
+
+> t
+
+, as ct → 0:
+
+Lip z (h)( t) ≤ sup 
+
+> z∈Rd
+
+∥∇ z h(t, z ; DM )∥ = O(c−4 
+
+> t
+
+). (15) 
+
+Moreover, Lip z (ˆ v∗)( t) ≤ sup z∈Rd ∥∇ z ˆv∗∥ = O(c−4 
+
+> t
+
+).
+
+See also Theorem 3 (in Appendix D) for a detailed version. As ct → 0 (equivalently, as σmin , σ → 0), the term O(c−4 
+
+> t
+
+) dominates. This shows that the interaction between the data-dependent weights αj and the data-dependent means m(j) 
+
+> t
+
+creates a source of stiffness that is stronger than the linear term Gtz. As the proposed sampler is based on the Gaussian-bridge CFM with c2 
+
+> t
+
+= σ2min + σ2t(1 − t), if σmin = 0 then ct ∼ √t near t = 0 and ∥Gt∥ ∼ 1/t, producing strong stiffness at the endpoint. Stiffness is directly controllable via the variance floor σmin . Choosing σmin involves a trade-off: smaller values improve endpoint matching but increase stiffness, while larger values improve numerical stability at the cost of smoothing. In practice, we use a small step size and tune 
+
+σ, σ min via a simple grid search to achieve a sweet spot. Algorithm 1 in App. C provides a detailed algorithm that describes the ODE sampler for probabilistic prediction. We note that while an exponential Euler scheme fits naturally with the structure of the ODE, it is insufficient to overcome the severe stiffness O(c−4 
+
+> t
+
+) introduced by the highly nonlinear dependence of the weights αj (t, z ) on z. The use of a tuned σmin and/or very small step size remains necessary. 
+
+3.2 Scalability and Approximation Schemes 
+
+Evaluating the empirical CFM velocity ˆ v∗ 
+
+> t
+
+(z) := ˆ v(t, z ) at a given ( t, z ) requires computing 
+
+M responsibilities αj (t, z ) ∝ exp   − ∥ z − m(j) 
+
+> t
+
+∥2/(2 c2 
+
+> t
+
+). Thus, the naive cost of one velocity evaluation is O(M d ), which becomes prohibitively costly for large transition sets. A simple solution to mitigate the cost is top– R posterior truncation. The responsibilities αj (t, z ) often concentrate sharply near the transitions whose interpolated locations m(j) 
+
+> t
+
+are closest to z. Let IR(z, t ) denote the indices of the R largest softmax weights: 
+
+IR(z, t ) = arg topR j αj (t, z ). Define the truncated velocity estimator ˆvt,R (z) := Gtz +
+
+P 
+
+> j∈I R(z,t )
+
+αj (t, z ) yj (t)
+
+P 
+
+> k∈I R(z,t )
+
+αk(t, z ) . (16) The following result quantifies the truncation error. 
+
+Proposition 3 (Truncation error) . Let t ∈ [0 , 1] and DM be given. Suppose that ∥B(j) 
+
+> t
+
+∥ ≤ C
+
+for all j, t for some constant C > 0. Then 
+
+ˆv∗ 
+
+> t
+
+(z) − ˆvt,R (z) ≤ 2C
+
+
+
+1 − X
+
+> j∈I R(z,t )
+
+αj (t, z )
+
+
+
+.
+
+8(a) Conditional Forecast Trajectory for Aizawa Attractor 
+
+> (b) sMAPE and VPT Comparison
+
+Figure 2: Conditional Forecast. (a) Examples of conditional forecasts generated by FreeFM and baseline models for 20 trajectories from the Aizawa attractor. Each trajectory originates from a different initial condition. (b) sMAPE and VPT of conditional forecast results from FreeFM and baseline models. Shaded regions indicate ±0.5 standard error over 135 dynamical systems, each with 20 trajectories originating from randomly sampled initial conditions. Since Gaussian weights αj (t, z ) decay exponentially with distance, the majority of weight mass is captured by a small R. This allows O(R) computational complexity per step, instead of O(M ). In principle, the truncation error in Proposition 3 could be mapped directly to the trajectory of the sampler using the Gr¨ onwall inequality. Such an argument provides a theoretical guarantee that the deviation of the discretized ODE remains bounded by the discarded mass, ensuring that the numerical approximations stay well-behaved. 
+
+# 4 Empirical Results 
+
+In this section, we validate the theoretical insight and evaluate the effectiveness of the proposed training-free model on nonlinear dynamics forecasting tasks (see App. F for details and addi-tional results). While the framework is applicable in principle more broadly to sequential data, we focus on this setting to provide a clear and controlled evaluation. 
+
+4.1 Dataset Settings 
+
+For our experiments, we use dysts as a synthetic dataset [29, 30]. It is a benchmark comprising 135 chaotic systems between 3 and 6 dimensions. The systems are described by ODEs that are aligned with respect to dominant timescales and integration procedures. The sensitivity to initial conditions of a chaotic system is quantified by its largest Lyapunov exponent λ, which measures how quickly nearby trajectories diverge or converge [88]. Stable systems or systems approaching periodic orbits have zero or negative Lyapunov exponents, while chaotic systems have positive Lyapunov exponents, implying that trajectories diverge exponentially with small changes in initial conditions. The Lyapunov time is the characteristic timescale of predictability, defined as the time required for an initial error to grow by a factor of 
+
+e (τ ≡ λ−1). Generally, after 3-5 Lyapunov times, the system becomes effectively unpredictable. For our experiments, following previous work [108], we integrate all systems using an implicit Runge-Kutta scheme and uniformly downsample all time series. Unlike [108], we choose a finer 9granularity of 100 time points per Lyapunov time τ .
+
+4.2 Baseline Settings 
+
+For the conditional forecast experiment and the long term attractor reconstruction experiment, we select seven widely used models in dynamical systems forecasting as our baselines: (1) N-BEATS [87], a deep neural network that uses interpretable basis expansion to decompose pre-dictions into trend and seasonality components; (2) TiDE [23], an efficient MLP-based encoder-decoder model for multivariate time series forecasting; (3) Echo State Networks (ESNs) [50], a reservoir computing approach that has been shown to perform well on chaotic dynamical systems; (4) Transformer [101], an attention-based architecture capable of capturing long-range dependencies in sequential data; (5) LSTM [43], a recurrent neural network with gating mech-anisms designed to model long-term temporal dependencies; (6) linear regression [7], a simple baseline that serves as a lower bound for model performance; and (7) a vanilla flow matching model [71]. For the probabilistic forecasting experiment, we compare our training-free model with a fully-trained vanilla flow matching model. For simplicity, we only tune one critical hyperparameter; see the App. F.1 for details on the hyperparameter ranges. 
+
+4.3 Conditional Forecasting 
+
+We generate 20 trajectories for each of the 135 chaotic systems, with a length of 812 time points and a granularity of 100 points per Lyapunov time. This corresponds to approximately 8.12 Lyapunov times per trajectory, placing the system firmly in the chaotic regime where sensitive dependence on initial conditions is fully manifested. Since chaotic systems typically become effectively unpredictable after 3–5 Lyapunov times, our trajectories are long enough to exhibit the characteristic exponential divergence of nearby trajectories, rather than operating in a regime where chaotic behavior has not yet developed. Each trajectory originates from a different, randomly sampled initial condition. We evaluate both our model and the baselines at a prediction horizon of 5 τ , corresponding to 500 time points. We used the first 312 time points as an initial condition to forecast the remaining 500 time points. We use the symmetric mean absolute percentage error (sMAPE) and the valid prediction time (VPT) to evaluate the forecast results. The definitions of these two metrics are provided in App. F.2. The results are presented in Fig. 2. Compared to all fully-trained baseline models, our training-free model outperforms all baselines on average across the 135 chaotic systems. In particular, our model achieves an average VPT greater than 1, exceeding the highest VPT among all baselines, even with a relatively tight threshold for VPT computation. 
+
+4.4 Probabilistic Forecasting 
+
+Next, we demonstrate that our model performs well in probabilistic forecasting. A key advan-tage of generative models in forecasting is that the stochastic component naturally incorporates uncertainty into predictions, making probabilistic forecasting a well-suited task. In the proba-bilistic forecasting experiment, we compare our model with a fully trained vanilla flow matching model [71]. For the data settings, we follow the conditional generation setting to generate 20 trajectories of length 812 with a granularity of 100 points per Lyapunov time from 135 chaotic systems in dysts . The trajectories are divided into 312 observed time points and 500 testing points. For each trajectory, we generate 50 different predictions for probabilistic evaluation. To evaluate the quality of probabilistic forecasts, we use sMAPE and the Continuous Ranked Probability Score (CRPS), a key metric to evaluate probabilistic forecasts, measuring the pre-cision of an entire predicted probability distribution against an actual outcome. Examples and results of the probabilistic forecast are presented in Fig. 3. Our training free model outperforms 10 (a) Probabilistic Forecast Trajectory for Lorenz-63 (2D) 
+
+> (b) Probabilistic Forecast Trajectory for Lorenz-63 (3D)
+> (c) sMAPE and CRPS Comparison
+
+Figure 3: Probabilistic Forecast. (a)-(b) Examples of probabilistic forecast generated by FreeFM and fully trained vanilla flow matching model for time series from Lorenz-63. Error shadows are standard error over 50 Monte-Carlo simulations. (c) sMAPE and CRPS of prob-abilistic forecast results from FreeFM and fully trained vanilla flow matching model. Error shadows are 0.5 standard error over 135 dynamical systems with 20 random initial conditions and 50 Monte-Carlo simulations. the fully trained vanilla flow matching models in terms of CRPS. From Fig. 3a and Fig. 3b, we can see that our training free models still have good forecast quality until 3 Lyapunov times, and give reasonable probabilistic forecast result after 4 Lyapunov times. We will evaluate the long term forecasting ability of our training free model in Sec. 4.5. 
+
+4.5 Long Term Attractor Reconstruction 
+
+Chaotic systems become effectively unpredictable after several Lyapunov times. Here, we eval-uate our model’s ability to reconstruct the attractors in the long term, beyond where point fore-casts fail. We quantify this ability using the correlation dimension, a non-parametric measure that characterizes the fractal dimension of strange attractors in chaotic dynamical systems [33]. The long-term dynamics of chaotic systems evolve on a strange attractor, and the correla-tion dimension characterizes how the attractor fills the phase space by measuring the scaling behavior of nearby point pairs. We compute the correlation dimension for both predicted and ground-truth trajectories, and we evaluate the results using the root mean square error (RMSE) between them. Following prior studies [42, 37], we also compute the Kullback–Leibler (KL) di-vergence between the true and reconstructed attractors [60]. This distance metric quantifies how well the reconstructed attractors match the original attractors in a distributional sense. 11 (a) Correlation Dimension Comparison (b) KL Divergence Comparison 
+
+Figure 4: Long Term Attractor Reconstruction. (a) Correlation dimensions of long term attractor reconstruction result from FreeFM and baseline models. (b) KL divergence of long term attractor reconstruction result from FreeFM and baseline models. Error shadows are 0.5 standard error. Both results are presented over 135 dynamical systems, each has 20 trajectories originated from 20 random initial conditions. The results are shown in Fig. 4. In terms of both the correlation dimension and the KL divergence, our training-free model outperforms all baselines. Interestingly, as shown in Fig. 4b, TiDE achieves strong results in KL divergence at long forecast horizons, despite its relatively weaker performance in sMAPE (Fig. 2b). This is likely because TiDE better captures the statistical characteristics of the true trajectories in phase space (e.g., marginal distributions and higher-order moments): even when individual trajectories deviate, the overall distribution remains close to the ground truth. 
+
+# 5 Conclusion 
+
+By considering what velocity field a perfectly expressive FM model learns when applied to finite sequential data, we have shown that, under a common choice of probability path, the optimal empirical solution admits a training-free, closed-form realization as a nonparamet-ric, memory-augmented ODE that enables forecasting by replaying historical transitions. Our derivation makes explicit that different choices of probability paths induce fundamentally differ-ent training-free dynamics, highlighting the role of the path as a key design choice. At the same time, the resulting nonparametric formulation scales poorly to high-dimensional systems and may struggle in nonstationary or distribution-shifted settings, where past transitions become unreliable. These observations motivate future work on developing scalable schemes for high-dimensional dynamics and designing hybrid models that balance nonparametric memory with parametric structure to improve generative performance. It would also be interesting in future work to explore how our training-free model performs for other families of sequential data. 
+
+Acknowledgments 
+
+The computations were enabled by resources provided by the National Academic Infrastructure for Supercomputing in Sweden (NAISS), partially funded by the Swedish Research Council through grant agreement no. 2022-06725 (NAISS2025-5-358). SHL would like to acknowledge support from the Wallenberg Initiative on Networks and Quantum Information (WINQ) and the Swedish Research Council (VR/2021-03648). NBE would like to acknowledge support from the U.S. Department of Energy, Office of Science, Office of Advanced Scientific Computing Research, EXPRESS: 2025 Exploratory Research for Extreme-Scale Science program, under Contract Number DE-AC02-05CH11231 at Lawrence Berkeley National Laboratory. MWM would like to acknowledge support from DARPA, NSF, the DOE Competitive Portfolios grant, and the DOE SciGPT grant. 12 References 
+
+[1] Michael S Albergo, Nicholas M Boffi, and Eric Vanden-Eijnden. Stochastic interpolants: A unifying framework for flows and diffusions. arXiv preprint arXiv:2303.08797 , 2023. [2] Michael S Albergo and Eric Vanden-Eijnden. Learning to sample better. Journal of Statistical Mechanics: Theory and Experiment , 2024(10):104014, 2024. [3] Abdul Fatir Ansari, Oleksandr Shchur, Jaris K¨ uken, Andreas Auer, Boran Han, Pedro Mercado, Syama Sundar Rangapuram, Huibin Shen, Lorenzo Stella, Xiyuan Zhang, et al. Chronos-2: From univariate to universal forecasting. arXiv preprint arXiv:2510.15821 ,2025. [4] Andreas Auer, Patrick Podest, Daniel Klotz, Sebastian B¨ ock, G¨ unter Klambauer, and Sepp Hochreiter. TiRex: Zero-shot forecasting across long and short horizons with en-hanced in-context learning. arXiv preprint arXiv:2505.23719 , 2025. [5] O. Azencot, N. B. Erichson, V. Lin, and M. W. Mahoney. Forecasting sequential data using Consistent Koopman Autoencoders. Technical Report Preprint: arXiv:2003.02236, 2020. [6] Dominique Bakry, Ivan Gentil, and Michel Ledoux. Analysis and Geometry of Markov Diffusion Operators , volume 348. Springer Science & Business Media, 2013. [7] Karin Bammann. Statistical Models: Theory and Practice, 2006. [8] Grigory Bartosh, Dmitry Vetrov, and Christian A Naesseth. SDE Matching: Scalable and simulation-free training of latent stochastic differential equations. arXiv preprint arXiv:2502.02472 , 2025. [9] J. A. L. Benitez, J. Guo, K. Hegazy, I. Dokmanic, M. W. Mahoney, and M. V. de Hoop. Neural equilibria for long-term prediction of nonlinear conservation laws. Technical Report Preprint: arXiv:2501.06933, 2025. [10] Amel Bentata. Markovian Projection of Stochastic Processes . PhD thesis, Universit´ ePierre et Marie Curie-Paris VI, 2012. [11] Joe Benton, George Deligiannidis, and Arnaud Doucet. Error bounds for flow matching methods. arXiv preprint arXiv:2305.16860 , 2023. [12] Tyrus Berry and Suddhasattwa Das. Limits of learning dynamical systems. SIAM Review ,67(1):107–137, 2025. [13] Tyrus Berry, Dimitrios Giannakis, and John Harlim. Nonparametric forecasting of low-dimensional dynamical systems. Physical Review E , 91(3):032915, 2015. [14] Quentin Bertrand, Anne Gagneux, Mathurin Massias, and R´ emi Emonet. On the closed-form of flow matching: Generalization does not arise from target stochasticity. arXiv preprint arXiv:2506.03719 , 2025. [15] Marin Biloˇ s, Kashif Rasul, Anderson Schneider, Yuriy Nevmyvaka, and Stephan G¨ unnemann. Modeling temporal data as continuous functions with stochastic process diffusion, 2023. [16] Denis Bosq. Nonparametric Statistics for Stochastic Processes: Estimation and Prediction ,volume 110. Springer Science & Business Media, 2012. [17] Gerard Brunick and Steven Shreve. Mimicking an Itˆ o process by a solution of a stochastic differential equation. The Annals of Applied Probability , 23(4):1584 – 1628, 2013. 13 [18] Steven L Brunton, Marko Budiˇ si´ c, Eurika Kaiser, and J Nathan Kutz. Modern Koopman theory for dynamical systems. arXiv preprint arXiv:2102.12086 , 2021. [19] Kung-Sik Chan and Howell Tong. Chaos: A Statistical Perspective . Springer Science & Business Media, 2013. [20] Ricky TQ Chen, Yulia Rubanova, Jesse Bettencourt, and David K Duvenaud. Neural ordinary differential equations. Advances in Neural Information Processing Systems , 31, 2018. [21] Yifan Chen, Mark Goldstein, Mengjian Hua, Michael S Albergo, Nicholas M Boffi, and Eric Vanden-Eijnden. Probabilistic forecasting with stochastic interpolants and F¨ ollmer processes. arXiv preprint arXiv:2403.13724 , 2024. [22] Ronald R Coifman and St´ ephane Lafon. Diffusion maps. Applied and Computational Harmonic Analysis , 21(1):5–30, 2006. [23] Abhimanyu Das, Weihao Kong, Andrew Leach, Shaan Mathur, Rajat Sen, and Rose Yu. Long-term forecasting with TiDe: Time-series dense encoder, 2024. [24] Manh Hong Duong, Carsten Hartmann, and Michela Ottobre. Coarse graining of stochastic differential equations: averaging and projection method. arXiv preprint arXiv:2506.14939 , 2025. [25] Bruno Dupire et al. Pricing with a smile. Risk , 7(1):18–20, 1994. [26] Rick Durrett. Probability: Theory and Examples . Cambridge University Press, 5 edition, 2019. [27] Jianqing Fan and Qiwei Yao. Nonlinear Time Series: Nonparametric and Parametric Methods . Springer, 2003. [28] William Gilpin. Chaos as an interpretable benchmark for forecasting and data-driven modelling. In Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 2) , 2021. [29] William Gilpin. Chaos as an interpretable benchmark for forecasting and data-driven modelling, 2023. [30] William Gilpin. Model scale versus domain knowledge in statistical forecasting of chaotic systems, 2023. [31] William Gilpin. Generative learning for nonlinear dynamics. Nature Reviews Physics ,6(3):194–206, 2024. [32] Georg A Gottwald, Fengyi Li, Youssef Marzouk, and Sebastian Reich. Stable generative modelling using Schr¨ odinger bridges. Philosophical Transactions A , 383(2299):20240332, 2025. [33] Peter Grassberger and Itamar Procaccia. Measuring the strangeness of strange attractors. 
+
+Physica D: Nonlinear Phenomena , 9(1-2):189–208, 1983. [34] Nate Gruver, Marc Finzi, Shikai Qiu, and Andrew G Wilson. Large language models are zero-shot time series forecasters. Advances in Neural Information Processing Systems ,36:19622–19635, 2023. [35] Albert Gu, Karan Goel, and Christopher R´ e. Efficiently modeling long sequences with structured state spaces. arXiv preprint arXiv:2111.00396 , 2021. 14 [36] Istv´ an Gy¨ ongy. Mimicking the one-dimensional marginal distributions of processes having an Itˆ o differential. Probability Theory and Related Fields , 71(4):501–516, 1986. [37] Niclas G¨ oring, Florian Hess, Manuel Brenner, Zahra Monfared, and Daniel Durstewitz. Out-of-domain generalization in dynamical systems reconstruction, 2024. [38] Hanyuan Hang, Ingo Steinwart, Yunlong Feng, and Johan AK Suykens. Kernel density estimation for dynamical systems. Journal of Machine Learning Research , 19(35):1–49, 2018. [39] John Harlim. Data-Driven Computational Methods: Parameter and Operator Estimations .Cambridge University Press, 2018. [40] Philip Hartman. Ordinary Differential Equations . SIAM, 2002. [41] Andrew Harvey and Vitaliy Oryshchenko. Kernel density estimation for time series data. 
+
+International Journal of Forecasting , 28(1):3–14, 2012. [42] Florian Hess, Zahra Monfared, Manuel Brenner, and Daniel Durstewitz. Generalized teacher forcing for learning chaotic dynamics, 2023. [43] Sepp Hochreiter and J¨ urgen Schmidhuber. Long short-term memory. Neural Computation ,9(8):1735–1780, 1997. [44] John J Hopfield. Neurons with graded response have collective computational proper-ties like those of two-state neurons. Proceedings of the National Academy of Sciences ,81(10):3088–3092, 1984. [45] Yang Hu, Xiao Wang, Zezhen Ding, Lirong Wu, Huatian Zhang, Stan Z. Li, Sheng Wang, Jiheng Zhang, Ziyun Li, and Tianlong Chen. FlowTS: Time series generation via rectified flow, 2025. [46] Jeremy P Huke. Embedding nonlinear dynamical systems: A guide to Takens’ theorem. 2006. [47] AR Humphries and AM Stuart. Deterministic and random dynamical systems: theory and numerics. In Modern Methods in Scientific Computing and Applications , pages 211–254. Springer, 2002. [48] Mohammad Mohaiminul Islam, Thijs P Kuipers, Sharvaree Vadgama, Coen de Vente, Afsana Khan, Clara I S´ anchez, and Erik J Bekkers. Longitudinal flow matching for trajectory modeling. arXiv preprint arXiv:2510.03569 , 2025. [49] Herbert Jaeger. The “echo state” approach to analysing and training recurrent neural networks-with an erratum note. Bonn, Germany: German national research center for information technology gmd technical report , 148(34):13, 2001. [50] Herbert Jaeger and Harald Haas. Harnessing nonlinearity: Predicting chaotic systems and saving energy in wireless communication. Science , 304(5667):78–80, 2004. [51] T Jahn, J Chemseddine, P Hagemann, C Wald, and G Steidl. Trajectory generator matching for time series. arXiv preprint arXiv:2505.23215 , 2025. [52] Ming Jin, Shiyu Wang, Lintao Ma, Zhixuan Chu, James Y Zhang, Xiaoming Shi, Pin-Yu Chen, Yuxuan Liang, Yuan-Fang Li, Shirui Pan, et al. Time-LLM: Time series forecasting by reprogramming large language models. arXiv preprint arXiv:2310.01728 , 2023. [53] Iolo Jones. Diffusion geometry. arXiv preprint arXiv:2405.10858 , 2024. [54] Patrick Kidger. On neural differential equations. arXiv preprint arXiv:2202.02435 , 2022. 15 [55] Anne B Koehler. The asymmetry of the sAPE measure and other comments on the M3-competition. International Journal of Forecasting , 17(4):570–574, 2001. [56] Marcel Kollovieh, Abdul Fatir Ansari, Michael Bohlke-Schneider, Jasper Zschiegner, Hao Wang, and Yuyang Bernie Wang. Predict, refine, synthesize: Self-guiding diffusion mod-els for probabilistic time series forecasting. Advances in Neural Information Processing Systems , 36, 2024. [57] Marcel Kollovieh, Marten Lienen, David L¨ udke, Leo Schwinn, and Stephan G¨ unnemann. Flow matching with Gaussian process priors for probabilistic time series forecasting. arXiv preprint arXiv:2410.03024 , 2024. [58] Nikola Kovachki, Zongyi Li, Burigede Liu, Kamyar Azizzadenesheli, Kaushik Bhat-tacharya, Andrew Stuart, and Anima Anandkumar. Neural operator: Learning maps between function spaces with applications to PDEs. Journal of Machine Learning Re-search , 24(89):1–97, 2023. [59] Aditi S Krishnapriyan, Alejandro F Queiruga, N Benjamin Erichson, and Michael W Mahoney. Learning continuous models for continuous physics. Communications Physics ,6(1):319, 2023. [60] Solomon Kullback and Richard A Leibler. On information and sufficiency. The Annals of Mathematical Statistics , 22(1):79–86, 1951. [61] Lea Kunkel and Mathias Trabs. On the minimax optimality of flow matching through the connection to kernel density estimation. arXiv preprint arXiv:2504.13336 , 2025. [62] Claire Lacour. Nonparametric estimation of the stationary density and the transition density of a Markov chain. Stochastic Processes and their Applications , 118(2):232–260, 2008. [63] St´ ephane S Lafon. Diffusion Maps and Geometric Harmonics . Yale University, 2004. [64] Chieh-Hsin Lai, Yang Song, Dongjun Kim, Yuki Mitsufuji, and Stefano Ermon. The principles of diffusion models. arXiv preprint arXiv:2510.21890 , 2025. [65] Justin Lee, Behnaz Moradijamei, and Heman Shakeri. Multi-marginal stochastic flow matching for high-dimensional snapshot data at irregular time points. arXiv preprint arXiv:2508.04351 , 2025. [66] Christian L´ eonard. A survey of the Schr¨ odinger problem and some of its connections with optimal transport. arXiv preprint arXiv:1308.0215 , 2013. [67] Xin Li, Jingdong Zhang, Qunxi Zhu, Chengli Zhao, Xue Zhang, Xiaojun Duan, and Wei Lin. From Fourier to neural ODEs: Flow matching for modeling complex systems. arXiv preprint arXiv:2405.11542 , 2024. [68] Zongyi Li, Nikola Kovachki, Kamyar Azizzadenesheli, Burigede Liu, Kaushik Bhat-tacharya, Andrew Stuart, and Anima Anandkumar. Markov neural operators for learning chaotic systems. arXiv preprint arXiv:2106.06898 , pages 2–3, 2021. [69] Soon Hoe Lim. On the hidden biases of flow matching samplers. arXiv preprint arXiv:2512.16768 , 2025. [70] Soon Hoe Lim, Yijin Wang, Annan Yu, Emma Hart, Michael W Mahoney, Xiaoye S Li, and N Benjamin Erichson. Elucidating the design choice of probability paths in flow matching for forecasting. Transaction on Machine Learning Research , 2025. 16 [71] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. [72] Yaron Lipman, Marton Havasi, Peter Holderrieth, Neta Shaul, Matt Le, Brian Karrer, Ricky TQ Chen, David Lopez-Paz, Heli Ben-Hamu, and Itai Gat. Flow matching guide and code. arXiv preprint arXiv:2412.06264 , 2024. [73] Haoming Liu, Jinnuo Liu, Yanhao Li, Liuyang Bai, Yunkai Ji, Yuanhe Guo, Shenji Wan, and Hongyi Wen. From navigation to refinement: Revealing the two-stage nature of flow-based diffusion models through oracle velocity. arXiv preprint arXiv:2512.02826 , 2025. [74] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 , 2022. [75] Yong Liu, Guo Qin, Zhiyuan Shi, Zhi Chen, Caiyin Yang, Xiangdong Huang, Jianmin Wang, and Mingsheng Long. Sundial: A family of highly capable time series foundation models. arXiv preprint arXiv:2502.00816 , 2025. [76] Lu Lu, Pengzhan Jin, and George Em Karniadakis. DeepOnet: Learning nonlinear oper-ators for identifying differential equations based on the universal approximation theorem of operators. arXiv preprint arXiv:1910.03193 , 2019. [77] Abrar Majeedi, Viswanatha Reddy Gajjala, Satya Sai Srinath Namburi GNVV, Nada Magdi Elkordi, and Yin Li. Lets forecast: Learning embedology for time series forecasting. arXiv preprint arXiv:2506.06454 , 2025. [78] Youssef Marzouk, Zhi Robert Ren, Sven Wang, and Jakob Zech. Distribution learning via neural differential equations: a nonparametric statistical perspective. Journal of Machine Learning Research , 25(232):1–61, 2024. [79] James E Matheson and Robert L Winkler. Scoring rules for continuous probability dis-tributions. Management Science , 22(10):1087–1096, 1976. [80] Kevin McGoff, Sayan Mukherjee, and Natesh Pillai. Statistical inference for dynamical systems: A review. 2015. [81] Gonzalo Mena, Arun Kumar Kuchibhotla, and Larry Wasserman. Statistical properties of rectified flow. arXiv preprint arXiv:2511.03193 , 2025. [82] Elizbar A Nadaraya. On estimating regression. Theory of Probability & Its Applications ,9(1):141–142, 1964. [83] Boaz Nadler, St´ ephane Lafon, Ronald R Coifman, and Ioannis G Kevrekidis. Diffusion maps, spectral clustering and reaction coordinates of dynamical systems. Applied and Computational Harmonic Analysis , 21(1):113–127, 2006. [84] Ilan Naiman, Nimrod Berman, Itai Pemper, Idan Arbiv, Gal Fadlon, and Omri Azencot. Utilizing image transforms and diffusion models for generative modeling of short and long time series. Advances in Neural Information Processing Systems , 37:121699–121730, 2024. [85] Ilan Naiman, N Benjamin Erichson, Pu Ren, Michael W Mahoney, and Omri Azencot. Generative modeling of regular and irregular time series data via Koopman VAEs. arXiv preprint arXiv:2310.02619 , 2023. [86] Kirill Neklyudov, Rob Brekelmans, Daniel Severo, and Alireza Makhzani. Action match-ing: Learning stochastic dynamics from samples. In International conference on machine learning , pages 25858–25889. PMLR, 2023. 17 [87] Boris N. Oreshkin, Dmitri Carpov, Nicolas Chapados, and Yoshua Bengio. N-BEATS: Neural basis expansion analysis for interpretable time series forecasting, 2020. [88] Edward Ott. Chaos in Dynamical Systems . Cambridge University Press, 2002. [89] Vladimir Piterbarg. Markovian projection method for volatility calibration, 2006. [90] Irmantas Ratas and Kestutis Pyragas. Application of next-generation reservoir com-puting for predicting chaotic systems from partial observations. Physical Review E ,109(6):064215, 2024. [91] Martin Rohbeck, Edward De Brouwer, Charlotte Bunne, Jan-Christian Huetter, Anne Biton, Kelvin Y Chen, Aviv Regev, and Romain Lopez. Modeling complex system dy-namics with flow matching across time and conditions. In The Thirteenth International Conference on Learning Representations , 2025. [92] George G Roussas. Nonparametric estimation of the transition distribution function of a Markov process. The Annals of Mathematical Statistics , pages 1386–1400, 1969. [93] Christopher Scarvelis, Haitz S´ aez de Oc´ ariz Borde, and Justin Solomon. Closed-form diffusion models. arXiv preprint arXiv:2310.12395 , 2023. [94] Yaozhong Shi, Zachary E Ross, Domniki Asimaki, and Kamyar Azizzadenesheli. Stochas-tic process learning via operator flow matching. arXiv preprint arXiv:2501.04126 , 2025. [95] George Sugihara and Robert M May. Nonlinear forecasting as a way of distinguishing chaos from measurement error in time series. Nature , 344(6268):734–741, 1990. [96] Kiet Bennema ten Brinke, Koen Minartz, and Vlado Menkovski. Flow matching for geometric trajectory simulation, 2025. [97] Panagiotis Theodoropoulos, Augustinos D Saravanos, Evangelos A Theodorou, and Guan-Horng Liu. Momentum multi-marginal Schr¨ odinger bridge matching. arXiv preprint arXiv:2506.10168 , 2025. [98] Jakub M Tomczak. Deep Generative Modeling . Springer Nature, 2022. [99] Alexander Tong, Nikolay Malkin, Guillaume Huguet, Yanlei Zhang, Jarrid Rector-Brooks, Kilian Fatras, Guy Wolf, and Yoshua Bengio. Improving and generalizing flow-based generative models with minibatch optimal transport. arXiv preprint arXiv:2302.00482 ,2023. [100] Panos Tsimpos, Zhi Ren, Jakob Zech, and Youssef Marzouk. Optimal scheduling of dynamic transport. arXiv preprint arXiv:2504.14425 , 2025. [101] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in Neural Information Processing Systems , 30, 2017. [102] Michael Vogt. Nonparametric regression for locally stationary time series. 2012. [103] Christian Wald and Gabriele Steidl. Flow matching: Markov kernels, stochastic processes and transport plans. Variational and Information Flows in Machine Learning and Optimal Transport , pages 185–254, 2025. [104] Wei Biao Wu. Nonparametric estimation for stationary processes. 2003. [105] A. Yu, D. Lyu, S. H. Lim, M. W. Mahoney, and N. B. Erichson. Tuning frequency bias of state space models. Technical Report Preprint: arXiv:2410.02035, 2024. 18 [106] Xinyu Yuan and Yan Qiao. Diffusion-TS: Interpretable diffusion for general time series generation. arXiv preprint arXiv:2403.01742 , 2024. [107] Xi Zhang, Yuan Pu, Yuki Kawamura, Andrew Loza, Yoshua Bengio, Dennis L Shung, and Alexander Tong. Trajectory flow matching with applications to clinical time series modeling. arXiv preprint arXiv:2410.21154 , 2024. [108] Yuanzhao Zhang and William Gilpin. Zero-shot forecasting of chaotic systems. arXiv preprint arXiv:2409.15771 , 2024. [109] Meng Zhao and Lijian Jiang. Data-driven probability density forecast for stochastic dy-namical systems. Journal of Computational Physics , 492:112422, 2023. [110] Zhengyu Zhou and Weiwei Liu. An error analysis of flow matching for deep generative modeling. In Forty-second International Conference on Machine Learning .19 Appendix 
+
+This appendix is organized as follows. In App. A, we discuss related work in detail. In App. B, we provide background on flow matching (FM), conditional flow matching (CFM), and their empirical counterparts, as well as related discussion. In App. C, we provide a detailed algorithm describing the proposed training-free model for probabilistic forecasting. In App. D, we provide proof of the main theoretical results presented in the main paper. In App. E, we offer additional theoretical results and insights on the proposed ODE model. In App. F, we provide experimental details and additional empirical results. 
+
+# A Related Work 
+
+A.1 Sequence Modeling 
+
+Sequence modeling has a long history that spans dynamical systems, statistical time-series analysis, and data-driven learning. Classical approaches model temporal evolution through dynamical system formalisms such as ODEs and SDEs, as well as through statistical models including ARIMA, ARFIMA and their nonlinear extensions [27, 19]. These perspectives support principled inference in challenging regimes, including partially observed systems [90], irregular sampling, and likelihood-based or general statistical inference for dependent data [80]. While such methods provide interpretability and theoretical structure, they often rely on parametric assumptions or explicit model specification that can be restrictive when the governing dynamics are unknown or highly complex or chaotic. Motivated by these limitations, a broad line of work studies nonparametric approaches that estimate dynamics directly from data. This includes nonparametric methods for stationary processes, such as kernel-based density and transition estimation [104, 41, 38], and locally stationary processes [102], as well as nonparametric estimation for Markov chains [62] and tran-sition distribution functionals of Markov processes [92], with general treatments for stochastic processes [16]. Closely related in spirit is Empirical Dynamical Modeling (EDM), which uses delay embeddings and memory-based local regression (motivated by Takens’ theorem) to fore-cast nonlinear dynamics directly from historical trajectories [95]. Our results connect to this tradition by revealing that, at the empirical optimum and under commonly used conditional paths [70], flow matching induces a continuous-time, memory-augmented dynamical system whose vector field aggregates information from past transitions. A complementary data-driven view is provided by Koopman operator methods and related lifting-based approaches, which represent nonlinear dynamics through linear evolution in a (infinite-dimensional) function space [5, 18, 109]. Whereas many nonparametric forecasting schemes emphasize local similarity and memory, Koopman-based approaches aim to create global representations that support prediction, system identification, and control. These per-spectives are not mutually exclusive; rather, they emphasize different inductive biases (local memory versus global structure), a distinction that becomes salient when interpreting the mech-anisms induced by modern generative objectives. Finally, neural sequence models have become central due to their expressive parametric func-tion approximation and scalability, including echo state and reservoir computing methods [50], recurrent architectures [43], Transformers [101, 49], State-Space Models [35, 105], as well as continuous-time neural models such as Neural ODEs and Neural SDEs [20, 8, 54, 59]. Many re-cent works further develop hybrid approaches that combine the mechanistic structure with learned components. Complementary operator-learning approaches, such as various forms of neural operators [58, 68, 76], study function-to-function representations of dynamics in high-dimensional settings, addressing a modeling regime that is orthogonal to the empirical 20 transition-level dynamics analyzed here. In contrast to proposing a new parametric architec-ture, our work characterizes the optimal empirical velocity field targeted by flow matching on sequential data, thereby providing an interpretable reference point for what expressive neural models trained with stochastic optimization are implicitly approximating. 
+
+A.2 Generative Modeling 
+
+Modern generative modeling approaches for sequential data often define dynamics implicitly through learned transport or score fields rather than explicit transition models. Flow matching has emerged as a promising framework, offering simple objectives and ODE-based sampling [71]. A growing body of work develops extensions and applications of flow matching across settings relevant to sequential data, including improved training and sampling [99], connections to ac-tion and control perspectives [86], trajectory and sequence constructions [107, 51], stochastic variants [94], longitudinal and irregularly structured data [48], Fourier and spectral parameter-izations [67], multi-marginal and multi-structure formulations [65], as well as navigation- and latent/hidden-state-related viewpoints [73, 69], among others [57]. While these works demon-strate the flexibility and empirical strength of flow matching, they typically treat the learned velocity field as an implicit neural object; in contrast, we ask what velocity field is learned at the empirical optimum given finite sequential data, and we show that under a commonly used choice of conditional probability path the optimal field admits a training-free, closed-form characterization with explicit dependence on historical transitions. Diffusion- and score-based generative models have also been widely adapted to sequential and continuous-time settings, often through SDE formulations [106, 15, 31], including approaches that emphasize temporal structure and forecasting [85, 84, 56]. These methods learn score fields that define stochastic sampling dynamics; our analysis is complementary in that it ex-poses when flow matching yields an explicit empirical optimum—interpretable as a similarity-weighted replay of past transitions—highlighting a distinct mechanism from purely parametric score learning. Several related probabilistic transport formalisms further connect generative modeling and dy-namical systems. Stochastic interpolants [21] provide a general perspective on the construction of stochastic paths and associated dynamics, while Schr¨ odinger bridge formulations characterize entropic optimal transport trajectories between distributions [97, 32]. More broadly, existing diffusion- and flow-based generative approaches often employ probability paths that transport a base distribution (e.g., a Gaussian) to an entire trajectory viewed as a single object [45, 84, 15], whereas the paths considered here are explicitly aligned with temporal structure [70, 107, 51], yielding velocity fields that decompose naturally into sequential transitions. Our results em-phasize that in the flow matching setting for sequential data, the choice of probability path can fundamentally determine the induced training-free dynamics at the empirical optimum, suggest-ing a modeling axis that parallels (but is distinct from) choices of interpolation or regularization in these related frameworks. In parallel, large language models and foundation models have recently been explored for time series and sequence forecasting, including large-scale pretraining and zero-shot transfer [34, 52, 108, 75, 3, 4]. These approaches emphasize generalization across tasks and datasets through scale, whereas our work studies the structure of the finite-data empirical optimum for flow matching, clarifying the extent to which the induced dynamics reflect general dynamical principles versus dataset-dependent replay. 
+
+Positioning of This Work. Rather than proposing a new architecture or objective, we provide a characterization of the velocity field learned by a perfectly expressive flow matching model trained on finite sequential data. Under a commonly used choice of conditional probability path [70], we show that the optimal empirical solution induces a nonparametric, memory-augmented 21 Figure 5: Illustration of Dynamical Measure Transport via Flow Matching (FM). The schematic depicts the continuous transport of a probability measure from a source to a target distribution. (Left) The process initializes with a standard Gaussian source measure p0(z) = 
+
+N (0 , I ). (Middle) The FM objective defines a vector field vt(z) that drives the transport. The resulting ODE flow dz/dt = vt(z) pushes the probability mass along time-dependent trajectories, creating a probability path pt(z) that undergoes a topological bifurcation (splitting from one mode to two). (Right) The measure is successfully transported to the target bimodal density 
+
+p1(z), with samples settling at the modes ±m.ODE whose vector field admits a closed-form expression and enables training-free forecasting by aggregating and replaying historical transitions. This perspective bridges nonparametric sequence modeling and modern generative learning, positions neural flow matching models trained by stochastic optimization as parametric surrogates of an ideal nonparametric solution, and leads to valuable insights that may inspire future work; see the paragraph before App. B.5. 
+
+# B Background and Related Discussion 
+
+The main goal of generative modeling is to use finitely many samples from a distribution to construct a sampling scheme capable of generating new samples from the same distribution. Among the families of existing generative models, flow matching (FM) is notable for its flexibility and simplicity. Given a target probability distribution, FM uses a parametric model (e.g., neural network) to learn the velocity vector field that defines a deterministic, continuous transformation (a normalizing flow) and transports a source probability distribution (e.g., standard Gaussian) to the target distribution. From now on, we assume that all the probability distributions (except the empirical data distri-bution) of the random variables considered are absolutely continuous (i.e., they have densities with respect to the Lebesgue measure), in which case we shall abuse the notation and use the same symbol to denote both the distribution and the density, unless stated otherwise. 
+
+B.1 Flow Matching (FM) 
+
+The goal of FM is to find a velocity field v : [0 , 1] × Rd → Rd, such that, if we solve the ODE: 
+
+dz (t)
+
+dt = v(t, z (t)) =: vt(z(t)) , z (0) = z0 ∈ Rd,
+
+then the law of z(1) when z0 ∼ p0 is p1 (in which case we say that v drives p0 to p1). The law of z(t) for t ∈ [0 , 1] is described by a probability path p : [0 , 1] × Rd → R, denoted pt(z), that 22 evolves from p0 at t = 0 to p1 at t = 1. If we know v, then we can first sample z0 ∼ p0 and then evolve the ODE from t = 0 to t = 1 to generate new samples. See Fig. 5 for an illustration. The velocity field v generates the continuous flow ψ : [0 , 1] × Rd given as ψt(z) = z(t), and the probability path via the push-forward distributions: pt = [ ψt]#p0, i.e., ψt(Z) ∼ pt for Z ∼ p0. In particular, Z ∼ p0 implies that ψ1(Z) ∼ p1, i.e., ψt can be viewed as a dynamical transport map. The ODE corresponds to the Lagrangian description (the v-generated trajectories viewpoint), and a change of variables link it to the Eulerian description (the evolving probability path pt
+
+viewpoint). Indeed, under standard regularity assumptions, a necessary and sufficient condition for v to generate pt is given by the continuity equation [2, 103, 9]: 
+
+∂p t
+
+∂t + ∇ · (ptv) = 0 , (17) where ∇· denotes the divergence operator. This equation ensures that the flow defined by v
+
+conserves the mass (or probability) described by pt. In general, even for simple choice of path, the velocity field does not admit a closed-form expression when p0 and p1 are known, except in special cases such as Gaussians, mixture of Gaussians and uniform distributions [81]. Given the population velocity v, sampling from p1 is achieved by sampling z0 ∼ p0 and inte-grating the ODE forward in time. In practice, v is approximated by a parametric model vθ
+
+trained via the FM objective 
+
+LFM [vθ] = Et∼U [0 ,1] , Z t∼pt
+
+∥vθ(t, Z t) − v(t, Z t)∥2. (18) 
+
+B.1.1 Conditional Flow Matching via a Latent Variable 
+
+Conditional flow matching (CFM) [71, 99] generalizes FM by introducing a latent variable C ∼ π
+
+taking values in a measurable space C. For each realization C = c, we specify a conditional probability path pt(z | C = c) generated by a conditional velocity field v(t, z | C = c). The marginal probability path is the mixture 
+
+pt(z) = 
+
+Z
+
+pt(z | c) π(dc ), (19) and the associated velocity field is given by conditional expectation 
+
+v(t, z ) = E[v(t, Z t | C) | Zt = z] = 
+
+Z
+
+v(t, z | c) pt(z | c)π(dc )
+
+pt(z) . (20) Given a parametric model vθ, the CFM regression objective reads 
+
+LCFM [vθ] = Et∼U [0 ,1] , C ∼π, Z t∼pt(·| C)
+
+∥vθ(t, Z t) − v(t, Z t | C)∥2. (21) It is shown in [71] that minimizing LCFM is equivalent, in terms of minimizers, to minimizing the FM objective (18). Thus, CFM learns a velocity field by projecting latent (possibly non-Markov) conditional dynamics onto state space that shares the same dimension as the data space. 
+
+Recovering the standard CFM formulation. Setting C = X with X ∼ p1 yields 
+
+pt(z) = 
+
+Z
+
+pt(z | x)p1(x) dx, 
+
+and 
+
+v(t, z ) = 
+
+Z
+
+v(t, z | x) pt(z | x)p1(x)
+
+pt(z) dx, 
+
+23 with the objective 
+
+LCFM [vθ] = Et,X,Z t∼pt(·| X)
+
+∥vθ(t, Z t) − v(t, Z t | X)∥2.
+
+In order to apply CFM, we need to specify the boundary distributions p0 and p1, and the conditional probability path pt(z|x). Below are some examples. 
+
+Rectified Flow. A canonical choice [74] is p0 = N (0 , I d), p1 = p∗, and 
+
+pt(z|X = x1) = N (z; tx 1, (1 − t)2Id), (22) which corresponds to the conditional velocity field v(t, z |X = x1) = x1−z 
+
+> 1−t
+
+. This conditional probability path realizes linear interpolating paths of the form Zt = (1 − t)x0 + tx 1 between a (reference) Gaussian sample x0 and a data sample x1. In practice, regularized versions of rectified flow are preferred for numerical stability (since v blows up as t → 1). A simple version is to modify the conditional probability path to 
+
+pt(·| X = x1) = N (tx 1, (1 − (1 − σmin )t)2Id),
+
+for some small σmin > 0, which corresponds to the regularized conditional velocity field v(t, z |X =
+
+x1) = x1−(1 −σmin )z 
+
+> 1−(1 −σmin )t
+
+. Another version is to consider a smoothed version of the data distribution 
+
+p∗; e.g., p1 = p∗ ⋆ N (0 , σ 2
+
+> min
+
+Id), where ⋆ denotes convolution. 
+
+Affine Conditional Flows Consider a base random variable Z ∼ Q with probability density function (PDF) K (not necessarily Gaussian) and, for t ∈ [0 , 1], the affine conditional flow defined by ψt(Z|X) = mt(X) + σt(X)Z for some time-differentiable functions m : [0 , 1] × Rd →
+
+Rd and σ : [0 , 1] × Rd → (0 , ∞). Since ψt is linear in Z, we can obtain its density via the change of variables: 
+
+pt(z|X) = 1
+
+σdt (X) K
+
+ z − mt(X)
+
+σt(X)
+
+
+
+. (23) Then, as in Theorem 3 in [71], we can show that the unique vector field that defines ψt(·| X)via the ODE ddt ψt(z|X) = v(t, ψ t(z|X)|X) has the form: 
+
+v(t, z |X) = at(X)z + bt(X), (24) where 
+
+at(X) =  
+
+> ∂σ t
+> ∂t
+
+(X)
+
+σt(X) , bt(X) = ∂m t
+
+∂t (X) − mt(X)at(X). (25) The rectified flow in previous example is a special case of this family of conditional flows (with 
+
+K = N (0 , I d), mt(X) = tX and σt(X) = 1 − t). The Gaussian flows considered in [71, 99, 1] are also special cases. All the formulations thus far are in the idealized continuous-time setting. In practice, we work with Monte Carlo estimates of the objective and use the optimized vθ to generate new samples by simulating the ODE with a numerical scheme. Note, however, that the training of CFM is simulation-free: the dynamics are only simulated at inference time and not when training the parametric model. An end-to-end error analysis for deep generative models based on FM was recently provided [110]. 
+
+B.2 Empirical Flow Matching 
+
+Suppose that we are given a source distribution p0 and N i.i.d. samples x(i) ∼ p1, i = 1 , . . . , N, 
+
+i.e., we only have access to the target distribution p1 through a finite sample. We approximate 
+
+p1 by its empirical distribution ˆ p1 := 1
+
+> N
+
+PNi=1 δx(i) . We shall refer to FM and CFM instantiated with p1 = ˆ p1 as empirical FM and empirical CFM , respectively. 24 Latent-variable formulation. Introduce a discrete latent variable 
+
+C ∼ π, π(i) = 1 
+
+> N
+
+, i ∈ { 1, . . . , N },
+
+and define the conditional probability path 
+
+pt(z | C = i) := pt(z | x(i)),
+
+where pt(· | x(i)) denotes a conditional probability path such as (22) or (23). The corresponding marginal probability path is ˆpt(z) = EC [ pt(z | C) ] = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+pt(z | x(i)), (26) and the associated velocity field, given by conditional expectation, takes the form ˆv(t, z ) = E[v(t, z | C) | Zt = z] = 
+
+> N
+
+X
+
+> i=1
+
+v(t, z | x(i)) pt(z | x(i))
+
+PNj=1 pt(z | x(j)) . (27) 
+
+Empirical FM and CFM objectives. The empirical FM objective is ˆLFM [v′] = Et∼U [0 ,1] , Z t∼ˆpt
+
+∥v′(t, Z t) − ˆv(t, Z t)∥2, (28) while the empirical CFM objective can be written, using the latent variable C, as ˆLCFM [v′] = Et∼U [0 ,1] , C ∼π, Z t∼pt(·| C)
+
+∥v′(t, Z t) − v(t, Z t | C)∥2
+
+= 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+Et∼U [0 ,1] , Z t∼pt(·| x(i))
+
+∥v′(t, Z t) − v(t, Z t | x(i))∥2. (29) If each conditional velocity field v(t, · | x(i)) generates the corresponding conditional probability path pt(· | x(i)), then the velocity field ˆ v(t, ·) generates the empirical path ˆ pt (see Lemma 2.1 in [61]). Moreover, as in the population case, the minimizing arguments of empirical FM and empirical CFM coincide (see Theorem 2.2 in [61]). For the conditional probability paths considered earlier, the empirical objective admits a closed-form minimizer ˆv∗ ∈ arg min 
+
+> v
+
+ˆLCFM [v] = arg min 
+
+> v
+
+ˆLFM [v],
+
+yielding a training-free generative model. Sampling is performed by integrating the ODE 
+
+dˆz∗(t)
+
+dt = ˆ v∗(t, ˆz∗(t)) , ˆz∗(0) ∼ p0, (30) which is evolved to t = 1 to obtain new samples. 
+
+Proposition 4 (Coupled empirical affine FM/CFM minimizer) . Let C be a discrete latent variable taking values in an index set I with prior π(c), and suppose that for each c ∈ I we are given an affine conditional flow on Rd of the form 
+
+ψt(Z | C = c) = mt(c) + σt(c)Z, Z ∼ K, 
+
+where mt(c) ∈ Rd and σt(c) > 0 are differentiable in t. Let pt(· | c) be the induced conditional density and let v(t, z | c) = at(c)z + bt(c) be the (unique) velocity field generating ψt(· | c), with 
+
+at(c) = ˙σt(c)
+
+σt(c) , bt(c) = ˙ mt(c) − at(c)mt(c).
+
+25 Define the mixture path pt(z) = P 
+
+> c∈I
+
+π(c) pt(z | c). Then the unique minimizer of the empirical CFM (equivalently FM) objective 
+
+ˆLCFM [v′] = Et∼U [0 ,1] EC∼πEZt∼pt(·| C)∥v′(t, Z t) − v(t, Z t | C)∥2
+
+admits the closed form expression: 
+
+ˆv∗(t, z ) = X
+
+> c∈I
+
+wc(t, z )  at(c)z + bt(c), wc(t, z ) = π(c) pt(z | c)
+
+P 
+
+> c′∈I
+
+π(c′) pt(z | c′) .
+
+Proof of Proposition 4. Let t ∼ U [0 , 1], C ∼ π on the discrete index set I, and Zt ∼ pt(· | C), where pt(· | c) is induced by the affine conditional flow ψt(· | c) = mt(c) + σt(c)Z with Z ∼ K.The objective is ˆLCFM [v′] = EtEC EZt∼pt(·| C)∥v′(t, Z t) − v(t, Z t | C)∥2.
+
+Fix t ∈ [0 , 1] and consider minimizing over measurable functions z 7 → v′(t, z ). Write the inner expectation as an integral against the joint law of ( C, Z t): 
+
+EC EZt∼pt(·| C)∥v′(t, Z t) − v(t, Z t | C)∥2 = X
+
+> c∈I
+
+π(c)
+
+Z
+
+> Rd
+
+∥v′(t, z ) − v(t, z | c)∥2 pt(z | c) dz. 
+
+Equivalently, letting 
+
+pt(z) = X
+
+> c∈I
+
+π(c)pt(z | c)be the marginal density of Zt, we can rewrite the same quantity as 
+
+Z
+
+> Rd
+
+X
+
+> c∈I
+
+π(c)pt(z | c) ∥v′(t, z ) − v(t, z | c)∥2
+
+!
+
+dz. 
+
+For each fixed z, the integrand is a strictly convex quadratic function of the vector v′(t, z ) ∈ Rd
+
+(strictly convex whenever pt(z) > 0). Hence, the minimizer is obtained pointwise by setting the gradient to zero: 0 = ∂∂v ′(t, z )
+
+X
+
+> c∈I
+
+π(c)pt(z | c) ∥v′(t, z ) − v(t, z | c)∥2 = 2 X
+
+> c∈I
+
+π(c)pt(z | c) v′(t, z ) − v(t, z | c).
+
+Solving yields 
+
+v′∗ (t, z ) = 
+
+P 
+
+> c∈I
+
+π(c)pt(z | c) v(t, z | c)
+
+P 
+
+> c′∈I
+
+π(c′)pt(z | c′) = X
+
+> c∈I
+
+wc(t, z ) v(t, z | c), wc(t, z ) = π(c)pt(z | c)
+
+pt(z) .
+
+This is exactly the conditional expectation form v′∗ (t, z ) = E[v(t, z | C) | Zt = z]. Finally, using the affine form v(t, z | c) = at(c)z + bt(c) gives ˆv∗(t, z ) = X
+
+> c∈I
+
+wc(t, z )  at(c)z + bt(c),
+
+which proves the claimed closed form. Uniqueness holds because for each t and almost every z with pt(z) > 0, the pointwise quadratic is strictly convex, hence the minimizer is unique pt-a.e.; this determines a unique minimizer in 
+
+L2(dt ⊗ pt(dz )). 26 Example 1 (Empirical Rectified Flow) . For the rectified flow example, the minimizer ˆv∗ admits the closed-form expression [14] 
+
+ˆv∗(t, z ) = 
+
+> N
+
+X
+
+> i=1
+
+wi(t, z ) x(i) − z
+
+1 − t , (31) 
+
+where the weights are given by 
+
+wi(t, z ) = softmax i
+
+ − ∥z − tx (j)∥2
+
+2(1 − t)2
+
+! 
+
+> j∈[N]
+
+ ,
+
+with softmax i denoting the ith component of the vector obtained after applying the softmax operation. The optimal velocity field is thus a time-dependent weighted average of the directions pointing toward the empirical samples. Analogous formulas hold for regularized variants of rectified flow. 
+
+Example 2 (Empirical Affine Flows) . To construct a flow from p0(z) = K(z) to the smoothed empirical distribution 
+
+˜p1(z) = 1
+
+N σ d
+
+> min
+> N
+
+X
+
+> i=1
+
+K z − x(i)
+
+σmin 
+
+!
+
+,
+
+we may choose functions mt and σt satisfying 
+
+m0(C) = 0 , m1(C) = x(C), σ0(C) = 1 , σ1(C) = σmin .
+
+Here and throughout, we write x(C) := x(i) when C = i. The final marginal distribution, obtained by averaging p1(z | C = i) over the empirical distribution of C, coincides with the Nadaraya–Watson kernel density estimator ˜p1 [82]. Heuristically, when K is Gaussian and 
+
+σmin → 0, this construction recovers rectified flow. For affine conditional flows, the empirical minimizer admits the closed-form representation below. This follows from Proposition 4 by taking I = [ N ], π(i) = 1 /N , and c = i indexing the samples x(i).
+
+Proposition 5. For the family of affine conditional flows, the minimizer ˆv∗ of the empirical FM objective admits the closed-form expression 
+
+ˆv∗(t, z ) = 
+
+> N
+
+X
+
+> i=1
+
+wi(t, z )  at(x(i)) z + bt(x(i)),
+
+where at and bt are given in (25) , and the weights are 
+
+wi(t, z ) = pt(z | x(i))
+
+PNj=1 pt(z | x(j)) , pt(z | x(i)) = 1
+
+σdt (x(i)) K z − mt(x(i))
+
+σt(x(i))
+
+!
+
+.
+
+Intuitively, the optimal empirical velocity field ˆv∗ is a convex combination of the individual conditional velocity fields v(t, z |x(i)), weighted by wi(t, z ) which tells us how likely the observed point z at time t is to belong to the flow path originating from the sample x(i).
+
+B.3 Empirical Couplings, Time Series, and Multi-Marginal Extensions 
+
+The empirical FM construction is generalized by introducing a latent variable C = ( I, J ) index-ing pairs of samples from p0 and p1 with an arbitrary coupling πij . This yields KDE-to-KDE transport and recovers empirical FM as a special case. 27 Example 3 (Empirical Affine Flows: KDE-to-KDE Transport) . In many settings we observe i.i.d. samples from both endpoints, 
+
+x(i)0 ∼ p0, i = 1 , . . . , N 0, x(j)1 ∼ p1, j = 1 , . . . , N 1,
+
+and would like to transport a smoothed empirical approximation of p0 to a smoothed empirical approximation of p1. Fix a base density K on Rd and bandwidths σ0, σ 1 > 0, and define the kernel density estimators (KDEs): 
+
+˜p0(z) = 1
+
+N0σd
+
+> 0
+> N0
+
+X
+
+> i=1
+
+K z − x(i)0
+
+σ0
+
+!
+
+, ˜p1(z) = 1
+
+N1σd
+
+> 1
+> N1
+
+X
+
+> j=1
+
+K z − x(j)1
+
+σ1
+
+!
+
+.
+
+Introduce a discrete latent variable 
+
+C = ( I, J ) ∈ [N0] × [N1], P(C = ( i, j )) = πij ,
+
+where π is an arbitrary coupling between the empirical endpoints (e.g. the independent coupling 
+
+πij = 1 
+
+> N0N1
+
+, an optimal transport (OT) coupling, or an empirical time-series coupling when paired data are available). For each (i, j ), define an affine conditional flow with 
+
+ψt(Z | I = i, J = j) = mij t + σij t Z, Z ∼ K, 
+
+where mij t ∈ Rd and σij t > 0 are chosen such that 
+
+mij  
+
+> 0
+
+= x(i)0 , mij  
+
+> 1
+
+= x(j)1 , σij  
+
+> 0
+
+= σ0, σij  
+
+> 1
+
+= σ1.
+
+Then the induced conditional density is 
+
+pt(z | i, j ) = 1(σij t )d K z − mij t
+
+σij t
+
+!
+
+,
+
+and the marginal path is the mixture 
+
+pt(z) = 
+
+> N0
+
+X
+
+> i=1
+> N1
+
+X
+
+> j=1
+
+πij pt(z | i, j ),
+
+so that p0 = ˜ p0 and p1 = ˜ p1 by construction. The following corollary follows from Proposition 4 by taking I = [ N0] × [N1], c = ( i, j ), and 
+
+π(c) = πij .
+
+Corollary 1 (KDE-to-KDE affine transport with coupling) . In the setting of Example 3 with 
+
+C = ( I, J ) and coupling πij , the minimizer is 
+
+ˆv∗(t, z ) = 
+
+> N0
+
+X
+
+> i=1
+> N1
+
+X
+
+> j=1
+
+wij (t, z )
+
+
+
+aij t z + bij t
+
+
+
+, wij (t, z ) = πij pt(z | i, j )
+
+P 
+
+> i′,j ′
+
+πi′j′ pt(z | i′, j ′) ,
+
+with aij t = ˙ σij t /σ ij t and bij t = ˙ mij t − aij t mij t .Sampling from ˜p1 is performed by integrating the training-free ODE ˙z(t) = ˆ v∗(t, z (t)) with 
+
+z(0) ∼ ˜p0.
+
+Special cases. (i) Taking N0 = 1 , x(1) 0 = 0 , and σ0 = 1 recovers the standard “base-to-KDE” setting in Example 2. (ii) If (x(i)0 , x (i)1 ) are paired observations (time series), one may choose the diagonal coupling πij = 1 
+
+> N
+
+1{i = j}, yielding a KDE-to-KDE flow that respects the empirical temporal coupling. 
+
+28 If instead a true joint distribution ( X0, X 1) ∼ p01 exists—as in time-series or dynamical sys-tems—setting C = ( X0, X 1) yields 
+
+v∗(t, z ) = E[v(t, z | X0, X 1) | Zt = z],
+
+which defines the Markovian projection (see the next subsection) of the pairwise temporal dynamics – this is the approach we consider in the main paper. 
+
+Extension to Multi-Marginal Flow Matching. The framework readily extends to C =(X0, X 1, . . . , X K ), corresponding to multi-marginal flow matching (MMFM) [91, 65]. Condi-tional paths may be defined using spline-interpolated means, Gaussian bridges, or other struc-tured probability paths satisfying multiple marginal constraints. It would also be interesting to extend to the more challenging setting where the sequences are irregularly sampled. 
+
+Time-Series and Conditional Forecasting. In conditional forecasting, C naturally repre-sents past observations ( Xτ −k, . . . , X τ ). The latent-variable CFM framework therefore provides a principled way to construct Markov generative models for forecasting even when the true dynamics are non-Markovian. 
+
+B.4 Markovian Projection and Relation to Schr¨ odinger Bridges 
+
+FM and CFM can be interpreted as regression-based Markovian projections [10, 24]. Latent conditional dynamics, induced by a target dynamical process which we take as our prior belief, may depend on hidden variables and thus be non-Markovian; projecting them via conditional expectation yields a Markov process that exactly matches prescribed one-time marginals. This is the deterministic analogue of Gy¨ ongy’s Markovian projection for SDEs [36, 17]. 
+
+Theorem 1 (Gy¨ ongy’s mimicking theorem / Markovian projection [36]) . Let (Xt)t∈[0 ,1] be an Itˆ o process in Rd of the form 
+
+dX t = bt dt + Σ t dW t,
+
+where (Wt) is a standard Brownian motion, and bt ∈ Rd, Σt ∈ Rd×m are progressively mea-surable processes such that the conditional moments below are well-defined. Define the (state-dependent) drift and diffusion coefficients 
+
+¯b(t, x ) := E[bt | Xt = x], ¯a(t, x ) := E[Σ tΣ⊤ 
+
+> t
+
+| Xt = x].
+
+Assume ¯b and ¯a are measurable and that ¯a(t, x ) is uniformly nondegenerate so that there exists a weak solution to the SDE 
+
+dY t = ¯b(t, Y t) dt + ¯ σ(t, Y t) dW t, ¯σ(t, x )¯ σ(t, x )⊤ = ¯ a(t, x ), Y0 d
+
+= X0.
+
+Then the Markov process (Yt) mimics ( Xt) in the sense that for every t ∈ [0 , 1] , Yt d
+
+= Xt.
+
+A stochastic process ( Xt) is Markov if the distribution of its future depends only on the present state; in the ODE setting, this means that the flow is fully determined, in distribution, by the current state. For example, the linearly interpolating path Xt = αtX1 + σtX0, with ( X0, X 1)drawn from a coupling of the endpoint marginals, is not Markov in Xt since its velocity depends on the hidden endpoints X0 and X1. FM resolves this by projecting the latent dynamics onto a velocity field defined by the conditional expectation v(t, x ) = E[ ˙Xt | Xt = x]. The resulting ODE ˙Xt = v(Xt, t ) defines a Markov process that exactly matches the prescribed one-time marginal distributions and constitutes the optimal Markov approximation of the original dynamics in the L2 regression sense. However, matching marginals alone does not uniquely determine the full path law unless additional structure is imposed; consequently, the Markovian 29 projection generally does not preserve the original non-Markov temporal correlations or multi-time joint distributions. This deterministic projection can be viewed as the zero-noise analogue of Gy¨ ongy’s theorem. 
+
+Corollary 2 (Deterministic Markovian projection (zero-noise analogue), informal version) . Let 
+
+(Xt)t∈[0 ,1] be an absolutely continuous process with ˙Xt integrable and define 
+
+v(t, x ) := E[ ˙Xt | Xt = x].
+
+Assume further that the family of marginals μt := L(Xt) solves the continuity equation ∂tμt +
+
+∇ · (μtv) = 0 in the distributional sense, and that this equation admits a unique solution. If the ODE ˙Yt = v(t, Y t) admits a (weak) solution on [0 , 1] with Y0 d
+
+= X0, then Yt d
+
+= Xt for all 
+
+t ∈ [0 , 1] .
+
+While Markovian projection for SDEs has been extensively studied—most notably in mathe-matical finance (e.g., [89]) following the work of [25]—the analogous problem for deterministic ODE dynamics (in the sense of constructing marginal-matching Markovian flows) appears to receive far less attention in the literature. Markovian projection alone specifies a Markov process that matches prescribed one-time marginal distributions, but it leaves the full path law underdetermined, as different Markov processes may share the same marginals while exhibiting distinct temporal correlations. Schr¨ odinger bridges (SBs) [66] resolve this non-uniqueness by selecting, among all path measures with the given marginals, the unique process minimizing relative entropy with respect to a chosen reference process. From this perspective, FM implements a regression-based Markovian projection, while the SB adds a variational principle that fixes a distinguished Markov process consistent with both the marginals and optimal transport in path space. 
+
+Connecting Back to Our Proposed ODE-Based Forecaster. Even if the underlying dynamics generating the data are non-Markovian, the latent-variable CFM framework allows us to construct a Markov flow whose one-time marginals match the data by projecting pairwise or multi-time temporal couplings onto a time-inhomogeneous velocity field. In this paper, we focus on understanding FM for sequential data, and we restrict our attention to pairwise couplings; see Fig. 6 for the example of target probability path we focus on. The key insight gained is summarized as follows, which can motivate various extensions (e.g., to higher-order temporal couplings) which we leave for future work. 
+
+Viewed through the latent-variable FM formulation, empirical FM, once equipped with a choice of latent variable and conditional probability path which reflects an inductive bias, induces a rich family of nonparametric, data-adaptive ODE and SDE samplers for probabilistic forecasting. 
+
+Once a conditional probability path pt(· | C) is specified, the associated empirical velocity ˆ v∗
+
+defines a deterministic ODE, while stochastic perturbations or Schr¨ odinger bridge relaxations naturally lead to diffusion-based (SDE) samplers. When the latent variable C encodes tempo-ral information (e.g., pairs or windows of observations), these constructions yield data-driven dynamical models for forecasting that do not require an explicit parametric specification of the underlying dynamics. On the theoretical side, characterizing the model expressiveness and approximation properties induced by different choices of latent variables and probability paths under various data generating assumptions is an interesting direction for future work. 
+
+B.5 More on FM for Sequential Data 
+
+We justify why FM remains statistically valid when trained on a single observed trajectory 
+
+from a stationary time series. The key point is that the empirical FM loss is a time average 
+
+30 of a stationary integrable observable, and hence converges to its population expectation by Birkhoff’s ergodic theorem, even though the samples are not independent. Let Ω := ( Rd)Z be the canonical path space equipped with the product Borel σ-field F and a probability measure P under which the coordinate process Xτ (ω) := ωτ is defined. Let 
+
+φ : Ω → Ω be the left shift ( φω )τ = ωτ +1 and denote by I := {A ∈ F : φ−1(A) = A} the invariant σ-field. 
+
+Definition 1 (Stationarity and ergodicity) . The process (Xτ )τ ∈Z is (strictly) stationary if P
+
+is φ-invariant, i.e. P ◦ φ−1 = P. It is ergodic if I is P-trivial, i.e. P(A) ∈ { 0, 1} for all A ∈ I .
+
+Stationary and ergodic transitions. Define the pair process Yτ := ( Xτ , X τ +1 ) ∈ R2d. If (Xτ ) is stationary and ergodic, then ( Yτ ) is also stationary and ergodic. 
+
+FM objective along a trajectory. Let vθ(t, z ) be a parametric velocity field. For each observed pair Yτ = ( Xτ , X τ +1 ), define the (noise-injected) interpolation 
+
+Z(τ ) 
+
+> t
+
+:= (1 − t)Xτ + tX τ +1 + σtξ, ξ ∼ N (0 , I d),
+
+where σt ≥ 0 is differentiable and ξ is independent of ( Xτ ). Then ˙Z(τ ) 
+
+> t
+
+= ( Xτ +1 − Xτ ) + ˙ σt ξ.Define the per-transition integrated FM loss as the measurable function ℓθ : R2d → R,
+
+ℓθ(x0, x 1) := Et,ξ 
+
+h
+
+vθ(t, (1 − t)x0 + tx 1 + σtξ) − (x1 − x0) − ˙σt ξ 2i
+
+,
+
+where the expectation is over t ∼ U [0 , 1] and ξ ∼ N (0 , I d). The empirical objective from a single trajectory is 
+
+LT (θ) := 1
+
+T 
+
+> T−1
+
+X 
+
+> τ=0
+
+ℓθ(Yτ ).
+
+Theorem 2 (Ergodic consistency of FM (fixed θ)) . Fix θ ∈ Θ and assume ℓθ is measurable with E[|ℓθ(Y0)|] < ∞. If (Xτ ) is stationary and ergodic, then 
+
+LT (θ) = 1
+
+T 
+
+> T−1
+
+X 
+
+> τ=0
+
+ℓθ(Yτ ) a.s. 
+
+−−−−→  
+
+> T→∞
+
+L(θ) := E[ℓθ(Y0)] .
+
+Proof. Define the integrable observable H(ω) := ℓθ(X0(ω), X 1(ω)). Then ℓθ(Yτ (ω)) = H(φτ ω)and hence 
+
+LT (θ) = 1
+
+T 
+
+> T−1
+
+X 
+
+> τ=0
+
+H(φτ ω).
+
+By Birkhoff’s ergodic theorem for measure-preserving transformations (e.g., applying Thm. 6.2.1 in [26]), 1
+
+T 
+
+> T−1
+
+X 
+
+> τ=0
+
+H(φτ ω) → E[H | I ] a.s. Ergodicity implies I is trivial, hence E[H | I ] = E[H] a.s. Therefore the limit equals E[ℓθ(Y0)]. Theorem 2 shows that FM training on a single stationary trajectory is statistically well-defined at the population level, despite temporal dependence. 31 Figure 6: FM with the Brownian-Bridge-Like Target for Sequence Prediction. This figure illustrates how FM with the proposed target probability path in [70] induces KDE-to-KDE transport, allowing us to obtain the distribution for the state in the next time point 
+
+xτ +1 , given a distribution centered around the current point xτ . Top Panel: Sequence data points ( . . . , x τ , x τ +1 , . . . ), indexed by τ , on a curve. The transition xτ → xτ +1 is highlighted. 
+
+Bottom Panels: The target process over time t ∈ [0 , 1]. We start with a Gaussian distribution 
+
+p0(z|xτ ) = N (xτ , σ 2min I) centered at xτ . The samples are then transported (blue dots) along trajectories guided by the learned vector field vt(z) (red arrows). The position is Zt = (1 −t)xτ +
+
+tx τ +1 + ctξ, with noise variance c2 
+
+> t
+
+= σ2min + σ2t(1 − t) forming a “bridge” between start and end points. The flow ends at the target distribution p1(z|xτ +1 ) = N (xτ +1 , σ 2
+
+> min
+
+I) ≈ δ(xτ +1 ). 
+
+# C Detailed Algorithm for the Proposed Training-Free Sampler 
+
+To generate new samples, we numerically integrate the closed-form ODE model (13) on a time-grid 0 = t0 < · · · < t L = 1. Let Zℓ denote the hidden state of the ODE at time tℓ. Algorithm 1 provides a detailed algorithm to describe the proposed training-free sampler for probabilistic 
+
+Algorithm 1 Training-Free ODE Sampler for One-Step Forecasting 
+
+Require: Current state xτ , memory bank {X(j)}Mj=1 , parameters ( σmin , σ ), time grid {tℓ}Lℓ=0  
+
+> 1:
+
+Sample Z0 ∼ N (xτ , σ 2min Id) 
+
+> 2:
+
+for ℓ = 0 to L − 1 do  
+
+> 3:
+
+t ← tℓ, ∆ ℓ ← tℓ+1 − tℓ 
+
+> 4:
+
+c2 
+
+> t
+
+← σ2min + σ2t(1 − t) 
+
+> 5:
+
+Gt ← σ2(1 −2t)2c2
+
+> t
+
+Id 
+
+> 6:
+
+for j = 1 to M do  
+
+> 7:
+
+m ← (1 − t)X(j)1 + tX (j)2 
+
+> 8:
+
+˙m ← X(j)2 − X(j)1 
+
+> 9:
+
+Bj ← ˙m − Gtm 
+
+> 10:
+
+sj ← − ∥Zℓ−m∥2 
+
+> 2c2
+> t
+> 11:
+
+end for  
+
+> 12:
+
+α ← softmax( s) 
+
+> 13:
+
+h ← PMj=1 αj Bj 
+
+> 14:
+
+v ← GtZℓ + h 
+
+> 15:
+
+Choose integration method and step sizes ∆ℓ: 
+
+> 16:
+
+if using explicit forward Euler then  
+
+> 17:
+
+Zℓ+1 ← Zℓ + ∆ ℓ · v 
+
+> 18:
+
+end if  
+
+> 19:
+
+end for  
+
+> 20:
+
+xτ +1 ← ZL
+
+32 forecasting. We mention the use of explicit forward Euler scheme there, but in principle any ODE integration method could be used. 
+
+# D Proof of Theoretical Results 
+
+D.1 Proof of Proposition 1 
+
+Proposition 1 is a direct specialization of the general latent-variable CFM minimizer (see App. B) to the transition dataset DM = {X(j)}Mj=1 , with latent index C ∈ [M ] := {1, . . . , M } and uniform prior π(j) = 1 /M . For completeness, we provide the proof specialized to this setting. 
+
+Proof. Let C ∈ [M ] be a discrete latent variable with prior π(j) = 1 /M and let X = X(C). By definition, ˆLCFM [v′] = Et∼U [0 ,1] , C ∼π, Z t∼pt(·| X(C))∥v′(t, Z t) − v(t, Z t | X(C))∥2.
+
+Fix t ∈ [0 , 1]. Since the objective is quadratic in v′(t, ·), the unique minimizer over measurable functions z 7 → v′(t, z ) is given by the L2 projection: ˆv∗(t, z ) = E
+
+h
+
+v(t, z | X(C)) | Zt = z
+
+i
+
+.
+
+Because C is discrete and X(C) = X(j) when C = j, this conditional expectation can be written as ˆv∗(t, z ) = 
+
+> M
+
+X
+
+> j=1
+
+P(C = j | Zt = z) v(t, z | X(j)).
+
+By Bayes’ rule, 
+
+P(C = j | Zt = z) = π(j) pt(z | X(j))
+
+PMk=1 π(k) pt(z | X(k)) = pt(z | X(j))
+
+PMk=1 pt(z | X(k)) =: wj (t, z ),
+
+where we used π(j) = 1 /M .Substituting the affine conditional velocity v(t, z | X(j)) = at(X(j))z + bt(X(j)) yields ˆv∗(t, z ) = 
+
+> M
+
+X
+
+> j=1
+
+wj (t, z )  at(X(j)) z + bt(X(j)),
+
+which proves the claim. Uniqueness follows from strict convexity of the quadratic loss. 
+
+D.2 Proof of Proposition 2 
+
+For an open set Ω ⊂ Rd, we denote by Ck(Ω) the space of functions f : Ω → Rm whose partial derivatives up to order k exist and are continuous on Ω. We write C∞(Ω) = T 
+
+> k≥1
+
+Ck(Ω) for the space of smooth functions. 
+
+Spatial Lipschitz constant. For each fixed t ∈ [0 , 1], the (spatial) Lipschitz constant of a map f (t, ·) : Rd → Rd is defined in the standard metric sense as Lip z (f )( t) := sup  
+
+> z̸=z′
+
+∥f (t, z ) − f (t, z ′)∥∥z − z′∥ ∈ [0 , ∞].
+
+33 If, in addition, f (t, ·) ∈ C1(Rd) and sup z∈Rd ∥∇ z f (t, z )∥ < ∞, where ∇z f denotes the Jacobian with respect to z and ∥ · ∥ is the operator norm induced by the Euclidean norm, then by the mean value theorem, Lip z (f )( t) ≤ sup 
+
+> z∈Rd
+
+∥∇ z f (t, z )∥.
+
+On compact, convex domains Ω ⊂ Rd (instead of Rd as above), this inequality becomes an equality (see Proposition 14 in [100]). The (spatial) Lipschitz constant of the velocity field plays an important role in both the sta-bility and approximation theory of ODE-based models. Prior work [11, 78, 100] shows that distributional error in such models is controlled by the spatial Lipschitz constant of the under-lying velocity field, reflecting the sensitivity of transported measures to perturbations in the dynamics. These results identify the spatial Lipschitz constant as a key quantity linking dy-namical stability and robustness of transported distributions. Moreover, large spatial Lipschitz constants are directly associated with numerical stiffness of the induced ODE, necessitating smaller time steps and more restrictive stability conditions for time-integration schemes. The above considerations, together with issues of numerical stiffness, motivate our study of the spatial Lipschitz constant of ˆ v∗. To prove Proposition 2, we first establish the following auxiliary result. 
+
+Lemma 1. Fix t ∈ [0 , 1] and let ct > 0. Define 
+
+πj (t, z ) := exp 
+
+
+
+− ∥z − m(j) 
+
+> t
+
+∥2
+
+2c2
+
+> t
+
+
+
+, αj (t, z ) := πj (t, z )
+
+PMk=1 πk(t, z ) ,
+
+and ¯mt(z) := PMk=1 αk(t, z ) m(k) 
+
+> t
+
+. Then for each j ∈ { 1, . . . , M } and all z ∈ Rd,
+
+∇z αj (t, z ) = 1
+
+c2
+
+> t
+
+αj (t, z )
+
+
+
+m(j) 
+
+> t
+
+− ¯mt(z)
+
+
+
+. (32) 
+
+In particular, 
+
+∇z αj (t, z ) ≤ 1
+
+c2
+
+> t
+
+αj (t, z ) m(j) 
+
+> t
+
+− ¯mt(z) . (33) 
+
+Proof. Fix t ∈ [0 , 1] and suppress the explicit dependence on t in the notation for notational simplification: write c := ct, mj := m(j) 
+
+> t
+
+, πj (z) := πj (t, z ), and αj (z) := αj (t, z ). Let Π( z) := PMk=1 πk(z), so that αj (z) = πj (z)Π( z) . By the quotient rule, 
+
+∇αj (z) = ∇πj (z)Π( z) − πj (z)Π( z)2 ∇Π( z) = αj (z)
+
+
+
+∇ log πj (z) −
+
+> M
+
+X
+
+> k=1
+
+αk(z) ∇ log πk(z)
+
+
+
+.
+
+Since log πj (z) = − 12c2 ∥z − mj ∥2 and thus ∇ log πj (z) = − 1 
+
+> c2
+
+(z − mj ), we obtain 
+
+∇αj (z) = αj (z) − 1
+
+c2 (z − mj ) + 
+
+> M
+
+X
+
+> k=1
+
+αk(z) 1
+
+c2 (z − mk)
+
+!
+
+= αj (z)
+
+c2 mj −
+
+> M
+
+X
+
+> k=1
+
+αk(z)mk
+
+!
+
+.
+
+Reinstating t and recalling ¯mt(z) = P 
+
+> k
+
+αk(t, z )m(k) 
+
+> t
+
+yields (32). The bound (33) follows by taking norms. 34 The following lemma guarantees that h(t, ·; DM ) is C1(Rd), hence its z-Lipschitz constant is well-defined. 
+
+Lemma 2 (Smoothness in z). Fix t ∈ [0 , 1] and a dataset DM . Assume σmin > 0 and c2 
+
+> t
+
+:= 
+
+σ2min + σ2t(1 − t) > 0. Let 
+
+αj (t, z ) = exp 
+
+
+
+− ∥z−m(j) 
+
+> t∥2
+> 2c2
+> t
+
+PMk=1 exp 
+
+
+
+− ∥z−m(k) 
+
+> t∥2
+> 2c2
+> t
+
+ , h(t, z ; DM ) = 
+
+> M
+
+X
+
+> j=1
+
+αj (t, z ) yj (t),
+
+where yj (t) = ˙m(j) 
+
+> t
+
+− Gtm(j) 
+
+> t
+
+and Gt = g(t)Id is independent of z. Then for each fixed t, the maps z 7 → αj (t, z ), z 7 → h(t, z ; DM ), and ˆv∗(t, z ) = Gtz + h(t, z ; DM ) is C∞(Rd) in z.Proof. For fixed t, each function 
+
+z 7 → exp − ∥z − m(j) 
+
+> t
+
+∥2
+
+2c2
+
+> t
+
+!
+
+is C∞(Rd) and strictly positive since c2 
+
+> t
+
+> 0. Hence the denominator 
+
+S(z, t ) := 
+
+> M
+
+X
+
+> k=1
+
+exp − ∥z − m(k) 
+
+> t
+
+∥2
+
+2c2
+
+> t
+
+!
+
+is C∞(Rd) and satisfies S(z, t ) > 0 for all z. Therefore, αj (t, z ) is C∞(Rd) since it is a quotient of C∞ functions with a nonvanishing denominator. Since yj (t) does not depend on z, h(t, z ; DM )is a finite linear combination of C∞ functions in z, hence C∞. Finally, z 7 → Gtz is linear, so ˆv∗(t, ·) is C∞ as well. Proposition 2 is a special case (specializing to the case when σ > 0 and thus g(t) > 0 for all t)of the following theorem. 
+
+Theorem 3 (Spatial Lipschitz bound) . Fix t ∈ [0 , 1] and a dataset DM . Assume that for all j
+
+and t, ∥ ˙m(j) 
+
+> t
+
+∥ ≤ R1, ∥m(j) 
+
+> t
+
+∥ ≤ Rm. Then the z-Lipschitz constant of h can be bounded as: 
+
+Lip z (h)( t) ≤ sup 
+
+> z∈Rd
+
+∥∇ z h(t, z ; DM )∥ ≤ 2R1Rm
+
+c2
+
+> t
+
++ ∥Gt∥ 2R2
+
+> m
+
+c2
+
+> t
+
+.
+
+In particular, if σ > 0, then ∥Gt∥ = O(c−2 
+
+> t
+
+) as ct → 0, and 
+
+Lip z (h)( t) = O(c−4 
+
+> t
+
+) as ct → 0.
+
+Moreover, 
+
+Lip z (ˆ v∗)( t) ≤ sup 
+
+> z∈Rd
+
+∥∇ z ˆv∗(t, z )∥ ≤ ∥ Gt∥ + Lip z (h)( t) = O(c−4 
+
+> t
+
+)
+
+as ct → 0.Proof of Theorem 3. Let t ∈ [0 , 1] and DM be given. We split h(t, z ; DM ) into two parts and analyze them separately: 
+
+h(t, z ; DM ) = h1(t, z ; DM ) − h2(t, z ; DM ),
+
+where 
+
+h1(t, z ; DM ) = 
+
+> M
+
+X
+
+> j=1
+
+αj (t, z ) ˙ m(j) 
+
+> t
+
+,
+
+35 h2(t, z ; DM ) = 
+
+> M
+
+X
+
+> j=1
+
+αj (t, z )Gtm(j) 
+
+> t
+
+=: Gt ¯mt(z).
+
+The full Jacobian is ∇z h = ∇z h1 − ∇ z h2. We can bound its norm using the triangle inequality: 
+
+∥∇ z h∥ ≤ ∥∇ z h1∥ + ∥∇ z h2∥.For the first term, 
+
+∇z h1 = ∇z
+
+
+
+> M
+
+X
+
+> j=1
+
+αj ˙m(j)
+
+> t
+
+ =
+
+> M
+
+X
+
+> j=1
+
+˙m(j) 
+
+> t
+
+(∇z αj )⊤.
+
+From Lemma 1, we have ∇z αj = αj
+
+> c2
+> t
+
+(m(j) 
+
+> t
+
+− ¯mt(z)), and so: 
+
+∇z h1 = − 1
+
+c2
+
+> tM
+
+X
+
+> j=1
+
+αj ˙m(j) 
+
+> t
+
+(m(j) 
+
+> t
+
+− ¯mt(z)) ⊤.
+
+We bound its norm: 
+
+∥∇ z h1∥ ≤ 1
+
+c2
+
+> tM
+
+X
+
+> j=1
+
+αj ∥ ˙m(j) 
+
+> t
+
+∥ · ∥ m(j) 
+
+> t
+
+− ¯mt(z)∥
+
+Using our bounds R1 and Rm (and ∥m(j) 
+
+> t
+
+− ¯mt(z)∥ ≤ ∥ m(j) 
+
+> t
+
+∥ + ∥ ¯mt(z)∥ ≤ 2Rm): 
+
+∥∇ z h1∥ ≤ 1
+
+c2
+
+> tM
+
+X
+
+> j=1
+
+αj (R1)(2 Rm) = 2R1Rm
+
+c2
+
+> t
+
+
+
+> M
+
+X
+
+> j=1
+
+αj
+
+ .
+
+Since P αj = 1, we have ∥∇ z h1∥ ≤ 2R1Rm
+
+> c2
+> t
+
+. Thus, Lip z (h1)( t) = O(c−2 
+
+> t
+
+). For the second term, 
+
+∇z h2 = ∇z (Gt ¯mt(z)) = Gt · ∇ z ¯mt(z).
+
+First, we compute the Jacobian of the posterior mean ¯ mt(z): 
+
+∇z ¯mt(z) = ∇z
+
+
+
+> M
+
+X
+
+> j=1
+
+αj m(j)
+
+> t
+
+ =
+
+> M
+
+X
+
+> j=1
+
+m(j) 
+
+> t
+
+(∇z αj )⊤ = 1
+
+c2
+
+> tM
+
+X
+
+> j=1
+
+αj m(j) 
+
+> t
+
+(m(j) 
+
+> t
+
+− ¯mt(z)) ⊤.
+
+We bound its norm similarly: 
+
+∥∇ z ¯mt(z)∥ ≤ 1
+
+c2
+
+> tM
+
+X
+
+> j=1
+
+αj ∥m(j) 
+
+> t
+
+∥ · ∥ m(j) 
+
+> t
+
+− ¯mt(z)∥ ≤ 1
+
+c2
+
+> tM
+
+X
+
+> j=1
+
+αj (Rm)(2 Rm) = 2R2
+
+> m
+
+c2
+
+> t
+
+.
+
+Now, we compute the norm of ∇z h2 by multiplying by the norm of Gt:
+
+∥∇ z h2∥ ≤ ∥ Gt∥ · ∥∇ z ¯mt(z)∥.
+
+Note that ∥Gt∥ = |σ2(1 −2t)|
+
+> 2c2
+> t
+
+≤ σ2
+
+> 2c2
+> t
+
+= O(c−2 
+
+> t
+
+). Hence, 
+
+∥∇ z h2∥ ≤ 
+
+ σ2
+
+2c2
+
+> t
+
+  2R2
+
+> m
+
+c2
+
+> t
+
+
+
+= σ2R2
+
+> m
+
+c4
+
+> t
+
+.
+
+36 Thus, Lip z (h2)( t) = O(c−4 
+
+> t
+
+). The Lipschitz constant of the full nonlinear term is bounded by the sum of the two parts: Lip z (h)( t) ≤ Lip z (h1)( t) + Lip z (h2)( t) ≤ O(c−2 
+
+> t
+
+) + O(c−4 
+
+> t
+
+).
+
+Now, for velocity field: 
+
+∇z ˆv∗(t, z ) = ∇z (Gtz) + ∇z h(t, z ; DM ).
+
+The Jacobian of the linear part ∇z (Gtz) is simply the matrix Gt, and so: 
+
+∇z ˆv∗(t, z ) = Gt + ∇z h(t, z ; DM ).
+
+Since ∥Gt∥ = O(c−2 
+
+> t
+
+), we have: Lip z (ˆ v∗) ≤ sup 
+
+> z
+
+∥∇ z ˆv∗∥ ≤ ∥ Gt∥ + sup 
+
+> z
+
+∥∇ z h(t, z ; DM )∥ ≤ O(c−2 
+
+> t
+
+) + O(c−4 
+
+> t
+
+),
+
+which is O(c−4 
+
+> t
+
+) as ct → 0.
+
+D.3 Proof of Proposition 3 
+
+Proof of Proposition 3. Let t ∈ [0 , 1] and DM be given. Let h(t, z ; DM ) = PMj=1 αj B(j) 
+
+> t
+
+, where 
+
+B(j) 
+
+> t
+
+:= yj (t) = ˙ m(j) 
+
+> t
+
+− Gtm(j) 
+
+> t
+
+. Then, we can rewrite: ˆ v∗ 
+
+> t
+
+(z) = ˆ v∗(t, z ) = Gtz + h(t, z ; DM ). Let SR = P 
+
+> j∈I R
+
+αj be the weight mass of the top-R elements. We have: ˆvt,R (z) = Gtz +
+
+P 
+
+> j∈I R
+
+αj B(j)
+
+> t
+
+SR
+
+.
+
+Let ¯BR =   
+
+> P
+> j∈I RαjB(j)
+> t
+> SR
+
+denote the top-R weighted average. The approximation error is 
+
+∥ˆv∗ 
+
+> t
+
+− ˆvt,R ∥ = ∥(Gtz + h(t, z ; DM )) − (Gtz + ¯BR)∥ = ∥h(t, z ; DM ) − ¯BR∥.
+
+We can split h(t, z ; DM ) into top-R and remaining terms: 
+
+h(t, z ; DM ) = X
+
+> j∈I R
+
+αj B(j) 
+
+> t
+
++ X
+
+> j / ∈I R
+
+αj B(j) 
+
+> t
+
+= SR ¯BR + (1 − SR) ¯B¬R,
+
+where ¯B¬R is the weighted average of the remaining terms. Substituting this into the error: 
+
+∥h(t, z ; DM ) − ¯BR∥ = ∥SK ¯BR + (1 − SR) ¯B¬R − ¯BR∥ (34) = ∥(SR − 1) ¯BR + (1 − SR) ¯B¬R∥ (35) = ∥(1 − SR)( ¯B¬R − ¯BR)∥ = (1 − SR)∥ ¯B¬R − ¯BR∥. (36) By assumption, ∥B(j) 
+
+> t
+
+∥ ≤ C for all j and t. Using the triangle inequality, we obtain ∥ ¯B¬R −
+
+¯BR∥ ≤ ∥ ¯B¬R∥ + ∥ ¯BR∥ ≤ C + C = 2 C. Thus, the error is bounded uniformly by (1 − SR)(2 C) = 2C
+
+
+
+1 − P 
+
+> j∈I R
+
+αj
+
+
+
+, which is the bound that we wanted to show. 37 Lastly, we provide some remarks on the proposed ODE sampler. The linear coefficient Gt = σ2(1 −2t)2c2
+
+> t
+
+Id exhibits a sign change at t = 0 .5: Gt ≻ 0 for t < 0.5, Gt = 0 at t = 0 .5, and Gt ≺ 0 for t > 0.5. This sign structure creates repulsive then attractive dynamics: during t ∈ [0 , 0.5), the linear term Gtz amplifies deviations from the origin, while during t ∈
+
+(0 .5, 1] it contracts toward the origin. The positive eigenvalues for t < 0.5 fundamentally limit stability: explicit methods require ∆ t < 2/λ max (Gt) to avoid explosive growth. Intuitively, the paths initially diverge from their starting points due to forward-time diffusion, then later converge toward their endpoints due to the bridge conditioning. The nonlinear term provides a restorative force that anchors trajectories to the data, but careful step size selection during the repulsive phase t ∈ [0 , 0.5) remains crucial for numerical stability. Although the mixture term h(z, t ) ∈ Conv {B(1)  
+
+> t
+
+, . . . , B (M ) 
+
+> t
+
+}, where Conv denotes convex hull, the full velocity Gtz + h(z, t ; DM ) needs not lie in the convex hull of observed velocities, nor must the trajectories remain inside convex hulls of the data. In the rectified-flow limit ( ct ≡ 0so Gt = 0), an Euler step satisfies zn+1 − zn = ∆ t P 
+
+> j
+
+αj (tn, z n) ˙ m(j) 
+
+> t
+
+, a convex combination of observed instantaneous velocities. Once Gt̸ = 0, if we use an exponential Euler scheme, then the linear map eGt∆t induces geometric distortion, causing amplification/contraction of the coordinates and moving the trajectory away from the convex hull. 
+
+# E Additional Theoretical Results and Insights on the Proposed Training-Free Model 
+
+This section further studies the properties of the proposed training-free ODE sampler. We shall: (i) provide existence and uniqueness result, then study the Duhamel (variation-of-constants) representation and explore the implications; and (ii) provide interpretation for the nonlinear forcing term in the velocity field as a Nystr¨ om-extended, row-stochastic diffusion-map operator [22, 63] applied to certain velocity labels. 
+
+E.1 Global Well-Posedness and Duhamel’s Representation 
+
+First, we provide a result on existence and uniqueness of the solution to the proposed ODE sampler. 
+
+Theorem 4 (Global well-posedness) . Assume σmin > 0 so that ct ≥ σmin for all t ∈ [0 , 1] .Assume there exist constants Rm, R 1 > 0 such that for all j ∈ { 1, . . . , M } and all t ∈ [0 , 1] ,
+
+∥m(j) 
+
+> t
+
+∥ ≤ Rm, ∥ ˙m(j) 
+
+> t
+
+∥ ≤ R1.
+
+Let ˆv∗(t, z ) = Gtz + h(t, z ; DM ) with Gt = σ2(1 −2t)2c2
+
+> t
+
+Id and h as in (10) . Then: (i) ˆv∗(t, ·) is globally Lipschitz in z, uniformly in t ∈ [0 , 1] .(ii) ˆv∗ has linear growth: there exist constants A, B < ∞ such that ∥ˆv∗(t, z )∥ ≤ A + B∥z∥ for all (t, z ) ∈ [0 , 1] × Rd.Consequently, for any initial condition Z0 ∈ Rd, the ODE 
+
+˙Zt = ˆ v∗(t, Z t), t ∈ [0 , 1] ,
+
+admits a unique solution on [0 , 1] . Moreover, solutions depend continuously on Z0.Proof. Since ct ≥ σmin ,
+
+∥Gt∥ = σ2|1 − 2t|
+
+2c2
+
+> t
+
+≤ σ2
+
+2σ2min 
+
+=: CG < ∞.
+
+38 By Theorem 3, Lip z (h)( t) ≤ 2Rm
+
+c2
+
+> t
+
+ R1 + ∥Gt∥Rm
+
+ ≤ 2Rm
+
+σ2min 
+
+ R1 + CGRm
+
+ =: Lh < ∞.
+
+Since z 7 → Gtz has Lipschitz constant ∥Gt∥ ≤ CG,Lip z (ˆ v∗)( t) ≤ ∥ Gt∥ + Lip z (h)( t) ≤ CG + Lh =: L < ∞,
+
+uniformly in t ∈ [0 , 1]. This proves (i). For (ii), we bound 
+
+∥ˆv∗(t, z )∥ ≤ ∥ Gt∥ ∥ z∥ + ∥h(t, z )∥.
+
+Moreover, 
+
+∥h(t, z )∥ ≤ 
+
+> M
+
+X
+
+> j=1
+
+αj (t, z ) ∥yj (t)∥ ≤ sup 
+
+> 1≤j≤M
+
+∥yj (t)∥ ≤ R1 + ∥Gt∥Rm ≤ R1 + CGRm.
+
+Hence 
+
+∥ˆv∗(t, z )∥ ≤ CG∥z∥ + ( R1 + CGRm),
+
+which is linear growth. Since ˆ v∗ is continuous in t and globally Lipschitz in z uniformly on [0 , 1], Picard–Lindel¨ of implies existence and uniqueness of a solution on [0 , 1] for any Z0 ∈ Rd (see, e.g. [40]). Continuous dependence on Z0 follows from Gr¨ onwall’s inequality. With the uniqueness of the solution to the ODE established, the forecast sequence obtained by repeatedly integrating the ODE is well defined and forms a data-driven Markov chain. To analyze its structure for 1-step forecasting, we now study Duhamel’s representation of the ODE solution. 
+
+Duhamel’s representation. The proposed sampler is the nonlinear ODE: ˙Zt = GtZt + h(t, Z t; DM ), Z0 ∼ N  m(τ )0 , σ 2min Id
+
+. (37) Let Φ( t, s ) denote the fundamental matrix for ˙z = Gtz. Then the standard variation-of-constants identity gives, for any T ≤ 1 and t ∈ [0 , T ], 
+
+Zt = Φ( t, 0) Z0 +
+
+Z t
+
+> 0
+
+Φ( t, s ) h(s, Z s; DM ) ds. (38) Equivalently, with the co-moving variable Yt := Φ( t, 0) −1Zt,
+
+Yt = Y0 +
+
+Z t
+
+> 0
+
+Φ( s, 0) −1 h s, Φ( s, 0) Ys; DM
+
+ ds. (39) 
+
+Proposition 6 (Duhamel representation for the solution of the proposed ODE sampler) . The fundamental matrix is 
+
+Φ( t, s ) = ct
+
+cs
+
+Id, (40) 
+
+and thus the ODE solution admits the following representation: for t ∈ (0 , 1] ,
+
+Zt =
+
+s
+
+1 + 
+
+ σσmin 
+
+2
+
+t(1 − t)Z0 +
+
+> M
+
+X
+
+> j=1
+
+Z t
+
+> 0
+
+s
+
+σ2min + σ2t(1 − t)
+
+σ2min + σ2s(1 − s) αj (s, Z s)yj (s) ds. (41) 39 Proof. Let d(t) := c2 
+
+> t
+
+. Then d′(t) = σ2(1 − 2t) and g(t) = σ2(1 −2t)2c2
+
+> t
+
+= d′(t)2d(t) . Since Gt = g(t)Id
+
+commutes with itself at all times, Φ( t, s ) = exp 
+
+ Z ts
+
+Gr dr 
+
+
+
+= exp 
+
+ Z ts
+
+g(r) dr 
+
+
+
+Id = exp 
+
+ 12
+
+Z tsd′(r) 
+
+> d(r)
+
+dr 
+
+
+
+Id =
+
+s
+
+d(t)
+
+d(s) Id = ct
+
+cs
+
+Id.
+
+Plugging the above formula into (38), we obtain the desired expression for the ODE solution. Therefore, we see that the one-step ODE forecaster behaves like a nonparametric smoother that averages over past transitions, rather than learning a single Markov transition rule, which partially explains why the proposed training-free model can be competitive with other sequence models on nonlinear dynamics benchmark tasks. To better see this, consider the case when 
+
+σ = 0 for the Duhamel’s representation, in which case the formula (41) simplifies to: 
+
+Zt = Z0 +
+
+> M
+
+X
+
+> j=1
+
+βj (t; DM ) · (X(j)2 − X(j)1 ), (42) where 
+
+βj (t; DM ) = 
+
+Z t
+
+> 0
+
+exp( −∥ Zs − m(j) 
+
+> s
+
+∥2/(2 σ2min )) 
+
+PMk=1 exp( −∥ Zs − m(k) 
+
+> s
+
+∥2/(2 σ2min )) ds ≥ 0, m(j) 
+
+> s
+
+= (1 − s)X(j)1 + sX (j)2 ,
+
+and PMj=1 βj (t; DM ) = t. This structural representation tells us that the ODE sampler evolves by mixing past transition directions, and the mixing coefficients are integrals over time of similarity weights along the trajectory. In particular, the displacement Z1 − Z0 is a time-scaled convex combination of stored increments with time-accumulated attention weights. For a small 
+
+δ > 0, we can approximate, for every s ∈ [0 , 1 − δ], as: 
+
+Zs+δ − Zs
+
+δ ≈
+
+> M
+
+X
+
+> j=1
+
+exp( −∥ Zs − m(j) 
+
+> s
+
+∥2/(2 σ2min )) 
+
+PMk=1 exp( −∥ Zs − m(k) 
+
+> s
+
+∥2/(2 σ2min )) · (X(j)2 − X(j)1 ),
+
+which is a data-adaptive Nadaraya-Watson kernel estimator on all the past transition directions. Importantly, for σ > 0 the variance schedule c2 
+
+> t
+
+= σ2min + σ2t(1 − t) induces a time-dependent smoothing and a linear drift term (via gt = ˙ ct/c t), interpolating between sharper, memory-based dynamics and more regularized transport. From a dynamical-systems viewpoint, when the kernel bandwidth is small (so that the responsibilities concentrate), the velocity field becomes close to a piecewise-defined mixture and the ODE can be viewed as an approximate switching system that follows the locally most similar stored transition. Lastly, we remark that one can also obtain an analogous solution representation and extend the above discussion accordingly for SDE samplers, but we choose to focus on ODE here to simplify the exposition. 
+
+E.2 Connections to Diffusion Geometry, Markov Operators and Diffusion Maps 
+
+Background on diffusion geometry and Markov operators. Much of the Riemannian geometry of a smooth manifold can be expressed in terms of its Laplacian operator ∆ = div ◦ ∇ 
+
+via the carr´ e du champ identity [6]: Γ( f, h ) := 12
+
+ f ∆h + h∆f − ∆( f h ) = ⟨∇ f, ∇h⟩, (43) which recovers the Riemannian metric on 1-forms from the action of ∆. A central idea (diffusion geometry [53]) is to replace the Laplacian by a more general operator L defined on an abstract state space, and to interpret (43) as defining the intrinsic geometry associated with L.40 In many settings, L arises as the infinitesimal generator of a Markov semigroup . A family (Pt)t≥0 of linear operators acting on a function space is called a Markov semigroup if: (i) 
+
+P0 = Id, (ii) PtPs = Pt+s for all t, s ≥ 0, and (iii) Pt preserves positivity and constant functions. The generator is defined by 
+
+Lf := lim 
+
+> t↓0
+
+Ptf − ft , (44) whenever the limit exists. Rather than working directly with generators, one data-driven ap-proach typically proceeds by constructing finite-time Markov diffusion operators from data; the generator and the associated geometry emerge in suitable small-time or small-bandwidth limits. Basic examples of Markov semigroup include: 
+
+• Heat diffusion on Rd. Let pt(x, y ) denote the Gaussian heat kernel 
+
+pt(x, y ) = 1(4 πt )d/ 2 exp 
+
+
+
+− ∥x − y∥2
+
+4t
+
+
+
+, t > 0.
+
+It defines the Markov semigroup (Ptf )( x) = 
+
+Z
+
+> Rd
+
+pt(x, y ) f (y) dy, 
+
+with infinitesimal generator L = ∆. 
+
+• Weighted manifolds. Let M be a smooth compact Riemannian manifold and let 
+
+π(dy ) = μ(y) dVol M(y) with μ > 0 smooth. Define the weighted Laplacian 
+
+Lf = μ−1div( μ∇f ) = ∆ f + ∇ log μ · ∇ f, 
+
+which is symmetric in L2(M, π ) and admits π as an invariant measure. Let pμt (x, y ) denote the heat kernel associated with L with respect to the measure π:(Ptf )( x) = 
+
+Z
+
+> M
+
+pμt (x, y ) f (y) π(dy ),
+
+Z
+
+> M
+
+pμt (x, y ) π(dy ) = 1 .
+
+Then ( Pt)t≥0 is a Markov semigroup with generator L.
+
+• General Markov processes. If ( Xt)t≥0 is a Markov process on a measurable space, then (Ptf )( x) = E[f (Xt) | X0 = x]defines a Markov semigroup. The earlier two examples are specific instantiations within this framework. 
+
+Diffusion maps. Diffusion maps [22, 63, 83] are a family of kernel-based methods that con-struct intrinsic geometric representations of data by interpreting a normalized kernel matrix as a Markov diffusion operator on the data manifold. In the classical setting, one studies the spectrum of this operator and uses its leading eigenfunctions as low-dimensional intrinsic coordi-nates. Here, we are mainly interested in relating the proposed ODE sampler to diffusion maps, and do not perform spectral decomposition; instead, we directly use the associated (popula-tion and empirical) diffusion operators and their Nystr¨ om extensions to transport vector-valued observables. Fix a sampler time s ∈ [0 , 1] and consider an intrinsic point cloud ˜Ms = { ˜m(j) 
+
+> s
+
+}Mj=1 ⊂ Rd,viewed as samples from a probability measure πs supported on a smooth manifold. Given a bandwidth εs > 0, define the Gaussian kernel 
+
+kεs (x, y ) = exp 
+
+
+
+− ∥x − y∥2
+
+2εs
+
+
+
+.
+
+41 The associated population diffusion operator is (Tεs f )( x) = 
+
+R kεs (x, y )f (y) πs(dy )
+
+R kεs (x, y ) πs(dy ) . (45) Throughout, we use a hat to denote finite-sample or empirical objects constructed from the point cloud ˜Ms via Nystr¨ om approximation. In particular, ˆK(s), ˆD(s) and ˆW (s) denote the empirical kernel, degree and random-walk matrices, while ˆPs denotes the corresponding empirical diffusion operator evaluated at arbitrary query points. The unhatted objects correspond to population-level integral operators. Define ˆKij (s) := exp − ∥ ˜m(i) 
+
+> s
+
+− ˜m(j) 
+
+> s
+
+∥2
+
+2εs
+
+!
+
+, ˆD(s) := diag( ˆK(s)1), ˆW (s) := ˆD(s)−1 ˆK(s).
+
+For arbitrary y ∈ Rd, the Nystr¨ om weights are ˆwj (y, s ) := exp 
+
+
+
+− ∥y− ˜m(j) 
+
+> s∥2
+> 2εs
+
+PMk=1 exp 
+
+
+
+− ∥y− ˜m(k) 
+
+> s∥2
+> 2εs
+
+ ,
+
+and the empirical diffusion operator is ( ˆPsf )( y) := 
+
+> M
+
+X
+
+> j=1
+
+ˆwj (y, s ) f ( ˜ m(j) 
+
+> s
+
+). (46) Here “Nystr¨ om” refers both to the finite-sample approximation of the population integral op-erator and to its evaluation at out-of-sample query points via kernel weights, as is standard in the diffusion-maps literature. 
+
+Markov interpretation. The row-normalized kernel ˆW (s) = ˆD(s)−1 ˆK(s) is a stochastic matrix and thus defines a discrete-time Markov chain on the cloud ˜Ms, with transition proba-bilities 
+
+P(Xn+1 = ˜ m(j) 
+
+> s
+
+| Xn = ˜ m(i) 
+
+> s
+
+) = ˆWij (s).
+
+The empirical diffusion operator ˆPs is the associated conditional-expectation operator, ( ˆPsf )( ˜ m(i) 
+
+> s
+
+) = E[f (Xn+1 ) | Xn = ˜ m(i) 
+
+> s
+
+],
+
+while its Nystr¨ om extension (46) provides transition probabilities ˆ w(· | y, s ) from an arbitrary query point y ∈ Rd.At the population level, Tεs admits the representation 
+
+Tεs f (x) = 
+
+Z
+
+f (y) qεs (x, dy ),
+
+with qεs a Markov transition kernel. In the joint limit M → ∞ and εs → 0 (with suitable scaling), ˆPs converges to Tεs and ( Tεs − Id) /ε s recovers, up to a constant factor, a (possibly density-weighted) Laplace–Beltrami operator. 42 Intrinsic coordinates and diffusion-scale invariance. Define intrinsic coordinates ˜m(j) 
+
+> t
+
+:= Φ( t, 0) −1m(j) 
+
+> t
+
+, j = 1 , . . . , M, (47) and intrinsic diffusion scale ˜ct := ct
+
+φ(t, 0) , εt := ˜ c2 
+
+> t
+
+, (48) where Φ( t, 0) = φ(t, 0) Id. For the proposed ODE sampler, Φ( t, 0) = ct
+
+c0
+
+Id ⇒ ˜ct ≡ c0, εt ≡ c20. (49) 
+
+Proposition 7 (Kernel equivariance and intrinsic labels) . Fix t ∈ [0 , 1] and let y ∈ Rd. Then: (a) (Kernel equivariance) 
+
+αj
+
+ Φ( t, 0) y, t  = ˆ wj (y, t ).
+
+(b) (Intrinsic label identity) 
+
+Φ( t, 0) −1yj (t) = ˙ ˜m(j) 
+
+> t
+
+.
+
+Proof. (a) Since Φ( t, 0) = φ(t, 0) Id,
+
+∥Φ( t, 0) y − m(j) 
+
+> t
+
+∥2 = φ(t, 0) 2∥y − ˜m(j) 
+
+> t
+
+∥2.
+
+Substituting into the definition of αj and using c2 
+
+> t
+
+/φ (t, 0) 2 = ˜ c2 
+
+> t
+
+yields αj (Φ( t, 0) y, t ) = ˆ wj (y, t ). 
+
+(b) Differentiating m(j) 
+
+> t
+
+= Φ( t, 0) ˜ m(j) 
+
+> t
+
+gives ˙m(j) 
+
+> t
+
+= Gtm(j) 
+
+> t
+
++ Φ( t, 0) ˙ ˜m(j) 
+
+> t
+
+.
+
+Thus yj (t) = Φ( t, 0) ˙ ˜m(j) 
+
+> t
+
+and left-multiplying by Φ( t, 0) −1 yields the result. It then follows directly from Proposition 7 that, for every s ∈ [0 , 1] and every y ∈ Rd,Φ( s, 0) −1h s, Φ( s, 0) y; DM
+
+ = ( ˆPs ˙˜m(s))( y), (50) where ˙˜m(s)( ˜ m(j) 
+
+> s
+
+) = ˙ ˜m(j) 
+
+> s
+
+. On-cloud, Φ( s, 0) −1h s, m (i) 
+
+> s
+
+; DM
+
+ =
+
+> M
+
+X
+
+> j=1
+
+ˆWij (s) ˙ ˜m(j) 
+
+> s
+
+. (51) 
+
+Discretizations as Nystr¨ om regression steps. Let 0 = t0 < · · · < t K = 1 and ∆ tk =
+
+tk+1 − tk.
+
+Forward Euler. 
+
+Zk+1 = Zk + ∆ tk
+
+
+
+Gtk Zk + ( ˆPtk y( tk ))( Zk)
+
+
+
+.
+
+Integrating-factor scheme. 
+
+Zk+1 = Φ( tk+1 , t k)
+
+
+
+Zk + ∆ tk ( ˆPtk y( tk ))( Zk)
+
+
+
+.
+
+Exponential Euler (ETD1). 
+
+Zk+1 = eg(tk )∆ tk Zk + eg(tk )∆ tk − 1
+
+g(tk) ( ˆPtk y( tk ))( Zk),
+
+with the natural continuous extension when g(tk) = 0. The key message is that each discretization step realizes a balance between linear transport and a nonlinear data-dependent forcing, which is exactly represented by the empirical diffusion-map operator ˆPs acting on intrinsic velocity labels. 43 Relation to diffusion forecasting. Diffusion forecasting [39, 13] builds a data-driven Markov operator from a kernel on a point cloud and uses its eigenfunctions to propagate densities/ex-pectations under an (unknown) generator. Here, the same kernel–Markov machinery appears inside the Lagrangian sampler: at frozen time s, the intrinsic forcing is exactly a Nystr¨ om extension of a row-stochastic diffusion-map random walk applied to the vector-valued observ-able ˙˜m(j) 
+
+> s
+
+. Thus the map y 7 → PMj=1 ˜wj (y, s ) ˙ ˜m(j) 
+
+> s
+
+is precisely the Nadaraya–Watson (kernel conditional expectation) estimator of the intrinsic velocity observable on ˜Ms. Unlike classical diffusion maps, we do not perform eigendecomposition or spectral truncation: the full operator is evaluated locally along the sampler trajectory. 
+
+# F Experimental Details and Additional Results 
+
+F.1 Baseline Model Details 
+
+Our baseline models follow the model design and range of hyperparameter used in previous studies [28, 29, 108, 71]. The qualitative details can be obtained from those works. We use the reference implementation and hyperparameter settings from Dart library for all baseline model other than vanilla flow matching model. For vanilla flow matching model we follow settings in prior work [71]. For simplicity and fair evaluation, we only choose one important hyperparameter to tune. The hyperparameter details are shown below. 
+
+Vanilla Flow Matching [71] - Input Length: {0.05, 0.25 , 0.5, 0.75, 1 } Lyapunov times 
+
+- Hidden Dimension: 256 
+
+- Time Embedding Dimension: 64 
+
+- Number of Residual Blocks: 4 
+
+- Dropout Fraction: 0.1 
+
+- Activation Function: ReLU 
+
+N-BEATS [87] - Input Length: {0.05, 0.25 , 0.5, 0.75, 1 } Lyapunov times 
+
+- Number of Stacks: 30 
+
+- Number of Blocks: 1 
+
+- Number of Layers: 4 
+
+- Expansion Coefficient Dimension: 5 
+
+- Layer Widths: 256 
+
+- Degree of Trend Polynomial: 2 
+
+- Dropout Fraction: 0.0 
+
+- Activation Function: ReLU 
+
+Transformer [101] - Input Length: {0.05, 0.25 , 0.5, 0.75, 1 } Lyapunov times 
+
+- Number Attention Heads: 4 
+
+- Number Encoder Layers: 3 
+
+44 - Number Decoder Layers: 3 
+
+- Feedforward Dimension: 512 
+
+- Dropout Fraction: 0.1 
+
+- Activation Function: ReLU 
+
+TiDE [23] - Input Length: {0.05, 0.25 , 0.5, 0.75, 1 } Lyapunov times 
+
+- Number of Encoder Layers: 1 
+
+- Number of Decoder Layers: 1 
+
+- Decoder Output Dimension: 16 
+
+- Hidden Dimension Size: 128 
+
+- Past Temporal Width: 4 
+
+- Future Temporal Width: 4 
+
+- Past Temporal Hidden: None 
+
+- Future Temporal Hidden: None 
+
+- Temporal Decoder Hidden: 32 
+
+- Dropout Fraction: 0.1 
+
+LSTM [43] - Input Length: {0.05, 0.25 , 0.5, 0.75, 1 } Lyapunov times 
+
+- Hidden Dimensionality: 25 
+
+- Number of Recurrent Layers: 2 
+
+- Dropout Fraction: 0.0 
+
+- Training Length: 24 
+
+ESN [50] - Input Length: {0.05, 0.25 , 0.5, 0.75, 1 } Lyapunov times 
+
+- Number of Reservoir Units: 500 
+
+- Spectral Radius: 0.8 
+
+- Leak Rate: 0.1 
+
+- Reservoir Connectivity: 0.1 
+
+- Input Scaling: 1.0 
+
+- Input Connectivity: 0.2 
+
+- Ridge Regularization: 1e-4 
+
+45 F.2 Evaluation Metrics 
+
+Symmetric Mean Absolute Percentage Error (sMAPE). sMAPE is an accuracy measure based on percentage (or relative) errors, and it is commonly used in time series prediction and forecasting tasks [55]. It is defined as: sMAPE( y, ˆy) ≡ 100% 
+
+n
+
+> n
+
+X
+
+> t=1
+
+|yt − ˆyt|
+
+(|yt| + |ˆyt|)/2 , (52) where n is forecast horizon, yt is true value of test time series and ˆyt is predicted value of the forecast model. sMAPE is bounded between 0% and 200%, and penalizes larger over and underestimations in a “symmetric” manner. 
+
+Valid Prediction Time (VPT). VPT measures the first forecast horizon when sMAPE exceeds a fixed threshold ϵ [30]: VPT ≡ arg max 
+
+> ˜t
+
+{˜t|sMAPE( yt, ˆyt) < ϵ, ∀t < ˜t}. (53) We set ϵ = 20, tighter than prior studies [30]. 
+
+Continuous Ranked Probability Score (CRPS). CRPS measures the respective accuracy of two probabilistic forecasting models. For a predictive distribution F and observation y, it is the scoring rule defined as [79]: CRPS( F, y ) = 
+
+Z +∞−∞ 
+
+[F (x) − 1{x ≥ y}2]dx. (54) For practical computation, we consider its equivalent form: CRPS( F, y ) = E[|X − y|] − 12 E[|X − X′|], (55) where X, X ′ are independent samples drawn from the forecast distribution F .
+
+Correlation Dimension. Correlation dimension is a measure of the dimensionality of the space occupied by a set of random points, often referred to as a type of fractal dimension. It characterizes how the attractor fills the phase space by measuring the scaling behavior of nearby point pairs [33]. For a scalar time series {x(t)}, reconstruct the phase space using time-delay embedding: 
+
+X(i) = [ x(i), x (i + τ ), . . . , x (i + ( m − 1) τ )] , (56) where m is embedding dimension, τ is time delay, and let total number of embedded vectors be 
+
+N . Then the correlation integral C(r) counting the fraction of point pairs is defined according to the radius r:
+
+C(r) = lim  
+
+> N→∞
+
+1
+
+N 2
+
+> N
+
+X
+
+> i,j =1
+
+Θ( r − ∥ X(i) − X(j)∥), (57) where Θ( ·) is Heaviside step function. As in scaling region, a power-law relationship holds 
+
+C(r) ∝ rdcorr , therefore we have correlation dimension computed as: 
+
+dcorr = lim 
+
+> r→0
+
+log C(r)log r . (58) 46 Kullback–Leibler divergence (KL divergence). KL divergence is a type of statistical distance measuring how much an approximating probability distribution Q different from a true probability distribution P [60]. It is defined as: 
+
+DKL (P ∥Q) = X
+
+> x∈X
+
+P (x) P (x)
+
+Q(x) . (59) 
+
+F.3 Computational Cost 
+
+We provide a computational cost analysis comparing our training-free model with the vanilla flow matching model and the six baseline models. All experiments are conducted on a single NVIDIA A100 GPU (40GB). Let M denote the number of training samples, d denote the state dimension of the chaotic system, and H denote the forecast horizon. For our training-free model, let Tg denote the time grid size, Node denote the number of ODE integration steps, B
+
+denote the batch size, and S denote the number of Monte Carlo samples. Our model is training-free, resulting in minimal computational cost before inference. During the pre-computation phase, the model computes the transition means mj and velocity correction terms Bj , with a complexity of only O(Tg ·M ·d). During the single-step inference phase, at each ODE integration step, the model first computes pairwise differences between the current state and the transition means, with complexity O(B · M · d); then computes the softmax of Gaussian responsibilities, with complexity O(B · M ); and finally computes the nonlinear correction term, with complexity O(B · M · d). Thus, the total computational cost per integration step is 
+
+O(B · M · d). For multi-step probabilistic forecasting with horizon H and S Monte Carlo samples, the total computational cost is: 
+
+Cdense = O(S · H · Node · M · d). (60) To improve practical efficiency, we introduce a top-R approximation that restricts attention to the R nearest transitions at each query point, where R ≪ M . This approximation first computes distances to all M transitions, with complexity O(B · M · d); then performs a partial sort to identify the R nearest neighbors, with complexity O(B · M ); and finally computes the weighted velocity over only the R neighbors, with complexity O(B · k · d). Thus, the inference complexity for multi-step probabilistic forecasting becomes: 
+
+Ctop-R = O(S · H · Node · (M · d + R · d)) . (61) According to our dataset settings, for each system we have 20 trajectories with 812 − 500 = 312 observed time points, yielding a total of M = 6240 samples. Based on this and the baseline model settings described in Appendix F.1, we compute the approximate Floating Point Operations (FLOPs) for our training-free model and the baseline models. The results are presented in Fig. 7. 
+
+F.4 Conditional Forecast Examples 
+
+For conditional forecasting, we present additional forecast results from various chaotic systems beyond the Aizawa attractor shown in Fig. 2a. These results are provided in Figs. 8-12. 
+
+F.5 Ablation Study 
+
+Our training-free model provides a closed-form optimal velocity field and integrates the induced ODE to generate samples. The choice of ODE integrator settings can significantly impact the 47 (a) Training FLOPs Comparison (b) Inference FLOPs Comparison 
+
+Figure 7: Computational Cost. (a) FLOPs Comparison during training phase. (b) FLOPs Comparison during inference phase. All the FLOPs are computed among 6240 samples. 
+
+Figure 8: H´ enon–Heiles System. generated trajectories. In this ablation study, we examine different integrator configurations, including the number of integration steps and the choice of ODE solvers, to investigate whether our model behaves consistently with standard flow matching models across various settings. We conduct the ablation study under the same setting as Sec. 4.3, except that we vary the number of ODE integration steps in [30 , 50 , 100] and the ODE solver in [Euler, Runge–Kutta, Exponential Euler], respectively. The results are presented in Fig. 13. From Fig. 13a, we see that more integration steps lead to better prediction quality. And Fig. 13b shows that the Euler method is already good enough for our training free models. These conclusions are identical with flow matching models from previous studies [96, 71]. We also run ablation experiment to study if the top R truncation scheme leads to differences in 48 Figure 9: Sprott G System. 
+
+Figure 10: Isothermal Chemical Process. 49 Figure 11: Jerk Circuit Oscillator. 
+
+Figure 12: Forced Brusselator System. 50 the proposed training-free model. We set truncation number R = 256, the result is presented in Fig. 13c. We can see that the results are almost the same after we apply truncation regime.  
+
+> (a) Ablation Study for ODE Integration Steps (b) Ablation Study for ODE Solvers
+> (c) Ablation Study for Truncation Model
+
+Figure 13: Ablation Study. (a) Ablation study for ODE integration steps: [30 , 50 , 100]. (b) Ablation study for 3 different ODE solver: [Euler , Runge–Kutta , Exponential Euler]. (c) Ablation study for truncation model, truncation number R = 256. Shaded regions from Fig (a)-(c) indicate ±0.5 standard error over 135 dynamical systems, each with 20 trajectories originating from randomly sampled initial conditions. 51
