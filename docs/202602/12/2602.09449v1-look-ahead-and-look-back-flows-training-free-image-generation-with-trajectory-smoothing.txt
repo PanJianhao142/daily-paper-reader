@@ -1,0 +1,572 @@
+Title: Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing
+
+URL Source: https://arxiv.org/pdf/2602.09449v1
+
+Published Time: Wed, 11 Feb 2026 01:36:40 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing 
+
+Yan Luo 1 Henry Huang 1 Todd Y. Zhou 1 Mengyu Wang 1
+
+## Abstract 
+
+Recent advances have reformulated diffusion models as deterministic ordinary differential equa-tions (ODEs) through the framework of flow matching, providing a unified formulation for the noise-to-data generative process. Various training-free flow matching approaches have been devel-oped to improve image generation through flow velocity field adjustment, eliminating the need for costly retraining. However, Modifying the velocity field v introduces errors that propagate through the full generation path, whereas adjust-ments to the latent trajectory z are naturally cor-rected by the pretrained velocity network, reduc-ing error accumulation. In this paper, we propose two complementary training-free latent-trajectory adjustment approaches based on future and past velocity v and latent trajectory z information that refine the generative path directly in latent space. We propose two training-free trajectory smooth-ing schemes: Look-Ahead , which averages the current and next-step latents using a curvature-gated weight, and Look-Back , which smoothes latents using an exponential moving average with decay. We demonstrate through extensive experi-ments and comprehensive evaluation metrics that the proposed training-free trajectory smoothing models substantially outperform various state-of-the-art models across multiple datasets including COCO17, CUB-200, and Flickr30K. 
+
+## 1. Introduction 
+
+Recently, diffusion models have been reformulated within the mathematical framework of ordinary differential equa-tions (ODEs), known as flow matching , which defines a deterministic ODE-governed formulation of noise-to-data generative process (Lipman et al., 2023; Chen & Lipman, 2024; Albergo & Vanden-Eijnden, 2023; Luo et al., 2025). 
+
+> 1
+
+Harvard AI and Robotics Lab, Harvard University. Correspon-dence to: Mengyu Wang <mengyu wang@meei.harvard.edu >.
+
+Preprint. February 11, 2026. 
+
+Figure 1. Conceptual illustration of training-free trajectory smooth-ing for flow sampling. Without trajectory smoothing (top), back-ward integration of the flow ODE suffers divergence and overshoot in low Signal-to-Noise Ratio (SNR) regions, causing the discrete trajectory to deviate from the ideal continuous flow and producing final samples that inaccurately reach the target distribution. With the trajectory smoothing mechanism (bottom), the trajectory main-tains robust fidelity to the ideal continuous flow across both low and high SNR regions, ensuring stable progression and accurate convergence. 
+
+Among these ODE-based approaches, Rectified Flow has emerged as a particularly effective formulation that uses a linear and constant-velocity transport between noise and data as a training target (Liu et al., 2022; 2023; Esser et al., 2024). This simplification not only leads to more stable training and faster convergence (Lee et al., 2024; Wang et al., 2024a) but also enables efficient few-step genera-tion and straightforward distillation of pretrained flow mod-els (Kornilov et al., 2024; Liu et al., 2024). More recently, a 1
+
+> arXiv:2602.09449v1 [cs.CV] 10 Feb 2026 Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing
+
+series of training-free approaches have further advanced this line of work by adapting pretrained flow models through velocity re-parameterization or trajectory refinement, elimi-nating the need for costly retraining (Wang et al., 2025b; Bu et al., 2025; Li et al., 2025; Jin et al., 2025). These methods are especially appealing because they achieve substantial improvements in image generation fidelity and image edit-ing capability with minimal computational overhead (Wang et al., 2025a; Kulikov et al., 2025; Avrahami et al., 2025), making high-quality generation and editing accessible even under limited resources. Most training-free flow methods focus on image editing using pretrained rectified-flow or diffusion models without retraining. Stable Flow (Avrahami et al., 2025) identifies vi-tal layers for improved editing; RF-Edit (Wang et al., 2024c) preserves structure by reusing stored self-attention features; RF-Inversion (Rout et al., 2024) uses an optimal-control adjustment of the image-to-noise trajectory for faithful zero-shot editing. FlowEdit (Kulikov et al., 2025) constructs a direct flow between source- and target-prompt images for inversion-free editing. FlowChef (Patel et al., 2025) nudges the latent trajectory using a task loss on the predicted clean image. SplitFlow (Yoon et al., 2025) decomposes a target prompt into semantic subflows and re-assembles them for higher-fidelity, inversion-free editing. By contrast, only a few training-free flow methods focus on improving general image generation. Rectified Diffu-sion (Wang et al., 2024b) enhances fidelity by finetuning on synthetic samples. HiFlow (Bu et al., 2025) builds a virtual high-resolution reference flow to guide generation, while OC-Flow (Wang et al., 2025b) steers trajectories via reward-driven control velocities. A-Euler (Jin et al., 2025) enforces near-linear velocity by decomposing it into drift and residual components, and Self-Guidance (Li et al., 2025) stabilizes denoising by smoothing velocity with past-step corrections. In this paper, we propose two complementary training-free latent-trajectory adjustment approaches based on future and past velocity v and latent trajectory z information that refine the generative path directly in latent space, in contrast to prior methods that modify the velocity field. Modifying the velocity field v introduces errors that propagate along the entire generation path, whereas adjustments to the latent trajectory z are subsequently regularized by the pretrained velocity network, limiting error accumulation. The contributions of our paper are as follows: • We propose a training-free Look-Ahead scheme that smoothes the latent trajectory with weighted average of current z and next-step z gated by spatial curvature. • We introduce a training-free Look-Back scheme that smoothes the latent trajectory with exponential moving average of latent state z with a decay. • We demonstrate through extensive experiments and comprehensive evaluation metrics that the proposed training-free trajectory smoothing models substantially outperforms various state-of-the-art models. 
+
+## 2. Related Work 
+
+Flow Matching and Its Variants Flow Matching (Lip-man et al., 2023) formulates generative modeling as learning a continuous-time velocity field that transports samples from a simple prior distribution to the target data distribution via an ordinary differential equation (ODE). Subsequent works have extended this framework to various geomet-ric and architectural settings, such as Flow Matching on general geometries (Chen & Lipman, 2024), discrete do-mains (Gat et al., 2024), and rigid-body manifolds through SE(3)-Stochastic Flow Matching (Bose et al., 2024). The Rectified Flow formulation (Liu et al., 2023) further simpli-fies the probability path by enforcing a linear and constant-velocity transport between data and noise, leading to faster convergence and trajectory-straightened flows. Follow-up studies explore optimal transport straightness (Wang et al., 2024a), one-step trajectory learning (Kornilov et al., 2024), and improved training objectives (Lee et al., 2024), while others incorporate adaptive control (Wang et al., 2025b), reinforcement learning (Liu et al., 2025), or velocity decom-position (Jin et al., 2025) to enhance stability and efficiency. Training-free rectified-flow variants, such as HiFlow (Bu et al., 2025) and Self-Guidance (Li et al., 2025), demon-strate that pretrained flow models can be refined through flow-aligned or self-consistent guidance without retraining. Collectively, these advances establish Rectified Flow as a unifying paradigm for deterministic generation, underscor-ing the widespread adoption of Stable Diffusion v3.5 (Esser et al., 2024) in modern generative modeling pipelines. 
+
+Training-Free Flow-Based Image Generation Methods 
+
+Most existing training-free flow models primarily target im-age editing (Avrahami et al., 2025; Wang et al., 2024c; Rout et al., 2024; Kulikov et al., 2025; Patel et al., 2025; Yoon et al., 2025), where pretrained flow matching models are adapted without additional training to enable high-quality and controllable visual modifications. By contrast, rela-tively few training-free flow-based methods target improve-ments in general image generation. For instance, Rectified Diffusion (Wang et al., 2024b) Rectified Diffusion demon-strates that leveraging synthetic samples generated by a pretrained diffusion or flow-matching model to perform a secondary finetuning stage leads to consistent improvements in downstream generation fidelity and sample quality. Hi-Flow (Bu et al., 2025) establishes a virtual reference flow within the high-resolution space that effectively captures the characteristics of low-resolution flow information, offering 2Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing 
+
+guidance for high-resolution generation. OC-Flow (Wang et al., 2025b) maximizes a chosen image-level reward such as CLIP similarity and aesthetic score to optimally steer the flow trajectory by adding a term of control velocity to produce images that satisfy the desired condition. Training-free velocity-modification methods such as OC-Flow show strong potential for improving image generation quality by directly steering the flow trajectory without retraining. Along this line of research, A-Euler (Jin et al., 2025) ac-celerates few-step sampling by adaptively decomposing the velocity field into a linear drift and a temporally-suppressed residual, effectively enforcing a near-linear velocity tra-jectory. Self-Guidance (Li et al., 2025) smooths the sam-pling trajectory by correcting the current velocity using a weighted difference from the noisier immediate-past veloc-ity, leading to more stable denoising and improved image generation quality. Both A-Euler and Self-Guidance tem-porally smooth the velocity field to stabilize the denoising trajectory and improve image generation quality. 
+
+## 3. Problem Statement: Training-Free Trajectory Smoothing 
+
+Let p0 denote the target data distribution and p1 = N (0 , I )
+
+the noise prior. Flow-based generative models, including rectified flow and its variants, define a continuous proba-bility path (pt)t∈[0 ,1] governed by the ordinary differential equation (ODE) 
+
+dz t
+
+dt = vΘ(zt, t, c ), z1 ∼ p1, z 0 ∼ p0, (1) where vΘ denotes a learned velocity field parameterized by 
+
+Θ and conditioned on optional context c.During inference, the path is integrated backward in time using discrete timesteps {tk}Kk=0 . However, the numerical integration of this flow ODE is often unstable due to high local curvature in the learned velocity field vΘ, stiffness and oscillations in regions of low signal-to-noise ratio (SNR), and the limited step sizes prescribed by schedulers originally tuned for diffusion models. Such instabilities manifest as di-vergence, overshooting, or loss of trajectory fidelity, leading to degraded sample quality and requiring either retraining or costly higher-order solvers. 
+
+Objective The goal is to design a training-free, lightweight stabilization mechanism that improves numer-ical stability and trajectory fidelity during backward inte-gration of the flow ODE, operates without additional model evaluations or retraining of vΘ, and remains fully compati-ble with native scheduler configurations used in diffusion or rectified-flow sampling. This mechanism should enhance robustness while preserving the efficiency and generality of standard inference pipelines. 
+
+Formal Optimization View Given a discrete trajectory 
+
+{zk} governed by the update rule 
+
+zk+1 = Φ Θ(zk, t k, η k, c ), (2) we seek a correction operator R such that 
+
+min  
+
+> R
+
+Et,z 
+
+∥zR 
+
+> k+1
+
+− ψt(z1)∥22
+
+
+
+s.t. zR 
+
+> k+1
+
+= R ΦΘ(zk, t k, η k, c ),
+
+(3) where ψt(·) denotes the ideal continuous flow trajectory. To achieve stable and faithful integration without retrain-ing, we introduce two training-free correction schemes for 
+
+R. The first, the Look-Ahead scheme, stabilizes the tra-jectory by referencing future curvature trends to anticipate deviations and adjust the step accordingly. The second, the 
+
+Look-Back scheme, achieves complementary stability by referencing past averaged states, effectively damping high-frequency oscillations while maintaining trajectory fidelity. Both mechanisms adaptively regulate the integration pro-cess to preserve the expected flow dynamics of the learned velocity field vΘ.
+
+## 4. Look-Ahead Scheme for Flow Sampling 
+
+Let p0 be the data distribution and p1 = N (0 , I ) the noise prior. A rectified-flow model defines a probability path 
+
+(pt)t∈[0 ,1] governed by 
+
+dz t
+
+dt = vΘ(zt, t, c ), z1 ∼ p1, z 0 ∼ p0, (4) where vΘ denotes a learned velocity field conditioned on context c. Sampling integrates (4) backward on a grid 1 = 
+
+t0 > · · · > t K = 0 with steps ∆k = tk − tk+1 > 0. The forward Euler update is 
+
+zEul  
+
+> k+1
+
+= zk − ηk vΘ(zk, t k, c ), (5) where ηk follows the scheduler’s native step configuration. To improve stability without retraining, we introduce a 
+
+training-free look-ahead scheme that inspects the local ve-locity trend: it accepts long steps in nearly straight direc-tions but interpolates conservatively under high curvature, keeping constant cost per step. 
+
+Predictor and Efficient Velocity Estimation At (zk, t k),we evaluate the instantaneous velocity vk = vΘ(zk, t k, c )
+
+and perform the scheduler’s native predictor step, ˜z =
+
+SchedulerStep (zk, v k, t k) with ˜t = tk − ∆k. Instead of re-evaluating vΘ(˜ z, ˜t, c ), we estimate the peek velocity by finite difference: 
+
+˜v ≈ zk − ˜z
+
+∆k
+
+. (6) This captures the effective directional change implied by the scheduler without doubling model evaluations. 3Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing   
+
+> Figure 2. Schematic view of the proposed look-ahead sampling. Conventional flow sampling always takes full steps, which can overshoot in regions of high curvature and lead to a large deviation from the target. In contrast, the Look-Ahead scheme adaptively interpolates based on local curvature, modulating step sizes to better follow the underlying flow and achieve a significantly smaller endpoint error.
+> Figure 3. Schematic view of the proposed look-back sampling. Conventional sampling exhibits oscillations and overshoots the target, while Look-Back produces a smooth trajectory through exponential state averaging.
+
+Curvature-Gated Interpolation We quantify local cur-vature as the normalized directional deviation: 
+
+κk = ∥˜v − vk∥2
+
+∥˜z − zk∥2 + ε , (7) where ε = 10 −8 ensures numerical stability by preventing division-by-zero. If κk ≤ τcurv , the full step is accepted, 
+
+zk+1 = ˜ z, t k+1 = ˜ t. Otherwise, a partial interpolation mitigates instability: 
+
+zk+1 = zk + γ(˜ z − zk), tk+1 = ˜ t, (8) where γ ∈ (0 , 1) controls conservativeness. The timestep al-ways advances to preserve scheduler synchronization. This curvature-gated interpolation adaptively balances efficiency and stability: when the local trajectory is smooth ( κk small), it takes confident, full steps to accelerate sampling; when curvature increases, the interpolation automatically damp-ens the update, preventing divergence or oscillation. In essence, the gate acts as a lightweight, geometry-aware step controller that preserves trajectory fidelity without extra model evaluations. 
+
+Algorithm Algorithm 1 summarizes the full inference rou-tine. It iteratively integrates the flow ODE using a scheduler-consistent predictor, estimates future velocity via a single finite-difference peek, and adaptively accepts or interpolates each step based on local curvature, achieving stability and ef-ficiency without additional model evaluations, as illustrated in Figure 2. 
+
+Algorithm 1 Look-Ahead Sampling with Curvature Gate 
+
+Require: trained field vΘ(·, ·, c ), scheduler timesteps 
+
+{tk}Kk=0 with ∆k = tk − tk+1 , initial latent z0 ∼ p1
+
+at t0 = 1 , curvature threshold τcurv > 0, interpolation factor γ ∈ (0 , 1) , numerical epsilon ε 
+
+> 1:
+
+z ← z0, t ← t0 
+
+> 2:
+
+for k = 0 , 1, . . . , K − 1 do  
+
+> 3:
+
+v ← vΘ(z, t, c ) 
+
+> 4:
+
+˜z ← SchedulerStep (z, v, t ), ˜t ← t − ∆k 
+
+> 5:
+
+˜v ← (z − ˜z)/∆k 
+
+> 6:
+
+κ ← ∥ ˜v − v∥2/(∥˜z − z∥2 + ε) 
+
+> 7:
+
+if κ ≤ τcurv then  
+
+> 8:
+
+z ← ˜z {accept full step } 
+
+> 9:
+
+else  
+
+> 10:
+
+z ← z + γ(˜ z − z) {interpolate } 
+
+> 11:
+
+end if  
+
+> 12:
+
+t ← ˜t 
+
+> 13:
+
+end for  
+
+> 14:
+
+return z
+
+Reduction to Conventional Flow Sampling When 
+
+τcurv = ∞ or γ = 1 , the curvature gate never triggers interpolation, it becomes identical to conventional flow sam-pling. 
+
+## 5. Look-Back Scheme for Flow Sampling 
+
+While the Look-Ahead scheme stabilizes integration by probing future trends, the Look-Back scheme complements it by peeking into the past. It leverages exponentially aver-aged latents to damp high-frequency oscillations, providing a memory-efficient and training-free stabilization mecha-nism. 4Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing 
+
+Exponential State Averaging We maintain an exponen-tially weighted history of latent states: 
+
+¯zk = γ(tk) ¯ zk−1 +  1 − γ(tk) zk, ¯z−1 = z0, (9) where γ(t) ∈ [0 , 1) controls the decay rate. The averaged state ¯zk acts as a low-variance memory of the trajectory, filtering transient noise while preserving the coarse struc-ture of the flow dynamics. As γ(t) decreases, ¯zk becomes more responsive to the current latent, ensuring the averag-ing influence vanishes near convergence. Exponential state averaging functions as a temporal low-pass filter, suppress-ing jitter during mid-range timesteps with high stochastic variance. This yields smoother latent paths and improved numerical robustness for rectified-flow dynamics. 
+
+Backward-Referenced yet Forward-Stabilizing Unlike the look-ahead method that extrapolates into the future, the Look-Back scheme stabilizes integration by referencing past states. Velocity is evaluated at a blended latent that combines the current state with its exponentially smoothed history: 
+
+zpeek  
+
+> k
+
+= (1 − λ) zk + λ ¯zk−1, λ ∈ [0 , 1] . (10) Here, ¯zk−1 captures the slow manifold of recent dynam-ics, serving as a denoised, low-frequency reference. Al-though the mechanism peeks backward, its effect is forward-stabilizing : the blended latent aligns velocity evaluation with the stable trajectory toward which the flow is converg-ing. The corresponding update reads 
+
+zk+1 = zk − ηk vΘ(zpeek  
+
+> k
+
+, t k, c ), (11) where vΘ is the learned velocity field. This implicit damping mitigates overshooting and oscillatory motion without bias-ing the underlying flow manifold. By peeking into the past, the sampler anticipates the stable manifold of the trajectory, reducing variance and promoting smooth convergence in stiff or noisy regions of the flow. 
+
+SNR-Aware Decay Scheduling To adapt the smoothing strength across noise levels, we define γ(t) as a logistic function of the log-SNR: 
+
+γ(t) = γmax · σ
+
+
+
+β[ξ(t) − ξ∗]
+
+
+
+, (12) where σ denotes the sigmoid, β controls transition steepness, and ξ(t) = log( a2 
+
+> t
+
+/b 2 
+
+> t
+
+) is the log-SNR derived from the generative process zt = atx0 + btϵ with ϵ ∼ N (0 , I ). For rectified flows, at = 1 − t and bt = t yield ξ(t) = 2 log 1−tt ;for diffusion models, at = √¯αt and bt = √1 − ¯αt, so 
+
+ξ(t) = log(¯ αt/(1 − ¯αt)) . The midpoint ξ∗ marks maximal uncertainty: when ξ(t) < ξ ∗, γ(t) stays high for strong smoothing; as ξ(t) → ∞ , γ(t) → 0, recovering the native solver near convergence. 
+
+Algorithm Algorithm 2 outlines the complete inference procedure for the Look-Back sampling, as illustrated in Fig-ure 3. At each step, it maintains an exponentially averaged latent state, peeks into this smoothed history to evaluate a stabilized velocity, and updates the current latent accord-ingly, achieving noise-averaged, training-free flow sampling with improved stability and smoothness. 
+
+Algorithm 2 Look-Back Sampling for Flow Models 
+
+Require: vΘ, schedule {(tk, η k)}K−1 
+
+> k=0
+
+, decay γ(t), blend 
+
+λ, condition c
+
+1: z0 ∼ N (0 , I ); ¯z−1 ← z0
+
+2: for k = 0 to K − 1 do 
+
+3: ¯zk ← γ(tk)¯ zk−1 +  1 − γ(tk)zk
+
+4: zpeek  
+
+> k
+
+← (1 − λ)zk + λ¯zk−1
+
+5: vk ← vΘ(zpeek  
+
+> k
+
+, t k, c )
+
+6: zk+1 ← zk − ηkvk
+
+7: end for 
+
+8: return zK
+
+Reduction to Conventional Flow Sampling When λ =0, the blended latent in (10) reduces to the current state zk,and the update rule in (11) becomes identical to the standard Euler step. 
+
+## 6. Complexity Analysis 
+
+Let Cv denote the cost of one model (velocity field) eval-uation vΘ(z, t, c ), K the total number of sampling steps, and d the latent dimensionality. Both proposed schemes preserve the same asymptotic complexity as standard flow sampling, requiring only one model evaluation per step. As summarized in Table 3, Look-Ahead and Look-Back intro-duce minor O(K, d ) vector operations for curvature gating and exponential averaging, resulting in negligible runtime overhead and slightly higher memory usage for the run-ning average in Look-Back. Overall, both methods achieve improved stability and smoothness at nearly identical com-putational cost to the baseline. 
+
+Table 1. Complexity comparison of different flow sampling schemes. Cv denotes a single model evaluation cost; d is latent dimension.                  
+
+> Method Model Calls / Step Time Complexity Extra Memory
+> Conventional Flow Sampling 1O(K, C v)O(d)
+> Look-Ahead 1O(K, C v+K, d )O(d)
+> Look-Back 1O(K, C v+K, d )O(2 d)
+
+## 7. Experiment & Analysis 
+
+Experimental Set-Up We evaluate all methods under identical SDv3.5 inference settings, comparing the base-line sampler with the proposed Look-Ahead and Look-Back 5Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing 
+
+Table 2. Performance of generated images produced by various methods on COCO17, CUB-200, and Flickr30K.                                                                                                                                                 
+
+> Dataset Method FID ↓IS ↑CLIPScore ↑BLEU-4 ↑METEOR ↑ROUGE-L ↑CLAIR ↑
+> COCO17 (Lin et al., 2014) SDv3.5 28.46 33.64 0.3284 7.99 29.17 35.11 71.45 SDv3.5 w/ A-Euler (Jin et al., 2025) 27.64 34.63 0.3284 7.96 29.09 35.17 71.23 SDv3.5 w/ Self-Guidance (Li et al., 2025) 40.98 28.54 0.3121 6.52 26.18 31.59 62.26 SDv3.5 w/ Momentum 29.36 33.27 0.3329 8.26 29.43 35.27 71.41 SDv3.5 w/ Look-Ahead 26.17 34.60 0.3296 8.82 30.45 36.15 72.99
+> SDv3.5 w/ Look-Back 26.27 34.81 0.3294 8.76 30.53 36.17 72.77
+> CUB-200 (Welinder et al., 2010) SDv3.5 24.92 4.81 32.40 0.13 16.57 17.64 66.69 SDv3.5 w/ A-Euler (Jin et al., 2025) 22.98 5.05 32.50 0.12 16.39 17.51 66.22 SDv3.5 w/ Self-Guidance (Li et al., 2025) 61.16 4.98 31.25 0.18 17.85 17.78 62.28 SDv3.5 w/ Momentum 26.25 4.67 32.64 0.18 17.02 17.94 66.57 SDv3.5 w/ Look-Ahead 21.99 5.12 32.64 0.14 16.64 17.65 66.78
+> SDv3.5 w/ Look-Back 19.73 5.32 32.96 0.15 16.81 17.86 66.65
+> Flickr30K (Plummer et al., 2015) SDv3.5 79.58 17.95 0.3379 4.12 23.88 29.30 68.03 SDv3.5 w/ A-Euler (Jin et al., 2025) 78.57 17.83 0.3371 3.91 22.99 29.00 67.56 SDv3.5 w/ Self-Guidance (Li et al., 2025) 93.07 14.44 0.3160 3.35 20.80 26.27 57.35 SDv3.5 w/ Momentum 79.05 17.56 0.3420 4.18 24.27 29.32 67.20 SDv3.5 w/ Look-Ahead 75.88 18.12 0.3388 4.97 25.32 30.58 70.16
+> SDv3.5 w/ Look-Back 75.62 18.30 0.3386 4.73 25.26 30.07 69.43
+
+schemes, as well as prior training-free baselines A-Euler (Jin et al., 2025) and Self-Guidance (Li et al., 2025). All mod-els adopt a 25-step sampling schedule with classifier-free guidance (CFG) = 7, ensuring that performance variations reflect only the stabilization behavior. The chosen configura-tion follows recommendations from prior studies (Liu et al., 2023; Lu et al., 2022; Wang et al., 2024b) and the Hugging-Face guidelines. A single random seed is sampled once and fixed across all experiments. All hyperparameters related to the proposed methods are provided in the appendix. We conduct evaluations on three benchmark datasets: COCO17 (Lin et al., 2014) (validation set), CUB-200 (Welinder et al., 2010) (test set), and Flickr30K (Plum-mer et al., 2015) (test set), covering diverse image–text do-mains for assessing both visual fidelity and semantic align-ment. All images are generated at a resolution of 512 × 512 ,following the protocol in (Ma et al., 2024). We evaluate image generation quality using FID (Heusel et al., 2017), IS (Salimans et al., 2016), and CLIPScore (Hes-sel et al., 2021) to assess visual fidelity and seman-tic alignment. Additionally, captions for generated im-ages are produced using BLIPv2 (Li et al., 2023) and compared with ground-truth captions via language-based metrics including BLEU-4 (Papineni et al., 2002), ME-TEOR (Banerjee & Lavie, 2005), ROUGE-L (Lin, 2004), and CLAIR (Chan et al., 2023), providing comprehensive evaluation of text–image consistency. 
+
+Performance As shown in Table 2, the proposed Look-Ahead and Look-Back schemes consistently outperform existing training-free samplers in both fidelity and semantic alignment. On COCO17, Look-Ahead achieves the lowest FID of 26.17 and the highest BLEU-4 of 8.82, surpassing A-Euler (27.64 FID) and Momentum (29.36 FID). Look-Back attains a similar FID (26.27) while further improving IS to 34.81 and METEOR to 30.53. These results indicate that curvature-aware interpolation and exponential latent averaging jointly enhance the numerical stability of ODE integration, reducing oscillations without extra model evalu-ations. In particular, both methods substantially outperform Self-Guidance (40.98 FID, 28.54 IS), which modifies the velocity field but often amplifies instability in rectified-flow inference. The observed gains in CLAIR, 72.99 for Look-Ahead and 72.77 for Look-Back, demonstrate their effec-tiveness in maintaining high-level semantic coherence while stabilizing low-level integration dynamics. The advantages of the proposed methods generalize across diverse datasets with distinct statistical characteristics. On CUB-200, Look-Ahead and Look-Back reduce the FID from 24.92 (baseline) to 21.99 and 19.73, respectively. The improvement of about 5 points indicates enhanced image fidelity and better integration stability. On Flickr30K, Look-Ahead improves BLEU-4 from 4.12 to 4.97 and ROUGE-L from 29.30 to 30.58, showing that curvature-gated correc-tion strengthens text-image consistency. Meanwhile, Look-Back achieves the lowest FID (75.62 vs. 79.58 baseline) and the highest IS (18.30 vs. 17.95 baseline), confirm-ing smoother and more reliable convergence in the pres-ence of high-curvature dynamics. Together, these results demonstrate that the proposed Look-Ahead and Look-Back schemes not only stabilize the numerical integration but also consistently improve both visual fidelity and semantic alignment across datasets of varying complexity. 
+
+Qualitative Analysis Figure 4 qualitatively highlights that the proposed Look-Ahead and Look-Back schemes produce sharper, more coherent, and semantically faithful images than all baselines. For instance, in the Peace River Animals Jigsaw Puzzle example, both methods recover fine-grained details in the animal textures and forest background that are lost in Momentum or A-Euler, while maintaining natural composition and color consistency. Similarly, in the Street sign example, Look-Ahead and Look-Back clearly render the “Queens / Bronx” text and truck icon with legible edges, whereas baselines produce fragmented signage. 6Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing 
+
+Caption Momentum Self Guidance A-Euler Pretrained Look-Ahead Look-Back                                                                      
+
+> Peace River Animals Jigsaw Puzzle
+> 70 /0.38 40 /0.24 40 /0.34 60 /0.37 85 /0.39 90 /0.38 An intersection with a stoplight on a roadway that has no vehicles traveling on it.
+> 50 /0.30 85 /0.33 30 /0.28 20 /0.31 85 /0.31 85 /0.31 A person flying a kite on wet sand
+> 90 /0.35 90 /0.35 90 /0.34 60 /0.33 90 /0.33 90 /0.34 An green and white overhead street sign on Interstate 278 for Queens and Bronx, showing a truck restriction
+> 70 /0.38 60 /0.35 60 /0.41 40 /0.37 85 /0.41 85 /0.42
+> Figure 4. Qualitative comparison showing LookAhead and LookBack produce higher quality images with better coherence and detail than baseline methods. Scores shown are CLAIR / CLIPScore.
+
+Figure 5 reveals clear qualitative advantages of the proposed schemes over standard sampling. For the astronaut com-position, Look-Ahead and Look-Back generate markedly richer cosmic scenes with more intricate starfield details and refined suit textures, whereas standard sampling produces a flatter, less detailed result. In the portrait, the key differ-ence lies in the realistic raindrop details rendered on the woman’s coat by both proposed methods, an atmospheric nuance completely absent in the standard sampling. 
+
+Ablation Study Figure 6 analyzes the sensitivity of the pro-posed Look-Ahead and Look-Back schemes to their key hyperparameters, revealing how curvature gating and expo-nential averaging jointly govern stability and fidelity during ODE integration. In the Look-Ahead scheme, both the curvature threshold τcurv and interpolation factor γ control the balance between numerical conservativeness and trajec-tory progress. As shown in Figures 6(a)–(b), excessively large τcurv values permit unstable full-step updates resem-bling Euler behavior, while overly restrictive thresholds hinder convergence; the optimal regime emerges around 
+
+τcurv = 1 and γ = 0 .9, which achieve the lowest FID (75.88) and highest CLIPScore (0.3388), confirming that moderate curvature moderation yields the best trade-off be-tween efficiency and smoothness. In the Look-Back scheme, Figures 6(c)–(d) illustrate that small blending weights and a centered SNR midpoint ( ξ∗ = 0 ) produce the most sta-ble results. Larger λ over-smooths latent trajectories and biases the generative path, whereas proper SNR-dependent decay γ(t) ensures that smoothing fades near convergence, allowing high-frequency details to re-emerge. Collectively, these ablations demonstrate that both schemes are robust within a broad parameter range and validate the importance of curvature-aware moderation and adaptive temporal aver-aging for stable training-free flow sampling. 7Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing Astronaut floating in a sea of stars, surreal cosmic composition Portrait of a woman under rain with transparent umbrella, shallow DOF, bokeh city lights background, cinematic melancholy Look-Ahead Standard Sampling Look-Back 
+
+Figure 5. Visual effects of different γ (Look-Ahead) and λ (Look-Back). The Look-Ahead and Look-Back generations exhibit richer and more intricate visual details in the astronaut compared to the standard sampling. In the rainy portrait, the Look-Ahead and Look-Back generations produce more realistic raindrop details on the girl’s coat, making the scene more consistent with a rainy atmosphere, whereas the standard sampling fails to capture such effects. =0.9 =0.95 =0.99  
+
+> 74
+> 75
+> 76
+> 77
+> 78
+> 79
+> 80
+> FID Score
+> 75.88
+> 77.14
+> 78.36
+> FID Score
+> CLIP Score
+> 0.3360
+> 0.3365
+> 0.3370
+> 0.3375
+> 0.3380
+> 0.3385
+> 0.3390
+> 0.3395
+> 0.3400
+> CLIP Score
+> 0.3388
+> 0.3381 0.3380
+
+(a) Look-Ahead ( τcurv = 1 ). curv =1 curv =15 curv =20 curv =25  
+
+> 75.0
+> 75.5
+> 76.0
+> 76.5
+> 77.0
+> 77.5
+> 78.0
+> 78.5
+> 79.0
+> FID Score
+> 75.88
+> 76.79
+> 77.55
+> 77.81
+> FID Score
+> CLIP Score
+> 0.3370
+> 0.3375
+> 0.3380
+> 0.3385
+> 0.3390
+> 0.3395
+> 0.3400
+> CLIP Score
+> 0.3388
+> 0.3383
+> 0.3385
+> 0.3387
+
+(b) Look-Ahead ( γ = 0 .9). =0.05 =0.1 =0.2  
+
+> 74
+> 75
+> 76
+> 77
+> 78
+> 79
+> 80
+> 81
+> 82
+> 83
+> FID Score
+> 76.61
+> 75.23
+> 81.36
+> FID Score
+> CLIP Score
+> 0.336
+> 0.337
+> 0.338
+> 0.339
+> 0.340
+> 0.341
+> 0.342
+> CLIP Score
+> 0.3379 0.3378
+> 0.3406
+
+(c) Look-Back ( ξ∗ = 0 ). =-0.25 =0 =0.25  
+
+> 74.0
+> 74.5
+> 75.0
+> 75.5
+> 76.0
+> 76.5
+> 77.0
+> FID Score
+> 75.62
+> 75.23
+> 75.62
+> FID Score
+> CLIP Score
+> 0.3360
+> 0.3365
+> 0.3370
+> 0.3375
+> 0.3380
+> 0.3385
+> 0.3390
+> 0.3395
+> 0.3400
+> CLIP Score 0.3386
+> 0.3378
+> 0.3386
+
+(d) Look-Back ( λ = 0 .1). 
+
+Figure 6. Ablation study of key hyperparameters related to the proposed methods on Flickr30K. 
+
+Runtime Under identical settings, SDv3.5 requires 11.0 seconds per image, while Look-Ahead and Look-Back take 11.4 and 11.2 seconds, respectively, introducing only a marginal overhead. 
+
+## 8. Conclusion 
+
+We presented two complementary training-free latent-trajectory smoothing methods, Look-Ahead and Look-Back, which refine the flow-matching generative process directly in latent space. Unlike prior approaches that modify the velocity field and risk accumulating errors along the sam-pling path, our latent-trajectory adjustments benefit from the intrinsic corrective behavior of the pretrained veloc-ity network, leading to more stable and robust generation. Look-Ahead leverages curvature-gated averaging with fu-ture latents, while Look-Back applies an exponentially de-cayed moving average informed by past states. Extensive experiments on COCO17, CUB-200, and Flickr30K show that our methods consistently outperform strong state-of-the-art baselines across a wide range of metrics. These results highlight latent-trajectory smoothing as an effective and general strategy for improving training-free flow-based image generation. 
+
+## Impact Statement 
+
+This work introduces Look-Ahead and Look-Back, training-free mechanisms that enhance the numerical stability and trajectory fidelity of flow-based generative models. By cor-recting discretization errors such as divergence and over-shooting, these methods ensure that the generated output adheres more strictly to the semantic intent and distribution defined by the pre-trained velocity field. 8Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing 
+
+There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. Because our contribution is restricted to a numerical stabi-lization technique that does not modify model parameters or training data, it introduces no new ethical dimensions or risks independent of the pre-trained model weights. 
+
+## References 
+
+Albergo, M. S. and Vanden-Eijnden, E. Building normaliz-ing flows with stochastic interpolants. In International Conference on Learning Representations , 2023. Avrahami, O., Patashnik, O., Fried, O., Nemchinov, E., Aberman, K., Lischinski, D., and Cohen-Or, D. Stable flow: Vital layers for training-free image editing. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. Banerjee, S. and Lavie, A. METEOR: An automatic metric for mt evaluation with improved correlation with human judgments. In Proceedings of the ACL Workshop on In-trinsic and Extrinsic Evaluation Measures for Machine Translation and/or Summarization , pp. 65–72, Ann Arbor, Michigan, USA, June 2005. Association for Computa-tional Linguistics. Bose, A. J., Akhound-Sadegh, T., Huguet, G., Fatras, K., Rector-Brooks, J., Liu, C.-H., Nica, A. C., Korablyov, M., Bronstein, M. M., and Tong, A. Se(3)-stochastic flow matching for protein backbone generation. In Interna-tional Conference on Learning Representations , 2024. Bu, J., Ling, P., Zhou, Y., Zhang, P., Dong, X., Zang, Y., Cao, Y., Wu, T., Lin, D., and Wang, J. Hiflow: Training-free high-resolution image generation with flow-aligned guidance. Advances in Neural Information Processing Systems , 2025. Chan, D., Petryk, S., Gonzalez, J., Darrell, T., and Canny, J. Clair: Evaluating image captions with large language models. In Proceedings of the 2023 Conference on Em-pirical Methods in Natural Language Processing , pp. 13638–13646, 2023. Chen, R. T. Q. and Lipman, Y. Flow matching on general geometries. In The Twelfth International Conference on Learning Representations , 2024. Esser, P., Kulal, S., Blattmann, A., Entezari, R., M ¨uller, J., Saini, H., Levi, Y., Lorenz, D., Sauer, A., Boesel, F., Podell, D., Dockhorn, T., English, Z., Lacey, K., Good-win, A., Marek, Y., and Rombach, R. Scaling rectified flow transformers for high-resolution image synthesis. In 
+
+International Conference on Machine Learning , 2024. Gat, I., Remez, T., Shaul, N., Kreuk, F., Chen, R. T. Q., Synnaeve, G., Adi, Y., and Lipman, Y. Discrete flow matching. 2024. Hessel, J., Holtzman, A., Forbes, M., Le Bras, R., and Choi, Y. CLIPscore: A reference-free evaluation metric for image captioning. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing ,pp. 7514–7528, Online and Punta Cana, Dominican Re-public, November 2021. Association for Computational Linguistics. Heusel, M., Ramsauer, H., Unterthiner, T., Nessler, B., and Hochreiter, S. Gans trained by a two time-scale update rule converge to a local nash equilibrium. In Advances in Neural Information Processing Systems , volume 30, pp. 6626–6637, 2017. Jin, C. et al. A-flops: Accelerating diffusion sam-pling with adaptive flow path sampler. arXiv preprint arXiv:2509.00036 , 2025. Kornilov, N., Mokrov, P., Gasnikov, A., and Korotin, A. Optimal flow matching: Learning straight trajectories in just one step. 2024. Kulikov, V., Kleiner, M., Huberman-Spiegelglas, I., and Michaeli, T. Flowedit: Inversion-free text-based editing using pre-trained flow models. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pp. 19721–19730, 2025. Lee, S., Lin, Z., and Fanti, G. Improving the training of recti-fied flows. In Advances in Neural Information Processing Systems , volume 37, pp. 63082–63109, 2024. Li, J., Li, D., Savarese, S., and Hoi, S. Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models. In International conference on machine learning , pp. 19730–19742. PMLR, 2023. Li, T. et al. Self-guidance: Boosting flow and diffusion generation on their own. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. Lin, C.-Y. ROUGE: A package for automatic evaluation of summaries. In Text Summarization Branches Out ,pp. 74–81, Barcelona, Spain, July 2004. Association for Computational Linguistics. Lin, T.-Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ra-manan, D., Doll ´ar, P., and Zitnick, C. L. Microsoft coco: Common objects in context. In European conference on computer vision , pp. 740–755. Springer, 2014. Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. In 11th International Conference on Learning Representations, ICLR 2023 , 2023. 9Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing 
+
+Liu, J., Liu, G., Liang, J., Li, Y., Liu, J., Wang, X., Wan, P., Zhang, D., and Ouyang, W. Flow-grpo: Training flow matching models via online rl. Advances in Neural Information Processing Systems , 2025. Liu, X., Gong, C., and Liu, Q. Rectified flow: A marginal preserving approach to optimal transport. arXiv preprint arXiv:2209.03003 , 2022. Liu, X., Gong, C., and Liu, Q. Flow straight and fast: Learning to generate and transfer data with rectified flow. In International Conference on Learning Representations ,2023. Liu, X., Zhang, X., Ma, J., Peng, J., and Liu, Q. Instaflow: One step is enough for high-quality diffusion-based text-to-image generation. In International Conference on Learning Representations , 2024. Lu, C., Zhou, Y., Bao, F., Chen, J., Li, C., and Zhu, J. Dpm-solver: A fast ode solver for diffusion probabilistic model sampling in around 10 steps. Advances in neural information processing systems , 35:5775–5787, 2022. Luo, Y., Du, D., Huang, H., Fang, Y., and Wang, M. Curve-flow: Curvature-guided flow matching for image genera-tion. arXiv preprint arXiv:2508.15093 , 2025. Ma, N., Goldstein, M., Albergo, M. S., Boffi, N. M., Vanden-Eijnden, E., and Xie, S. Sit: Exploring flow and diffusion-based generative models with scalable interpolant trans-formers. In European Conference on Computer Vision ,pp. 23–40. Springer, 2024. Papineni, K., Roukos, S., Ward, T., and Zhu, W. BLEU: a method for automatic evaluation of machine transla-tion. In Proceedings of the 40th Annual Meeting of the Association for Computational Linguistics , pp. 311–318, Philadelphia, Pennsylvania, USA, July 2002. Association for Computational Linguistics. Patel, M., Wen, S., Metaxas, D. N., and Yang, Y. Flowchef: Steering of rectified flow models for controlled gener-ations. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 15308–15318, 2025. Plummer, B. A., Wang, L., Cervantes, C. M., Caicedo, J. C., Hockenmaier, J., and Lazebnik, S. Flickr30k entities: Collecting region-to-phrase correspondences for richer image-to-sentence models. In Proceedings of the IEEE international conference on computer vision , pp. 2641– 2649, 2015. Rout, L., Chen, Y., Ruiz, N., Caramanis, C., Shakkottai, S., and Chu, W.-S. Semantic image inversion and editing using rectified stochastic differential equations. arXiv preprint arXiv:2410.10792 , 2024. Salimans, T., Goodfellow, I., Zaremba, W., Cheung, V., Radford, A., and Chen, X. Improved techniques for training gans. arXiv preprint arXiv:1606.03498 , 2016. Wang, F.-Y., Huang, Z., Bergman, A. W., Shen, D., Gao, P., Lingelbach, M., Sun, K., Bian, W., Song, G., Liu, Y., and Li, H. Straightness is not your need in rectified flow. In 
+
+International Conference on Learning Representations ,2024a. Wang, F.-Y., Yang, L., Huang, Z., Wang, M., and Li, H. Rec-tified diffusion: Straightness is not your need in rectified flow. arXiv preprint arXiv:2410.07303 , 2024b. Wang, J., Pu, J., Qi, Z., Guo, J., Ma, Y., Huang, N., Chen, Y., Li, X., and Shan, Y. Taming rectified flow for inversion and editing. arXiv preprint arXiv:2411.04746 , 2024c. Wang, J., Pu, J., Qi, Z., Guo, J., Ma, Y., Huang, N., Chen, Y., Li, X., and Shan, Y. Taming rectified flow for inversion and editing. In International Conference on Machine Learning , 2025a. Wang, L. et al. Training free optimal control flow (oc-flow). In International Conference on Learning Representations ,2025b. Welinder, P., Branson, S., Mita, T., Wah, C., Schroff, F., Belongie, S., and Perona, P. Caltech-ucsd birds 200. 2010. Yoon, S.-H., Li, M., Beaudouin, G., Wen, C., Azhar, M. R., and Wang, M. Splitflow: Flow decomposition for inversion-free text-to-image editing. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. 10 Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing 
+
+## A. Sampling with Momentum 
+
+For each sample trajectory, we maintain a first-moment vector mk initialized to zero. At each step, we update this momentum using an exponential moving average: 
+
+gk = − vΘ(zk, t k, c ), (13) 
+
+mk+1 = β1 mk + (1 − β1) gk, (14) 
+
+zk+1 = zk + ηk mk+1 , (15) where β1 ∈ [0 , 1) controls the momentum strength (e.g., 0.8 by default). This formulation introduces temporal smoothness in velocity directions and stabilizes sampling for stiff or high-curvature trajectories. This training-free method maintains momentum independently for each trajectory without batch sharing, introducing negligible computational overhead by requiring only one additional vector state per sample. Notably, in the specific case where β1 = 0 , the algorithm reduces exactly to the vanilla Euler solver. Empirically, we observe that β1 = 0 .8 achieves the optimal performance on Flickr30K. 
+
+## B. Pseudo Algorithm 
+
+Algorithm 3 Sampling with Momentum 
+
+Require: Trained velocity field vΘ, condition c, time grid 1 = t0 > · · · > t K = 0 , step sizes ηk, momentum coefficient β1 
+
+> 1:
+
+Sample z0 ∼ p1 {initialize from noise prior } 
+
+> 2:
+
+m0 ← 0 
+
+> 3:
+
+for k = 0 , 1, . . . , K − 1 do  
+
+> 4:
+
+gk ← − vΘ(zk, t k, c ) 
+
+> 5:
+
+mk+1 ← β1mk + (1 − β1)gk 
+
+> 6:
+
+zk+1 ← zk + ηkmk+1  
+
+> 7:
+
+end for  
+
+> 8:
+
+return zK {final generated sample }
+
+Fundamentally, this approach operates as a form of trajectory smoothing. The method acts as a temporal low-pass filter on the flow velocity, suppressing abrupt direction changes (high-frequency oscillations) while preserving the global flow geometry. By aggregating historical directional information, the momentum term effectively straightens the integration path, making it robust to local irregularities or noise in the learned velocity field. This avoids the need to assume diminishing gradients and ensures the solver smoothly reduces to Euler when β1 → 0, providing convergence stability with minimal overhead. 
+
+## C. Complexity Analysis 
+
+We now analyze and compare the computational complexity of three flow sampling schemes, i.e., conventional, Look-Ahead, and Look-Back, in terms of their dominant operations per timestep. Let Cv denote the cost of one model (velocity field) evaluation vΘ(z, t, c ), and K the total number of sampling steps. 
+
+Conventional Flow Sampling Each step directly evaluates the velocity field once and performs a single latent update Eq. (5). Hence, the total cost scales linearly with K:
+
+Cflow = K C v .
+
+Look-Ahead Sampling The proposed Look-Ahead scheme estimates the peek velocity ˜v via a finite-difference extrap-olation Eq. (6) without invoking an additional model call. Thus, its computational complexity remains identical to the conventional solver, but with extra O(d) vector arithmetic per step (where d is latent dimensionality), which is negligible compared to Cv .
+
+CLA = K C v + O(K d ).
+
+In practice, the runtime overhead is marginal ( < 3% ), as the dominant cost remains model evaluation. 11 Look-Ahead and Look-Back Flows: Training-Free Image Generation with Trajectory Smoothing                   
+
+> Table 4. Key hyperparameters related to the proposed look-ahead scheme.
+> Dataset γτcurv
+> COCO-2017 0.9 10 CUB-200 0.95 1Flickr30K 0.9 1
+> Table 5. key hyperparameters related to the proposed look-back scheme.
+> Dataset λξ∗
+> COCO-2017 0.1 0CUB-200 0.1 0Flickr30K 0.1 0.25
+
+Look-Back Sampling The Look-Back scheme introduces exponentially weighted averaging and blending operations Eq. (9)–Eq. (10), both linear in d. Like Look-Ahead, it performs one velocity-field query per step; thus its asymptotic complexity also matches the baseline: 
+
+CLB = K C v + O(K d ).
+
+However, its memory footprint is slightly higher due to storage of the running average ¯zk.Table 3 summarizes the comparative complexity, model calls, and memory cost. Both Look-Ahead and Look-Back retain the same asymptotic complexity as conventional flow sampling, offering stability or smoothness improvements at nearly constant computational cost.      
+
+> Table 3. Complexity comparison of different flow sampling schemes. Cvdenotes a single model evaluation cost; dis latent dimension.
+
+Method Model Calls / Step Time Complexity Extra Memory 
+
+Conventional Flow Sampling 1 O(K C v ) O(d)
+
+Look-Ahead (Curvature-Gated) 1 O(K C v + K d ) O(d)
+
+Look-Back (EMA-Stabilized) 1 O(K C v + K d ) O(2 d)
+
+The additional O(K d ) arithmetic in Look-Ahead and Look-Back schemes is computationally negligible in practice, since d
+
+corresponds to the latent dimensionality of the VAE or diffusion backbone rather than the pixel space. Typical latent sizes (e.g., d ≈ 4 × 64 × 64 for Stable Diffusion) are orders of magnitude smaller than the full image dimensionality. Consequently, the total overhead K d remains well within modern GPU memory and compute budgets even for large K (e.g., K ≤ 100 ). This ensures that both Look-Ahead and Look-Back sampling remain fully feasible and efficient in high-resolution generative pipelines, maintaining near-identical runtime to the baseline solver while providing enhanced stability and smoothness. 
+
+## D. Implementation Details 
+
+CLAIR (Chan et al., 2023) leverages a Large Language Model to evaluate semantic equivalence. For the CLAIR implemen-tation, we utilize the OpenAI gpt-4.1-mini model as the evaluator backend. To ensure reproducibility, we detail the specific hyperparameter configurations used for the Look-Ahead and Look-Back schemes across the evaluated datasets (COCO17, CUB-200, and Flickr30K). For the Look-Ahead scheme, the curvature threshold τcurv and the interpolation factor γ are tuned to balance trajectory fidelity with sampling efficiency; these settings are provided in Table 4. For the Look-Back scheme, we specify the blending weight λ and the SNR midpoint ξ∗, which jointly control the intensity of the history-based stabilization and the decay scheduling. These values are listed in Table 5. Regarding the dataset protocols, since both COCO17 and Flickr30K provide five captions per image, we use the specific prompt that achieves the best CLIPScore for evaluation purposes. 12

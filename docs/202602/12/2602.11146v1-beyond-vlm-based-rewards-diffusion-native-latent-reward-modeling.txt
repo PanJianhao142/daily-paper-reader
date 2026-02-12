@@ -1,0 +1,987 @@
+Title: Beyond VLM-Based Rewards: Diffusion-Native Latent Reward Modeling
+
+URL Source: https://arxiv.org/pdf/2602.11146v1
+
+Published Time: Thu, 12 Feb 2026 02:24:10 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Beyond VLM-Based Rewards: Diffusion-Native Latent Reward Modeling 
+
+## Gongye Liu 1, Bo Yang 1, Yida Zhi 1, Zhizhou Zhong 1, Lei Ke 3, Didan Deng 2, Han Gao 2,Yongxiang Huang 2, Kaihao Zhang 4, Hongbo Fu 1, Wenhan Luo 1 †
+
+> 1
+
+The Hong Kong University of Science and Technology 
+
+> 2
+
+Huawei Hong Kong AI Framework & Data Technologies Lab 
+
+> 3
+
+Tsinghua University 4The Australian National University 
+
+## Abstract 
+
+Preference optimization for diffusion and flow-matching models relies on reward functions that are both discriminatively robust and computationally efficient. Vision-Language Models (VLMs) have emerged as the primary reward provider, leveraging their rich multimodal priors to guide alignment. However, their computation and memory cost can be substantial, and optimizing a latent diffusion generator through a pixel-space reward introduces a domain mismatch that complicates alignment. In this paper, we propose 
+
+DiNa-LRM , a di ffusion-na tive latent reward model that formulates preference learning directly on noisy diffusion states. Our method introduces a noise-calibrated Thurstone likelihood with diffusion-noise-dependent uncertainty. DiNa-LRM leverages a pretrained latent diffusion backbone with a timestep-conditioned reward head, and supports inference-time noise ensembling, providing a diffusion-native mechanism for test-time scaling and robust rewarding. Across image alignment benchmarks, DiNa-LRM substantially outperforms existing diffusion-based reward baselines and achieves performance competitive with state-of-the-art VLMs at a fraction of the computational cost. In preference optimization, we demonstrate that DiNa-LRM improves preference optimization dynamics, enabling faster and more resource-efficient model alignment.  
+
+> Website: https://github.com/HKUST-C4G/diffusion-rm
+
+## 1 Introduction 
+
+Diffusion [ 9] and flow-matching models [ 21 ] have become the dominant paradigm for high-quality visual generation, achieving remarkable progress in image [ 6, 44 ] and video synthesis [ 3 , 38 ]. As these models scale, aligning their outputs with human preferences has emerged as a critical challenge. A range of preference alignment algorithms, including Reward Feedback Learning [ 50 ], Direct Preference Optimization [ 20 , 37 , 52 ], and RL-based approaches such as GRPO [ 19 , 51 ], have been proposed and shown strong empirical results on large-scale foundation models [ 33 , 44 ]. Across these methods, the reward model is a key bottleneck because it provides the supervision signal that steers optimization. Most existing reward models for visual generation are built on large multimodal encoders, and recent work has increasingly adopted vision-language models (VLMs) as reward backbones [ 20 , 23 , 43 ]. Compared to earlier CLIP-based rewards [ 12 , 47 , 50 ], VLM-based rewards substantially improve accuracy and robustness. This trend is further amplified by backbone scaling, as larger VLMs often provide more robust discriminative ability through large-scale pretraining [ 45 ]. At the same time, using VLM rewards in alignment can be costly, especially when reward evaluation is queried repeatedly 
+
+> †Corresponding author.
+> arXiv:2602.11146v1 [cs.CV] 11 Feb 2026
+
+during optimization. Moreover, VLM rewards typically operate in pixel space, whereas latent diffusion generators are trained and optimized in latent space [ 31 ], which introduces a latent-to-pixel mismatch that complicates alignment and increases system overhead, especially for reward-gradient methods [28, 50]. These limitations motivate revisiting reward modeling from a diffusion-native perspective. Diffusion models form another family of large-scale pretrained backbones [ 6 , 38 ], and prior work shows that their generative pretraining yields rich representations that transfer to discriminative objectives, ranging from classification [ 14 , 49 ] to adversarial discrimination [ 32 , 53 ]. This raises a natural question: can diffusion backbones be turned into general-purpose reward models that remain competitive in preference discrimination while being more optimization-friendly for alignment? 
+
+Recent attempts [ 24 , 56 ] have begun to explore diffusion models as noise-aware rewards under specific alignment paradigms, often focusing on preference optimization over noisy intermediate states. While promising, this line of work is often tied to particular training algorithms and does not directly study diffusion backbones as general-purpose reward models under the same usage scenario as VLM rewards. In contrast, we focus on the reward model itself and study diffusion backbones as reusable reward models under the same usage scenario as VLM rewards, namely, scoring clean samples via latent-space evaluation. Our goal is to unlock the intrinsic discriminative capability of large-scale diffusion pretraining through diffusion-native preference modeling. 
+
+To this end, we propose DiNa-LRM , a diffusion-native latent reward model. DiNa-LRM formulates preference learning directly on noisy diffusion states by extending the Thurstone model with a noise-calibrated comparison uncertainty that scales with the diffusion noise level. Built on a pretrained latent diffusion backbone, DiNa-LRM predicts timestep-aware rewards in the VAE latent space with a scoring head. At inference time, DiNa-LRM supports noise ensembling that aggregates evidence from multiple timesteps within the reward head, providing a diffusion-native test-time scaling knob for more robust scoring. Experiments show that DiNa-LRM substantially improves over diffusion-based reward baselines and narrows the gap to strong VLM-based rewards on benchmark evaluations, while reducing memory overhead and improving optimization dynamics in preference optimization under the same setup. Our contributions are summarized as follows: 
+
+• Diffusion-native preference formulation. We extend the Thurstone preference model from clean samples to noisy diffusion states by introducing a noise-calibrated comparison uncertainty that scales with the noise level. 
+
+• Inference-time scaling via noise ensembling. We build a timestep-aware latent reward model on top of a pretrained latent diffusion backbone, and propose inference-time noise ensembling that aggregates multi-timestep features. 
+
+• Empirical evaluation of alignment behavior. We demonstrate that diffusion-native rewards substantially improve over diffusion-based baselines and narrow the gap to strong VLM rewards on benchmarks. 
+
+## 2 Related Works 
+
+CLIP-based Reward Models Early reward modeling [ 12 , 16 , 47 , 48 , 50 , 55 ] for text-to-image generation often repurposes CLIP-style vision-language pretraining as a proxy for human preference. Representative methods such as PickScore [ 12 ], HPS-v2 [ 47 ], and ImageReward [ 50 ] fine-tune CLIP [ 30 ] or BLIP [ 15 ] on human preference datasets to predict a single scalar score. Subsequent works have extended this paradigm to multi-dimensional assessments [ 55 ] and fine-grained feedback signals [ 16 ]. While computationally efficient, these models typically couple a frozen or fine-tuned encoder with a lightweight MLP head. Consequently, their performance is inherently bounded by the representational capacity of the pretrained CLIP models. 
+
+VLM-based Reward Models With rapid advances in large vision-language models [ 1, 10 , 40 ], recent reward modeling has increasingly shifted toward stronger VLM backbones that support richer semantic understanding, improved robustness, and better generalization. A common practice is to replace the VLM’s language head with a regression [ 8 , 20 , 23 ] or logit-based head [ 7, 45 , 54 ], and optimize the model for Bradley–Terry [ 2] or MSE objectives. Emerging generative reward models further leverage chain-of-thought [ 42 , 46 ], thinking-with-image [ 41 ], and VLM-as-a-verifier [ 57 ]strategies to produce structured reasoning before scoring. Despite their effectiveness, VLM-based reward models typically operate in pixel space and incur high inference cost. Crucially, their reliance on discrete text generation often renders gradient propagation impractical, limiting their application in on-policy, reward-gradient-based alignment. 
+
+Diffusion Models for Discriminative Task Beyond generation, recent studies have demonstrated that diffusion backbones learn transferable representations suitable for discriminative objectives such as classification [ 14 , 49 ]. Diffusion models have also been explored as discriminators [ 22 , 32 , 53 ] in adversarial training settings, leveraging their 2ability to process noisy inputs and their compatibility with latent-space pipelines. These findings suggest that diffusion backbones are natural candidates for reward modeling. Concurrent efforts [ 24 , 56 ] have investigated diffusion-based reward modeling, primarily focusing on step-level rewards over noisy intermediate states to facilitate trajectory-level optimization. In contrast, our work targets diffusion-based reward modeling in general-purpose preference alignment, where reward evaluation on clean images or latents. And we further investigate diffusion-native designs that improve reward quality and optimization efficiency under this setting. 
+
+## 3 Preliminaries 
+
+Diffusion Models In the discrete-time setting, diffusion models [ 9, 34 ] define a forward noising process that gradually perturbs a data sample x0 ∼ 𝑝 data into a noisy state x𝑡 over 𝑇 steps: 
+
+x𝑡 = 𝛼 (𝑡 )x0 + 𝜎 (𝑡 )x𝑇 , x𝑇 ∼ N ( 0, I), (1) where {𝛼 (𝑡 ), 𝜎 (𝑡 )} is a predefined noise schedule (typically satisfying 𝛼 2 (𝑡 ) + 𝜎 2 (𝑡 ) = 1). The reverse denoising process is parameterized by a neural backbone, such as U-Net [ 31 ] or DiT [ 25 ], and is commonly trained via 𝜖 -prediction that conditioned on timestep 𝑡 and an optional condition c:
+
+LDM (𝜃 ) = Ex0 ,x𝑇 ,𝑡 , c
+
+∥x𝑇 − 𝜖 𝜃 (x𝑡 , 𝑡, c)∥ 22
+
+ . (2) 
+
+Flow Matching Models Similarly, flow-matching models [ 17 , 21 ] generate samples by solving a continuous-time transport ODE, which can be described using the same linear forward form as Eq. 1 , with 𝛼 (𝑡 ) = 1 − 𝑡 and 𝜎 (𝑡 ) = 𝑡 
+
+defined in the rectified flow framework. The model learns a time-dependent velocity field 𝑣 𝜃 (x𝑡 , 𝑡, c) via 𝑣 -prediction regression, 
+
+LFM (𝜃 ) = Ex0 ,x1 ,𝑡 , c
+
+∥𝑣 𝜃 (x𝑡 , 𝑡, c) − ( x1 − x0)∥ 22
+
+ . (3) 
+
+Latent Space Modeling Diffusion and flow-matching share a similar formulation [ 18 ], so the proposed methods could apply to both. Throughout this paper, we adopt flow-matching notation : x0 denotes clean data and x1 denotes Gaussian noise. Both models typically operate in the frozen VAE latent Z [ 31 ], with optimization restricted to the denoising backbone. 
+
+## 4 Method 
+
+In this section, we propose DiNa-LRM , a Di ffusion-Na tive Latent Reward Model. We first introduce a diffusion-native preference formulation by extending the Thurstone model from clean samples to noisy diffusion states, where comparison uncertainty is explicitly calibrated by the noise level. We also present the fidelity-loss objective and timestep sampling strategies for optimization. We then describe the latent reward architecture built on a pretrained diffusion backbone with a query-based scoring head. Finally, we present an inference-time noise ensembling algorithm that aggregates multi-timestep features for test-time scaling. An overview of the full framework is provided in Figure 1 .
+
+4.1 Diffusion-native Preference Formulation 
+
+Given a text prompt c and a preference label indicating which sample is better within a pair (x+ 
+
+> 0
+
+, x− 
+
+> 0
+
+), our goal is to learn a scalar scoring function 𝑟 𝜃 (x0, c) ∈ R that assigns higher scores to preferred samples. 
+
+Thurstone Model on Clean Samples Human preference annotations are inherently noisy, since subjective judgments can be ambiguous and labeling inconsistent. Following the Thurstone model’s formulation [ 35 ], we treat human preferences as noisy observations derived from an underlying reward function 𝑟 𝜃 (x0, c). Specifically, we model the perceived quality of a sample as a stochastic reward 𝑢 (x0, c), defined as the additive composition of a deterministic score and a Gaussian noise term: 
+
+𝑢 (x0, c) = 𝑟 𝜃 (x0, c) + 𝜂, 𝜂 ∼ N ( 0, 𝜎 2 
+
+> 𝑢
+
+), (4) 3DiNa -LRM 
+
+𝑟 !(𝑥 ", 𝑡 , 𝑐 ) Thurstone 
+
+Model 
+
+Text Prompt 𝑐 
+
+Image 𝑥 !
+
+𝑡 Timestep   
+
+> Predicted Distribution
+> Fieldity Loss
+
+ℒ 
+
+> Noise -calibrated Distribution
+
+𝑘 ∗ 𝜎 #(𝑡 ) + 𝜎 $ 
+
+> #
+> Clean Distribution
+
+𝜎 $
+
+> #
+> Dif fusion
+> Backbones
+> FiLM
+> Modulation
+> FiLM
+> Modulation
+> Image
+
+𝑥 " 
+
+> Text Prompt
+
+𝑐 𝑡     
+
+> Timestep
+> 𝑡 !"#
+> {𝐹 $%$ }{𝐹 &'( }
+> Gated Q-Former
+> MLP
+> 𝑉 𝑇
+> Reward Score
+
+𝑟 !
+
+𝜎 (𝑡 )Figure 1 Overview of DiNa-LRM . Left: Diffusion-native Preference Learning. During training, clean preference pairs 
+
+(𝑥 + 
+
+> 0
+
+, 𝑥 − 
+
+> 0
+
+, 𝑐 ) are perturbed to noisy states (𝑥 + 
+
+> 𝑡
+
+, 𝑥 − 
+
+> 𝑡
+
+) and evaluated by a time-conditioned reward model 𝑟 𝜃 . We employ a noise-calibrated Thurstone likelihood where comparison variance scales with the diffusion noise level 𝜎 𝑡 , and optimize via a fidelity loss L. Right: Latent Reward Architecture. Multi-layer visual and text features extracted from a latent diffusion backbone are FiLM-modulated by timestep embeddings 𝑡 𝑒𝑚𝑏 . These features are aggregated through a gated Q-Former and an MLP to produce a scalar reward score. 
+
+where the noise term 𝜂 ∼ N ( 0, 𝜎 2 
+
+> 𝑢
+
+) captures the intrinsic ambiguity in human judgment. For a labeled pair (x+ 
+
+> 0
+
+, x− 
+
+> 0
+
+),the preference probability is formulated by: 
+
+P(x+ 
+
+> 0
+
+≻ x− 
+
+> 0
+
+| c) = Φ 𝑟 𝜃 (x+ 
+
+> 0
+
+, c) − 𝑟 𝜃 (x− 
+
+> 0
+
+, c)√︁ 
+
+𝜎 2 
+
+> 𝑢
+
++ 𝜎 2
+
+> 𝑢
+
+!
+
+, (5) where Φ(·) denotes the CDF of the standard normal distribution. This framework allows us to learn the reward parameters 
+
+𝑟 𝜃 by maximizing the likelihood of the observed preference data. 
+
+Noise-calibrated Thurstone Eq. 5 provides a straightforward way to learn 𝑟 𝜃 (x0, c) from clean preference samples. However, diffusion and flow-matching backbones are pretrained to process noisy states x𝑡 rather than clean samples x0.To bridge this distributional gap, we propose noise-calibrated Thurstone , which extends preference learning to the noisy samples (x+ 
+
+> 𝑡
+
+, x− 
+
+> 𝑡
+
+).Given a timestep 𝑡 , noisy states are formed by the standard forward noising process ( Eq. 1 ), 
+
+x𝑡 = 𝛼 (𝑡 )x0 + 𝜎 (𝑡 )ϵ, ϵ ∼ N ( 0, I), (6) where 𝜎 (𝑡 ) controls the noise magnitude. Intuitively, a larger 𝑡 removes more semantic information from the underlying sample, making preference judgments on x𝑡 less certain. We formalize this effect by modulating the comparison uncertainty 𝜎 𝑢 (𝑡 ) as a function of the diffusion noise level 𝜎 2 (𝑡 ) in Eq. 6 :
+
+𝜎 2 
+
+> 𝑢
+
+(𝑡 ) = 𝑘 𝜎 2 (𝑡 ) + 𝜎 2 
+
+> 𝑢
+
+, (7) where 𝜎 𝑢 represents the baseline ambiguity on clean samples in Eq. 4 , and 𝑘 scales the growth of uncertainty. In our paper, we empirically set 𝑘 = 2 and 𝜎 𝑢 = 0.1.Consequently, the preference likelihood on noisy states is: 
+
+P(x+ 
+
+> 𝑡
+
+≻ x− 
+
+> 𝑡
+
+| 𝑡, c) = Φ 𝑟 𝜃 (x+ 
+
+> 𝑡
+
+, 𝑡, c) − 𝑟 𝜃 (x− 
+
+> 𝑡
+
+, 𝑡, c)√︁ 
+
+𝜎 2 
+
+> 𝑢
+
+(𝑡 ) + 𝜎 2 
+
+> 𝑢
+
+(𝑡 )
+
+!
+
+, (8) where 𝑟 𝜃 (x𝑡 , 𝑡, c) denotes a time-aware reward model that takes the noisy input together with its noise level. This formulation treats preference learning as a family of objectives indexed by 𝑡 , where the supervision signal remains constant while the confidence is regularized by the noise level. 4This noise-calibrated approach offers several advantages for diffusion-based reward modeling. First, Distributional Alignment . By defining the reward objective over x𝑡 , we ensure the model’s input distribution remains consistent with the noisy manifold encountered during diffusion pre-training. Second, Inference Versatility . The time-dependent formulation 𝑟 𝜃 (x𝑡 , 𝑡, c) enables flexible reward estimation during deployment. To approximate the preference for a clean sample, one can either evaluate the model at a fixed low-noise index or aggregate predictions across the noise schedule via ensembling. This allows for sophisticated inference-time scaling strategies that leverage the global trajectory rather than a single point estimate. Third, Uncertainty-Aware Regularization . The noise-calibrated variance 𝜎 2 
+
+> 𝑢
+
+(𝑡 ) explicitly accounts for the diminishing semantic signal-to-noise ratio as 𝑡 increases. By inducing a conservative preference likelihood in high-noise regimes, this mechanism prevents uninformative, high-variance gradients from destabilizing training, effectively acting as a noise-aware formulation for preference learning. 
+
+Training Following prior work [ 5 ], we adopt fidelity loss [ 36 ] for optimization. Let 𝑦 ∈ { 0, 1} denote the preference label for a clean pair (x+ 
+
+> 0
+
+, x− 
+
+> 0
+
+) (with 𝑦 = 1 indicating x+ 
+
+> 0
+
+≻ x− 
+
+> 0
+
+), we minimize: 
+
+Lfid (𝜃 ) = E(x+    
+
+> 0,x−
+> 0,c,𝑦 ), 𝑡 ∼𝑞 (𝑡 )
+
+h
+
+1 −√︃ 𝑦 ˆ𝑝 𝜃 + ( 1 − 𝑦 )  1 − ˆ𝑝 𝜃 
+
+i
+
+. (9) The timestep distribution 𝑞 (𝑡 ) determines the noise level used for preference learning. We consider three strategies: (i) Fixed , using a single timestep 𝑡 = 𝑡 ★, when 𝑡 ★ = 0, the preference formulation reduces to Eq. 5 . (ii) Uniform , sampling 
+
+𝑡 uniformly from U ( 0, 1); and (iii) Logit-Normal [6], which samples timesteps by drawing a Gaussian N ( 𝜇, 𝜎 2) in logit space and mapping it to (0, 1) via a sigmoid. In practice, we find that fixed sampling is sensitive to 𝑡 ★ and less robust, while uniform and logit-normal yield comparable results. We adopt uniform by default for simplicity, and provide a more detailed comparison in Section 5.3 .
+
+4.2 Latent Reward Architecture 
+
+Our reward model takes a noisy latent x𝑡 together with prompt c and timestep 𝑡 , and predicts a scalar reward 𝑟 𝜃 (x𝑡 , 𝑡, c).It is instantiated on top of a pretrained latent diffusion backbone (SD3.5-Medium [ 6] in most experiments) and a query-based reward head. All computations are performed in VAE latent space, with the VAE kept frozen. Multi-layer diffusion features. Given (x𝑡 , 𝑡, c), the diffusion backbone produces hidden-state sequences at multiple layers for both visual and textual streams (if available). In practice, extracting features from a small subset of layers S is sufficient, and we do not require all layers of the backbone. We formulate it as: 
+
+n
+
+F(𝑖 ) 
+
+> vis ,𝑡
+
+, F(𝑖 )
+
+> txt ,𝑡
+
+o 
+
+> 𝑖 ∈ S
+
+= Backbone (x𝑡 , 𝑡, c), (10) where F(𝑖 ) 
+
+> vis ,𝑡
+
+∈ R𝑁 𝑣 ×𝐶 and F(𝑖 ) 
+
+> txt ,𝑡
+
+∈ R𝑁 𝑡 ×𝐶 denote the visual and text token features extracted at layer 𝑖 , respectively. 
+
+Timestep-conditioned adaptation. To make the reward head explicitly aware of the noise level, we apply FiLM-style modulation [ 26 ] to each selected layer feature using the timestep embedding 𝑡 emb . Each adapted feature is projected to a lower-dimensional subspace, concatenated across layers, and linearly fused into unified token sequences: Vt ∈ R𝑁 𝑣 ×𝑑 
+
+for visual tokens and Tt ∈ R𝑁 𝑡 ×𝑑 for text tokens. 
+
+Q-Former Scoring We aggregate Vt and Tt using a query transformer with 𝑁 𝑞 learnable query tokens. The queries attend to visual and text tokens via value-gated [ 29 ] cross-attention. We then refine the queries with a second visual-only cross-attention block, followed by a lightweight FFN. Finally, we map the pooled query representation to a scalar reward: 
+
+𝑟 𝜃 (x𝑡 , 𝑡, c) = MLP 
+
+
+
+Pool ( ˜Q)
+
+
+
+∈ R, (11) where ˜Q denotes the final query states and Pool (·) is mean pooling over queries. The query-based head also naturally supports multi-noise ensembling: features extracted at multiple timesteps can be adapted and concatenated as a longer context token sequence, and the same Q-Former head can be applied once to produce an aggregated score. 54.3 Inference-Time Scaling via Noise Ensembling 
+
+Our reward model is defined on noisy inputs and predicts 𝑟 𝜃 (x𝑡 , 𝑡, c). At inference time, however, the goal is typically to assign a reliable score to a clean sample (x0, c). A simple choice is to evaluate the reward at a fixed low-noise level: 
+
+ˆ𝑟 (x0, c) = 𝑟 𝜃 (x𝑡 ★ , 𝑡 ★, c). (12) Beyond a single noise level, diffusion models provide multiple noise-conditioned “views” of the same sample and thus admit a natural test-time scaling knob. To reduce sensitivity to a single evaluation noise level and improve the performance, we evaluate the sample at multiple timesteps {𝑡 𝑘 }𝐾 𝑘 =1 and aggregate them within the reward head . Specifically, we extract backbone features at each (x𝑡 𝑘 , 𝑡 𝑘 , c), apply the timestep-conditioned modulation, and concatenate the resulting context tokens across timesteps: 
+
+Vensemble = Concat  V𝑡 1 , . . . , V𝑡 𝐾 
+
+ ∈ R(𝐾 × 𝑁 𝑣 ) × 𝐶 ,
+
+Tensemble = Concat  T𝑡 1 , . . . , T𝑡 𝐾 
+
+ ∈ R(𝐾 × 𝑁 𝑣 ) × 𝐶 . (13) After that the same query-based scoring head is applied once to produce an aggregated score ˆ𝑟 (x0, c).This token-level ensembling serves as a diffusion-native form of inference-time scaling. We observe that the reward model’s performance varies across datasets and evaluation timesteps, indicating that different timesteps may emphasize different aspects of the underlying representation. By combining features from different timesteps, the model can leverage complementary evidence and produce a more stable score, at the cost of additional inference compute. 
+
+## 5 Experiments 
+
+5.1 Experimental Setup 
+
+Training Details We adopt SD3.5-Medium [ 6 ] as the diffusion backbone. Our proposed DiNa-LRM is trained on a valid subset of HPDv3 [ 23 ], which contains approximately 0.8M pairwise comparisons. Training is conducted for one epoch on 8 GPUs with 80G VRAMs. We adopt AdamW with weight decay 0.01 , a constant learning rate of 5 × 10 −5,and a total batch size of 64 . We maintain an exponential moving average (EMA) of model weights with decay 0.995 
+
+throughout training, and use the EMA weights for evaluation. Following standard diffusion pre-training practice [ 27 ], we adopt bucketed training for variable-resolution images. Each sample is resized to its nearest resolution bucket, and over 80% of images preserve their original resolution and aspect ratio after bucketing. For timestep sampling, we use the Uniform strategy, drawing 𝑡 ∼ U ( 0, 1). For each preference pair, the chosen and rejected samples are perturbed with the same noise to form (x+ 
+
+> 𝑡
+
+, x− 
+
+> 𝑡
+
+). Additional implementation details are provided in the supplementary materials. 
+
+Evaluation Protocol We compare against representative reward models from three categories: (i) CLIP-base Reward Models: ImageReward [ 50 ], PickScore [ 12 ], HPSv2 [ 47 ], and MPS [ 55 ]; (ii) VLM-based Reward Models: 
+
+UnifiedReward [ 43 ], UnifiedReward-CoT [ 42 ], and HPSv3 [ 23 ]; (iii) Diffusion-based Reward Models: LRM-SD1.5 [ 56 ]and LRM-SDXL. Following prior works [ 23 ], we evaluate on a diverse suite of test sets, including ImageReward [ 50 ], HPDv2 [ 47 ], HPDv3 [ 23 ], and GenAI-Bench [ 11 ], to assess generalization across data quality and annotation sources. For all datasets, we report pairwise preference accuracy , i.e., the fraction of comparisons where the reward model assigns a higher score to the preferred sample. Unless otherwise specified, DiNa-LRM is evaluated using a single noise level with 
+
+𝑡 = 0.4. For test-time ensembling, we compute rewards at three noise levels 𝑡 ∈ { 0.2, 0.5, 0.7} and aggregate them as described in Section 4.3 . The ensemble set is chosen to span low-, mid-, and high-noise regimes, balancing robustness and computational overhead. 
+
+5.2 Reward Modeling 
+
+The preference prediction accuracy on various test sets is presented in Table 1 . Overall, DiNa-LRM substantially improves over prior diffusion-based reward models, while remaining slightly behind the strongest VLM-based judge. This suggests that diffusion features from a modern foundation backbone can serve as a considerably stronger basis for preference prediction. Across datasets, HPSv3 attains the highest average accuracy, while DiNa-LRM demonstrates that diffusion-native rewards in latent space can achieve competitive accuracy with clear optimization advantages. 6Table 1 Pairwise Preference Accuracy across different benchmarks. We compare CLIP-/VLM-/Diffusion -based reward models. Within each group, the best result is shown in bold . DiNa-LRM * indicates that we adopt token-level multi-noise inference scaling. 
+
+Model Backbone Pairwise Preference Accuracy (%) ImageReward HPDv2 HPDv3 GenAI Bench Avg 
+
+CLIP-base RM 
+
+ImageReward [50] CLIP 65.15 73.95 58.74 63.41 65.31 PickScore [12] CLIP 62.73 79.44 65.67 69.98 69.45 HPSv2 [47] CLIP 65.62 82.58 64.69 67.62 70.13 MPS [55] CLIP 66.37 83.27 64.33 68.08 70.51 
+
+VLM-base RM 
+
+UnifiedReward [43] LLaVA-OV-7B 63.82 83.10 71.96 72.38 72.81 UnifiedReward-Think [42] LLaVA-OV-7B 58.54 82.70 66.07 70.91 69.56 HPSv3 [23] Qwen2VL-7B 67.03 85.36 76.03 70.95 74.84 
+
+Diffusion-based RM 
+
+LRM-SD1.5 [56] SD-1.5 59.17 72.39 54.05 60.86 61.62 LRM-SDXL [56] SDXL 60.35 71.19 53.80 61.58 61.73 
+
+DiNa-LRM (Ours ) SD3.5-M-2B 60.34 82.13 75.04 68.43 71.49 
+
+DiNa-LRM * (Ours ) SD3.5-M-2B 61.75 84.31 74.86 68.98 72.48 
+
+Importantly, latent-space reward evaluation avoids pixel-space overhead and latent-to-pixel mismatch, making it more efficient during alignment. Finally, test-time multi-noise ensembling provides a consistent but modest improvement. Aggregating rewards across multiple noise levels improves the average accuracy from 71.49% to 72.48%. This supports our motivation that different noise levels expose complementary evidence in diffusion representations, and ensembling can reduce sensitivity to the evaluation timestep at the cost of additional compute 
+
+5.3 Ablation Studies 
+
+Timestep Schedules We first study how the training-time timestep schedule affects diffusion-native reward learning. We compare fixed-noise training at a single timestep (Const 𝑡 ∈ { 0, 0.2, 0.7}) against distributional schedules that expose the model to a range of noise conditions. As summarized in Table 2 , fixed-noise training can achieve reasonable performance on the in-domain set like HPDv3, but generalizes poorly to other test sets, leading to substantially lower average accuracy. In contrast, distributional schedules markedly improve out-of-domain generalization, indicating that 
+
+covering multiple noise regimes during training is important for robust preference learning . Among distributional schedules, Uniform sampling provides a strong and stable default. We further consider LogitNormal schedules (following the SD3.5 training recipe [ 6]) to explicitly bias training toward higher-noise (LogitNormal (0.8, 1.0)) or lower-noise (LogitNormal (− 0.8, 1.0)) regions. Results show that LogitNormal is competitive, yet Uniform yields higher average accuracy overall in our setting. Overall, the performance differences between distributional schedules are moderate, with Uniform providing the best results in our experiments. 
+
+Noise-Calibrated Variance We evaluate whether explicitly tying the comparison variance to the diffusion noise level in the Thurstone model improves preference learning. We compare a constant-variance Thurstone variant ( Fixed , 𝜎 𝑢 = 0.5)against the proposed noise-calibrated variance ( NC ). As shown in Table 2 , noise calibration yields clear gains in overall performance, with the most pronounced improvements on out-of-domain benchmarks and under multi-noise ensembling. In particular, NC substantially boosts HPDv2 accuracy (e.g., 78 .72 → 82 .13 for single inference and 78 .16 → 84 .31 with ensembling), and improves the averaged accuracy more significantly when combined with ensembling ( 70 .41 → 72 .48 ). We hypothesize that noise-dependent uncertainty modeling provides a better-calibrated training signal across noise regimes, encouraging the model to learn more diverse and complementary features at different noise levels . This diversity is especially beneficial for robustness across different datasets and for inference-time scaling via multi-noise ensembling. 7Table 2 Ablations on timestep schedule and uncertainty modeling. We vary the training timestep schedule (Const /Uniform /LogitNormal ) and the Thurstone variance modeling ( Fixed vs. NC ). Ensemble indicates multi-timestep ensembling is enabled. NC: Noise-Calibrated Variance. Bold : Best Performance. Underline: Second Best. 
+
+Timestep Schedule Var. Ensemble Pairwise Preference Accuracy (%) ImageReward HPDv2 HPDv3 GenAI Bench Avg 
+
+Constant timestep (single-noise training) 
+
+𝑡 = 0 Fixed 58.61 59.20 74.37 67.55 64.93 
+
+𝑡 = 0.2 Fixed 59.59 62.92 74.67 67.97 66.29 
+
+𝑡 = 0.7 Fixed 59.94 73.75 73.28 68.02 68.75 
+
+Uniform schedule ( 𝑡 ∼ U ( 0, 1))
+
+Uniform Fixed 60.88 78.72 75.11 68.01 70.68 Uniform Fixed ✓ 60.77 78.16 74.68 68.01 70.41 Uniform ( Ours ) NC 60.34 82.13 75.04 68.43 71.49 Uniform ( Ours ) NC ✓ 61.75 84.31 74.86 68.98 72.48 
+
+LogitNormal schedule 
+
+LN (0.8, 1.0) NC 60.36 78.73 74.89 68.35 70.58 LN (0.8, 1.0) NC ✓ 60.88 80.31 74.68 68.86 71.18 LN (− 0.8, 1.0) NC 60.42 79.08 75.40 68.52 70.86 LN (− 0.8, 1.0) NC ✓ 61.44 80.76 75.07 68.43 71.43 
+
+Backbone Adaptation. We compare LoRA fine-tuning on the backbone against training only the reward head with the backbone frozen. As reported in Table 3 , LoRA adaptation provides consistent gains, while the frozen-backbone variant remains competitive. This suggests that pretrained diffusion representations already provide useful signals for preference learning, and lightweight backbone adaptation can further refine these features toward the preference objective. 
+
+Table 3 Effect of backbone adaptation. 
+
+Training Strategy HPDv3 GenAI-Bench Avg (4 sets) 
+
+Freeze backbone 73.52 67.09 70.27 LoRA fine-tuning 75.04 68.43 71.49 0.0 0.2 0.4 0.6 0.8  
+
+> Timestep t
+> 60
+> 62
+> 64
+> 66
+> 68
+> 70
+> 72
+> Average Accuracy
+> LN(0.8, 1.0)
+> LN(-0.8, 1.0)
+> Uniform(0, 1)
+
+Figure 2 Effect of Inference-time Noise Level. Uniform 
+
+sampling performs consistently well across a wide range of 𝑡 ,with accuracy peaking at mid-range timesteps. 
+
+Inference-time Noise Level. We analyze sensitivity to the inference-time noise level 𝑡 . Figure 2 reports the average accuracy as a function of 𝑡 for models trained with different timestep schedules. Preference accuracy is maximized at intermediate noise levels, with the best performance consistently attained around 𝑡 ∈ [ 0.3, 0.7].In contrast, evaluating at near-clean states (𝑡 = 0) or 
+
+highly noisy states (𝑡 = 0.8) leads to degraded accuracy. A plausible explanation is that intermediate-noise represen-tations better balance semantic fidelity and discriminative signal. We therefore use 𝑡 = 0.4 as the default single-noise inference setting. 
+
+Multi-Noise Ensembling. Beyond a single noise level, diffusion models provide multiple noise-conditioned views of the same sample, and the reward performance can benefit from aggregating features across timesteps. As shown in Table 1 and Table 2 , when combined with our noise-calibrated variance, token-level multi-noise ensembling generally improves the overall performance, with particularly 80 25 50 75 100 125 150        
+
+> Training Step
+> 19.5
+> 20.0
+> 20.5
+> 21.0
+> Golden Score (PickScore)
+> Golden Score (PickScore)
+> HPSV3
+> Ours
+> 025 50 75 100 125 150
+> Training Step
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> HPSV3 Proxy Score
+> Proxy Score / Reward
+> HPSV3
+> Ours 0.2
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Ours Proxy Score
+
+Figure 3 Training Curves (ReFL on SD3.5-M) . We optimize with either HPSv3 or DiNa-LRM (Ours) as the proxy reward. We report the optimized proxy score (right) and an external held-out golden metric (PickScore; left) .
+
+DiNa-LRM improves the proxy score faster while the golden metric increases in tandem. Peak VRAM (GB)   
+
+> TFL OPs per Step
+
+Figure 4 Efficiency Analysis . Peak varm (top) 
+
+and per-step tflops (bottom) for a single ReFL optimization step is reported. 
+
+notable gains on out-of-domain benchmarks, suggesting that different timesteps capture complementary discriminative features that enhance robustness across different datasets. 
+
+5.4 Preference Alignment 
+
+To assess the practical utility of DiNa-LRM , we evaluate its performance in the context of post-training alignment. We adopt ReFL [ 50 ] as a representative reward-gradient algorithm, where the generative model is optimized by backpropagating gradients through the reward signal. We compare our diffusion-native reward against HPSv3, a state-of-the-art VLM-based reward model. 
+
+Experimental Setup We optimize SD3.5-M on the Pick-a-Pic [ 12 ] dataset. To ensure a controlled comparison, we maintain identical ReFL implementations and optimization hyperparameters across all experiments, varying only the source of the rewards. We run 150 optimization steps with a batch size of 256 . For DiNa-LRM , a clean latent sample 
+
+(x0, c) is scored via a fixed low-noise evaluation 𝑟 (x0, c) ≜ 𝑟 𝜃 (x0.4, 0.4, c). In contrast, HPSv3 is computed on the decoded image in pixel space. 
+
+Optimization Dynamics Inspired by Wang et al. [39] , we designate the optimization objective as a proxy score and track a held-out golden score (PickScore) that is withheld from the optimization. This allows us to track alignment progress while detecting potential reward hacking. As shown in Figure 3 , optimizing with our diffusion-native reward yields accelerated improvement in the proxy score compared to the HPSv3 baseline, and the golden score increases in tandem with the proxy reward, showing no obvious evidence of reward hacking at the early iterations. Conversely, HPSv3 demonstrates slower convergence in both proxy and golden scores under the same training steps. 
+
+Efficiency Analysis We quantify the efficiency gains of our diffusion-native approach by profiling single-step ReFL updates at 1024 × 1024 resolution with a batch size of 1, reporting peak VRAM and FLOPs. As summarized in Figure 4 ,our latent reward is substantially cheaper to optimize. It reduces peak memory by 51 .4% , reward-calculation FLOPs by 
+
+71 .1% , and optimization-phase FLOPs by 46 .4% relative to HPSv3. These gains stem from computing rewards natively in the VAE latent space, which avoids expensive decoding and reduces overhead during alignment. These findings demonstrate that diffusion-native rewards provide an effective and optimization-friendly reward signal for post-training alignment, improving training dynamics while substantially reducing the resource cost. 
+
+## 6 Conclusion 
+
+Throughtout this paper, we revisit reward modeling for diffusion models from a diffusion-native perspective and show that latent diffusion backbones can serve as practical and competitive reward models for preference alignment. By formulating preference learning on noisy diffusion states with noise-calibrated uncertainty and enabling inference-time noise ensembling, our proposed DiNa-LRM substantially strengthens diffusion-based rewards and brings their preference 9prediction closer to strong VLM judges. More importantly, operating natively in latent space yields a structural advantage for post-training alignment: DiNa-LRM provides an optimization-friendly reward signal that improves proxy and held-out golden metrics in tandem, while cutting resource cost substantially (e.g., 51 .4% peak VRAM and large reductions in reward/optimization FLOPs). These results suggest that diffusion-native latent reward modeling is a promising alternative to pixel-space VLM rewards. 
+
+Limitations and Future Work Our reward is learned and evaluated in the latent space of a specific diffusion backbone, which makes optimization efficient but does not guarantee cross-backbone transfer. Improving generality remains an open direction. Moreover, latent-space modeling may under-emphasize certain pixel-level artifacts that can be amplified during preference optimization. For example, we observe grid-like artifacts after long-horizon alignment. Future work includes (i) training on stronger and more unified backbones to improve generality, (ii) adding lightweight pixel-space regularization or perceptual constraints to penalize latent-invisible artifacts, and (iii) exploring generative or feedback-rich reward modeling that produces dense rewards. 
+
+## Impact Statement 
+
+This paper develops a diffusion-native reward model for preference learning in text-to-image generation, facilitating automated evaluation and post-training optimization of diffusion models. However, as reward models guide generative behavior, biases inherent in preference datasets may be inherited or amplified during optimization, potentially yielding stereotypical or discriminatory outputs. These risks necessitate responsible deployment practices, including rigorous auditing during optimization, and the integration of robust safety protocols within generative pipelines. 
+
+## References 
+
+[1] Bai, S., Cai, Y., Chen, R., Chen, K., Chen, X., Cheng, Z., Deng, L., Ding, W., Gao, C., Ge, C., Ge, W., Guo, Z., Huang, Q., Huang, J., Huang, F., Hui, B., Jiang, S., Li, Z., Li, M., Li, M., Li, K., Lin, Z., Lin, J., Liu, X., Liu, J., Liu, C., Liu, Y., Liu, D., Liu, S., Lu, D., Luo, R., Lv, C., Men, R., Meng, L., Ren, X., Ren, X., Song, S., Sun, Y., Tang, J., Tu, J., Wan, J., Wang, P., Wang, P., Wang, Q., Wang, Y., Xie, T., Xu, Y., Xu, H., Xu, J., Yang, Z., Yang, M., Yang, J., Yang, A., Yu, B., Zhang, F., Zhang, H., Zhang, X., Zheng, B., Zhong, H., Zhou, J., Zhou, F., Zhou, J., Zhu, Y., and Zhu, K. Qwen3-vl technical report. arXiv preprint arXiv:2511.21631, 2025. [2] Bradley, R. A. and Terry, M. E. Rank analysis of incomplete block designs: I. the method of paired comparisons. Biometrika, 39(3/4):324–345, 1952. ISSN 00063444. URL http://www.jstor.org/stable/2334029 .[3] Brooks, T., Peebles, B., Holmes, C., DePue, W., Guo, Y., Jing, L., Schnurr, D., Taylor, J., Luhman, T., Luhman, E., et al. Video generation models as world simulators. OpenAI Blog, 1(8):1, 2024. [4] Cai, H., Cao, S., Du, R., Gao, P., Hoi, S., Huang, S., Hou, Z., Jiang, D., Jin, X., Li, L., et al. Z-image: An efficient image generation foundation model with single-stream diffusion transformer. arXiv:2511.22699, 2025. [5] Chen, D., Wu, T., Ma, K., and Zhang, L. Toward generalized image quality assessment: Relaxing the perfect reference quality assumption. In Proceedings of the Computer Vision and Pattern Recognition Conference, pp. 12742–12752, 2025. [6] Esser, P., Kulal, S., Blattmann, A., Entezari, R., Müller, J., Saini, H., Levi, Y., Lorenz, D., Sauer, A., Boesel, F., et al. Scaling rectified flow transformers for high-resolution image synthesis. In ICML, 2024. [7] Gong, Y., Wang, X., Wu, J., Wang, S., Wang, Y., and Wu, X. Onereward: Unified mask-guided image generation via multi-task human preference learning. arXiv:2508.21066, 2025. [8] He, X., Jiang, D., Zhang, G., Ku, M., Soni, A., Siu, S., Chen, H., Chandra, A., Jiang, Z., Arulraj, A., et al. Videoscore: Building automatic metrics to simulate fine-grained human feedback for video generation. In EMNLP, pp. 2105–2123, 2024. [9] Ho, J., Jain, A., and Abbeel, P. Denoising diffusion probabilistic models. Advances in neural information processing systems, 33:6840–6851, 2020. [10] Hurst, A., Lerer, A., Goucher, A. P., Perelman, A., Ramesh, A., Clark, A., Ostrow, A., Welihinda, A., Hayes, A., Radford, A., et al. Gpt-4o system card. arXiv preprint arXiv:2410.21276, 2024. [11] Jiang, D., Ku, M., Li, T., Ni, Y., Sun, S., Fan, R., and Chen, W. Genai arena: An open evaluation platform for generative models. Advances in Neural Information Processing Systems, 37:79889–79908, 2024. [12] Kirstain, Y., Polyak, A., Singer, U., Matiana, S., Penna, J., and Levy, O. Pick-a-pic: An open dataset of user preferences for text-to-image generation. NeurIPS, 36:36652–36663, 2023. 
+
+10 [13] Labs, B. F. Flux. https://github.com/black-forest-labs/flux , 2024. [14] Li, A. C., Prabhudesai, M., Duggal, S., Brown, E., and Pathak, D. Your diffusion model is secretly a zero-shot classifier. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 2206–2217, 2023. [15] Li, J., Li, D., Xiong, C., and Hoi, S. Blip: Bootstrapping language-image pre-training for unified vision-language understanding and generation. In International conference on machine learning, pp. 12888–12900. PMLR, 2022. [16] Liang, Y., He, J., Li, G., Li, P., Klimovskiy, A., Carolan, N., Sun, J., Pont-Tuset, J., Young, S., Yang, F., et al. Rich human feedback for text-to-image generation. In CVPR, 2024. [17] Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747, 2022. [18] Lipman, Y., Havasi, M., Holderrieth, P., Shaul, N., Le, M., Karrer, B., Chen, R. T., Lopez-Paz, D., Ben-Hamu, H., and Gat, I. Flow matching guide and code. arXiv preprint arXiv:2412.06264, 2024. [19] Liu, J., Liu, G., Liang, J., Li, Y., Liu, J., Wang, X., Wan, P., Zhang, D., and Ouyang, W. Flow-grpo: Training flow matching models via online rl. arXiv:2505.05470, 2025. [20] Liu, J., Liu, G., Liang, J., Yuan, Z., Liu, X., Zheng, M., Wu, X., Wang, Q., Xia, M., Wang, X., et al. Improving video generation with human feedback. arXiv:2501.13918, 2025. [21] Liu, X., Gong, C., and Liu, Q. Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003, 2022. [22] Lu, Y., Ren, Y., Xia, X., Lin, S., Wang, X., Xiao, X., Ma, A. J., Xie, X., and Lai, J.-H. Adversarial distribution matching for diffusion distillation towards efficient image and video synthesis. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 16818–16829, 2025. [23] Ma, Y., Wu, X., Sun, K., and Li, H. Hpsv3: Towards wide-spectrum human preference score. In ICCV, pp. 15086–15095, 2025. [24] Mi, X., Yu, W., Lian, J., Jie, S., Zhong, R., Liu, Z., Zhang, G., Zhou, Z., Xu, Z., Zhou, Y., et al. Video generation models are good latent reward models. arXiv:2511.21541, 2025. [25] Peebles, W. and Xie, S. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF international conference on computer vision, pp. 4195–4205, 2023. [26] Perez, E., Strub, F., De Vries, H., Dumoulin, V., and Courville, A. Film: Visual reasoning with a general conditioning layer. In Proceedings of the AAAI conference on artificial intelligence, volume 32, 2018. [27] Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., Müller, J., Penna, J., and Rombach, R. Sdxl: Improving latent diffusion models for high-resolution image synthesis. arXiv preprint arXiv:2307.01952, 2023. [28] Prabhudesai, M., Goyal, A., Pathak, D., and Fragkiadaki, K. Aligning text-to-image diffusion models with reward backpropagation. arXiv:2310.03739, 2023. [29] Qiu, Z., Wang, Z., Zheng, B., Huang, Z., Wen, K., Yang, S., Men, R., Yu, L., Huang, F., Huang, S., et al. Gated attention for large language models: Non-linearity, sparsity, and attention-sink-free. arXiv preprint arXiv:2505.06708, 2025. [30] Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al. Learning transferable visual models from natural language supervision. In International conference on machine learning, pp. 8748–8763. PmLR, 2021. [31] Rombach, R., Blattmann, A., Lorenz, D., Esser, P., and Ommer, B. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pp. 10684–10695, 2022. [32] Sauer, A., Boesel, F., Dockhorn, T., Blattmann, A., Esser, P., and Rombach, R. Fast high-resolution image synthesis with latent adversarial diffusion distillation. In SIGGRAPH Asia 2024 Conference Papers, pp. 1–11, 2024. [33] Seedream, T., Chen, Y., Gao, Y., Gong, L., Guo, M., Guo, Q., Guo, Z., Hou, X., Huang, W., Huang, Y., et al. Seedream 4.0: Toward next-generation multimodal image generation. arXiv:2509.20427, 2025. [34] Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Ermon, S., and Poole, B. Score-based generative modeling through stochastic differential equations. In ICLR, 2021. [35] Thurstone, L. L. A law of comparative judgment. In Scaling, pp. 81–92. Routledge, 2017. [36] Tsai, M.-F., Liu, T.-Y., Qin, T., Chen, H.-H., and Ma, W.-Y. Frank: a ranking method with fidelity loss. In Proceedings of the 30th annual international ACM SIGIR conference on Research and development in information retrieval, pp. 383–390, 2007. 
+
+11 [37] Wallace, B., Dang, M., Rafailov, R., Zhou, L., Lou, A., Purushwalkam, S., Ermon, S., Xiong, C., Joty, S., and Naik, N. Diffusion model alignment using direct preference optimization. In CVPR, pp. 8228–8238, 2024. [38] Wan, T., Wang, A., Ai, B., Wen, B., Mao, C., Xie, C.-W., Chen, D., Yu, F., Zhao, H., Yang, J., et al. Wan: Open and advanced large-scale video generative models. arXiv:2503.20314, 2025. [39] Wang, J., Liang, J., Liu, J., Liu, H., Liu, G., Zheng, J., Pang, W., Ma, A., Xie, Z., Wang, X., et al. Grpo-guard: Mitigating implicit over-optimization in flow matching via regulated clipping. arXiv:2510.22319, 2025. [40] Wang, P., Bai, S., Tan, S., Wang, S., Fan, Z., Bai, J., Chen, K., Liu, X., Wang, J., Ge, W., et al. Qwen2-vl: Enhancing vision-language model’s perception of the world at any resolution. arXiv preprint arXiv:2409.12191, 2024. [41] Wang, Q., Liu, J., Liang, J., Jiang, Y., Zhang, Y., Chen, J., Zheng, Y., Wang, X., Wan, P., Yue, X., et al. Vr-thinker: Boosting video reward models through thinking-with-image reasoning. arXiv:2510.10518, 2025. [42] Wang, Y., Li, Z., Zang, Y., Wang, C., Lu, Q., Jin, C., and Wang, J. Unified multimodal chain-of-thought reward model through reinforcement fine-tuning. arXiv:2505.03318, 2025. [43] Wang, Y., Zang, Y., Li, H., Jin, C., and Wang, J. Unified reward model for multimodal understanding and generation. arXiv:2503.05236, 2025. [44] Wu, C., Li, J., Zhou, J., Lin, J., Gao, K., Yan, K., Yin, S.-m., Bai, S., Xu, X., Chen, Y., et al. Qwen-image technical report. arXiv:2508.02324, 2025. [45] Wu, J., Gao, Y., Ye, Z., Li, M., Li, L., Guo, H., Liu, J., Xue, Z., Hou, X., Liu, W., et al. Rewarddance: Reward scaling in visual generation. arXiv:2509.08826, 2025. [46] Wu, T., Zou, J., Liang, J., Zhang, L., and Ma, K. Visualquality-r1: Reasoning-induced image quality assessment via reinforcement learning to rank. arXiv:2505.14460, 2025. [47] Wu, X., Hao, Y., Sun, K., Chen, Y., Zhu, F., Zhao, R., and Li, H. Human preference score v2: A solid benchmark for evaluating human preferences of text-to-image synthesis. arXiv:2306.09341, 2023. [48] Wu, X., Sun, K., Zhu, F., Zhao, R., and Li, H. Human preference score: Better aligning text-to-image models with human preference. In ICCV, pp. 2096–2105, 2023. [49] Xiang, W., Yang, H., Huang, D., and Wang, Y. Denoising diffusion autoencoders are unified self-supervised learners. In Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 15802–15812, 2023. [50] Xu, J., Liu, X., Wu, Y., Tong, Y., Li, Q., Ding, M., Tang, J., and Dong, Y. Imagereward: Learning and evaluating human preferences for text-to-image generation. NeurIPS, 36:15903–15935, 2023. [51] Xue, Z., Wu, J., Gao, Y., Kong, F., Zhu, L., Chen, M., Liu, Z., Liu, W., Guo, Q., Huang, W., et al. Dancegrpo: Unleashing grpo on visual generation. arXiv:2505.07818, 2025. [52] Yang, K., Tao, J., Lyu, J., Ge, C., Chen, J., Shen, W., Zhu, X., and Li, X. Using human feedback to fine-tune diffusion models without any reward model. In CVPR, pp. 8941–8951, 2024. [53] Yin, T., Gharbi, M., Park, T., Zhang, R., Shechtman, E., Durand, F., and Freeman, B. Improved distribution matching distillation for fast image synthesis. Advances in neural information processing systems, 37:47455–47487, 2024. [54] Zhang, R., Zhang, M., Zhou, J., Guo, Z., Liu, X., Xu, Z., Zhong, Z., Yan, P., Luo, H., and Li, X. Mind-v: Hierarchical video generation for long-horizon robotic manipulation with rl-based physical alignment. arXiv preprint arXiv:2512.06628, 2025. [55] Zhang, S., Wang, B., Wu, J., Li, Y., Gao, T., Zhang, D., and Wang, Z. Learning multi-dimensional human preference for text-to-image generation. In CVPR, pp. 8018–8027, 2024. [56] Zhang, T., Da, C., Ding, K., Yang, H., Jin, K., Li, Y., Gao, T., Zhang, D., Xiang, S., and Pan, C. Diffusion model as a noise-aware latent reward model for step-level preference optimization. arXiv:2502.01051, 2025. [57] Zhang, X., Zhang, X., Wu, Y., Cao, Y., Zhang, R., Chu, R., Yang, L., and Yang, Y. Generative universal verifier as multimodal meta-reasoner. arXiv preprint arXiv:2510.13804, 2025. 
+
+12 Appendix 
+
+## A Uncertainty Analysis 
+
+Our reward model is evaluated on noise-conditioned inputs. Each evaluation samples Gaussian noise to construct a perturbed state x𝑡 . Consequently, the predicted score is stochastic, and the pairwise ranking decision for a fixed comparison pair may vary across repeated noise draws. In this section, we quantify this effect on a subset of 1,000 
+
+preference pairs randomly sampled from the HPDv3 test set. For a fixed preference pair (x+ 
+
+> 0
+
+, x− 
+
+> 0
+
+) and a fixed evaluation noise level 𝑡 , we repeat the noising-and-scoring process 
+
+𝐾 = 10 times and obtain 𝐾 pairwise decisions: 
+
+𝑑 𝑘 = I𝑟 𝜃 (x+ 
+
+> 𝑡 ,𝑘
+
+, 𝑡, c) > 𝑟 𝜃 (x− 
+
+> 𝑡 ,𝑘
+
+, 𝑡, c) , 𝑘 = 1, . . . , 𝐾. (14) Let 𝑝 = 1
+
+> 𝐾
+
+Í𝐾 𝑘 =1 𝑑 𝑘 denote the empirical probability that the model ranks the chosen sample above the rejected one under stochastic noising. We measure decision instability using the variation ratio :
+
+VR (𝑡 ) = 1 − max ( 𝑝, 1 − 𝑝 ) = min ( 𝑝, 1 − 𝑝 ), (15) which ranges from 0 (fully consistent decisions) to 0.5 (maximally ambiguous decisions). We report the average VR (𝑡 )
+
+over evaluation pairs for each noise level 𝑡 .To characterize score-space behavior, we compute the pairwise margin Δ𝑟 𝑘 = 𝑟 + 
+
+> 𝑘
+
+− 𝑟 − 
+
+> 𝑘
+
+and report its mean 
+
+𝜇 Δ𝑟 (𝑡 ) = 1
+
+𝐾 
+
+> 𝐾
+
+∑︁ 
+
+> 𝑘 =1
+
+Δ𝑟 𝑘 , (16) which reflects how strongly the model separates the chosen sample from the rejected one on average. In addition, we quantify score sensitivity for a single sample by the variance of its predicted score across the 𝐾 runs, 
+
+Var (𝑟 ) = 1
+
+𝐾 − 1
+
+> 𝐾
+
+∑︁ 
+
+> 𝑘 =1
+
+ 𝑟 𝑘 − ¯𝑟 2, ¯𝑟 = 1
+
+𝐾 
+
+> 𝐾
+
+∑︁ 
+
+> 𝑘 =1
+
+𝑟 𝑘 , (17) and report Var (𝑟 ) averaged over all evaluated samples at each 𝑡 .       
+
+> Table 4 Uncertainty Analysis. We repeat the evaluation 𝐾 =10 times per pair at each noise level 𝑡 . VR measures decision instability,
+> 𝜇 Δ𝑟 is the mean pairwise margin, and Var (𝑟 )is the average per-sample score variance across repeated noise samples.
+
+Eval. 𝑡 VR ↓ μ𝚫 𝒓 ↑ Var r ↓
+
+0.01 0.003 0.267 6.57 × 10 −4
+
+0.2 0.015 0.564 4.53 × 10 −3
+
+0.4 0.023 0.929 2.39 × 10 −2
+
+0.6 0.029 1.252 1.18 × 10 −1
+
+0.8 0.063 1.405 2.25 × 10 −1
+
+Table 4 shows that decision stochasticity remains limited across noise levels: VR (𝑡 ) stays small even at high noise (e.g., 
+
+0.063 at 𝑡 =0.8), indicating that pairwise decisions are typically consistent across different noise sampling. As expected, the score variance Var (𝑟 ) increases substantially with 𝑡 , reflecting stronger randomness in highly noisy states. Overall, these results indicate that while stochastic noising introduces score-level uncertainty, it induces only mild decision-level ambiguity , and the obtained scores from a diffusion reward model are reliable. 
+
+## B Detailed Algorithmic Procedures 
+
+In this section, we provide a formal description of the algorithmic frameworks for both the training and inference phases of DiNa-LRM, as well as the implementation of ReFL in Section 5.4 .13 B.1 Training with Noise-Calibrated Thurstone 
+
+As presented in algorithm 1 , we detail the optimization for our latent reward model. The procedure emphasizes our noise-calibrated preference learning ( Section 4.1 ), where the comparison variance 𝜎 2 
+
+> 𝑢
+
+(𝑡 ) is explicitly modulated by the diffusion noise level 𝜎 (𝑡 ). Notably, the entire process operates within the VAE latent space, bypassing the need for image-space decoding and significantly improving training throughput. 
+
+Algorithm 1: DiNa-LRM Training Procedure 
+
+Input :Preference pairs (x+ 
+
+> 0
+
+, x− 
+
+> 0
+
+, c, 𝑦 ), schedule (𝛼 𝑡 , 𝜎 𝑡 ), 𝑘, 𝜎 𝑢 
+
+Output :
+
+Reward model 𝑟 𝜃  
+
+> 1
+
+for each iteration do  
+
+> 2
+
+# Step 1: Sample diffusion noise level  
+
+> 3
+
+𝑡 ∼ U ( 0, 1), ϵ ∼ N ( 0, I) ; // Uniform t sampling  
+
+> 4
+
+# Step 2: Forward noising in latent space ( Eq. 1 ) 
+
+> 5
+
+x+ 
+
+> 𝑡
+
+= 𝛼 (𝑡 )x+ 
+
+> 0
+
++ 𝜎 (𝑡 )ϵ 
+
+> 6
+
+x− 
+
+> 𝑡
+
+= 𝛼 (𝑡 )x− 
+
+> 0
+
++ 𝜎 (𝑡 )ϵ 
+
+> 7
+
+# Step 3: Noise-calibrated reward inference  
+
+> 8
+
+𝑟 + = r_theta (x+ 
+
+> 𝑡
+
+, 𝑡, c) 
+
+> 9
+
+𝑟 − = r_theta (x− 
+
+> 𝑡
+
+, 𝑡, c) 
+
+> 10
+
+𝜎 2 
+
+> 𝑢
+
+(𝑡 ) = 𝑘𝜎 2 (𝑡 ) + 𝜎 2 
+
+> 𝑢
+
+; // Eq. 7 : Calibrated uncertainty  
+
+> 11
+
+# Step 4: Probabilistic preference modeling ( Eq. 8 ) 
+
+> 12
+
+Δ𝑟 = 𝑟 + − 𝑟 − 
+
+> 13
+
+ˆ𝑝 𝜃 = Φ 
+
+
+
+Δ𝑟 /√︁ 2𝜎 2 
+
+> 𝑢
+
+(𝑡 )
+
+ 
+
+> 14
+
+# Step 5: Fidelity loss optimization ( Eq. 9 ) 
+
+> 15
+
+Lfid = 1 −√︁ 𝑦 ˆ𝑝 𝜃 + ( 1 − 𝑦 )( 1 − ˆ𝑝 𝜃 ) 
+
+> 16
+
+𝜃 ← 𝜃 − 𝜂 ∇𝜃 Lfid 
+
+B.2 Inference-Time Noise Ensembling 
+
+algorithm 2 illustrates our strategy for inference-time scaling ( Section 4.3 ). Unlike standard reward models that evaluate a single point estimate, DiNa-LRM allows for the aggregation of multiple noise-conditioned views of the same clean sample. By concatenating FiLM-modulated tokens across 𝐾 distinct timesteps, the query-based head can attend to a global context of the diffusion trajectory. This token-level ensembling serves as a test-time scaling skill, where increased inference compute can be traded for improved reward stability and alignment accuracy. 
+
+B.3 Implementation of Reward-Gradient Alignment (ReFL) 
+
+To evaluate the practical effectiveness of DiNa-LRM as a differentiable optimization signal, we integrate it into the ReFL framework for post-training alignment. Given a text prompt 𝑐 ∼ D 𝑝𝑟 𝑜𝑚 𝑝𝑡 𝑠 , we initiate the denoising process from a random noise latent x𝑇 ∼ N ( 0, I). We perform the initial 𝑁 − 1 denoising steps without tracking gradients. This produces an intermediate latent x𝑡 1 that captures the basic semantic structure of the image. In the final denoising step(s), we enable gradient tracking through the diffusion UNet or Transformer backbone. We compute the one-step-predicted clean latent ˆx0. Then we adopt DiNa-LRM to produce a scalar reward 𝑟 𝜙 ( ˆx0, c) = 𝑟 𝜙 
+
+
+
+𝛼 (𝑡 ∗) ˆx0 + 𝜎 (𝑡 ∗)ϵ, 𝑡 ∗, 𝑐 
+
+
+
+, where 
+
+𝑡 ∗ = 0.4 in our experiment setting. Then we calculate the ReFL loss and backpropagate it: 
+
+L𝑅𝑒𝐹 𝐿 = −E ˆx0 [𝑟 𝜙 ( ˆx0, c)] (18) 14 Algorithm 2: Inference-Time Scaling via Noise Ensembling 
+
+Input :Clean sample x0, prompt c, evaluation timesteps {𝑡 𝑘 }𝐾 𝑘 =1
+
+Output :
+
+Aggregated reward score ˆ𝑟  
+
+> 1
+
+# Step 1: Multi-timestep feature extraction  
+
+> 2
+
+V, T ← [ ] , [ ] ; // Initialize token storage  
+
+> 3
+
+for 𝑘 = 1 to 𝐾 do  
+
+> 4
+
+# Perturb sample to the specified noise level  
+
+> 5
+
+x𝑡 𝑘 = 𝛼 (𝑡 𝑘 )x0 + 𝜎 (𝑡 𝑘 )ϵ 
+
+> 6
+
+# Extract features from diffusion backbone ( Eq. 10 ) 
+
+> 7
+
+F𝑣𝑖𝑠 , F𝑡 𝑥𝑡 = Backbone (x𝑡 𝑘 , 𝑡 𝑘 , c) ; // Backbone feature exaction  
+
+> 8
+
+# Step 2: Timestep-conditioned adaptation  
+
+> 9
+
+V𝑡 𝑘 = FiLM_Modulate (F𝑣𝑖𝑠 , 𝑡 𝑘 ) ; // Feature Modulation  
+
+> 10
+
+T𝑡 𝑘 = FiLM_Modulate (F𝑡 𝑥𝑡 , 𝑡 𝑘 ) 
+
+> 11
+
+Append V𝑡 𝑘 to V, T𝑡 𝑘 to T 
+
+> 12
+
+# Step 3: Token-level ensembling ( Eq. 13 ) 
+
+> 13
+
+Vensemble = Concat (V) ; // Join tokens across timesteps  
+
+> 14
+
+Tensemble = Concat (T )  
+
+> 15
+
+# Step 4: Global query-based scoring  
+
+> 16
+
+ˆ𝑟 = Q_Former (V𝑒𝑛𝑠 , T𝑒𝑛𝑠 ) 
+
+> 17
+
+return ˆ𝑟 
+
+## C Extensive Experiments 
+
+C.1 Extensive Ablation Studies 
+
+Impact of Layer Depth Our default configuration utilizes features from 12 layers (specifically indices 4, 8, 12) extracted from the diffusion backbone. To evaluate the sensitivity of the reward model to feature granularity, we compare configurations using 8, 12, 16 and 20 layers. As shown in Table 5, we observe a consistent and positive correlation between the number of feature layers and pairwise preference accuracy across all benchmarks, suggesting that a sufficient hierarchical representation is necessary to capture complex human preferences. Due to the limited computational resources, we conduct our primary ablation experiments using the 12-layer configuration as a representative setting. It is worth noting that our research prioritizes the design and verification of the diffusion-native formulation rather than exhaustive architectural tuning. While specific hyperparameters of the reward head may exert moderate influences on final scores, such optimal configurations often vary across different backbone architectures. Our preliminary investigations reveal that the inclusion of text features and the utilization of multi-level backbone features are critical factors for performance, whereas other architectural choices yield less significant impact. 
+
+> Table 5 Ablation on Layer Depth.
+
+Configure Pairwise Preference Accuracy (%) ImageReward HPDv2 HPDv3 GenAI Bench Avg 
+
+8 layers 58.83 74.39 72.28 66.79 68.07 12 layers ( Ours ) 60.34 82.13 75.04 68.43 71.49 16 layers 61.13 82.57 75.16 68.52 71.85 20 layers 61.94 83.44 75.37 70.29 72.76 
+
+Generalization Across Diverse Backbones To evaluate whether the diffusion-native latent reward paradigm is backbone-agnostic, we extend DiNa-LRM to two additional high-performance T2I models: Z-Image-7B [4] and 
+
+FLUX.1-Dev-12B [13 ]. We adopt the first 19 layers for FLUX, and the first 16 layers for Z-Image. As summarized in Table 6, DiNa-LRM maintains robust performance across different architectures, with all backbones achieving competitive pairwise preference accuracy. . 15 Table 6 Generalization Across Different Diffusion Backbones. 
+
+Backbone Pairwise Preference Accuracy (%) ImageReward HPDv2 HPDv3 GenAI Bench Avg 
+
+SD3.5-M (12 layers) 60.34 82.13 75.04 68.43 71.49 FLUX.1-Dev (19 layers) 59.03 81.21 72.57 66.67 69.87 Z-Image-Turbo (16 layers) 60.13 81.75 71.58 67.21 70.17 
+
+Discussion about Scaling Behaviors Interestingly, unlike the significant scaling behaviors observed in VLM-based reward models [ 45 ], we do not observe a corresponding performance leap in benchmarks when scaling the underlying diffusion backbone from SD3.5-M (2B) [ 6 ] to Z-Image-Turbo (7B) [ 4] and FLUX.1-Dev (12B) [ 13 ]. A more conservative yet practical conclusion is that our formulation remains effective across diverse backbones, providing similar performance regardless of the model scale. We hypothesize that larger generative backbones often distribute their discriminative priors across a broader or deeper set of layers , necessitating more intensive layer-wise search and feature aggregation to unlock their full reward potential. Due to limited computational resources, we did not perform exhaustive hyperparameter tuning or deeper layer searches for the 7B and 12B models. Additionally, it appears that the performance of diffusion-native rewards may be more heavily bounded by the quality of the preference training data rather than the generation capacity of the backbone. Consequently, a promising direction for future work would be distilling high-performance pixel-space VLM rewards into these latent-space backbones to achieve both superior accuracy and efficient on-policy alignment. 
+
+C.2 Extensive Alignment Experiments 
+
+Flow-GRPO Optimization While ReFL serves as a gradient-based supervised alignment baseline, we further validate 
+
+DiNa-LRM in an online reinforcement learning setting using Flow-GRPO [ 19 ]. To ensure rapid verification, we adopt 
+
+Flow-GRPO-Fast variant, which utilizes a hybrid sampling strategy: only the first 3 SDE denoising steps are optimized with gradient tracking, while the remaining steps follow standard ODE sampling. Following the evaluation protocol in 
+
+Section 5.4 , we designate PickScore as a held-out "golden metric" that does not participate in training, serving as an external indicator for monitoring over-optimization. Our RL configuration employs a group size of 18, with 32 prompts processed per optimization step. The training dynamics visualized in Figure 5 and intermediate sample visualizations visualized in Figure 6 demonstrate that DiNa-LRM provides a stable and effective reward signal for complex online RL trajectories. 0 25 50 75 100 125 150 175 200                 
+
+> Training Step
+> 0.76
+> 0.78
+> 0.80
+> 0.82
+> 0.84
+> Golden Score (PickScore)
+> Golden Score (PickScore)
+> Ours
+> 025 50 75 100 125 150 175 200
+> Training Step
+> 0.2
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Proxy Score
+> Proxy Score / Reward
+> Ours
+> Figure 5 Training Curves (Flow-GRPO-Fast on SD3.5-M) . We optimize with DiNa-LRM as the proxy reward. We report the optimized proxy score (right) and an external held-out golden metric (PickScore; left) .
+
+16 Two girls posing with the Knesset in the background 
+
+Base Step 60 Step 120 Step 180   
+
+> Wide dynamic shot of a compact, geometric starship in a space battle. Style influences of Volvo,
+> Bertone, and Minecraft. Terrazzo textures, cinematic volumetric lighting, sharp focus, photorealistic
+> 8k Octane render.
+> Enigmatic black square building on top of a purple hill, smoke stacks Figure 6 Qualitative Evolution during Flow-GRPO-Fast Alignment.
+
+## D Discussion about Reward Hacking 
+
+In the context of preference alignment, reward hacking remains a critical challenge where the generative model exploits the reward function to achieve high scores without genuine quality improvements. Similar to observations in prior works [ 19 ], we find that during the early stages of alignment, the proxy reward and the held-out golden metric (PickScore) increase in tandem, indicating effective preference learning. However, as optimization progresses into the long-horizon regime, the growth of the golden metric stagnates or even declines, while the proxy reward begins to fluctuate significantly or reaches a plateau. During our experiments, we identify two distinct hacking patterns (see Figure X): 
+
+• Spurious Human Injection. We notice a tendency where the reward model assigns higher scores to images featuring human subjects. Consequently, the generative model occasionally incorporates human figures into scenes even when they are not explicitly requested by the prompt. 
+
+• Stylistic Drift toward Animation. The model exhibits a strong tendency to shift toward an anime or illustrative style when the prompt does not specify realistic or photographic outputs. To mitigate these issues, regularization techniques are not only beneficial but also essential. We demonstrate that the pretraining loss in ReFL [50], along with KL-divergence constraints and regulated clipping ratios in Flow-GRPO [19], effectively stabilizes the optimization trajectory and delays the onset of hacking. Additionally, we also notice a prioritization of Aesthetic Quality over Semantic Fidelity . The reward model tends to favor high-quality, visually appealing images even if they exhibit minor prompt-mismatch, over lower-quality images that strictly follow the prompt. While the final rewards remain positively correlated with prompt alignment, this vision-centric bias is likely a shared limitation among most vision-foundation-based reward models. In practice, a more 17 A highly detailed portrait of a Cabbage Monster painted by 
+
+> Wayne Barlowe featured on ArtStation
+
+Base Over Optimization Base Over Optimization 
+
+> a high quality yellow black logo for a gambling website
+> named as “ husbet ”
+
+Hacking Pattern 1: Spurious Human Injection 
+
+> dog statue the top of mountain
+
+Base Over Optimization Base Over Optimization  
+
+> photo of Ford Focus RS, night time ,city roads, Miami streets
+
+Hacking Pattern 2: Stylistic Drift toward Animation Figure 7 Visualization of Reward Hacking Patterns. We present representative failure cases observed during the late-stage optimization (step 780) of the Flow-GRPO-Fast pipeline. These patterns illustrate two primary forms of over-optimization: (1). Spurious Human Injection. (2). Stylistic Drift toward Animation. 
+
+robust alignment strategy involves combining DiNa-LRM with metrics specialized in text-image alignment to provide a more balanced and comprehensive feedback signal. 
+
+## E Experimental Details 
+
+Here, we provide all the detailed hyperparameters for: (i) Reward Modeling Training ( Section 5.2 ); and (ii) Text-to-Image Alignment ( Section 5.4 ). 18 Table 7 Hyperparameters for Reward Modeling 
+
+Training 
+
+Training strategy LoRA LoRA alpha 128 LoRA dropout 0.0 LoRA R 64 LoRA target-modules q_proj,k_proj,v_proj,o_proj Optimizer AdamW Learning rate 5e-5 EMA Decay 0.995 Epochs 1Batch size 64 (after accumulation) 
+
+Model Architecture on SD-3.5-M 
+
+Number of Transformer Blocks 12 Visual Feature Layers Index 4, 8, 12 Textual Feature Layers Index 4, 8, 12 Query Number 4
+
+Timestep Sampling 
+
+Sampling Strategy Uniform Sample ( 𝑡 ∼ U ( 0, 1))
+
+Table 8 Hyperparameters for Preference Alignment (ReFL) on SD3.5-M 
+
+Training 
+
+Training strategy LoRA LoRA alpha 64 LoRA dropout 0.0 LoRA R 32 LoRA target-modules q_proj,k_proj,v_proj,o_proj Optimizer Adam Learning rate 3e-5 Training Steps 150 Batch size 256 (after accumulation) 
+
+Algorithm of ReFL 
+
+Rollout Sample Steps 40 Stop Grad Step [30, 39] 
+
+19

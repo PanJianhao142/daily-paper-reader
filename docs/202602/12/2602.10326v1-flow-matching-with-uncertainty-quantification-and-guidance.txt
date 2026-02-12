@@ -1,0 +1,1413 @@
+Title: Flow Matching with Uncertainty Quantification and Guidance
+
+URL Source: https://arxiv.org/pdf/2602.10326v1
+
+Published Time: Thu, 12 Feb 2026 01:23:30 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# Flow Matching with Uncertainty Quantification and Guidance 
+
+Juyeop Han 1 Lukas Lao Beyer 1 Sertac Karaman 1
+
+## Abstract 
+
+Despite the remarkable success of sampling-based generative models such as flow matching, they can still produce samples of inconsistent or degraded quality. To assess sample reliability and generate higher-quality outputs, we propose uncertainty-aware flow matching (UA-Flow), a lightweight extension of flow matching that predicts the veloc-ity field together with heteroscedastic uncertainty. UA-Flow estimates per-sample uncertainty by propagating velocity uncertainty through the flow dynamics. These uncertainty estimates act as a re-liability signal for individual samples, and we fur-ther use them to steer generation via uncertainty-aware classifier guidance and classifier-free guid-ance. Experiments on image generation show that UA-Flow produces uncertainty signals more highly correlated with sample fidelity than base-line methods, and that uncertainty-guided sam-pling further improves generation quality. 
+
+## 1. Introduction 
+
+In recent years, sampling-based generative models such as diffusion (Sohl-Dickstein et al., 2015; Ho et al., 2020; Song et al., 2021) and flow matching (Lipman et al., 2023; Liu et al., 2023; Albergo & Vanden-Eijnden, 2023) have achieved remarkable success across a wide range of domains, most particularly in image and video gener-ation (Dhariwal & Nichol, 2021; Ho et al., 2022) as well as in sequential decision-making (Janner et al., 2022; Chi et al., 2025; Black et al., 2024). Despite this progress, these models often produce samples of inconsistent quality. As a result, using reliably generated samples in downstream applications remains challenging, and this challenge be-comes particularly critical in safety-sensitive settings such as robotics and decision-making. To address this issue, the uncertainty associated with each generated sample can be interpreted as a measure of the re-  
+
+> *Equal contribution 1MIT LIDS. Correspondence to: Juyeop Han <juyeop@mit.edu >.
+
+liability of the generation process. Recently, several works have explored uncertainty estimation for diffusion-based generative models by adapting techniques from existing un-certainty quantification literature for neural networks (Lak-shminarayanan et al., 2017; Kendall & Gal, 2017; Ritter et al., 2018). In sampling-based generative modeling, un-certainty plays two central roles: (i) it provides a principled signal for assessing the quality or reliability of individual generated samples, and (ii) uncertainty can be leveraged dur-ing the generative process to actively improve sample quality through guided sampling (De Vita & Belagiannis, 2025). However, most prior works (Kou et al., 2023; Jazbec et al., 2025) primarily focus on the first role, using uncertainty in a post-hoc manner for sample filtering or selection. Moreover, existing approaches are often domain-specific (Sun et al., 2023; Franchi et al., 2025) and quantify uncertainty over conditional inputs (Berry et al., 2024). In this work, we propose uncertainty-aware flow matching 
+
+(UA-Flow), a lightweight extension of flow matching that models heteroscedastic uncertainty in the velocity field. By propagating this velocity uncertainty through the flow dy-namics, UA-Flow provides principled sample uncertainty estimates with minimal additional overhead. Because uncer-tainty is modeled at the velocity level, our approach does not rely on domain-specific uncertainty representations. More-over, we can leverage the learned velocity uncertainty for uncertainty-aware guided sampling, which improves gen-eration quality and is not explicitly considered in closely related prior work (Kou et al., 2023; Jazbec et al., 2025). The deterministic sampling allows us to localize uncertainty to the learned velocity field and propagate it through the dynamics, in contrast to stochastic sampling. We empirically validate uncertainty estimation with our proposed approach in two settings. First, we provide ev-idence that UA-Flow’s uncertainty correlates with sam-ple fidelity, with higher uncertainty indicating lower fi-delity. In particular, filtering out high-uncertainty samples yields better fidelity-oriented metrics than prior uncertainty-quantification baselines for sampling-based generative mod-els (Kou et al., 2023; De Vita & Belagiannis, 2025). Sec-ond, our systematic ablation studies demonstrate that uncer-tainty reduction can be actively incorporated as guidance during sampling, where both uncertainty-aware classifier and classifier-free guidance lead to improved generation 1                                 
+
+> arXiv:2602.10326v1 [cs.CV] 10 Feb 2026 Flow Matching with Uncertainty Quantification and Guidance
+> Max. U-CFG scale λmax
+> 012510 20
+> U-CG scale  w
+> 010 30 50
+> (a) Generated samples.
+> Max. U-CFG scale λmax
+> 012510 20
+> U-CG scale  w
+> 010 30 50
+> (b) Latent pixel-wise uncertainties.
+> Figure 1. Uncertainty-aware guidance sweep on ImageNet-256: generated samples and predicted latent pixel-wise uncertainties under uncertainty-aware classifier and classifier free guidance (U-CG and U-CFG). We visualize ImageNet-256 samples for the class guinea pig, Cavia cobaya across combinations of U-CG and U-CFG. Rows sweep the U-CG scale w∈ { 0,10 ,30 ,50 }
+> and columns sweep the maximum U-CFG scale λmax ∈ { 0,1,2,5,10 ,20 }. The left panel shows generated images, and the right panel shows the corresponding predicted uncertainty maps (brighter indicates higher uncertainty). Increasing guidance typically yields more class-consistent samples while reducing predicted uncertainty.
+
+quality. 
+
+## 2. Background 
+
+Sampling-based generative models and guidance. 
+
+Sampling-based generative models synthesize data by itera-tively transforming samples from a simple base distribution into the data distribution. Diffusion models implement this transformation through a gradual denoising process (Sohl-Dickstein et al., 2015; Ho et al., 2020; Song et al., 2021). Flow matching instead learns a deterministic ordinary dif-ferential equation (ODE) whose velocity field transports samples along a prescribed probability path (Lipman et al., 2023; Liu et al., 2023; Albergo & Vanden-Eijnden, 2023). Across both families, generation can be substantially im-proved by guidance, which modifies the sampling dynamics to favor samples that better satisfy a condition. Classifier guidance (CG) injects gradients from an external classifier or constraint functions into the sampling update (Dhariwal & Nichol, 2021; Dao et al., 2023), while classifier-free guid-ance (CFG) extrapolates conditional and unconditional pre-dictions without a separate classifier (Ho & Salimans, 2022; Zheng et al., 2023). A practical challenge is that strong guid-ance can reduce diversity or induce artifacts at high scales, motivating approaches that moderate the effective guidance signal or adapt its strength during sampling (Saharia et al., 2022; Sadat et al., 2024). 
+
+Uncertainty quantification for neural networks. Un-certainty quantification (UQ) for neural networks assesses prediction reliability and is commonly decomposed into aleatoric uncertainty (data-dependent noise) and epistemic uncertainty (model uncertainty) (Kendall & Gal, 2017). A widely used approach to aleatoric UQ is heteroscedastic regression, where the network predicts both a mean and an input-dependent variance and is trained with a Gaussian negative log-likelihood (Nix & Weigend, 1994). Epistemic uncertainty is often approximated with Bayesian-inspired techniques such as Monte Carlo dropout, deep ensembles, or Laplace approximations (Gal & Ghahramani, 2016; Lak-shminarayanan et al., 2017; Ritter et al., 2018). While these methods are well-established in classification and regres-sion, applying them to sampling-based generative models requires specifying which intermediate quantities are un-certain (e.g., score/velocity or conditional input) and how 
+
+uncertainty propagates through the sampling dynamics. 
+
+Uncertainty quantification with sampling-based genera-tive models. Most existing UQ methods for sampling-based generative models are diffusion-centric and can be broadly grouped by where uncertainty is modeled. Some quantify uncertainty in the conditional input of conditional diffu-sion (Berry et al., 2024). Others develop diffusion-model uncertainty for domain-specific generation and decision-making, including trajectory planning and multi-agent fore-casting (Sun et al., 2023; Capellera et al., 2025), as well as text-to-image uncertainty analysis (Franchi et al., 2025). A third line targets uncertainty of the generated sample itself. BayesDiff (Kou et al., 2023) uses Bayesian/Laplace-based estimators (Daxberger et al., 2021) and propagates uncertainty through the diffusion dynamics. Other meth-ods rely on feature-space likelihoods based on CLIP en-coders (Radford et al., 2021; Jazbec et al., 2025), or pixel-wise aleatoric uncertainty for reliability scoring and 2Flow Matching with Uncertainty Quantification and Guidance 
+
+uncertainty-guided sampling (De Vita & Belagiannis, 2025). Despite this progress, flow-matching-specific UQ remains underexplored, even though its deterministic ODE structure enables modeling uncertainty in the learned velocity field and propagating it through the dynamics. 
+
+## 3. Uncertainty-Aware Flow Matching 
+
+This section presents uncertainty-aware flow matching (UA-Flow), which learns heteroscedastic uncertainty directly in the velocity field and propagates it through the generative flow. The resulting uncertainty enables uncertainty-aware classifier and classifier-free guidance during sampling. 
+
+Setup and notation. Flow matching learns a time-dependent velocity field that transports samples from a base distribution x0 ∼ p0 to data x1 ∼ p1 along a pre-scribed probability path. We adopt the common affine path 
+
+xt = αtx1 + βtx0 over time t ∈ [0 , 1] , which induces the conditional distribution pt(xt | x1) and the corresponding closed-form conditional target velocity ut(xt | x1) (Lipman et al., 2024). 
+
+3.1. Probabilistic Velocity Field Modeling 
+
+UA-Flow aims to learn both the mean, ¯uθt (xt) ∈ Rn, and the diagonal variance, (σθt (xt)) 2 ∈ Rn, of the velocity field, using the target velocity ut(xt) as supervision. For the computational efficiency and representational simplic-ity, we estimate the variance in an element-wise manner. The uncertainty-aware flow matching loss, LUFM (θ), is for-mulated as Gaussian negative log-likelihood (NLL) loss targeting the velocity: 
+
+LUFM (θ) = Et,p t(xt)
+
+h  ¯uθt (xt) − ut(xt)2
+
+2( σθt (xt)) 2 +log( σθt (xt)) 
+
+i
+
+.
+
+(1) All operations in LUFM are applied element-wise. This convention is used throughout the paper. As in standard flow matching, the target velocity ut(xt)
+
+is not directly accessible, and training instead regresses the model to the conditional velocity ut(xt | x1) under 
+
+pt(xt | x1). Following the same principle, UA-Flow mini-mizes a conditional uncertainty-aware flow matching loss, denoted by LCUFM , which reformulates LUFM in terms of the conditional velocity: 
+
+LCUFM (θ) = Et,p 1(x1),p t(xt|x1)
+
+h Ut(xt, x1)2( σθt (xt)) 2 +
+
+ ¯uθt (xt) − ut(xt | x1)2
+
+2( σθt (xt)) 2 + log( σθt (xt)) 
+
+i
+
+,
+
+(2) where Ut(xt, x1) := ˆ ut(xt)2 − ut(xt | x1)2 is a correction term between the unconditional velocity estimate, ˆut(x),and the conditional velocity. In practice, we define the estimated target velocity ˆut(x) using the reweighted mini-batch estimator: 
+
+ˆut(xt) = 
+
+PBb=1 ut(xt | x1,b )pt(xt | x1,b )
+
+PBb=1 pt(xt | x1,b ) . (3) We detail the approximation from LUFM (θ) to LCUFM (θ)
+
+and analyze Ut(xt, x1) in Appendix A. 
+
+Remark. UA-Flow can be fine-tuned from a pre-trained flow matching model, without requiring training from scratch. In practice, we find that initializing from a pre-trained model is beneficial for preserving generation quality while learning uncertainty. Moreover, we adopt the β-NLL loss (Seitzer et al., 2022) rather than the standard Gaussian NLL, which scales each sample loss by sg (σθt (xt)) 2β 
+
+with β ∈ [0 , 1] because it produces better mean estimates. 
+
+3.2. Uncertainty Propagation through Flow Dynamics 
+
+We aim to estimate uncertainty of a generated sample reflect-ing accumulated velocity uncertainty along the flow. Specif-ically, given the predicted mean and variance of uθt (xt),
+
+¯uθt (xt) and (σθt (xt)) 2, we propagate the mean ¯xt and vari-ance Var[ xt] of the state xt starting from the initial state x0
+
+sampled from the base distribution p0. We interpret the re-sulting mean and variance at the final time, ¯x1 and Var[ x1],as the generated sample and its associated uncertainty. To obtain the mean dynamics, we linearize ¯uθt (xt) around 
+
+¯xt and drop higher-order terms, yielding 
+
+d¯xt
+
+dt = ¯ uθt (¯ xt). (4) For variance propagation we adopt Euler discretization, 
+
+xt+∆ t = xt + uθt (xt)∆ t, since variance propagation us-ing higher-order solvers would require a substantial increase in analytical complexity and computational cost. Similar to the variance propagation of BayesDiff (Kou et al., 2023), we approximate the evolution of the element-wise variance from xt to xt+∆ t as 
+
+Var[ xt+∆ t] ≈Var[ xt] + ( σθt (¯ xt)∆ t)2
+
++ 2∆ tCov( xt, u θt (xt)) , (5) Here, (σθt (¯ xt)) 2 is the predicted velocity variance evaluated at the mean state, and Cov( xt, u θt (xt)) ∈ Rn denotes the element-wise covariance between the state and its velocity. The former quantifies injected velocity noise, while the latter captures how state uncertainty couples with the local sensitivity of the velocity field. Applying a first-order Taylor expansion again, the element-wise covariance Cov( xt, u θt (xt)) is approximated as 
+
+Cov( xt, u θt (xt)) ≈ diag( Jθt (¯ xt)) ⊙ Var[ xt]. (6) 3Flow Matching with Uncertainty Quantification and Guidance 
+
+where Jθt (¯ xt) = ∂ ¯uθt 
+
+> ∂xt¯xt
+
+∈ Rn×n denotes the Jacobian of the mean velocity with respect to the state, evaluated at 
+
+¯xt. Also, ⊙ represents element-wise multiplication. Since forming diag( Jθt (¯ xt)) explicitly is intractable in high di-mensions, we approximate diag( Jθt (¯ xt)) ⊙ Var[ xt] using Hutchinson’s diagonal estimator (Bekas et al., 2007; Dha-rangutte & Musco, 2023). Consequently, the covariance 
+
+Cov( xt, u θt ) can be estimated as: 
+
+Cov( xt, u θt (xt)) ≈ 1
+
+S
+
+> S
+
+X
+
+> i=1
+
+(σxt ⊙ ri) ⊙ (Jθt (¯ xt)( σxt ⊙ ri)) 
+
+(7) with σxt = pVar[ xt]. ri ∈ Rn is a Rademacher vector whose entries are independently sampled from {− 1, +1 }
+
+with equal probability. Using Jacobian-vector products (JVPs) (Baydin et al., 2018), Jθt (¯ xt)( σxt ⊙ ri) can be com-puted efficiently via automatic differentiation without form-ing Jθt explicitly. Algorithm 1 summarizes the Monte Carlo estimator corresponding to Equation (7). We provide full derivations of Equations (4) to (7), as well as alternative covariance approximations, in Appendix B. 
+
+3.3. Uncertainty-Aware Guidance for Flow Matching 
+
+We incorporate the predicted velocity uncertainty into guided sampling by modifying the mean dynamics in Equa-tion (4). We present two mechanisms: (i) an uncertainty-based pseudo-likelihood whose gradient is used as a classifier-guidance term, and (ii) an adaptive choice of the CFG scale that reduces the predicted variance of the extrap-olated velocity. 
+
+Uncertainty-aware classifier guidance (U-CG). Standard classifier guidance modifies the sampling dynamics by adding a term btw∇x log pt(y | x) to the velocity field, where w ≥ 0 is the guidance scale. For the affine path xt = αtx1 + βtx0, bt = − ˙βtβtαt− ˙αtβ2 
+
+> t
+> αt
+
+. We de-fine an uncertainty-based pseudo-likelihood over states, 
+
+˜pt(¯ xt) ∝ exp( f (( σθt (¯ xt)) 2)) , which assigns higher den-sity to low-uncertainty states. Instantiating the classifier-guidance template by replacing ∇x log pt(y | x) with 
+
+∇xt log ˜ pt(xt) = ∇xt f (( σθt (xt)) 2) yields: 
+
+¯uθt, CG (¯ xt) = ¯ uθt (¯ xt) + btw∇¯xt f (( σθt (¯ xt)) 2). (8) The scalar function f should attain larger values when the predicted velocity variance is smaller, so that the guidance term steers the trajectory toward low-uncertainty regions. In our experiments, we heuristically use the negative squared mean across dimensions of the element-wise predicted vari-ances, f (σ2) = −( 1
+
+> n
+
+Pni=1 σ2 
+
+> i
+
+)2.
+
+Uncertainty-aware classifier-free guidance (U-CFG). 
+
+When UA-Flow is trained with classifier-free conditioning, the CFG extrapolated mean velocity is: 
+
+¯uθt, CFG (¯ xt | y) = (1 + λ)¯ uθt (¯ xt | y) − λ¯uθt (¯ xt | ∅), (9) where λ ≥ 0 is the CFG scale and ∅ denotes the null condition. Let σθt,y (¯ xt) and σθt, ∅(¯ xt) denote the predicted (element-wise) standard deviations of the conditional and uncondi-tional velocities, respectively. Assuming strong correlation between the two standard deviations, we approximate the element-wise variance of the extrapolated velocity by 
+
+Var uθt, CFG (xt | y) ≈  (1 + λ)σθt,y (¯ xt) − λσ θt, ∅(¯ xt)2.
+
+(10) We empirically show that the conditional and unconditional standard deviations are highly correlated (see Section G.4). We choose λ to minimize the total predicted variance of the extrapolated velocity with a clamp λmax to prevent the extrapolated velocity from diverging: 
+
+λ∗ = min( λopt , λ max ), (11) where 
+
+λopt = argmin 
+
+> λ≥0
+> n
+
+X
+
+> i=1
+
+ (1 + λ)σθt,y,i (¯ xt) − λσ θt, ∅,i (¯ xt)2.
+
+(12) Here, λopt admits a closed-form solution represented in Section C. At each sampling step, we compute a guidance-modified mean velocity and its associated element-wise variance at the current mean state ¯xt. When enabled, U-CFG returns the guided mean and variance by extrapolating conditional and unconditional predictions and approximating the variance as in Equations (9) and (10), with the scale λ∗ computed as in Equation (11) (see Algorithm 2). When enabled, U-CG then adds the mean-velocity correction in Equation (8) (see Algorithm 3). Both mechanisms can be applied sequentially within a single sampling step. 
+
+## 4. Experiments 
+
+We design experiments to evaluate whether the uncertainty estimated by UA-Flow can be used (i) as a sample-level reliability signal for generated samples , and (ii) as a control signal to improve generation via guided sampling . To assess (i), we filter out high-uncertainty generated images and com-pare the resulting FID and precision/recall against baseline uncertainty estimation methods (Section 4.2). To assess (ii), we conduct controlled ablations on uncertainty-aware classifier guidance (U-CG) (Section 4.3) and uncertainty-aware classifier-free guidance (U-CFG) (Section 4.4) under matched sampling settings. 4Flow Matching with Uncertainty Quantification and Guidance                     
+
+> Table 1. Computational cost (TFLOPs) required for sampling and uncertainty quantification using the proposed method (UA-Flow) and baselines per image across datasets. Vanilla
+> only shows computational cost required for sampling. Method CIFAR-10 ImageNet-128 ImageNet-256 Vanilla 7.778 1.097 4.362 AU 14.31 2.019 8.026 BayesDiff 17.72 2.447 9.731 GenUnc 46.72 8.493 33.65
+> UA-Flow 8.742 1.499 6.075
+
+4.1. Experimental Setup 
+
+We evaluate our method on CIFAR-10 (Krizhevsky et al., 2010) and ImageNet (Deng et al., 2009) at resolutions 
+
+128 × 128 (ImageNet-128 ) and 256 × 256 (ImageNet-256 ) using generative quality metrics: Fr ´echet Incep-tion Distance (FID) (Heusel et al., 2017) and preci-sion/recall (Kynk ¨a ¨anniemi et al., 2019). FID measures the overall distributional similarity between generated and real images, while precision and recall respectively cap-ture sample fidelity and distributional coverage. Details not described in this subsection are provided in Section E. 
+
+Training and Model Architectures. For CIFAR-10, we use an ADM-based (Dhariwal & Nichol, 2021) uncondi-tional flow matching model in pixel space. For ImageNet, we adopt a DiT-based conditional latent flow matching model (Dao et al., 2023) trained on images resized to 
+
+128 ×128 and 256 ×256 . Specifically, we use DiT-B/2 (Pee-bles & Xie, 2023) as the backbone and the pretrained au-toencoder from Stable Diffusion (Rombach et al., 2022) to map RGB images to a latent tensor with downsampling ratio 8 and 4 channels. For CIFAR-10 and ImageNet-128, we first train a vanilla flow matching model and then fine-tune it by adding a variance prediction head. For ImageNet-256, we fine-tune a pretrained latent flow matching model released in prior work (Dao et al., 2023). 
+
+Sampling Process. All experiments use the second order Heun’s method solver with 50 sampling steps. For CIFAR-10, we adopt the EDM sampling schedule (Karras et al., 2022), while for ImageNet we use uniformly spaced time steps. U-CG is applied every two sampling steps, whereas (U-)CFG is applied at every step. 
+
+4.2. Filtering Images with High-Uncertainty 
+
+We evaluate whether the predicted uncertainty provides a sample-level reliability signal by progressively filtering out high-uncertainty generated samples and tracking changes in FID and precision/recall. 
+
+Baselines. We compare against BayesDiff (Kou et al., 2023), Aleatoric Uncertainty (AU) (De Vita & Belagiannis, 2025), and Generative Uncertainty (GenUnc) (Jazbec et al., 2025). As these methods were originally proposed for diffusion models, we adapt them to flow matching by defining un-certainty over the velocity field and propagating it through the flow dynamics. Implementation details are provided in Section E.2. 
+
+Uncertainty aggregation for filtering. Uncertainty-based filtering requires assigning each generated sample a sin-gle scalar uncertainty score. GenUnc defines scalar uncer-tainty in the CLIP (Radford et al., 2021) embedding space, whereas UA-Flow, BayesDiff, and AU produce element-wise uncertainty maps over the image/latent tensor. For these element-wise methods, we use the final-state uncer-tainty map Var[ x1] and compute a sample-level score as the mean of the top 10% highest-uncertainty elements, which re-duces the influence of large low-uncertainty background re-gions. UA-Flow and BayesDiff update uncertainty estimates every four sampling steps to reduce computational overhead, following the original protocol of BayesDiff. For covari-ance estimation in the variance propagation step shown in Equation (7), we use a single Monte Carlo sample in prac-tice, i.e. S = 1 . Section G.3.2 shows that increasing the number of probes does not noticeably improve the filtering performance. 
+
+Filtering procedure. Filtering experiments are conducted without classifier guidance or classifier-free guidance. We use class-conditional uncertainty for ImageNet and uncondi-tional uncertainty for CIFAR-10. For each dataset, we gener-ate 100k images, rank them by the sample-level uncertainty, and progressively remove the top 10% high-uncertainty sam-ples up to 50% . At each filtering ratio, we randomly select 
+
+50k images from the remaining set and compute evaluation metrics against 50k reference images. 
+
+Results. Figures 2a, 6a and 6b summarize the results of uncertainty-based filtering. For UA-Flow, increasing the filtering ratio leads to higher precision and lower recall, showing a fidelity-diversity trade-off. On ImageNet, the resulting gain in sample fidelity outweighs the loss in diver-sity, leading to improved FID after filtering. On CIFAR-10, where the unfiltered FID is already low, this trade-off instead manifests as a slight increase in FID. GenUnc exhibits a stronger precision-recall trade-off and achieves lower FID than UA-Flow. However, this behavior is expected, as GenUnc represents uncertainty as domain-specific scalar Gaussian entropy estimated in the CLIP em-bedding space, which is closely aligned with perceptual image quality. In contrast, UA-Flow estimates element-wise uncertainty directly in the latent or pixel space of the gener-ative model, providing a finer-grained signal that correlates with the fidelity of individual image regions. As shown 5Flow Matching with Uncertainty Quantification and Guidance 0 10 20 30 40 50           
+
+> Filtering ratio (%)
+> 18
+> 20
+> 22
+> 24
+> 26
+> 28
+> Score
+> FID
+> 010 20 30 40 50
+> Filtering ratio (%)
+> 0.50
+> 0.51
+> 0.52
+> 0.53
+> 0.54
+> 0.55
+> 0.56
+> 0.57
+> Precision
+> 010 20 30 40 50
+> Filtering ratio (%)
+> 0.62
+> 0.63
+> 0.64
+> 0.65
+> 0.66
+> 0.67
+> 0.68
+> 0.69
+> Recall
+> UA-Flow
+> AU
+> BayesDiff
+> GenUnc
+> ImageNet-256
+
+(a) Generative quality metrics after filtering high-uncertainty samples. Image UA-Flow   
+
+> AU BayesDiff
+
+(b) Latent pixel-wise uncer-tainties. 
+
+Figure 2. (a) Generative quality metrics as a function of the filtering ratio on ImageNet-256. For each filtering level, high-uncertainty generated images are removed and 50k samples are randomly selected from the remaining set for evaluation. Compared to AU (De Vita & Belagiannis, 2025) and BayesDiff (Kou et al., 2023), which estimate element-wise uncertainty in the latent space, UA-Flow achieves lower FID and higher precision after filtering. GenUnc (Jazbec et al., 2025) is shown as a reference baseline, as it uses domain-specific scalar uncertainty estimated in the CLIP embedding space. (b) Example latent pixel-wise uncertainty maps produced by UA-Flow, AU, and BayesDiff for the same generated image. Brighter regions indicate higher uncertainty. For visualization, uncertainty values are normalized independently for each image. 
+
+in Figures 2b, 6a and 6b, UA-Flow highlights spatially lo-calized regions of high uncertainty, which is not possible for GenUnc due to its scalar formulation. Moreover, since UA-Flow does not depend on CLIP or any modality-specific embedding space, it may naturally extend to other data modalities without additional components. In contrast, both AU and BayesDiff show increasing FID as the filtering ratio increases, indicating that their uncertainty estimates are less aligned with sample quality under flow matching. For AU, both precision and recall consistently de-crease across datasets. BayesDiff exhibits a precision-recall trade-off with UA-Flow on CIFAR-10, while on ImageNet it does not show the same pattern. Qualitatively, the uncer-tainty maps of AU (Figures 6a and 6b) exhibit patterns that are largely inverted compared to those of UA-Flow, while BayesDiff produces noisy uncertainty maps that fail to lo-calize high-uncertainty regions. We discuss the reason for the noisy uncertainty maps in Section G.1. Overall, these results suggest that the uncertainty signals produced by AU and BayesDiff do not reliably correlate with sample fidelity. Additionally, Table 1 reports the computational overhead required to generate a single sample and quantify its uncer-tainty for UA-Flow and the baseline methods across datasets. UA-Flow incurs substantially lower computational overhead than all baseline uncertainty quantification methods. In par-ticular, GenUnc requires at least 5.3 × higher computational cost than UA-Flow due to repeated sampling through mod-els with different weights. Taken together, these results demonstrate that the uncer-tainty estimated by UA-Flow provides a sample-level relia-bility signal that is not only well correlated with fidelity, but also computationally efficient. 
+
+> Scale  w
+> 010 30 50
+
+Figure 3. ImageNet-256 samples under different U-CG scales 
+
+w at a CFG scale λ = 0 .5. Each column corresponds to a fixed class label and random seed, while rows sweep the U-CG scale 
+
+w ∈ { 0, 10 , 30 , 50 }. As w increases, samples become more class-consistent and visually simpler, reflecting the fidelity–diversity trade-off induced by steering generation toward low-uncertainty regions. 
+
+4.3. Uncertainty-Aware Classifier Guidance 
+
+In this experiment, we evaluate the effect of uncertainty-aware classifier guidance (U-CG) by sweeping the U-CG scale w ∈ [0 , 50] under fixed CFG scales λ ∈ { 0, 0.25 , 0.5}.Note that U-CG and CFG are disabled when w = 0 and 
+
+λ = 0 , respectively. 
+
+Results. Figure 7 shows generation quality metrics as a function of the U-CG scale. Across datasets, increasing w
+
+6Flow Matching with Uncertainty Quantification and Guidance                                                                                                 
+
+> Table 2. FID, precision and recall under uncertainty-aware classifier guidance (U-CG) across datasets. For each CFG scale λ, we report the best-performing U-CG setting (lowest FID). AU denotes uncertainty-aware guidance using aleatoric uncer-tainty (De Vita & Belagiannis, 2025) and is included as a ref-erence baseline. U-CG consistently improves precision compared to vanilla sampling under matched CFG settings, and it also yields better FID on ImageNet-128 and ImageNet-256.
+> (a) CIFAR-10 Setting U-CG FID ↓Precision ↑Recall ↑
+> AU –2.18 0.6549 0.6328 Vanilla –2.13 0.6570 0.6289
+> U-CG only 10 2.43 0.6585 0.6245
+> (b) ImageNet-128 Setting λwFID ↓Precision ↑Recall ↑
+> AU ––27.21 0.4500 0.6618 Vanilla 0.0 027.23 0.4525 0.6697
+> U-CG only 30 19.00 0.4925 0.6412 CFG only 0.25 014.76 0.5442 0.6297
+> CFG + U-CG 20 10.71 0.5798 0.6120 CFG only 0.5 08.29 0.6251 0.5858
+> CFG + U-CG 20 6.95 0.6452 0.5633
+> (c) ImageNet-256 Setting λwFID ↓Precision ↑Recall ↑
+> AU ––23.14 0.4982 0.6642 Vanilla 0.0 023.14 0.4997 0.6619
+> U-CG only 50 18.79 0.5290 0.6358 CFG only 0.25 010.31 0.6207 0.6078
+> CFG + U-CG 40 8.65 0.6463 0.5828 CFG only 0.5 05.29 0.7154 0.5468
+> CFG + U-CG 20 4.95 0.7286 0.5383
+
+induces a clear precision–recall trade-off: precision typically increases or peaks at an intermediate scale, while recall con-sistently decreases. This behavior reflects the intended effect of U-CG, which steers samples toward low-uncertainty re-gions of the learned velocity, favoring high-fidelity modes at the expense of diversity. As a result, FID decreases as w increases up to a dataset-dependent optimum, beyond which excessive guidance de-grades performance. On CIFAR-10, where the baseline FID is already low, this trade-off may instead manifest as a slight increase in FID, consistent with the filtering behavior observed in Section 4.2. These results are summarized in Table 2, which compares generation quality with and without U-CG under matched CFG scales. For each CFG setting, we report the U-CG configuration that achieves the lowest FID. We additionally         
+
+> Table 3. FID, precision and recall under standard and uncertainty-aware classifier-free guidance (CFG and U-CFG) across ImageNet. On ImageNet-128 and 256, we compare CFG with a scale λto U-CFG with a scale λ∗capped by λmax . For each method, we report the best-performing scale (lowest FID) and the corresponding precision and recall. U-CFG achieves lower FID by retaining higher recall at the optimum.
+> (a) ImageNet-128
+
+λ/λmax FID ↓ Precision ↑ Recall ↑
+
+CFG 1.0 5.23 0.7270 0.5031 U-CFG 1.75 4.82 0.7058 0.5349  
+
+> (b) ImageNet-256
+
+λ/λmax FID ↓ Precision ↑ Recall ↑
+
+CFG 0.75 4.49 0.7801 0.4933 U-CFG 1.5 4.35 0.7678 0.5119 
+
+include uncertainty-aware guidance based on AU as a refer-ence baseline. However, AU leads to only marginal changes in generation metrics under flow matching, which is consis-tent with the observations in Section 4.2 that its uncertainty estimates are weakly correlated with sample-level fidelity in this setting. Figure 3 visually illustrates the qualitative effects of U-CG on ImageNet-256 samples. As the U-CG scale in-creases, samples become more class-consistent while ex-hibiting reduced background complexity, reflecting the fidelity-diversity trade-off induced by steering generation to-ward low-uncertainty regions. Overall, these results demon-strate that guidance based on a pseudo-likelihood derived from predicted velocity uncertainty can effectively improve sample fidelity. 
+
+4.4. Uncertainty-Aware Classifier-Free Guidance 
+
+We study the effect of applying uncertainty-aware classifier-free guidance (U-CFG) by evaluating FID, precision, and recall compared to CFG. For CFG, we sweep the fixed guid-ance scale λ. For U-CFG, since the step-wise adaptive scale 
+
+λ∗ is chosen from uncertainty and clamped by a maximum 
+
+λmax , we sweep λmax . We evaluate FID, precision, and recall on ImageNet-128 and 256 over a wide range of scales (e.g., {0, 0.25 , . . . , 2.0, 3, 4, 5, 10 , 15 , 20 }). 
+
+Results. Figures 4a and 8a compare the metrics under increasing guidance parameters λ and λmax . As the CFG scale λ grows, precision and recall degrade sharply at large 
+
+λ, leading to a steep increase in FID. In contrast, precision and recall of U-CFG are changed slightly as λmax increases, resulting in only a small FID degradation at high λmax .This robustness can be attributed to U-CFG’s adaptive, step-7Flow Matching with Uncertainty Quantification and Guidance 0 5 10 15 20               
+
+> CFG scale /max
+> 5
+> 10
+> 15
+> 20
+> Score
+> FID
+> 0510 15 20
+> CFG scale /max
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Precision
+> 0510 15 20
+> CFG scale /max
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> Recall
+> CFG
+> U-CFG
+> ImageNet-256
+
+(a) FID, Precision, and Recall versus CFG scale λ (CFG) or λmax (U-CFG). 0 5 10 15 20 25 30 35 40 45 50    
+
+> Step index
+> 0.0
+> 2.5
+> 5.0
+> 7.5
+> 10.0
+> 12.5
+> 15.0
+> 17.5
+> 20.0
+> U-CFG scale  *
+> U-CFG scale *distribution
+> Mean
+> Median
+
+(b) Distribution of U-CFG scale λ∗.
+
+Figure 4. (a) FID, precision, and recall as a function of the fixed CFG scale λ or the maximum scale λmax of U-CFG on ImageNet-256 CFG degrades sharply at large λ, while U-CFG remains more stable as λmax increases. (b) Violin plots of the adaptive U-CFG scale λ∗ across sampling steps 1,000 samples . λ∗ tends to be smaller in early steps and larger in later steps. 
+
+CFG U-CFG 
+
+> Scale  λ / λmax
+> 12510 20
+
+CFG U-CFG 
+
+Figure 5. ImageNet-256 samples under increasing CFG scale 
+
+λ and the maximum of U-CFG scale λmax . Samples generated by standard CFG (left) and U-CFG (right) while sweeping the scale λ (CFG) or the cap λmax (U-CFG) in {1.0, 2.0, 5.0, 10 , 20 }.Large λ in CFG can lead to oversaturation and mode collapse, whereas U-CFG better preserves global structure under large λmax 
+
+via adaptive step-wise scaling. 
+
+dependent scaling. Figures 4b and 8b show violin plots of 
+
+λ∗ collected every five steps from 1,000 generated samples. We observe that λ∗ is typically smaller in early sampling steps and becomes larger in later steps, suggesting that U-CFG avoids over-guidance when the sample is still coarse, thereby mitigating the diversity loss that is typical at high fixed CFG scales. Qualitatively, Figure 5 shows that large λ in standard CFG can produce oversaturated samples or mode collapse, whereas U-CFG better preserves global structure even under a large λmax without saturation or with minimal saturation. Finally, Table 3 reports the best-performing configurations (lowest FID) for each method. Across both datasets, U-CFG achieves lower FID than CFG despite the lower precision because it retains higher recall at the optimum. This sug-gests that U-CFG improves FID primarily by reducing the collapse in coverage that occurs under overly strong fixed-scale guidance. Overall, these results support that U-CFG improves generation by adaptively selecting λ∗ to reduce uncertainty at each sampling step. 
+
+## 5. Conclusion 
+
+We propose uncertainty-aware flow matching (UA-Flow), which predicts element-wise heteroscedastic uncertainty alongside the velocity field and propagates it through de-terministic flow dynamics to obtain per-sample uncertainty, enabling uncertainty-aware classifier guidance (U-CG) and step-wise adaptive classifier-free guidance (U-CFG). Across CIFAR-10 and ImageNet, UA-Flow’s uncertainty correlates more closely with sample fidelity than element-wise uncer-tainty quantification baselines while incurring lower com-putational overhead. Using this signal during sampling im-proves generation: U-CG induces a precision–recall trade-off by steering toward low-uncertainty modes, while U-CFG mitigates failures of large fixed guidance via adaptive scal-ing and remains robust under strong guidance. Because uncertainty is predicted at the velocity level, UA-Flow is modality-agnostic and may extend beyond images, e.g., as a reliability signal in safety-critical settings such as robotics and decision-making. 
+
+## Impact Statement 
+
+This work advances uncertainty quantification for sampling-based generative models by explicitly modeling and propa-gating uncertainty in flow matching dynamics. By providing 8Flow Matching with Uncertainty Quantification and Guidance 
+
+per-sample and spatially localized uncertainty estimates, the proposed approach can help practitioners assess the reliabil-ity of generated outputs and make more informed decisions when deploying generative models. Potential positive impacts include improved robustness and safety in downstream applications that rely on generative models. In particular, uncertainty-aware guidance may re-duce failure cases caused by overconfident or excessively guided generation. At the same time, as with other advances in generative mod-eling, improved generation quality and controllability may amplify existing societal risks associated with synthetic data, including misuse, misinformation, or overreliance on auto-matically generated content. We emphasize that uncertainty estimates should be used as a complementary reliability signal rather than a guarantee of correctness. 
+
+## References 
+
+Albergo, M. S. and Vanden-Eijnden, E. Building normal-izing flows with stochastic interpolants. 2023. URL 
+
+https://arxiv.org/abs/2209.15571 .Baydin, A. G., Pearlmutter, B. A., Radul, A. A., and Siskind, J. M. Automatic differentiation in machine learning: a survey. Journal of machine learning research , 18(153): 1–43, 2018. Bekas, C., Kokiopoulou, E., and Saad, Y. An estimator for the diagonal of a matrix. Applied numerical mathematics ,57(11-12):1214–1229, 2007. Berry, L., Brando, A., and Meger, D. Shedding light on large generative networks: Estimating epistemic uncertainty in diffusion models. In The 40th Conference on Uncertainty in Artificial Intelligence , 2024. Black, K., Brown, N., Driess, D., Esmail, A., Equi, M., Finn, C., Fusai, N., Groom, L., Hausman, K., Ichter, B., et al. π0: A vision language-action flow model for general robot control, 2024a. URL https://arxiv.org/abs/2410.24164 , 2024. Capellera, G., Rubio, A., Ferraz, L., and Agudo, A. Uni-fied uncertainty-aware diffusion for multi-agent trajectory modeling. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 22476–22486, June 2025. Chi, C., Xu, Z., Feng, S., Cousineau, E., Du, Y., Burch-fiel, B., Tedrake, R., and Song, S. Diffusion policy: Visuomotor policy learning via action diffusion. The International Journal of Robotics Research , 44(10-11): 1684–1704, 2025. Dao, Q., Phung, H., Nguyen, B., and Tran, A. Flow match-ing in latent space. arXiv preprint arXiv:2307.08698 ,2023. Daxberger, E., Kristiadi, A., Immer, A., Eschenhagen, R., Bauer, M., and Hennig, P. Laplace redux–effortless Bayesian deep learning. In NeurIPS , 2021. De Vita, M. and Belagiannis, V. Diffusion model guided sampling with pixel-wise aleatoric uncertainty estimation. In 2025 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , pp. 3844–3854, 2025. doi: 10.1109/WACV61041.2025.00378. Deng, J., Dong, W., Socher, R., Li, L.-J., Li, K., and Fei-Fei, L. Imagenet: A large-scale hierarchical image database. In 2009 IEEE Conference on Computer Vi-sion and Pattern Recognition , pp. 248–255, 2009. doi: 10.1109/CVPR.2009.5206848. Dharangutte, P. and Musco, C. A tight analysis of hutchin-son’s diagonal estimator. In Symposium on Simplicity in Algorithms (SOSA) , pp. 353–364. SIAM, 2023. Dhariwal, P. and Nichol, A. Diffusion models beat GANs on image synthesis. Advances in neural information processing systems , 34:8780–8794, 2021. Franchi, G., Belkhir, N., Trong, D. N., Xia, G., and Pilzer, A. Towards understanding and quantifying uncertainty for text-to-image generation. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 8062– 8072, 2025. Gal, Y. and Ghahramani, Z. Dropout as a bayesian approx-imation: Representing model uncertainty in deep learn-ing. In international conference on machine learning , pp. 1050–1059. PMLR, 2016. Heusel, M., Ramsauer, H., Unterthiner, T., Nessler, B., and Hochreiter, S. Gans trained by a two time-scale update rule converge to a local nash equilibrium. Advances in neural information processing systems , 30, 2017. Ho, J. and Salimans, T. Classifier-free diffusion guidance. 
+
+arXiv preprint arXiv:2207.12598 , 2022. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. Advances in neural information process-ing systems , 33:6840–6851, 2020. Ho, J., Salimans, T., Gritsenko, A., Chan, W., Norouzi, M., and Fleet, D. J. Video diffusion models. Advances in neural information processing systems , 35:8633–8646, 2022. Janner, M., Du, Y., Tenenbaum, J., and Levine, S. Plan-ning with diffusion for flexible behavior synthesis. In 
+
+International Conference on Machine Learning , 2022. 9Flow Matching with Uncertainty Quantification and Guidance 
+
+Jazbec, M., Wong-Toi, E., Xia, G., Zhang, D., Nalisnick, E., and Mandt, S. Generative uncertainty in diffusion models. In Proceedings of the Forty-first Conference on Uncertainty in Artificial Intelligence , 2025. Karras, T., Aittala, M., Aila, T., and Laine, S. Elucidating the design space of diffusion-based generative models. 
+
+Advances in neural information processing systems , 35: 26565–26577, 2022. Kendall, A. and Gal, Y. What uncertainties do we need in Bayesian deep learning for computer vision? Advances in neural information processing systems , 30, 2017. Kou, S., Gan, L., Wang, D., Li, C., and Deng, Z. Bayes-diff: Estimating pixel-wise uncertainty in diffusion via bayesian inference. In The Twelfth International Confer-ence on Learning Representations , 2023. Krizhevsky, A., Nair, V., and Hinton, G. CIFAR-10 (Canadian institute for advanced research). URL http://www.cs.toronto.edu/kriz/cifar. html , 5(4):1, 2010. Kynk ¨a ¨anniemi, T., Karras, T., Laine, S., Lehtinen, J., and Aila, T. Improved precision and recall metric for assess-ing generative models. Advances in neural information processing systems , 32, 2019. Lakshminarayanan, B., Pritzel, A., and Blundell, C. Simple and scalable predictive uncertainty estimation using deep ensembles. Advances in neural information processing systems , 30, 2017. Lipman, Y., Chen, R. T. Q., Ben-Hamu, H., Nickel, M., and Le, T. Flow matching for generative modeling. In 
+
+International Conference on Learning Representations ,2023. Lipman, Y., Havasi, M., Holderrieth, P., Shaul, N., Le, M., Karrer, B., Chen, R. T., Lopez-Paz, D., Ben-Hamu, H., and Gat, I. Flow matching guide and code. arXiv preprint arXiv:2412.06264 , 2024. Liu, X., Gong, C., and Liu, Q. Flow straight and fast: Learning to generate and transfer data with rectified flow. 2023. URL https://openreview.net/forum? id=XVjTT1nw5z .Nix, D. A. and Weigend, A. S. Estimating the mean and variance of the target probability distribution. In Pro-ceedings of 1994 ieee international conference on neural networks (ICNN’94) , volume 1, pp. 55–60. IEEE, 1994. Peebles, W. and Xie, S. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF interna-tional conference on computer vision , pp. 4195–4205, 2023. Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., and Sutskever, I. Learning transferable visual models from natural language su-pervision. In Meila, M. and Zhang, T. (eds.), Pro-ceedings of the 38th International Conference on Ma-chine Learning , volume 139 of Proceedings of Machine Learning Research , pp. 8748–8763. PMLR, 18–24 Jul 2021. URL https://proceedings.mlr.press/ v139/radford21a.html .Ritter, H., Botev, A., and Barber, D. A scalable laplace ap-proximation for neural networks. In 6th international conference on learning representations, ICLR 2018-conference track proceedings , volume 6. International Conference on Representation Learning, 2018. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., and Ommer, B. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pp. 10684–10695, 2022. Sadat, S., Hilliges, O., and Weber, R. M. Eliminating over-saturation and artifacts of high guidance scales in diffu-sion models. In The Thirteenth International Conference on Learning Representations , 2024. Saharia, C., Chan, W., Saxena, S., Li, L., Whang, J., Denton, E. L., Ghasemipour, K., Gontijo Lopes, R., Karagol Ayan, B., Salimans, T., et al. Photorealistic text-to-image dif-fusion models with deep language understanding. Ad-vances in neural information processing systems , 35: 36479–36494, 2022. Seitzer, M., Tavakoli, A., Antic, D., and Martius, G. On the pitfalls of heteroscedastic uncertainty estimation with probabilistic neural networks. In International Confer-ence on Learning Representations , April 2022. Sohl-Dickstein, J., Weiss, E., Maheswaranathan, N., and Ganguli, S. Deep unsupervised learning using nonequi-librium thermodynamics. In International conference on machine learning , pp. 2256–2265. pmlr, 2015. Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Er-mon, S., and Poole, B. Score-based generative modeling through stochastic differential equations. In International Conference on Learning Representations , 2021. Sun, J., Jiang, Y., Qiu, J., Nobel, P., Kochenderfer, M. J., and Schwager, M. Conformal prediction for uncertainty-aware planning with diffusion dynamics model. Advances in Neural Information Processing Systems , 36:80324– 80337, 2023. 10 Flow Matching with Uncertainty Quantification and Guidance 
+
+Zheng, Q., Le, M., Shaul, N., Lipman, Y., Grover, A., and Chen, R. T. Guided flows for generative modeling and decision making. arXiv preprint arXiv:2311.13443 , 2023. 11 Flow Matching with Uncertainty Quantification and Guidance 
+
+## A. Derivation of the Uncertainty-Aware Flow Matching Loss 
+
+This appendix provides a detailed derivation of the conditional uncertainty-aware flow matching loss LCUFM by rewriting the unconditional Gaussian negative log-likelihood loss LUFM in terms of conditional flow matching. The key idea is to express expectations under the marginal distribution pt(x) using the conditional distribution pt(x | x1), which enables tractable training despite the inaccessibility of the unconditional velocity. For notational simplicity, time is uniformly sampled, i.e. t ∼ [0 , 1] , though any alternative time-sampling distribution could be used. We begin by expanding the uncertainty-aware flow matching loss LUFM and decomposing it into four expectation terms, which will later be rewritten under the conditional distribution. 
+
+LUFM (θ) = Et, p t(xt)
+
+h  ¯uθt (xt) − ut(xt)2
+
+2( σθt (xt)) 2 + log( σθt (xt)) 
+
+i
+
+= Et, p t(xt)
+
+h (¯ uθt (xt)) 2
+
+2( σθt (xt)) 2
+
+i| {z }
+
+> (A)
+
+−2 Et, p t(xt)
+
+h ¯uθt (xt)ut(xt)2( σθt (xt)) 2
+
+i| {z }
+
+> (B)
+
++ Et, p t(xt)
+
+h (ut(xt)2
+
+2( σθt (xt)) 2
+
+i| {z }
+
+> (C)
+
++ Et, p t(xt)
+
+h
+
+log( σθt (xt)) 
+
+i| {z }
+
+> (D)
+
+(13) Term (A) depends only on the predicted mean and variance and can be rewritten by expressing the marginal distribution 
+
+pt(xt) as an integral over the conditional distribution pt(xt | x1) and the data distribution p1(x1).
+
+(A) = 
+
+Z (¯ uθt (xt)) 2
+
+2( σθt (xt)) 2 pt(xt)dxtdt =
+
+Z (¯ uθt (xt)) 2
+
+2( σθt (xt)) 2 pt(xt | x1)p1(x1)dx1dxtdt = Et,p 1(x1),p t(xt|x1)
+
+h (¯ uθt (xt)) 2
+
+2( σθt (xt)) 2
+
+i
+
+(14) Term (B) involves the cross term between the predicted mean and the true unconditional velocity. Since the unconditional velocity ut(x) is intractable, we rewrite it using the law of total expectation under the conditional flow matching formulation. 
+
+(B) = 
+
+Z ¯uθt (xt)ut(xt)2( σθt (xt)) 2 pt(xt)dxtdt 
+
+=
+
+Z ¯uθt (xt)2( σθt (xt)) 2
+
+ Z ut(xt | x1)pt(xt | x1)p1(x1)
+
+pt(xt) dx1
+
+
+
+pt(xt)dxtdt 
+
+=
+
+Z ¯uθt (xt)ut(xt | x1)2( σθt (xt)) 2 pt(xt | x1)p1(x1)dx1dxtdt 
+
+= Et,p 1(x1),p t(xt|x1)
+
+h ¯uθt (xt)ut(xt | x1)2( σθt (xt)) 2
+
+i
+
+(15) By the same change of measure, terms (C) and (D) can be rewritten as 
+
+(C) = Et,p 1(x1),p t(xt|x1)
+
+h (ut(xt)) 2
+
+2( σθt (xt)) 2
+
+i
+
+(16) 
+
+(D) = Et,p 1(x1),p t(xt|x1)
+
+h
+
+log( σθt (xt)) 
+
+i
+
+(17) Therefore, LU F M (θ) can be rewritten as: 
+
+LUFM (θ) = Et,p 1(x1),p t(xt|x1)
+
+h (¯ uθt (xt)) 2 − 2¯ uθt (xt)ut(xt | x1) + ( ut(xt)) 2
+
+2( σθt (xt)) 2 + log( σθt (xt)) 
+
+i
+
+=Et,p 1(x1),p t(xt|x1)
+
+h (¯ uθt (xt) − ut(xt | x1)) 2 + ( ut(xt)) 2 − (ut(xt | x1)) 2
+
+2( σθt (xt)) 2 + log( σθt (xt)) 
+
+i (18) However, we cannot evaluate the true unconditional flow ut(xt) in closed form. Using the identity in Equation (19), we can rewrite ut(xt) as a ratio of expectations over x1 ∼ p1:
+
+ut(xt) = 
+
+Z ut(xt | x1)pt(xt | x1)p1(x1)
+
+pt(xt) dx1 =
+
+R ut(xt | x1)pt(xt | x1)p1(x1)dx1
+
+R pt(xt | x1)p1(x1)dx1
+
+= Ep1(x1)[ut(xt | x1)pt(xt | x1)] 
+
+Ep1(x1)[pt(xt | x1)] .
+
+(19) 12 Flow Matching with Uncertainty Quantification and Guidance 
+
+This suggests a self-normalized importance-sampling estimator based on a mini-batch {x1,b }Bb=1 ∼ p1:
+
+ˆut(xt) = 
+
+PBb=1 ut(xt | x1,b ) pt(xt | x1,b )
+
+PBb=1 pt(xt | x1,b ) . (20) Since ut(xt) is intractable, we approximate (ut(xt)) 2 by (ˆ ut(xt)) 2 in our objective. This ratio-of-expectations naturally motivates an importance-weighted approximation, providing a tractable proxy for the unconditional target. Substituting 
+
+ˆut(xt)2 yields the correction term Ut(xt, x1) := ˆ ut(xt)2 − ut(xt | x1)2 and results in the conditional objective LCUFM (θ)
+
+in Equation (2). 
+
+Remark on Jensen bias in approximating (ut(xt)) 2 and why we still keep Ut(xt, x1). However, ˆut(xt)2 is not an unbiased estimator of ut(xt)2 even when ˆut(xt) is a consistent proxy for ut(xt). This follows from the identity 
+
+E[ˆ u2] − (E[ˆ u]) 2 = Var(ˆ u), i.e., squaring introduces a Jensen gap proportional to the estimator variance. Accordingly, the bias is controlled by the (mini-batch) estimator variance and typically decreases as the mini-batch size B increases. Despite this limitation, introducing the correction term Ut(xt, x1) := ˆ ut(xt)2 − ut(xt | x1)2 still yields a closer surrogate to the original unconditional objective than omitting Ut altogether. Indeed, letting pt|1(x1 | xt) = pt(xt|x1) p1(x1) 
+
+> pt(xt)
+
+denote the induced posterior in Equation (19), we have ut(xt) = Ept|1(x1|xt)[ut(xt | x1)] and thus 
+
+Ept|1(x1|xt)
+
+ut(xt)2 − ut(xt | x1)2 = − Var pt|1(x1|xt)(ut(xt | x1)) ≤ 0.
+
+Therefore, dropping Ut implicitly sets this negative term to zero, incurring a systematic bias that does not vanish with B.In contrast, our proxy retains this variance-related correction up to the residual bias in ˆut(xt)2, which diminishes as the mini-batch estimator variance decreases (e.g., as B increases). 
+
+## B. Details on Variance Propagation and Covariance Approximations 
+
+This appendix provides detailed derivations for the variance evolution equations and tractable approximations of the covariance between the state and the velocity field. 
+
+B.1. Derivation of Equation (4) 
+
+Using the Gaussian velocity model uθt (x) = ¯ uθt (xt) + σθt (xt) ⊙ ϵ with ϵ ∼ N (0 , I ), we have E[uθt (xt)] = E[¯ uθt (xt)] .Applying a first-order Taylor expansion of ¯uθt (xt) around ¯xt := E[xt] yields 
+
+d¯xt
+
+dt = Euθt (xt) = E¯uθt (xt) ≈ E¯uθt (¯ xt) + Jθt (¯ xt)( xt − ¯xt) = ¯ uθt (¯ xt). (21) 
+
+B.2. Derivation of Equation (5) 
+
+Under Euler integration between times t and t + ∆ t, the flow dynamics become 
+
+xt+∆ t = xt + uθt (xt) ∆ t. (22) Applying the element-wise variance identity Var( X + aY ) = Var( X) + a2Var( Y ) + 2 a Cov( X, Y ) to Equation (22) yields Equation (5), where Y = uθt (xt).Next, we justify the approximation Var( uθt (xt)) ≈ (σθt (¯ xt)) 2 used in the main text. By the law of total variance and 
+
+uθt (xt) = ¯ uθt (xt) + σθt (xt) ⊙ ϵ with ϵ ∼ N (0 , I ), we have 
+
+Var( uθt (xt)) = E[Var( uθt (xt) | xt)] + Var( E[uθt (xt) | xt]) =Ext
+
+(σθt (xt)) 2 + Var(¯ uθt (xt)) 
+
+≈Ext
+
+h
+
+(σθt (¯ xt)) 2 + ∂(σθt )2
+
+∂x ¯xt
+
+(xt − ¯xt)
+
+i
+
++ Var(¯ uθt (xt)) =( σθt (¯ xt)) 2 + Var(¯ uθt (xt)) 
+
+(23) 13 Flow Matching with Uncertainty Quantification and Guidance 
+
+where the last step follows by dropping higher-order terms and using E[xt − ¯xt] = 0 . The remaining term Var(¯ uθt (xt)) 
+
+captures variance induced by the spread of xt. In principle, it can be estimated by Monte Carlo sampling: draw xt,i ∼N (¯ xt, Var[ xt]) and compute the empirical variance of ¯uθt (xt,i ).In the main text, we focus on the predicted heteroscedastic uncertainty and avoid this additional Monte Carlo overhead. Thus, we neglect Var(¯ uθt (xt)) and use the approximation 
+
+Var( uθt (xt)) ≈ (σθt (¯ xt)) 2.
+
+Section G.3.1 further shows that explicitly including Var(¯ uθt (xt)) has negligible empirical effect on the resulting uncertainty estimates. 
+
+B.3. Derivation of Equation (6) 
+
+We write uθt (xt) = ¯ uθt (xt) + σθt (xt) ⊙ ϵ with ϵ ∼ N (0 , I ). The noise term does not contribute to the covariance because ϵ
+
+is independent of xt and has zero mean. Thus, 
+
+Cov( xt, u θt (xt)) = E[xt ⊙ uθt (xt)] − E[xt] ⊙ E[uθt (xt)] = Ext [xt ⊙ ¯uθt (xt)] − ¯xt ⊙ Ext [¯ uθt (xt)] 
+
+≈ Ext [xt ⊙ ¯uθt (xt)] − ¯xt ⊙ ¯uθt (¯ xt).
+
+(24) Applying a first-order Taylor expansion of ¯uθt (xt) around ¯xt gives 
+
+Ext
+
+xt ⊙ ¯uθt (xt) ≈ Ext
+
+h
+
+xt ⊙  ¯uθt (¯ xt) + Jθt (¯ xt) ( xt − ¯xt)i
+
+= ¯ xt ⊙ ¯uθt (¯ xt) + Ext
+
+h
+
+(xt − ¯xt) ⊙  Jθt (¯ xt) ( xt − ¯xt)i
+
+.
+
+(25) To keep the propagation tractable in high dimensions, we approximate Cov( xt) ∈ Rn×n as diagonal (i.e., we neglect off-diagonal entries). Then the i-th element of the last expectation becomes 
+
+E
+
+h
+
+(xt − ¯xt)i
+
+ Jθt (¯ xt) ( xt − ¯xt)
+
+> i
+
+i
+
+=
+
+> n
+
+X
+
+> j=1
+
+(Jθt (¯ xt)) ij E
+
+h
+
+(xt − ¯xt)i (xt − ¯xt)j
+
+i
+
+=
+
+> n
+
+X
+
+> j=1
+
+(Jθt (¯ xt)) ij (Cov( xt)) ij = ( Jθt (¯ xt)) ii Var[ xt]i.
+
+(26) Therefore, 
+
+Ext
+
+xt ⊙ ¯uθt (xt) ≈ ¯xt ⊙ ¯uθt (¯ xt) + diag( Jθt (¯ xt)) ⊙ Var[ xt]. (27) Combining Equations (24) to (27) yields Equation (6). 
+
+B.4. Derivation of Equation (7) 
+
+Let r ∈ Rn be a Rademacher vector with independent entries sampled uniformly from {− 1, +1 }, so that E[rirj ] = δij .Define σxt := pVar[ xt] and v := σxt ⊙ r. Then, for each coordinate i,
+
+Evi(Jθt (¯ xt)v)i
+
+ =
+
+> n
+
+X
+
+> j=1
+
+(Jθt (¯ xt)) ij E[vivj ] = ( Jθt (¯ xt)) ii (σxt )2 
+
+> i
+
+,
+
+since E[vivj ] = ( σxt )i(σxt )j E[rirj ] and E[rirj ] = δij . Stacking all coordinates gives 
+
+Ev ⊙ (Jθt (¯ xt)v) = diag( Jθt (¯ xt)) ⊙ Var[ xt]. (28) Therefore, Equation (7) provides an unbiased Monte Carlo estimator of diag( Jθt (¯ xt)) ⊙ Var[ xt] using only Jacobian–vector products. 14 Flow Matching with Uncertainty Quantification and Guidance 
+
+B.5. Approximations of Cov( xt, u θt (xt)) 
+
+We approximate Cov( xt, u θt (xt)) in three tractable ways: 
+
+Cov( xt, u θt (xt)) ≈
+
+
+
+0 (Option 1 )
+
+> 1
+> S
+
+PSi=1 (σxt ⊙ ri) ⊙
+
+
+
+Jθt (¯ xt)( σxt ⊙ ri)
+
+
+
+(Option 2 )
+
+> 1
+> S
+
+PSi=1 xt,i ⊙ ¯uθt (xt,i ) − ¯xt ⊙
+
+ 1
+
+> S
+
+PSi=1 ¯uθt (xt,i )
+
+
+
+(Option 3 )
+
+(29) where ri are Rademacher vectors and xt,i ∼ N (¯ xt, diag(Var[ xt])) . Here S denotes the number of samples. 
+
+Option 1. Ignore the covariance term. This is the cheapest choice computationally, but it discards the interaction between state and flow. 
+
+Option 2. This is the estimator deployed in our implementation. It estimates diag( Jθt (¯ xt)) ⊙ Var[ xt] using S Rademacher probes and Jacobian-vector products; see Algorithm 1 for details. 
+
+Option 3. A Monte Carlo alternative, similar to BayesDiff (Kou et al., 2023), draws xt,i ∼ N (¯ xt, Var[ xt]) for i = 1 , · · · , S 
+
+and estimates the covariance directly from sample moments. 
+
+## C. Derivations of λ∗
+
+Recall that U-CFG chooses a scalar CFG scale λ ≥ 0 by minimizing the total predicted variance of the extrapolated velocity. Using the notation in Section 3.3, let σθt,y (¯ xt) ∈ Rn and σθt, ∅(¯ xt) ∈ Rn denote the element-wise standard deviations of the conditional and unconditional velocities, respectively. As described in Equation (10), the element-wise standard deviation of the extrapolated velocity is 
+
+˜σ(λ) = (1 + λ)σθt,y (¯ xt) − λσ θt, ∅(¯ xt) = σθt,y (¯ xt) + λ(σθt,y (¯ xt) − σθt, ∅(¯ xt)) . (30) Therefore, Equation (12) can be written as the following least-squares problem: 
+
+λopt = arg min 
+
+> λ≥0
+> n
+
+X
+
+> i=1
+
+˜σi(λ)2 = arg min  
+
+> λ≥0
+
+∥σθt,y (¯ xt) + λd∥22, d := σθt,y (¯ xt) − σθt, ∅(¯ xt). (31) Expanding the objective yields a convex quadratic in λ:
+
+J(λ) = ∥σθt,y (¯ xt) + λd∥22 = σθt,y (¯ xt)⊤σθt,y (¯ xt) + 2 λ d⊤σθt,y (¯ xt) + λ2d⊤d. (32) When d⊤d > 0, the unconstrained minimizer is obtained by setting dJ dλ = 0 :
+
+dJ dλ = 2 d⊤σθt,y (¯ xt) + 2 λ d⊤d = 0 =⇒ λ⋆ = − d⊤σθt,y (¯ xt)
+
+d⊤d = (σθt, ∅)⊤σθt,y − ∥ σθt,y ∥22
+
+∥σθt,y − σθt, ∅∥22
+
+. (33) Imposing the constraint λ ≥ 0 gives the closed-form solution: 
+
+λopt = max(0 , λ ⋆). (34) If d⊤d = 0 (i.e., σy = σ∅), the objective J(λ) is constant in λ, and we set λopt = 0 . Finally, we apply the clamp in Equation (11): 
+
+λ∗ = min( λopt , λ max ).
+
+## D. Algorithms 
+
+This section summarizes the key sampling-time procedures used by UA-Flow. Algorithm 1 provides a Hutchinson’s diagonal estimator (Bekas et al., 2007; Dharangutte & Musco, 2023) of diag( Jθt (¯ xt)) ⊙ Var[ xt] via Jacobian-vector products(JVP)-based covariance approximation in Equation (7). Algorithm 2 gives uncertainty-aware classifier-free guidance (U-CFG), which computes the guided mean and variance (¯ u, σ 2) by combining conditional and unconditional predictions using an adaptive guidance scale λ∗. Algorithm 3 gives uncertainty-aware classifier guidance (U-CG), which corrects the mean velocity using the gradient of a guidance objective defined on the predicted uncertainty. 15 Flow Matching with Uncertainty Quantification and Guidance 
+
+Algorithm 1 Estimating diag( Jθt (¯ xt)) ⊙ Var[ xt]
+
+Input: velocity mean ¯uθt (·), state mean ¯xt, state variance Var[ xt], probes S
+
+σxt ← pVar[ xt], g ← 0
+
+for k = 1 , . . . , S do 
+
+Sample r(k) ∈ {± 1}n
+
+v(k) ← σxt ⊙ r(k)
+
+Jv (k) ← JVP(¯ uθt , ¯xt, v(k))
+
+g ← g + v(k) ⊙ Jv (k)
+
+end for return g/S 
+
+Algorithm 2 Uncertainty-aware classifier-free guidance (U-CFG): Guided mean and variance (¯ u, σ 2)
+
+Input: velocity mean and variance (¯ uθt , (σθt )2), state mean ¯xt, condition y, maximum CFG scale λmax 
+
+(¯ uy , σ 2 
+
+> y
+
+) ← (¯ uθt (¯ xt | y), (σθt (¯ xt | y)) 2)(¯ u∅, σ 2
+
+> ∅
+
+) ← (¯ uθt (¯ xt | ∅), (σθt (¯ xt | ∅)) 2)
+
+Compute λopt ▷ Section C 
+
+λ∗ ← min( λopt , λ max )¯u ← (1 + λ∗)¯ uy − λ∗ ¯u∅
+
+σ2 ← ((1 + λ∗)σy − λ∗σ∅)2
+
+return (¯ u, σ 2)
+
+## E. Implementation Details 
+
+E.1. Model & Training    
+
+> Table 4. Hyper-parameters. When two learning rates are reported as (ηhead , η backbone ), they denote the head and backbone learning rates, respectively.
+
+CIFAR-10 ImageNet-128 ImageNet-256 pretraining finetuning pretraining finetuning finetuning Learning rate 1e-4 (1 e-5, 1e-6) 2e-4 (2 e-5, 2e-5) (1 e-5, 1e-5) 
+
+AdamW (β1, β 2) (0 .9, 0.95) (0 .9, 0.999) (0 .9, 0.999) (0 .9, 0.999) (0 .9, 0.999) 
+
+Gradient warm-up step – 10000 – 1000 1000 Gradient clipping – 1.0 – 1.0 1.0 EMA decay rate 0.999 0.999 0.9999 0.9999 0.9999 Batch size 128 128 1024 1024 512 Epochs 1000 100 900 100 90 GPUs 2 2 4 4 4
+
+Architectures. For CIFAR-10, we use an ADM-based unconditional flow matching model. The architectural configuration follows standard ADM design choices and is detailed in Table 5. For ImageNet-128 and ImageNet-256, we adopt DiT-based conditional latent flow matching models, as described in Section 4, using DiT-B/2 as the backbone and a pretrained autoencoder to map RGB images to a latent space. 
+
+Training procedure. We summarize the training hyper-parameters for all datasets in Table 4. All models are trained with EMA, using the decay rates reported in the table. For CIFAR-10, we employ a skewed time-step sampling strategy used in EDM (Karras et al., 2022) during training. For ImageNet-256, we train the model using reverse-time parameterization, consistent with the pretrained latent flow matching setup. For datasets involving fine-tuning, we apply linear gradient warm-up for the specified number of steps and use gradient clipping with a maximum norm of 1.0. Batch sizes and the number of GPUs used for each setting are reported in Table 4. 16 Flow Matching with Uncertainty Quantification and Guidance 
+
+Algorithm 3 Uncertainty-aware classifier guidance (U-CG): Mean velocity correction 
+
+Input: state mean ¯xt, current (¯ u, σ 2), scales w, schedule bt, guidance function f
+
+d ← ∇ ¯xt f (σ2)¯u ← ¯u + btwd
+
+return ¯u 
+
+> Table 5. ADM configuration for CIFAR-10.
+
+CIFAR-10 # of ResNet blocks per scale 4Base channels 128 Channel multiplier per scale (2, 2, 2) Attention resolutions 2Dropout 0.3 For the reweighted mini-batch estimator used to compute ˆut, the batch size is defined per GPU and aggregated across devices during training. 
+
+Uncertainty modeling. For uncertainty-aware training, we add a variance prediction head to the pretrained flow matching backbone. The variance head predicts log σ to improve numerical stability during training. We use the β-NLL (Seitzer et al., 2022) objective with β = 1 .0 for all experiments. For ImageNet-128 and ImageNet-256, classifier-free conditioning is enabled by applying label dropout with probability 0.1 during training. 
+
+E.2. Flow Matching Versions of Baselines 
+
+Existing uncertainty quantification methods for sampling-based generative models are primarily developed for diffusion models. To enable a fair comparison with UA-Flow, we adapt these baselines (De Vita & Belagiannis, 2025; Kou et al., 2023; Jazbec et al., 2025) to the flow matching framework. In this subsection, we describe how the diffusion-based formulations of these methods are converted into their flow matching counterparts. 
+
+Aleatoric Uncertainty (AU) (De Vita & Belagiannis, 2025). In the original formulation, Aleatoric Uncertainty (AU) estimates sample uncertainty using the score function of a diffusion model. At each sampling step t, the model first estimates the clean data sample ˆx1 from the predicted score ϵθt (xt). Multiple perturbed states ˆx it are then generated by re-noising the estimated data, and the variance of the score predictions ϵθt (ˆ x it ) is used as a measure of sample uncertainty. To adapt AU to flow matching, we replace the score function with the learned velocity field uθt (xt). Assuming an affine probability path, the clean data estimate ˆx1 can be recovered from the current state xt and the predicted velocity as 
+
+ˆx1 = 1˙αtβt − ˙βtαt
+
+
+
+− ˙βtxt + βtuθt (xt)
+
+
+
+. (35) Starting from the estimated data ˆx1, we generate multiple perturbed states ˆx it by applying the forward affine transformation. We then compute the element-wise variance of the velocity predictions uθt (ˆ x it ), which serves as the aleatoric uncertainty estimate at time t. We aggregate the velocity uncertainties over the late-stage sampling steps to obtain a sample-level uncertainty estimate. 
+
+BayesDiff (Kou et al., 2023). In the diffusion-based formulation, BayesDiff estimates the uncertainty of the score function at each sampling step using Laplace Last Layer Approximation (LLLA) (Daxberger et al., 2021). The estimated score variance is then propagated through the diffusion dynamics to obtain uncertainty estimates for the generated samples. To adapt BayesDiff to flow matching, we apply LLLA to the velocity field and estimate the variance of the predicted velocity at each time step. This velocity variance is subsequently propagated through the flow dynamics following the same uncertainty propagation scheme as in the original BayesDiff formulation. 17 Flow Matching with Uncertainty Quantification and Guidance 
+
+Generative Uncertainty (GenUnc) (Jazbec et al., 2025). In the diffusion-based formulation, Generative Uncertainty (GenUnc) estimates sample uncertainty by sampling multiple model weights through LLLA and generating multiple images from the same noise realization. The resulting images are embedded into the CLIP (Radford et al., 2021) feature space, and the entropy of the extracted features is used as a sample-level uncertainty measure. For flow matching, we follow the same procedure by sampling model weights, generating multiple samples from the same initial noise using the corresponding flow matching model, and computing the variance of the resulting CLIP features as the uncertainty estimate. 
+
+## F. Additional Results on Main Experiments 
+
+This section collects additional figures referenced by the main paper to complement the main experiments. 
+
+F.1. Uncertainty-Based Filtering 0 10 20 30 40 50           
+
+> Filtering ratio (%)
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> Score
+> FID
+> 010 20 30 40 50
+> Filtering ratio (%)
+> 0.66
+> 0.67
+> 0.68
+> 0.69
+> 0.70
+> 0.71
+> Precision
+> 010 20 30 40 50
+> Filtering ratio (%)
+> 0.58
+> 0.59
+> 0.60
+> 0.61
+> 0.62
+> 0.63
+> Recall
+> UA-Flow
+> AU
+> BayesDiff
+> GenUnc
+> CIFAR-10
+
+Image UA-Flow 
+
+AU BayesDiff 
+
+(a) CIFAR-10. 0 10 20 30 40 50           
+
+> Filtering ratio (%)
+> 22
+> 24
+> 26
+> 28
+> 30
+> 32
+> 34
+> 36
+> Score
+> FID
+> 010 20 30 40 50
+> Filtering ratio (%)
+> 0.43
+> 0.44
+> 0.45
+> 0.46
+> 0.47
+> 0.48
+> 0.49
+> 0.50
+> Precision
+> 010 20 30 40 50
+> Filtering ratio (%)
+> 0.61
+> 0.62
+> 0.63
+> 0.64
+> 0.65
+> 0.66
+> 0.67
+> 0.68
+> Recall
+> UA-Flow
+> AU
+> BayesDiff
+> GenUnc
+> ImageNet-128
+
+Image UA-Flow 
+
+AU BayesDiff 
+
+(b) ImageNet-128. 
+
+Figure 6. Filtering high-uncertainty samples across datasets. Left: generative quality metrics as a function of the filtering ratio. Right: example (latent) pixel-wise uncertainty maps produced by UA-Flow, AU, and BayesDiff for the same generated image. On CIFAR-10, uncertainty-based filtering primarily induces a precision-recall trade-off that can negatively affect FID despite high overall sample quality. On ImageNet-128, the trends are consistent with ImageNet-256: UA-Flow achieves lower FID and higher precision after filtering compared to AU and BayesDiff; GenUnc is included as a reference baseline. 
+
+We evaluate whether uncertainty provides a useful reliability signal by progressively filtering out high-uncertainty generated samples and tracking changes in FID and precision/recall. Figure 6 summarizes the results on CIFAR-10 and ImageNet-128. Across datasets, UA-Flow exhibits a consistent precision-recall trade-off under filtering: removing the most uncertain samples increases precision while reducing recall. 
+
+CIFAR-10. On CIFAR-10, the unfiltered sample quality is already high, so the precision gain from filtering can be offset by the loss in recall, resulting in flat or slightly worse FID as the filtering ratio increases. 
+
+ImageNet-128. On ImageNet-128, filtering more reliably improves fidelity: UA-Flow achieves lower FID and higher precision after filtering compared to AU and BayesDiff (with the expected decrease in recall). We include GenUnc as a reference baseline; it uses a domain-specific scalar uncertainty estimated in a CLIP embedding space, which is different in nature from element-wise uncertainty predicted by UA-Flow. 18 Flow Matching with Uncertainty Quantification and Guidance 
+
+Uncertainty maps. Qualitatively, UA-Flow highlights spatially localized regions of high uncertainty, whereas AU often produces broadly inverted patterns and BayesDiff tends to yield noisier maps that do not clearly localize high-uncertainty regions. 
+
+F.2. Uncertainty-Aware Guidance 
+
+F.2.1. U NCERTAINTY -A WARE CLASSIFIER GUIDANCE (U-CG) 0 10 20 30 40 50  
+
+> Guidance scale w
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> 4.0
+> 4.5
+> 5.0
+> 5.5
+
+FID       
+
+> 010 20 30 40 50
+> Guidance scale w
+> 0.630
+> 0.635
+> 0.640
+> 0.645
+> 0.650
+> 0.655
+> 0.660
+> 0.665
+
+Precision       
+
+> 010 20 30 40 50
+> Guidance scale w
+> 0.595
+> 0.600
+> 0.605
+> 0.610
+> 0.615
+> 0.620
+> 0.625
+> 0.630
+
+Recall 
+
+> = 0
+
+CIFAR-10 
+
+> Score
+
+(a) CIFAR-10. 0 10 20 30 40 50  
+
+> Guidance scale w
+> 10
+> 15
+> 20
+> 25
+
+FID       
+
+> 010 20 30 40 50
+> Guidance scale w
+> 0.45
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+
+Precision       
+
+> 010 20 30 40 50
+> Guidance scale w
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+
+Recall 
+
+> = 0
+> = 0.25
+> = 0.5
+
+ImageNet-128 
+
+> Score
+
+(b) ImageNet-128. 0 10 20 30 40 50  
+
+> Guidance scale w
+> 5
+> 10
+> 15
+> 20
+
+FID       
+
+> 010 20 30 40 50
+> Guidance scale w
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+
+Precision       
+
+> 010 20 30 40 50
+> Guidance scale w
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+
+Recall 
+
+> = 0
+> = 0.25
+> = 0.5
+
+ImageNet-256 
+
+> Score
+
+(c) ImageNet-256. 
+
+Figure 7. Generation quality metrics as a function of the uncertainty-aware classifier guidance (U-CG) scale w under fixed classifier-free guidance (CFG) scales. Increasing w induces a fidelity–diversity trade-off, improving precision while reducing recall. FID improves up to an optimal guidance strength, after which excessive guidance degrades performance. 
+
+We sweep the U-CG scale w under fixed classifier-free guidance (CFG) scales. As shown in Figure 7, increasing w induces a consistent precision-recall trade-off across datasets: precision typically increases or peaks at an intermediate w, while recall decreases as guidance becomes stronger. As a result, FID improves up to a dataset-dependent optimum, after which excessive guidance degrades performance. On CIFAR-10, where the baseline FID is already low, the same trade-off can translate into only marginal FID gains or a slight FID increase at larger w.F.2.2. U NCERTAINTY -A WARE CLASSIFIER -F REE GUIDANCE (U-CFG) We compare standard CFG having scale λ with U-CFG, which uses a step-wise adaptive scale λ∗ clamped by λmax . In Figure 8, increasing the fixed CFG scale eventually degrades both precision and recall, leading to a sharp rise in FID at large λ. In contrast, U-CFG is substantially more robust as λmax increases, with only mild changes in precision/recall and correspondingly smaller FID degradation. The violin plot shows that λ∗ is typically smaller in earlier sampling steps and larger in later steps, suggesting that U-CFG avoids over-guidance when the sample is still coarse and applies stronger guidance after the sample becomes more refined. 19 Flow Matching with Uncertainty Quantification and Guidance 0 5 10 15 20               
+
+> CFG scale /max
+> 5
+> 10
+> 15
+> 20
+> 25
+> Score
+> FID
+> 0510 15 20
+> CFG scale /max
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> Precision
+> 0510 15 20
+> CFG scale /max
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> Recall
+> CFG
+> U-CFG
+> ImageNet-128
+
+(a) FID, Precision, and Recall versus CFG scale λ (CFG) or λmax (U-CFG). 0 5 10 15 20 25 30 35 40 45 50    
+
+> Step index
+> 0.0
+> 2.5
+> 5.0
+> 7.5
+> 10.0
+> 12.5
+> 15.0
+> 17.5
+> 20.0
+> U-CFG scale  *
+> U-CFG scale *distribution
+> Mean
+> Median
+
+(b) Distribution of adaptive U-CFG scales across sampling steps (1,000 images). 
+
+Figure 8. (a) FID, precision, and recall as a function of the fixed CFG scale λ or the maximum scale λmax of U-CFG on ImageNet-128. CFG degrades sharply at large λ, while U-CFG remains more stable as λmax increases. (b) Violin plots of the adaptive U-CFG scale λ∗ across sampling steps 1,000 samples . λ∗ tends to be smaller in early steps and larger in later steps. 
+
+## G. Supplementary Analyses 
+
+G.1. Uncertainty Evolution in BayesDiff and UA-Flow 
+
+Figures 9 and 10 compare the evolution of uncertainty maps over the sampling trajectory for BayesDiff and UA-Flow. Each figure shows the generated image (top), the estimated velocity uncertainty at intermediate steps (middle), and the propagated state uncertainty at the corresponding steps (bottom). Notably, both methods produce velocity uncertainty maps with clear spatial correlation, indicating that uncertainty concentrates in specific regions rather than being uniformly distributed. More specifically, velocity uncertainty obtained from UA-Flow is typically less noisy. Despite using the same variance propagation rule (Equation (5)), the propagated state uncertainty behaves very differently. For BayesDiff, the state uncertainty maps become largely unstructured and visually resemble noise, whereas UA-Flow yields state uncertainty maps that remain spatially coherent across steps. This behavior is consistent with Figure 11: BayesDiff exhibits a large uncertainty scale in the early sampling phase, and the corresponding early-step velocity uncertainty maps are also visibly noisy (e.g., step 12 in Figure 9). When such high-magnitude, noise-like velocity uncertainty is propagated, it can dominate the resulting state uncertainty and produce the unstructured, noise-like maps observed in Figure 9. In contrast, UA-Flow’s learned heteroscedastic velocity uncertainty is more spatially coherent, leading to propagated state uncertainty maps that remain structured. 
+
+G.2. Qualitative verification of uncertainty-based filtering 
+
+We next qualitatively assess whether UA-Flow’s predicted uncertainty provides a meaningful reliability signal. To this end, we focus on two ImageNet-256 classes, hen and teddy bear , and generate 1,000 samples per class using classifier-free guidance with scale λ = 0 .5 to show more realistic images. For each generated image, we compute the same scalar uncertainty score used for filtering in Section 4.2, then respectively select the 25 images with the highest uncertainty and lowest uncertainty. Figures 12 and 13 show clear qualitative separation between uncertainty extremes. High-uncertainty samples frequently exhibit severe structural distortions and cluttered scenes. In contrast, low-uncertainty samples tend to be sharply recognizable instances of the target class with clean textures and coherent global structure, indicating substantially higher perceptual fidelity. At the same time, the low-uncertainty subsets also reveal a fidelity-diversity trade-off. For hen , low-uncertainty samples are dominated by canonical compositions, typically close-up head/torso views on simple backgrounds. For teddy bear , low-uncertainty samples often depict centered plush toys under relatively uniform backgrounds. In contrast, the high-uncertainty subsets span more diverse contexts, poses, and compositions, albeit with noticeably lower fidelity. Overall, these results provide qualitative evidence that UA-Flow uncertainty is aligned with sample-level quality, and that uncertainty-based filtering behaves as observed in Section 4.2: retaining low-uncertainty (high-fidelity) samples while implicitly reducing diversity. 20 Flow Matching with Uncertainty Quantification and Guidance 
+
+Figure 9. Qualitative uncertainty evolution for BayesDiff. Images are sampled on ImageNet-256 without guidance (no classifier guidance or classifier-free guidance). Top : the generated sample. Middle : BayesDiff’s velocity uncertainty maps at intermediate sampling steps 12/24/36/48 (left to right). Bottom : state uncertainty maps obtained by propagating the velocity uncertainty through the sampling dynamics using the same variance propagation rule as UA-Flow. While the velocity uncertainty exhibits spatial correlation, the propagated state uncertainty becomes largely noise-like and fails to preserve coherent spatial structure. 
+
+21 Flow Matching with Uncertainty Quantification and Guidance 
+
+Figure 10. Qualitative uncertainty evolution for UA-Flow. Images are sampled on ImageNet-256 without guidance (no classifier guidance or classifier-free guidance). Top : the generated sample. Middle : UA-Flow’s velocity uncertainty maps at intermediate sampling steps 12/24/36/48 (left to right). Bottom : propagated state uncertainty maps computed from the velocity uncertainty via variance propagation. In contrast to BayesDiff, the state uncertainty remains spatially coherent and tracks structured regions throughout sampling. 0 10 20 30 40 50 
+
+Step index 
+
+> 0.000
+> 0.001
+> 0.002
+> 0.003
+> 0.004
+> 0.005
+> Sum of uncertainty
+
+State uncertainty      
+
+> Mean
+> +/-1 Std
+> 010 20 30 40 50
+
+Step index 
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> 1.4
+> 1.6
+
+Velocity uncertainty 
+
+> Mean
+> +/-1 Std
+
+Figure 11. Uncertainty scale over sampling steps for BayesDiff. We quantify the magnitude of uncertainty at each sampling step by summing the uncertainty map over all elements (spatial locations and channels) for each sample. The plot reports the mean ± standard deviation of this scalar summary across the 5 × 5 sample grid shown in Figure 9. The noisy state uncertainty maps in Figure 9 are consistent with the elevated uncertainty scale in the early sampling phase, suggesting that BayesDiff’s uncertainty is poorly calibrated across sampling time and can dominate variance propagation. 
+
+22 Flow Matching with Uncertainty Quantification and Guidance 
+
+Figure 12. Teddy bear (ImageNet-256, CFG λ = 0 .5): lowest vs. highest uncertainty samples. We generate 1,000 samples and select the 25 lowest-uncertainty images (top) and the 25 highest-uncertainty images (bottom) using the same uncertainty aggregation and ranking procedure as in the main paper. Low-uncertainty samples are visually clean and class-consistent, while high-uncertainty samples often contain clutter, distortions, or weak class identity. 
+
+Figure 13. Hen (ImageNet-256, CFG λ = 0 .5): lowest vs. highest uncertainty samples. We generate 1,000 samples and select the 25 lowest-uncertainty images (top) and the 25 highest-uncertainty images (bottom). Low uncertainty corresponds to high-fidelity, easily recognizable hens (often in canonical views), whereas high uncertainty corresponds to less reliable generations with more frequent artifacts or reduced class salience, illustrating a qualitative fidelity–diversity trade-off. 
+
+23 Flow Matching with Uncertainty Quantification and Guidance 
+
+G.3. Ablations on Uncertainty Estimation 
+
+G.3.1. E FFECT OF THE VARIANCE TERM Var(¯ uθt (xt)) IN EQUATION (23) In Equation (23), the velocity variance can be decomposed into two terms: the predicted heteroscedastic term (σθt (¯ xt)) 2 and the additional variance induced by the spread of xt, Var(¯ uθt (xt)) . In the main text, we drop the latter to avoid extra Monte Carlo (MC) computation. Here, we evaluate its practical impact by explicitly estimating Var(¯ uθt (xt)) with MC sampling. Specifically, for each step t we draw K = 10 samples xt,i ∼ N (¯ xt, Var[ xt]) and compute the empirical (diagonal) variance of ¯uθt (xt,i ) across i ∈ { 1, . . . , K }. We then define the total velocity variance as (σθt (¯ xt)) 2 + Var(¯ uθt (xt)) and repeat the same uncertainty-based filtering protocol as in Section 4.2 (ImageNet-256, UA-Flow, no guidance). 
+
+Figure 14. (a) Effect of explicitly including Var(¯ uθt (xt)) in velocity variance for uncertainty-based filtering (ImageNet-256, UA-Flow, no guidance). Single uses only (σθt (¯ xt)) 2 as in the main text, while total adds the MC-estimated term Var(¯ uθt (xt)) with 
+
+K = 10 samples. Across filtering ratios, FID/precision/recall curves remain largely unchanged. (b) Comparing the two terms in Equation (23): Scatter plot of Var(¯ uθt (xt)) (MC estimate with K = 10 ) versus (σθt (¯ xt)) 2. The heteroscedastic term dominates, consistent with the negligible impact observed in filtering. 
+
+As shown in Figure 14, explicitly incorporating Var(¯ uθt (xt)) does not significantly change the filtering behavior. Since estimating this term requires K additional forward evaluations of ¯uθt per sampling step, we omit it in practice as it does not provide a clear benefit relative to its computational overhead. Finally, we analyze the relative magnitude of the two variance terms. Figure 14 illustrates scatter plots of 10 6 randomly the MC-estimated Var(¯ uθt (xt)) against (σθt (¯ xt)) 2 over sampling steps and spatial locations through generating 1,000 images. We observe a positive correlation, but the estimated slope is small: a linear fit yields Var(¯ uθt (xt)) ≈ 0.036 ( σθt (¯ xt)) 2 + 0 .01 
+
+with Pearson correlation r = 0 .334 . This indicates that the heteroscedastic term is dominant, and the MC-estimated contribution typically adds only a small ( ∼ 3.6% ) variance gain. G.3.2. E FFECT OF THE NUMBER OF HUTCHINSON PROBES S0 10 20 30 40 50 
+
+> Filtering ratio (%)
+> 21.0
+> 21.5
+> 22.0
+> 22.5
+> 23.0
+> 23.5
+> Score
+
+FID      
+
+> 010 20 30 40 50
+> Filtering ratio (%)
+> 0.500
+> 0.505
+> 0.510
+> 0.515
+> 0.520
+
+Precision      
+
+> 010 20 30 40 50
+> Filtering ratio (%)
+> 0.650
+> 0.655
+> 0.660
+> 0.665
+> 0.670
+
+Recall 
+
+> S=1
+> S=2
+> S=4
+> S=8
+
+ImageNet-256 
+
+Figure 15. Effect of the number of Hutchinson probes S on uncertainty-based filtering (ImageNet-256, UA-Flow, no guidance). 
+
+Generation metrics are plotted as a function of the filtering ratio for S ∈ { 1, 2, 4, 8}.
+
+In UA-Flow, the state variance update (Equation (5)) includes a covariance term approximated by the Hutchinson’s diagonal estimator as Equation (7). Following the main filtering protocol in Section 4.2 (ImageNet-256, UA-Flow, no guidance), we evaluate the sensitivity of uncertainty-based filtering to the number of probes S used in the diagonal estimator. As shown in 24 Flow Matching with Uncertainty Quantification and Guidance 
+
+Figure 15, sweeping S ∈ { 1, 2, 4, 8} does not largely change curves for FID, precision, and recall across filtering ratios. This indicates that increasing S does not largely change the resulting uncertainty of samples in this setting. Therefore, we use S = 1 by default as it provides a good accuracy without extra computational cost. G.3.3. E FFECT OF COVARIANCE APPROXIMATION 0 10 20 30 40 50 
+
+> Filtering ratio (%)
+> 21.0
+> 21.5
+> 22.0
+> 22.5
+> 23.0
+> Score
+
+FID      
+
+> 010 20 30 40 50
+> Filtering ratio (%)
+> 0.5025
+> 0.5050
+> 0.5075
+> 0.5100
+> 0.5125
+> 0.5150
+> 0.5175
+> 0.5200
+> 0.5225
+
+Precision      
+
+> 010 20 30 40 50
+> Filtering ratio (%)
+> 0.6475
+> 0.6500
+> 0.6525
+> 0.6550
+> 0.6575
+> 0.6600
+> 0.6625
+> 0.6650
+
+Recall 
+
+> Zero
+> Ours
+> Monte Carlo
+
+ImageNet-256 
+
+Figure 16. Effect of covariance approximation on uncertainty-based filtering (ImageNet-256, UA-Flow, no guidance). We compare Option 1 (zero covariance), Option 2 (ours; JVP-based), and Option 3 (Monte Carlo) by plotting generation metrics versus the filtering ratio. 
+
+We then compare different covariance approximations in Equation (29) for the variance propagation step while keeping the rest of the filtering pipeline fixed (ImageNet-256, UA-Flow, no guidance). Figure 16 compares: (i) Option 1 (zero) , which drops the covariance term; (ii) Option 2 (ours) , which uses the proposed JVP-based approximation with S = 1 ; and (iii) 
+
+Option 3 (Monte Carlo) , which uses a Monte Carlo estimator and incurs higher computational cost with 10 Monte Carlo samples used as default in BayesDiff (Kou et al., 2023), i.e. S = 10 . Dropping the covariance term yields the worst filtering behavior, with the highest FID and a substantially weaker precision-recall trade-off. In contrast, Option 2 and Option 3 yield similar performance across filtering ratios, indicating that the proposed approximation captures the essential covariance structure at a fraction of the computational cost of Monte Carlo estimation. Overall, these results highlight both the necessity of accounting for covariance in accurate uncertainty estimation and the practical benefits of Option 2. 
+
+G.4. Empirical validation of conditional–unconditional uncertainty correlation for U-CFG 
+
+Figure 17. Correlation between unconditional and conditional velocity uncertainty. Left: Scatter plot of unconditional vs. conditional predicted standard deviations (σθt, ∅, σ θt,y ), using 10 6 randomly sampled elements across all sampling steps and 1,000 generated samples (no CFG, λ = 0 ). Right: Pearson correlation between σθt, ∅ and σθt,y computed at each sampling step (aggregated over all elements and samples). 
+
+Uncertainty-aware classifier-free guidance (U-CFG) combines conditional and unconditional predictions and approximates the variance of the extrapolated velocity under the assumption that the conditional and unconditional uncertainties are strongly correlated (see Equation (10)). To validate this assumption empirically, we measure the relationship between the predicted conditional and unconditional velocity standard deviations along the sampling trajectory. We generate 1,000 samples without CFG (i.e. λ = 0 ) using the same sampling configuration as in our main experiments. At each intermediate sampling step, we evaluate the model twice at the current state: once with the class condition y and once 25 Flow Matching with Uncertainty Quantification and Guidance 
+
+with the null condition ∅, obtaining element-wise standard deviations σθt,y (¯ xt) and σθt, ∅(¯ xt), respectively. To visualize the global relationship across time and spatial locations, we randomly subsample 10 6 element pairs  σθt, ∅, σ θt,y 
+
+ from all steps and all samples. Figure 17 (left) shows an almost linear relationship between σθt, ∅ and σθt,y , with Pearson correlation r ≈ 0.95 over the subsampled elements. Figure 17 (right) reports the per-step Pearson correlation computed over all elements, showing that the correlation is close to 1.0 for most steps, with deviations limited to a few early/late steps. Overall, these results provide empirical support for treating the conditional and unconditional uncertainty predictions as strongly correlated when defining the U-CFG uncertainty used in the main paper. 
+
+## H. Samples and Uncertainties 
+
+26 Flow Matching with Uncertainty Quantification and Guidance 
+
+Figure 18. Selected ImageNet-256 sample grids under uncertainty-aware guidance sweeps. Rows sweep the U-CG scale w ∈{0, 10 , 30 , 50 } and columns sweep the maximum U-CFG scale λmax ∈ { 0, 1, 2, 5, 10 , 20 }. Left: generated samples. Right: predicted latent pixel-wise uncertainty maps. 
+
+27

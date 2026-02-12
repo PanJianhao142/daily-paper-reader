@@ -1,0 +1,764 @@
+Title: FastFlow: Accelerating The Generative Flow Matching Models with Bandit Inference
+
+URL Source: https://arxiv.org/pdf/2602.11105v1
+
+Published Time: Thu, 12 Feb 2026 02:18:47 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+Published as a conference paper at ICLR 2026 
+
+# FAST FLOW : A CCELERATING THE GENERATIVE FLOW 
+
+# MATCHING MODELS WITH BANDIT INFERENCE 
+
+Divya Jyoti Bajpai 1, Dhruv Bhardwaj 2, Soumya Roy 2, Tejas Duseja 2,Harsh Agarwal 2, Aashay Sandansing 1, Manjesh K. Hanawal 1
+
+> 1
+
+Indian Institute of Technology Bombay 
+
+> 2
+
+Amazon 
+
+{divyajyoti.bajpai, 23d1594, mhanawal }@iitb.ac.in 
+
+{dhruvbrd, dusejat, hragarwl }@amazon.com meetsoumyaroy@gmail.com 
+
+## ABSTRACT 
+
+Flow-matching models deliver state-of-the-art fidelity in image and video genera-tion, but the inherent sequential denoising process renders them slower. Existing acceleration methods like distillation, trajectory truncation, and consistency ap-proaches are static, require retraining, and often fail to generalize across tasks. We propose FastFlow, a plug-and-play adaptive inference framework that accel-erates generation in flow matching models. FastFlow identifies denoising steps that produce only minor adjustments to the denoising path and approximates them without using the full neural network models used for velocity predictions. The approximation utilizes finite-difference velocity estimates from prior predictions to efficiently extrapolate future states, enabling faster advancements along the de-noising path at zero compute cost. This enables skipping computation at inter-mediary steps. We model the decision of how many steps to safely skip before requiring a full model computation as a multi-armed bandit problem. The bandit learns the optimal skips to balance speed with performance. FastFlow integrates seamlessly with existing pipelines and generalizes across image generation, video generation, and editing tasks. Experiments demonstrate a speedup of over 2.6×
+
+while maintaining high-quality outputs. The source code for this work can be found in https://github.com/Div290/FastFlow .
+
+## 1 INTRODUCTION 
+
+Recently, flow-matching (FM) models Lipman et al. (2022) have emerged as an effective approach for visual generation, offering both high fidelity and computational efficiency. By learning contin-uous vector fields that transport simple distributions to complex data distributions, they generate samples along smooth, iterative trajectories. Unlike diffusion models Croitoru et al. (2023), FM achieves faster convergence and fewer sampling steps while maintaining comparable or better per-ceptual quality. This framework allows precise control over the generative process, where increas-ing the number of flow integration steps typically improves perceptual quality in both images and videos. Despite these advances, inference speed remains a major bottleneck Yan et al. (2024); Davtyan et al. (2025) due to the several reverse denoising steps that are performed sequentially. As model sizes grow and generation tasks demand higher resolutions or longer video durations, the computational cost becomes prohibitive, resulting in substantial latency during inference. Several acceleration strategies—such as distillation Luhman & Luhman (2021); Yan et al. (2024); Kornilov et al. (2024), trajectory truncation Dhariwal & Nichol (2021); Lu et al. (2022); Liu et al. (2025a), and consistency training Yang et al. (2024); Zhang & Zhou (2025); Dao et al. (2025)—have been proposed. While effective, these approaches have limitations: they require additional training phases, rely on large-scale data, and incur non-trivial computational overhead. Moreover, they apply a uniform inference schedule across all inputs, overlooking the fact that some samples may converge 1
+
+> arXiv:2602.11105v1 [cs.CV] 11 Feb 2026
+
+Published as a conference paper at ICLR 2026 MAB MAB MAB MAB MAB 
+
+Figure 1: Overview of our method. At each step, the multi-armed bandit (MAB) selects the number of steps to approximate the trajectory. The bandit receives a reward proportional to the number of steps successfully approximated, while deviations from the computed velocity incur a penalty. This adaptive strategy allows the model to balance efficiency and accuracy across the trajectory. with fewer steps, while others require longer trajectories to maintain fidelity. This one-size-fits-all design leads to inefficiencies, as many intermediate steps contribute little to the final quality. In this work, we propose a novel adaptive inference framework that reduces cost by approximat-ing redundant intermediate denoising steps instead of fully computing them. Our approach builds on the observation that flow-matching models often follow approximately linear denoising trajec-tories Lipman et al. (2022) as they are trained to follow linear paths. Leveraging this property, we approximate future states using Taylor series expansions and local velocity estimates derived from the model dynamics, thereby reducing the number of expensive forward passes. We show that our approximation is sound by establishing a theoretical bound on the deviation of the final state of the approximate trajectory from that of the full model. When approximation fails to maintain fidelity, the system reverts to full model predictions. The central challenge, therefore, is to determine when approximation suffices and when precise computation is necessary. We address this challenge by formulating the decision process as a multi-armed bandit (MAB) problem . At each step, a bandit adaptively selects how many future steps can be approximated before requiring the next full model evaluation. Each arm corresponds to the number of steps to approximate, and a subsequent full evaluation provides feedback to assess approximation accuracy. The reward balances two competing objectives: (i) reducing computational cost by skipping evalu-ations, and (ii) limiting deviation from the true model trajectory. This adaptation allows the system to adjust inference complexity on a per-sample basis, learning over time when approximation is reliable and when exact prediction is necessary. Fig. 1 illustrates our method (details in Section 3.2). In existing caching-based acceleration approaches, TeaCache Liu et al. (2025a), caches residuals and re-uses them at later inference steps. However, they use a hand-crafted relative-L1 distance-based criteria to decide if a cache can be reused. In our experiments, we also observed that when a specific speedup (e.g., 2×) is required, TeaCache unintentionally ends up with a fixed caching schedule across generations, consistently skipping the same subset of timesteps regardless of in-put complexity. Finally, TeaCache relies on handcrafted polynomial fitting of noisy inputs, which typically requires prior model- or task-specific knowledge to perform optimally (see Appendix A.1). Our approach is both efficient and adaptive : at every timestep, the bandit dynamically learns to minimize redundancy by adapting to the complexity of the data distribution. Unlike prior accelera-tion strategies, our method introduces zero retraining overhead , requires no auxiliary networks, and integrates seamlessly as a true plug-and-play solution. In summary, our key contributions are: • We propose FastFlow, a method to accelerate visual generation skipping redundant de-noising steps, while using a simple Euler-solver for flow, and a first-order Taylor series expansion for velocities. The trade-off of speed v/s error is set up as a Multi-Armed Ban-dit (MAB) objective, enabling the model to dynamically learn when full computation is necessary. • We establish a theoretical bound on the deviation of the final state from the approximated trajectories with that obtained by the full model (see Thm. 3.1). • Our framework is model-agnostic, requires no retraining or auxiliary networks, and can be seamlessly integrated into existing flow-matching pipelines, making it a practical and general solution for faster visual generation. 2Published as a conference paper at ICLR 2026 • Extensive experiments across image generation, video generation, and image editing demonstrate more than 2.6× speedup while maintaining generation quality, showing that our method achieves acceleration without sacrificing fidelity. 
+
+## 2 RELATED WORKS 
+
+Recently, Flow Matching Lipman et al. (2022); Dao et al. (2023); Labs et al. (2025); Deng et al. (2025) has gained prominence as a strong counterpart to diffusion models Croitoru et al. (2023); Xing et al. (2024); Yang et al. (2023); Zhu et al. (2023), since it establishes a deterministic corre-spondence between random noise and data. This benefits applications such as image inversion Deng et al. (2024), editing Wang et al. (2024), and video synthesis Kong et al. (2024); Wan et al. (2025), where reduced randomness leads to faster sampling with fewer neural evaluations. Multimodal vari-ants, like FlowTok He et al. (2025), compress text and images into a joint token space to improve inference speed, and large-scale systems like FLUX.1 Labs et al. (2025) demonstrate that flows can approach the performance of diffusion models at low compute cost. In video domains, Pyramidal Flow Matching Jin et al. (2024) cuts down complexity using hierarchical generation. Nonetheless, the reliance on iterative sampling continues to hinder real-time deployment. To miti-gate this, most acceleration work has involved retraining-based schemes Lee et al. (2023); Bartosh et al. (2024). Knowledge distillation methods Luhman & Luhman (2021); Song et al. (2023); Liu et al. (2022b); Kornilov et al. (2024); Salimans & Ho (2022), including InstaFlow Liu et al. (2023), LeDiFlow Zwick et al. (2025), and Diff2Flow Schusterbauer et al. (2025), leverage diffusion priors for one- or few-step generation, while PeRFlow Yan et al. (2024) simplifies trajectories via piece-wise rectified flows. Sampling-acceleration approaches Dhariwal & Nichol (2021); Lu et al. (2022); Shaul et al. (2023), such as TeaCache Liu et al. (2025a), skip redundant steps using timestep embed-dings, whereas consistency-based methods Yang et al. (2024); Zhang & Zhou (2025); Haber et al. (2025); Dao et al. (2025) combine adversarial and consistency objectives for high-fidelity few-step synthesis. Additionally, higher-order pseudo-numerical solvers, as in PNDM Liu et al. (2022a), improve the speed–quality tradeoff in diffusion inference. While existing methods remain static and often struggle to generalize across different models, tasks, and datasets, FastFlow offers a universally compatible solution for any FM-based model. It dynami-cally adapts, identifying and skipping redundant steps based on the incoming data distribution, while the finite-difference approximation boosts efficiency to achieve significant speedups. Remarkably, FastFlow is training-free and incurs negligible computational overhead, making it both practical and highly effective in real-world scenarios. 
+
+## 3 METHODOLOGY 
+
+In this section, we provide details of our method, starting with a detailed description of the flow matching models and then detailing our application to the flow matching models. 3.1 FLOW MATCHING OVERVIEW 
+
+Consider two probability densities π0 and π1 on Rd, representing the source and target distributions. 
+
+Flow Matching (FM) seeks to learn a deterministic, time-continuous flow that transports samples from π0 to π1, governed by an ordinary differential equation (ODE). Formally, FM introduces a time-dependent velocity field v : Rd × [0 , 1] → Rd, giving rise to the initial value problem 
+
+dx t
+
+dt = v(xt, t ), x0 ∼ π0, t ∈ [0 , 1] . (1) Here, xt ∈ Rd denotes the sample state at time t, while the velocity field v(xt, t ), typically pa-rameterized by a neural network, is optimized such that the terminal distribution at t = 1 matches 
+
+π1. This ODE defines a flow map Φt(x0) that evolves samples along continuous trajectories, with 
+
+Φ1(x0) ∼ π1. The central task in FM is thus to learn a velocity field v(xt, t ) that realizes this transport. 
+
+Inference: As closed-form solutions for xt are generally unavailable for learned velocity fields, numerical solvers are required. FM most often employs the forward Euler method for its simplicity 3Published as a conference paper at ICLR 2026 and efficiency. The interval [0 , 1] is discretized into steps {t0 = 0 , t 1, . . . , t K = 1 }, possibly with non-uniform intervals. Starting from x0 ∼ π0, the trajectory is advanced as 
+
+xtk+1 = xtk + ∆ tk · v(xtk , t k), ∆tk = tk+1 − tk. (2) This discretization approximates the continuous flow with a finite sequence of updates, where each step moves the sample in the direction given by the velocity field. Owing to its low computational cost and suitability for parallel hardware, Euler’s method remains the default choice in most FM implementations. For our method, we need to find all the redundant denoising steps, as there will be many due to straight line trajectories that are learned during training and then replace them using some good approximation of the true model predictions. 3.2 OUR METHOD 
+
+Approximating velocity. To accelerate sampling, we look at a simple mechanism to approximate velocities at different timesteps, instead of re-computing from the model. Using the first-order Taylor series expansion for xt+∆ t and taking a time derivative results in: 
+
+v(xt+∆ t, t + ∆ t) := dx t+∆ t
+
+dt = v(xt, t ) + ∆ t · dv (xt, t )
+
+dt (3) A natural direction for approximation is to use the most recent velocity estimate computed from the model assuming dv (xt,t ) 
+
+> dt
+
+→ 0. In previous works, this is accompanied by a static criteria to decide whether re-computation from the model is necessary. However, we find that even in the regions where velocity seems to be smooth and linear, it makes minor adjustments, ignoring those leads to accumulated errors during generation (see Figure 4), making above strategy overly simplistic for aggressive skipping. Instead of re-using the same velocity estimate, we update it using finite-difference approximation 
+
+of Eq. 3, utilizing the past velocity estimates. We write this approximation at discrete time steps as follows (where p < k ): 
+
+v(xk+1 , t k+1 ) ≈ v(xk, t k) + ∆ tk · v(xtk , t k) − v(xtp , t p)
+
+tk − tp
+
+. (4) Below we establish a bound on the deviations in the flow value of the approximated velocity esti-mates while skipping a set of time-steps during inference with that obtained by the full model. 
+
+Theorem 3.1. Let {xtrue  
+
+> tk
+
+} denote the trajectory obtained using the exact velocity field with the forward Euler method, and let {xapprox  
+
+> tk
+
+} be the trajectory where velocity evaluations are skipped at a subset of steps S ⊆ { 0, . . . , T − 1} and are instead approximated, for simplicity, via a first-order Taylor expansion in time. Under assumptions of smoothness of velocity field, the cumulative error in the final state after T steps with a uniform step size ∆t = 1 /T is bounded by: 
+
+eT := ∥xapprox  
+
+> tT
+
+− xtrue  
+
+> tT
+
+∥ = O
+
+ |S| 
+
+T 3
+
+
+
+.
+
+The proof of this theorem can be found in Appendix B. This result shows that the final error grows linearly with the number of steps skipped and thus provides a formal guarantee on the stability of our approximation scheme. 
+
+Deciding Redundant Steps. A central challenge in our framework lies in determining when to perform a model evaluation versus when to rely on an approximation. Since each approximation in-evitably introduces error, uncontrolled propagation may cause the trajectory to deviate significantly from the true dynamics. Moreover, the tolerance to approximation errors can vary across samples of different complexity, implying that the decision criterion must adapt dynamically to the evolving data distribution. Thus, we cast the problem of detecting redundant steps as an online sequential decision-making problem , formalized via the Multi-Armed Bandit (MAB) framework. In an MAB setup, an agent iteratively selects actions from a finite set, aiming to maximize cumu-lative reward while balancing exploration of uncertain actions and exploitation of actions known to 4Published as a conference paper at ICLR 2026 yield high rewards. At timestep tk, let Atk denote the action set, where each action αtk ∈ A tk
+
+corresponds to skipping αt steps before the next model evaluation. A separate bandit is instantiated at each timestep, learning an adaptive policy for choosing αt based on approximation performance. Let v(xtk , t k) denote the true model velocity, ˆv(xtk , t k) its approximation under the chosen skip strategy, and ℓ(·, ·) is a discrepancy measure (e.g., mean-squared error). We define the reward asso-ciated with action αtk as 
+
+r(αtk ) = μ · αtk − ℓ ˆv(xtk , t k), v (xtk , t k), (5) The scalar μ > 0 balances the trade-off between efficiency (favoring larger αt) and accuracy (pe-nalizing deviation from the true velocity). This reward structure formalizes the intuition that skipping more steps accelerates inference, but incurs a penalty proportional to the local error. The MAB objective then becomes 
+
+max π E
+
+hPTt=1 r(αtk )
+
+i
+
+, where π denotes the adaptive policy that maps history of past rewards and actions to the choice of αt. By construction, the optimal policy π⋆ learns to exploit redundan-cies in locally smooth regions of the trajectory while reverting to exact model evaluations in regions of high curvature or instability. 
+
+Algorithm. Algorithm 1 presents the pseudo-code of FastFlow. The procedure begins with initial-ization: we specify the timestep grid, the velocity prediction model M, the action sets Atk available to each bandit Btk , and the trade-off parameter μ. Each bandit is then initialized from a full genera-tion using the first prompt, ensuring that each action is at least played once. At inference time, when the trajectory reaches a state xtk , the corresponding bandit Btk selects a skip length m := αtk via an upper-confidence bound strategy (line 5). This choice reflects a balance between exploration of new skip patterns and exploitation of those that have yielded high reward. The trajectory then advances m steps using finite-difference extrapolation, followed by an exact evaluation of M at the terminal point. The reward couples efficiency with reliability: longer skips are encouraged by the term μ · αtk ,but this gain is counterbalanced by a velocity mismatch loss that anchors accuracy. Concretely, if αtk = m, the extrapolated velocity ˆv(xtk+m+1 , t k+m+1 ) is contrasted with the true velocity 
+
+v(xtk+m+1 , t k+m+1 ). This loss is crucial, as it directly measures the drift introduced by approxima-tion: even small velocity errors accumulate along the trajectory, so penalizing the mismatch ensures stability. By continually updating bandit statistics under this trade-off, FastFlow adapts its policy across timesteps, recomputing when approximation would deviate significantly, while exploiting skips where the loss remains small. 
+
+Computational Complexity of Bandits: FastFlow employs multi-armed bandits (MABs) to deter-mine the number of steps to skip and approximate. MABs are computationally lightweight, adding negligible overhead, as they only maintain a list of rewards computed as in line 5 of Algorithm 1. This efficiency is further confirmed empirically in our experiments. 
+
+FastFlow and Linear multi-step solvers: We reformulate an m skip due to our method, on top of a Euler solver as a multi-step update in Appendix C. 
+
+## 4 EXPERIMENTS 
+
+We evaluate our approach across text-to-image generation, image editing, and text-to-video genera-tion. Below we describe the datasets used in each setting. 
+
+Datasets: We use the GenEval benchmark Ghosh et al. (2023), a collection of 553 prompts designed to evaluate compositional reasoning in text-to-image generation. The prompts are organized to probe key abilities such as object occurrence , spatial relations , color binding , and numerical consistency ,making GenEval a widely adopted standard for testing fine-grained semantic alignment. For image editing, we adopt the GEdit benchmark Liu et al. (2025b), which comprises 606 
+
+real-world editing instructions in English. The instructions span a broad spectrum of opera-tions—including object manipulation , color changes , layout adjustments , and stylization —allowing systematic evaluation of both localized edits and global scene transformations. 5Published as a conference paper at ICLR 2026 
+
+Algorithm 1 FastFlow: Bandit-driven approach for accelerated Flow Matching inference 
+
+Require: xt0 : Initial flow state 
+
+{t0, t 1, . . . , t T }: Timesteps 
+
+M: Velocity model 
+
+{B tk }T −1 
+
+> k=0
+
+: Bandit agents 
+
+{A tk }: Action sets for bandit agents 
+
+μ, γ = 2 .0: Trade-off parameter, Exploration constant. 
+
+k: Time index (loop variable) 
+
+p: Time index of most recent (actual) velocity evaluation 
+
+m: Skip length (in number of time indices) 
+
+1: Initialize the mean arm rewards Q and arm counts N for bandit agents {B tk }T −1 
+
+> k=0
+
+using the first prompt. 
+
+2: Compute initial velocities v(xt0 , t 0), v (xt1 , t 1) ← M (xt0 , t 0), M(xt1 , t 1) and set p ← 0.
+
+3: xt2 ← xt1 + v(xt1 , t 1) · (t1 − t0).
+
+4: k ← 2
+
+5: while k ≤ T − 1 do 
+
+6: n ← number of time Btk is invoked. 
+
+7: Bandit Btk selects skip length m := αtk ← arg max α∈A tk
+
+"
+
+Q(α) + γ
+
+q ln nN (α)
+
+#
+
+.
+
+8: Define ˆv(tk, t p, ∆t) := v(xtk , t k) + ∆ t · v(xtk ,t k )−v(xtp ,t p)  
+
+> tk−tp
+
+; ( p < k ).
+
+9: if m > 0 then 
+
+10: ∆tk+m,k ← tk+m − tk.
+
+11: xtk+m ← xtk + ˆ v(tk, t p, ∆tk+m,k ) · ∆tk+m,k .
+
+12: end if 
+
+13: ∆tk+m+1 ,k +m ← (tk+m+1 − tk+m).
+
+14: xtk+m+1 ← xtk+m + ˆ v(tk, t p, ∆tk+m+1 ,k +m) · ∆tk+m+1 ,k +m.
+
+15: v(xtk+m+1 , t k+m+1 ) = M(xtk+m+1 , t k+m+1 ).
+
+16: Compute reward: r(αtk ) = μ · αtk − ℓ ˆv(tk, t p, ∆tk+m+1 ,k +m), v (xtk+m+1 , t k+m+1 ) .
+
+17: Update bandit Btk statistics: N (αtk ) ← N (αtk ) + 1 , Q(αtk ) ←        
+
+> Pkj=1 r(αj)1{αj=αtk}
+> N(αtk)
+
+.
+
+18: p ← k; k ← k + m
+
+19: end while Ensure: Final trajectory {xtk }Tk=0 .To measure temporal and multimodal consistency in video generation, we use a subset of VBench 
+
+dataset . We construct a representative evaluation set by sampling 80 prompts, uniformly selecting 
+
+5 from each of the 16 dimensions defined by the benchmark. This ensures balanced coverage across diverse factors such as motion dynamics , object persistence , camera control , and scene composition ,yielding a challenging yet comprehensive testbed for generative video models. 
+
+Baselines: We compare our method against the following baselines: 
+
+Full Generation: The standard sampling procedure, where the model executes the complete de-noising trajectory without acceleration. This serves as the fidelity upper bound and the reference point for all accelerated methods. 
+
+TeaCache: TeaCache accelerates generation by caching intermediate representations and reusing them across timesteps. This eliminates redundant computation and reduces inference time, though fidelity can degrade due to approximations introduced in cached states. 
+
+InstaFlow: A flow-matching–based sampler trained for ultra-fast generation (down to a single step) on the Stable-Diffusion-v1.5 model. While highly efficient, it sacrifices fidelity compared to full sampling. We evaluate InstaFlow using the released Stable-Diffusion-v1.5 weights. 
+
+PeRFlow (Piecewise Rectified Flow): PeRFlow Yan et al. (2024) straightens the diffusion trajec-tory via piecewise-linear rectification over segmented timesteps, enabling few-step generation with favorable quality–efficiency tradeoffs. We report using the official Stable-Diffusion-XL checkpoints. 
+
+Ours: Our approach accelerates inference by selectively approximating redundant steps. A Multi-Armed Bandit dynamically decides where to apply approximation, balancing efficiency with fidelity. 6Published as a conference paper at ICLR 2026                                                                                                         
+
+> Method SO TO CT CL ATTR PO Overall ↑CLIPIQA ↑Spd. ↑Lat. ↓
+> Full Model
+> Full 50 0.99 0.90 0.81 0.85 0.59 0.54 0.78 0.85 1.00 ×36.2 Full 25 0.99 0.91 0.78 0.84 0.62 0.51 0.77 0.82 2.00 ×19.5 Full 10 0.99 0.88 0.68 0.84 0.56 0.48 0.74 0.75 5.00 ×07.3
+> Static Speedup Methods
+> InstaFlow 0.86 0.20 0.21 0.66 0.04 0.02 0.33 0.74 50.0 ×01.5
+> PerFlow 0.99 0.79 0.44 0.85 0.25 0.15 0.58 0.80 5.00 ×08.2 Teacache 0.99 0.89 0.78 0.83 0.58 0.52 0.76 0.80 1.85 ×20.6
+> Ours (FastFlow)
+> FastFlow-50 0.99 0.91 0.80 0.86 0.63 0.51 0.78 0.83 2.65 ×13.7 FastFlow-25 0.99 0.91 0.76 0.84 0.59 0.50 0.77 0.80 4.54 ×08.6 FastFlow-10 0.98 0.84 0.65 0.84 0.54 0.47 0.72 0.73 7.14 ×05.5
+
+Table 1: Comparison of flow-matching acceleration methods. SO: Single Object, TO: Two Object, CT: Counting, CL: Color, ATTR: Color Attribute, PO: Position, Overall: Overall score, CLIPIQA: Perceptual Image Quality. Speedup is relative to full-50 step generation. Latency is average infer-ence time per image (s).                                                                                               
+
+> Method SO TO CO CL ATTR PO Overall ↑CLIPIQA ↑Spd. ↑Lat. ↓
+> Full Model
+> Full 50 0.98 0.79 0.73 0.78 0.44 0.21 0.65 0.84 1.00 ×33.8 Full 25 0.98 0.78 0.71 0.76 0.43 0.18 0.64 0.80 2.00 ×17.5 Full 10 0.97 0.66 0.59 0.67 0.41 0.15 0.57 0.60 5.00 ×07.1
+> TeaCache
+> TeaCache-50 0.98 0.79 0.71 0.76 0.43 0.21 0.64 0.80 1.91 ×18.3 TeaCache-25 0.97 0.76 0.70 0.74 0.43 0.17 0.62 0.78 3.45 ×10.3
+> FlowFast (Ours)
+> FlowFast 50 0.97 0.78 0.72 0.77 0.44 0.20 0.64 0.82 2.57 ×13.9 FlowFast 25 0.97 0.78 0.71 0.75 0.42 0.18 0.63 0.79 4.21 ×08.5 FlowFast 10 0.95 0.64 0.54 0.66 0.40 0.14 0.55 0.57 7.59 ×05.2
+
+Table 2: Comparison of Full model, TeaCache, and FlowFast (ours). Best values in each column are bolded . FlowFast achieves significantly better performance-efficiency trade-offs while main-taining competitive accuracy and perceptual quality. For all baselines, we adopt the official hyperparameters provided in their codebases. In Table 1, Tea-Cache is applied is as released, and in Figure 2, we further evaluate it across timesteps to emphasise its plug-and-play flexibility. An ablation over μ is given in Figure 7. 
+
+Models. To demonstrate the versatility of our approach, we evaluate across multiple state-of-the-art models: for image generation, BAGEL, Flux-Kontext, and PeRFlow; for image editing, BAGEL, Flux-Kontext, and Step-1X-Edit; and for video generation, HunyuanVideo. 
+
+Hyperparameters. We consider two key hyperparameters. (i) Arm set: Each arm represents the number of steps to skip. Since the feasible skip length naturally decreases as the remaining steps shrink, we design the arm set adaptively with respect to the current generation step. For fairness, the arm set is kept fixed across models and tasks, and updated only when the generation horizon changes. (ii) Error scaling factor μ: To normalize rewards, we define μ = max t MSE (ˆ vt,v t) 
+
+> total steps
+
+, where the maximum MSE is estimated from the first full generation pass. This choice rescales error values to the same order as step counts, ensuring stable bandit updates while explicitly encoding the trade-off between efficiency (fewer steps) and fidelity (lower error). We run the experiments on a single NVIDIA A100 GPU. 7Published as a conference paper at ICLR 2026 1 2 3 4 5 6 7 8                                       
+
+> Speedup (x)
+> 5.0
+> 5.5
+> 6.0
+> 6.5
+> 7.0
+> Score (BAGEL)
+> Semantic Consistency (G_SC)
+> 12345678
+> Speedup (x)
+> Perceptual Quality (G_PQ)
+> 12345678
+> Speedup (x)
+> Overall (G_O)
+> Step Sizes
+> Steps 50
+> Steps 25
+> Steps 10 12345678
+> 4.0
+> 4.5
+> 5.0
+> 5.5
+> 6.0
+> Score (FLUX)
+> Semantic Consistency (G_SC)
+> 12345678
+> Perceptual Quality (G_PQ)
+> 12345678
+> Overall (G_O)
+> Step Sizes
+> Steps 50
+> Steps 25
+> Steps 10
+> Full Model TeaCache FastFlow
+> Speedup(x) Speedup(x) Speedup(x)
+
+Figure 2: Comparison of edit quality across two models: BAGEL and FLUX. Each subfigure reports semantic consistency (G SC), perceptual quality (G PQ), and overall score (G O) versus speedup. 1 2 3 4 5 6 7        
+
+> Speedup (×)
+> 65.0
+> 67.5
+> 70.0
+> 72.5
+> 75.0
+> 77.5
+> 80.0
+> 82.5
+> Score
+> Vbench
+> 1234567
+> Speedup (×)
+> 42
+> 44
+> 46
+> 48
+> 50
+> 52
+> 54
+> 56
+> BRISQUE
+> Steps
+> 50 Steps
+> 25 Steps
+> 10 Steps
+> Full Model TeaCache FastFlow
+
+Figure 3: Comparison of the Video generation for the HunYuanVideo model. We report the VBench score an the BRISQUE metric for the quality of frames generated. 4.1 RESULTS 
+
+Image Generation: Tables 1 and 2 present a comprehensive evaluation of FastFlow against existing baselines across multiple dimensions, including single-object (SO) and two-object (TO) generation, compositional accuracy, and object positioning. While semantic correctness is important, percep-tual quality is equally critical; to capture this, we report CLIPIQA scores—a state-of-the-art Image Quality Assessment metric. Our method consistently surpasses prior approaches, achieving sub-stantial speedups over full-step generation while maintaining competitive fidelity. Notably, speedup is measured relative to the full 50-step generation. Although InstaFlow and PerFlow (Table 1) are trained on Stable-Diffusion variants—rendering speedup comparisons inexact—the reported latency still provides a meaningful wall-clock comparison. 
+
+Image Editing: Figure 2 illustrates the performance of our method on image editing using BAGEL and FLUX models. Evaluations are conducted on the GEdit dataset, with GPT-4.1 serving as an automatic judge to score edits on semantic consistency (G SC), perceptual quality (G PQ), and an overall quality measure (G O). Our approach achieves the highest speedup among all baselines while preserving, and in many cases improving, the quality of the edits. 
+
+Video Generation. Figure 3 reports results on video synthesis using the VBench benchmark, which multiple dimensions including motion dynamics, temporal consistency, and scene composition. For perceptual assessment of individual frames, we additionally employ the no-reference BRISQUE 
+
+metric. Our method consistently surpasses baselines, delivering sharper frames and more coherent temporal evolution while achieving substantial acceleration. Collectively, these results demonstrate that FastFlow offers a transformative trade-off between effi-ciency and quality. By dramatically reducing computation without sacrificing perceptual or semantic 8Published as a conference paper at ICLR 2026 Zoomed in Zoomed in 
+
+Figure 4: L1-relative error between consecutive velocity predictions in the BAGEL model. While the trajectories may appear constant at intermediate scales, a finer analysis uncovers subtle yet sys-tematic variations, indicating that the underlying dynamics are not strictly stable. 50 Steps 25 Steps 50 Steps+TeaCache 1.85x Speedup   
+
+> 50 Steps+FastFlow 2.67x Speedup
+> Prompt: A photo of a red giraffe with black cellphone.
+> Prompt: A photo of a red umbrella and a green cow.
+> 50 Steps 25 Steps 50 Steps+TeaCache 1.88x Speedup
+> 50 Steps+FastFlow 2.75x Speedup
+> BAGEL FLUX
+
+Figure 5: Generated instance for image generation task for BAGEL and FLUX models. fidelity, our method sets a new standard for fast, high-quality image generation and editing. This opens the door to practical, real-time applications on resource-constrained devices, making advanced generative modeling more accessible and scalable. 4.2 ANALYSIS 
+
+Empirical evidence motivating approximation: In Figure 4, we illustrate the L1-relative error      
+
+> || v(xtk,t k)−v(xtk+1 ,t k+1 )|| || v(xtk+1 ,t k+1 )||
+
+of velocity predictions across consecutive steps, providing insight into how the model refines trajectories over time. We observe a clear three-phase pattern: the model first establishes the coarse flow, then performs subtle refinements during intermediate steps, and finally adjusts again in the later steps to finalize the trajectory. Prior work Liu et al. (2025a) has largely relied on zoomed-out trends, where intermediate updates appear nearly constant, motivating strategies that approximate future states solely from the last step. However, a finer-grained inspection reveals that these intermediate refinements, though small, are not negligible—subtle fluctuations accumulate and can lead to significant deviations if ignored. This phenomenon, consistently observed in both generation and editing tasks, highlights the need for approximation methods that capture intermediate dynamics rather than oversimplifying them. 
+
+Qualitative Analysis. Figure 5 illustrates image generation with BAGEL and FLUX. Simply trun-cating steps severely harms fidelity, especially for challenging prompts, yielding incomplete or dis-torted images. TeaCache produces closer outputs but still misses fine-grained details and realism. In contrast, FastFlow delivers results nearly indistinguishable from full-step generation, while being substantially faster. 9Published as a conference paper at ICLR 2026 0 10 20 30 40 50                         
+
+> Step
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> 0.40
+> L1-Relative Change
+> L1-Relative change
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> Fraction
+> 0246802468024680246802468
+> Timestep 5
+> Timestep 15
+> Timestep 25
+> Timestep 35
+> Timestep 45
+
+Figure 6: The figure illustrates how our method adaptively skips redundant steps in regions of slow variation, while reverting to full model evaluations when velocity changes are significant. Explana-tion can be found in Appendix A.3 Figure 10 shows editing examples. Direct step reduction either fails to apply edits or introduces visual artifacts. TeaCache improves but struggles with precise integration. FastFlow, however, in-corporates edits similar to full generation, consistently preserving semantic intent and visual quality. In summary, the strong speedup of FastFlow stems from its aggressive yet principled approximation, which skips redundant updates without diverging from the model trajectory. The multi-armed bandit controller further adapts to dataset and model dynamics (see Figure 11), learning where to skip and where to refine, enabling acceleration without sacrificing quality. 
+
+## 5 CONCLUSION 
+
+We introduced a new framework FastFlow, that accelerates flow-based generative models by adap-tively skipping redundant steps while safely approximating the underlying trajectory. Unlike static reduction strategies, our approach dynamically adjusts to the difficulty of incoming sam-ples—skipping more aggressively for easy cases while allocating more model computation to harder ones. The trajectory approximation further empowers the decision-maker (MAB) to capture fine-grained variations, enabling efficient yet faithful generation. Across diverse datasets and tasks, our method consistently outperforms existing baselines, establishing a new paradigm for fast, high-fidelity generative modeling. One limitation of using MAB is the speedup may not be observed in the initial steps due to inherent explorations. 
+
+## 6 ETHICS AND REPRODUCIBILITY STATEMENT 
+
+We confirm that we have read and adhere to the conference Code of Ethics. To the best of our knowledge, this work is original and all relevant prior work has been properly cited. All authors have contributed to and take responsibility for the content. No LLMs were used in the preparation of this manuscript, except where explicitly disclosed as part of the proposed method. 
+
+## ACKNOWLEDGEMENTS 
+
+Divya Jyoti Bajpai is supported by the Prime Minister’s Research Fellowship (PMRF), Govt. of India. Manjesh K. Hanawal thanks funding support from Telecom Centre of Excellence(TCOE), Department of Telecommunication (DoT) and Ministry of Electronics and Information Technology (MeitY). We also thank funding support from Amazon IIT-Bombay AI-ML Initiative (AIAIMLI). 10 Published as a conference paper at ICLR 2026 
+
+## REFERENCES 
+
+Grigory Bartosh, Dmitry P Vetrov, and Christian Andersson Naesseth. Neural flow diffusion models: Learnable forward process for improved diffusion modelling. Advances in Neural Information Processing Systems , 37:73952–73985, 2024. Florinel-Alin Croitoru, Vlad Hondru, Radu Tudor Ionescu, and Mubarak Shah. Diffusion models in vision: A survey. IEEE transactions on pattern analysis and machine intelligence , 45(9): 10850–10869, 2023. Quan Dao, Hao Phung, Binh Nguyen, and Anh Tran. Flow matching in latent space. arXiv preprint arXiv:2307.08698 , 2023. Quan Dao, Hao Phung, Trung Tuan Dao, Dimitris N Metaxas, and Anh Tran. Self-corrected flow distillation for consistent one-step and few-step image generation. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 39, pp. 2654–2662, 2025. Aram Davtyan, Leello Tadesse Dadi, Volkan Cevher, and Paolo Favaro. Faster inference of flow-based generative models via improved data-noise coupling. In The Thirteenth International Con-ference on Learning Representations , 2025. Chaorui Deng, Deyao Zhu, Kunchang Li, Chenhui Gou, Feng Li, Zeyu Wang, Shu Zhong, Weihao Yu, Xiaonan Nie, Ziang Song, et al. Emerging properties in unified multimodal pretraining. arXiv preprint arXiv:2505.14683 , 2025. Yingying Deng, Xiangyu He, Changwang Mei, Peisong Wang, and Fan Tang. Fireflow: Fast inver-sion of rectified flow for image semantic editing. arXiv preprint arXiv:2412.07517 , 2024. Prafulla Dhariwal and Alexander Nichol. Diffusion models beat gans on image synthesis. Advances in neural information processing systems , 34:8780–8794, 2021. Dhruba Ghosh, Hannaneh Hajishirzi, and Ludwig Schmidt. Geneval: An object-focused framework for evaluating text-to-image alignment. Advances in Neural Information Processing Systems , 36: 52132–52152, 2023. Eldad Haber, Shadab Ahamed, Md Shahriar Rahim Siddiqui, Niloufar Zakariaei, and Moshe Eliasof. Iterative flow matching–path correction and gradual refinement for enhanced generative model-ing. arXiv preprint arXiv:2502.16445 , 2025. Ju He, Qihang Yu, Qihao Liu, and Liang-Chieh Chen. Flowtok: Flowing seamlessly across text and image tokens. arXiv preprint arXiv:2503.10772 , 2025. Yang Jin, Zhicheng Sun, Ningyuan Li, Kun Xu, Hao Jiang, Nan Zhuang, Quzhe Huang, Yang Song, Yadong Mu, and Zhouchen Lin. Pyramidal flow matching for efficient video generative modeling. 
+
+arXiv preprint arXiv:2410.05954 , 2024. Weijie Kong, Qi Tian, Zijian Zhang, Rox Min, Zuozhuo Dai, Jin Zhou, Jiangfeng Xiong, Xin Li, Bo Wu, Jianwei Zhang, et al. Hunyuanvideo: A systematic framework for large video generative models. arXiv preprint arXiv:2412.03603 , 2024. Nikita Kornilov, Petr Mokrov, Alexander Gasnikov, and Aleksandr Korotin. Optimal flow match-ing: Learning straight trajectories in just one step. Advances in Neural Information Processing Systems , 37:104180–104204, 2024. Black Forest Labs, Stephen Batifol, Andreas Blattmann, Frederic Boesel, Saksham Consul, Cyril Diagne, Tim Dockhorn, Jack English, Zion English, Patrick Esser, et al. Flux. 1 kontext: Flow matching for in-context image generation and editing in latent space. arXiv preprint arXiv:2506.15742 , 2025. Sangyun Lee, Beomsu Kim, and Jong Chul Ye. Minimizing trajectory curvature of ode-based gen-erative models. In International Conference on Machine Learning , pp. 18957–18973. PMLR, 2023. 11 Published as a conference paper at ICLR 2026 Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. Feng Liu, Shiwei Zhang, Xiaofeng Wang, Yujie Wei, Haonan Qiu, Yuzhong Zhao, Yingya Zhang, Qixiang Ye, and Fang Wan. Timestep embedding tells: It’s time to cache for video diffusion model. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 7353– 7363, 2025a. Luping Liu, Yi Ren, Zhijie Lin, and Zhou Zhao. Pseudo numerical methods for diffusion models on manifolds. In The Twelfth International Conference on Learning Representations , 2022a. Shiyu Liu, Yucheng Han, Peng Xing, Fukun Yin, Rui Wang, Wei Cheng, Jiaqi Liao, Yingming Wang, Honghao Fu, Chunrui Han, et al. Step1x-edit: A practical framework for general image editing. arXiv preprint arXiv:2504.17761 , 2025b. Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 , 2022b. Xingchao Liu, Xiwen Zhang, Jianzhu Ma, Jian Peng, et al. Instaflow: One step is enough for high-quality diffusion-based text-to-image generation. In The Twelfth International Conference on Learning Representations , 2023. Cheng Lu, Yuhao Zhou, Fan Bao, Jianfei Chen, Chongxuan Li, and Jun Zhu. Dpm-solver: A fast ode solver for diffusion probabilistic model sampling in around 10 steps. Advances in neural information processing systems , 35:5775–5787, 2022. Eric Luhman and Troy Luhman. Knowledge distillation in iterative generative models for improved sampling speed. arXiv preprint arXiv:2101.02388 , 2021. Tim Salimans and Jonathan Ho. Progressive distillation for fast sampling of diffusion models. arXiv preprint arXiv:2202.00512 , 2022. Johannes Schusterbauer, Ming Gui, Frank Fundel, and Bj¨ orn Ommer. Diff2flow: Training flow matching models via diffusion model alignment. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 28347–28357, 2025. Neta Shaul, Juan Perez, Ricky TQ Chen, Ali Thabet, Albert Pumarola, and Yaron Lipman. Bespoke solvers for generative flow models. arXiv preprint arXiv:2310.19075 , 2023. Yang Song, Prafulla Dhariwal, Mark Chen, and Ilya Sutskever. Consistency models. 2023. Endree Suli and David Mayers. An introduction to numerical analysis . Cambridge University Press, 2003. Team Wan, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianxiao Yang, et al. Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 , 2025. Jiangshan Wang, Junfu Pu, Zhongang Qi, Jiayi Guo, Yue Ma, Nisha Huang, Yuxin Chen, Xiu Li, and Ying Shan. Taming rectified flow for inversion and editing. arXiv preprint arXiv:2411.04746 ,2024. Zhen Xing, Qijun Feng, Haoran Chen, Qi Dai, Han Hu, Hang Xu, Zuxuan Wu, and Yu-Gang Jiang. A survey on video diffusion models. ACM Computing Surveys , 57(2):1–42, 2024. Hanshu Yan, Xingchao Liu, Jiachun Pan, Jun Hao Liew, Qiang Liu, and Jiashi Feng. Perflow: Piecewise rectified flow as universal plug-and-play accelerator. Advances in Neural Information Processing Systems , 37:78630–78652, 2024. Ling Yang, Zhilong Zhang, Yang Song, Shenda Hong, Runsheng Xu, Yue Zhao, Wentao Zhang, Bin Cui, and Ming-Hsuan Yang. Diffusion models: A comprehensive survey of methods and applications. ACM computing surveys , 56(4):1–39, 2023. 12 Published as a conference paper at ICLR 2026 1.5 2.0 2.5 3.0 3.5 4.0 4.5 
+
+> Speedup
+> 73
+> 74
+> 75
+> 76
+> 77
+> 78
+> Geneval Score (%)
+> 50 Steps
+> 25 Steps
+> 0.0001
+> 0.0005
+> 0.001
+> 0.005
+> 0.01
+> values
+
+Figure 7: Caption Ling Yang, Zixiang Zhang, Zhilong Zhang, Xingchao Liu, Minkai Xu, Wentao Zhang, Chenlin Meng, Stefano Ermon, and Bin Cui. Consistency flow matching: Defining straight flows with velocity consistency. arXiv preprint arXiv:2407.02398 , 2024. Yuchen Zhang and Jian Zhou. Inverse flow and consistency models. In Forty-second International Conference on Machine Learning , 2025. Yuanzhi Zhu, Zhaohai Li, Tianwei Wang, Mengchao He, and Cong Yao. Conditional text image generation with diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 14235–14245, 2023. Pascal Zwick, Nils Friederich, Maximilian Beichter, Lennart Hilbert, Ralf Mikut, and Oliver Bring-mann. Lediflow: Learned distribution-guided flow matching to accelerate image generation. arXiv preprint arXiv:2505.20723 , 2025. 
+
+## A APPENDIX 
+
+A.1 FAST FLOW VS . T EA CACHE VS . D IRECT REDUCTION 
+
+FastFlow vs. Direct Reduction. A natural question arises: why not simply reduce the number of diffusion steps directly? While straightforward, this approach is fundamentally different from FastFlow. Direct reduction applies a static truncation of steps, which effectively assumes that the velocity at a removed step can be approximated by reusing the velocity from the previous step. This oversimplification discards useful intermediate information and can degrade generation quality. In contrast, FastFlow is adaptive . Instead of discarding steps outright, it selectively identifies which steps must be computed by the model and which can be approximated using prior computations. This ensures that efficiency is achieved without sacrificing fidelity, especially for complex prompts. 
+
+FastFlow vs. TeaCache. TeaCache approaches acceleration differently: it uses timestep embed-dings of noisy inputs and applies a polynomial fitting scheme to determine whether a step should be cached. While conceptually simple, this design comes with two key limitations: 1) It requires calibration via polynomial fitting, which introduces task- and model-specific tuning overhead. 2) It is not truly dynamic — the caching threshold is fixed once a target speedup is specified, and in our empirical evaluation (50 video generations and 100 image generations), we consistently observed that TeaCache converges to repetitive caching patterns (e.g., alternating steps for 2× speedup), re-gardless of the complexity of the prompt. This indicates that the method does not effectively adapt to prompt-specific generation difficulty, but rather applies a globally fixed caching strategy. 
+
+Advantages of FastFlow. Unlike TeaCache, FastFlow is truly dynamic . It learns on-the-fly during inference and adapts to the complexity of each prompt. For simpler generations, it aggressively 13 Published as a conference paper at ICLR 2026 reduces the number of model calls to maximize speedup, while for more complex prompts, it reverts to additional steps to preserve quality. This adaptiveness enables FastFlow to provide consistently better trade-offs between efficiency and fidelity compared to static baselines like TeaCache. A.2 SPEEDUP VS PERFORMANCE CURVE 
+
+In Figure 7, we show the speedup vs performance trade-off in our method, it also gives a sense of what number of steps to choose and with what μ, given a speedup. For instance, given a speedup of 2.3×, whether user should choose 50 steps with some high value of μ or 25 steps with some low values of μ.A.3 FAST FLOW ’S SKIP PATTERNS :Figure 6 illustrates how our method adapts skip decisions to the model’s internal dynamics. The plot shows the mean squared error (MSE) of consecutive velocities alongside the frequency with which different skip lengths are selected. When velocity fluctuations are high, FastFlow consistently chooses shorter skips, preserving accu-racy. During intermediate regions where changes are smoother, it shifts toward longer skips, accel-erating computation. Finally, as fluctuations re-emerge toward later steps, the method automatically reduces the skip length again. This adaptive behavior explains why FastFlow achieves significant speedups without compromising fidelity: it skips aggressively only when the trajectory is stable and reverts to fine-grained updates when the dynamics demand precision. A.4 ADAPTIVENESS OF FAST FLOW 
+
+The adaptiveness of our method can be further seen in the Figure 11 we find that our method can adjust the speedup based on the complexity of the incoming samples, if a sample required more model computations it reverts back to lesser number of skips and approximations and in the case of an easier generation the model can further gain speedup by aggressively skipping multiple redundant steps making our method a go to choice for adaptive visual generation. A.5 REGRET CURVES 
+
+In Figure 8, we plot the cumulative regret of bandits deployed at different points in the denoising trajectory. Across all positions, the cumulative regret begins to flatten between 50 and 100 samples, demonstrating that the bandit rapidly identifies the near-optimal skipping strategy. The small amount of regret accumulated in the first 50 samples is expected because several arms are only marginally suboptimal; choosing them does not significantly affect performance. A key reason for this fast convergence is the reward structure: it assigns a noticeably higher reward to the truly optimal arms, creating a strong separation between optimal and suboptimal choices. This makes the identification of the best arm easier, allowing the bandit to switch from exploration to exploitation very quickly. As a result, our method converges rapidly within a small number of samples. A.6 EMPIRICAL VALIDATION OF ERROR BOUND 
+
+In Figure 9, we provide results that verify the tightness of the bound which is developed in Theorem 3.1. The bound clearly shows a good amount of tightness when the number of skipped steps are small and as the number of steps skipped incraeses tehe bound becomes weaker, which is intuitive as well since the bound plays 
+
+## B THEORETICAL ANALYSIS 
+
+Assumptions: The velocity field v(x, t ) is assumed to be smooth and satisfy the following condi-tions for constants Lx, M > 0:1. Lipschitz continuity in space: ∥v(x, t ) − v(y, t )∥ ≤ Lx∥x − y∥ for all x, y ∈ Rd.14 Published as a conference paper at ICLR 2026 0 50 100 150 200 250 300 
+
+Samples 
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> Cumulative regret
+> Bandit at step 5
+> Bandit at step 10
+> Bandit at step 15
+> Bandit at step 20
+> Bandit at step 25
+> Bandit at step 30
+> Bandit at step 35
+> Bandit at step 40
+> Bandit at step 45
+
+Figure 8: The regret curves for various bandits applied at different steps, the results are the average of five random runs where randomness comes from the reshuffling of data. 25.0 27.5 30.0 32.5 35.0 37.5 40.0 42.5 
+
+Skipped steps 
+
+0.0075 
+
+0.0100 
+
+0.0125 
+
+0.0150 
+
+0.0175 
+
+0.0200 
+
+0.0225 
+
+> Error
+> Emprical error
+> Bound Error
+
+Figure 9: The plot represents empirical error vs the error developed in the Theorem 3.1. Replace the text ‘Salmon’ with ‘Sandwich’ 
+
+50 steps Original image 25 steps 50 steps+FastFlow 2.91x speedup 
+
+Original image 50 steps 25 steps 50 steps+FastFlow 2.76x speedup 
+
+Change the text ‘hotwind’ to ‘cool breeze’ 
+
+> BAGEL FLUX
+
+Figure 10: Generated instance for image editing task for BAGEL and FLUX models. 15 Published as a conference paper at ICLR 2026 TeaCache    
+
+> Speed Up: 1.91x Speed Up: 1.91x
+> FastFlow
+> Speed Up: 2.05x Speed Up: 2.70x Adaptiveness
+> Prompt: A cat and a lion eating noodles. Prompt: A photo of a cat.
+
+Figure 11: An illustration of the adaptiveness of our method. For simpler generation prompts, it achieves higher speedups by reducing inference calls, whereas for more complex samples, FastFlow automatically reverts to additional model calls. In contrast, baselines such as Teacache remain static across timesteps, showing no dependence on generation complexity. 
+
+Flux BAGEL Hyperparam Generation Editing Generation Editing Image resol. 1360 ×768 – 1024 × 1024 –Guidance scale 2.5 2.5 cfg text scale = 4 cfg text scale = 4 Guidance rescale 0 0 cfg img scale = 1 cfg img scale = 2 
+
+μ 0.001 0.005 0.001 0.005 cfg interval – – [0.4, 1.0] [0.0, 1.0] timestep shift – – 3 3cfg renorm min – – 0 0cfg renorm type – – “global” “text channel” Arms [0,2,4,6] (50), [0,2,4,6] (25), [0,1,2,3] (10) same as BAGEL 
+
+Table 3: Hyperparameter settings for Flux and BAGEL. We report separate values for generation and editing. Both models share the same arm configurations, while image resolution and condition-ing scales differ. 2. Bounded second time-derivative: ∂2v(x,t ) 
+
+> ∂t 2
+
+≤ M for all x ∈ Rd.
+
+Theorem B.1. Let {xtrue  
+
+> tk
+
+} denote the trajectory obtained using the exact velocity field with the forward Euler method, and let {xapprox  
+
+> tk
+
+} be the trajectory where velocity evaluations are skipped at a subset of steps S ⊆ { 0, . . . , T − 1} and are instead approximated, for simplicity, via a first-order Taylor expansion in time. 
+
+16 Published as a conference paper at ICLR 2026 
+
+Under above assumptions, the cumulative error in the final state after T steps with a uniform step size ∆t = 1 /T is bounded by: 
+
+eT := ∥xapprox  
+
+> tT
+
+− xtrue  
+
+> tT
+
+∥ = O
+
+ |S| 
+
+T 3
+
+
+
+.
+
+Proof. Let ek := ∥xapprox  
+
+> tk
+
+− xtrue  
+
+> tk
+
+∥ be the spatial error at timestep tk. The forward Euler updates for the true and approximate trajectories are given by: 
+
+xtrue  
+
+> tk+1
+
+= xtrue  
+
+> tk
+
++ ∆ t · v(xtrue  
+
+> tk
+
+, t k)
+
+xapprox  
+
+> tk+1
+
+= xapprox  
+
+> tk
+
++ ∆ t · ˜vk
+
+where ˜vk is the (potentially approximated) velocity used at step k.By subtracting the two update equations and applying the triangle inequality, we derive the error recurrence: 
+
+ek+1 = ∥xapprox  
+
+> tk
+
+− xtrue  
+
+> tk
+
++ ∆ t(˜ vk − v(xtrue  
+
+> tk
+
+, t k)) ∥≤ ek + ∆ t · ∥ ˜vk − v(xtrue  
+
+> tk
+
+, t k)∥.
+
+We bound the velocity mismatch term by splitting it into the approximation error and the propagated error: 
+
+∥˜vk − v(xtrue  
+
+> tk
+
+, t k)∥ ≤ ∥ ˜vk − v(xapprox  
+
+> tk
+
+, t k)∥
+
+| {z }
+
+> Approximation Error
+
++ ∥v(xapprox  
+
+> tk
+
+, t k) − v(xtrue  
+
+> tk
+
+, t k)∥
+
+| {z }
+
+> Propagated Error
+
+.
+
+The propagated error is bounded by the spatial Lipschitz condition: 
+
+∥v(xapprox  
+
+> tk
+
+, t k) − v(xtrue  
+
+> tk
+
+, t k)∥ ≤ Lxek.
+
+For the approximation error, if a skip occurs ( k ∈ S ), we use the bound on the second derivative. The remainder term of a first-order Taylor expansion gives: 
+
+∥˜vk − v(xapprox  
+
+> tk
+
+, t k)∥ ≤ M
+
+2 (∆ t)2.
+
+If no skip occurs ( k / ∈ S ), this error is 0. Combining these bounds, the full error recurrence becomes: 
+
+ek+1 ≤ ek + ∆ t
+
+
+
+1{k∈S} · M
+
+2 (∆ t)2 + Lxek
+
+
+
+≤ (1 + Lx∆t)ek + 1{k∈S} · M
+
+2 (∆ t)3.
+
+We unroll this recurrence starting from the initial condition e0 = 0 :
+
+eT ≤ 
+
+> T−1
+
+X
+
+> k=0
+
+1{k∈S} · M
+
+2 (∆ t)3 · (1 + Lx∆t)T −1−k.
+
+Using the inequality (1 + x) ≤ ex, we can bound the exponential term: 
+
+(1 + Lx∆t)T −1−k ≤ eLx∆t(T −1−k) ≤ eLxT ∆t = eLx .
+
+Substituting this back, we get a sum over the |S| steps where an error was introduced: 
+
+eT ≤ X
+
+> k∈S
+
+M
+
+2 (∆ t)3 · eLx = |S| · M e Lx
+
+2 (∆ t)3.
+
+Finally, with ∆t = 1 /T , the bound is: 
+
+eT ≤
+
+ |S| M e Lx
+
+2
+
+ 1
+
+T 3 ,
+
+which proves that eT = O
+
+ |S|  
+
+> T3
+
+
+
+.17 Published as a conference paper at ICLR 2026 
+
+Interpretation: The upper bound on the overall error can be interpreted as: 1. We show that global error between our update to the Euler solver, and Euler solver with full evaluation is small (as above). 2. The overall error grows linearly with the number of skipped steps, but decays rapidly with the total number of timesteps. 3. The proof provides a strong theoretical motivation for our choice of the bandit reward. The goal is to maximize the number of skipped steps, while lowering the local error. 4. Approximating velocities in regions of large curvature (i.e., large M ) increases the overall error. 
+
+## C FAST FLOW AND LINEAR MULTI -STEP METHODS 
+
+Given the first-order Taylor approximation for velocity, and Euler solver for FastFlow, a re-formulation to cast our updates in form of a Linear multi-step can be obtained as follows. Assume that as per our method and a uniform step-size, we evaluate the velocities 
+
+v(xk, k ), v (xk−1, k − 1) and then skip m steps as per a bandit action. Then xk+m+1 , with a Euler step update is given by: 
+
+xk+m+1 = xk+m + h · v(xk+m, k + m) (6) We approximate xk+m and v(xk+m, k + m) as follows: 
+
+xk+m ≈ xk + m · h · v(xk, k ) (7) 
+
+v(xk+m, k + m) ≈ v(xk, k ) + m · h v(xk, k ) − v(xk−1, k − 1) 
+
+h (8) Updating (2) , (3) in (1) , with some simplification results in: 
+
+xk+m+1 = xk + h[(2 m + 1) · v(xk, k ) − m · v(xk−1, k − 1)] (9) This is an multi-step update with order= 1. The update is consistent, and the Local Truncation Error (at step k + m + 1 , when bandit skips m steps at step k) can be shown to be as (after accounting for a division by h in Suli & Mayers (2003)): 
+
+τk,m = m2 + 1 2 · (m + 1) · h2 · d2xdt 2 (tk) + O(h3) ≤ m
+
+2 · h2 · d2xdt 2 (tk) + O(h3) (10) 18

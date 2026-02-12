@@ -1,0 +1,1024 @@
+Title: DEGMC: Denoising Diffusion Models Based on Riemannian Equivariant Group Morphological Convolutions
+
+URL Source: https://arxiv.org/pdf/2602.10221v1
+
+Published Time: Thu, 12 Feb 2026 01:08:47 GMT
+
+Number of Pages: 29
+
+Markdown Content:
+# DEGMC: Denoising Diffusion Models Based on Riemannian Equivariant Group Morphological Convolutions 
+
+## El Hadji S. Diop ⋆, Thierno Fall ⋆ and Mohamed Daoudi ‡
+
+> ⋆
+
+NAGIP-Nonlinear Analysis and Geometric Information Processing Research Group Department of Mathematics, University Iba Der Thiam, BP 967, Thies, Senegal 
+
+> ‡
+
+Institut Mines-Telecom Nord Europe, Centre for Digital Systems, CNRS Centrale Lille UMR 9189 CRIStAL, University of Lille, F-59000 Lille 
+
+Abstract 
+
+In this work, we address two major issues in recent Denoising Diffusion Probabilistic Models (DDPM): 1) geometric key feature extraction and 2) network equivariance. Since the DDPM pre-diction network relies on the U-net architecture, which is theoretically only translation equivariant, we introduce a geometric approach combined with an equivariance property of the more general Euclidean group, which includes rotations, reflections, and permutations. We introduce the notion of group morphological convolutions in Riemannian manifolds, which are derived from the viscosity solutions of first-order Hamilton-Jacobi-type partial differential equations (PDEs) that act as mor-phological multiscale dilations and erosions. We add a convection term to the model and solve it using the method of characteristics. This helps us better capture nonlinearities, represent thin ge-ometric structures, and incorporate symmetries into the learning process. Experimental results on the MNIST, RotoMNIST, and CIFAR-10 datasets show noticeable improvements compared to the baseline DDPM model. 
+
+Key words: Diffusion models. Hamilton-Jacobi equations. Group morphological convolutions. Equivariance. Riemannian manifolds. 
+
+# 1 Introduction 
+
+Over the past few years, deep generative models have experienced rapid growth, with applications ranging from realistic image generation [1, 2, 3, 4, 5] to audio synthesis [6, 7], and even molecular modeling [8, 9, 10, 11]. Among these approaches, probabilistic diffusion models (PDM) [12, 13, 5, 14, 15] have emerged as particularly influential due to their impressive generative capabilities. PDM can be broadly categorized into three main classes: denoising diffusion probabilistic models (DDPM) [12, 5], inspired by nonequilibrium thermodynamics; noise-conditioned score networks [13], based on a multiscale score-matching objective; and stochastic differential equation–based models [14, 16]. In particular, in the field of image generation, DDPM [5] have demonstrated a remarkable ability to produce high-quality samples. Their principle relies on two complementary stages. The first stage, known as the forward diffusion process, progressively adds Gaussian noise to the data until its distribution approaches an isotropic normal distribution. The second stage, the reverse or denoising process, aims to invert this procedure by learning, via a deep neural network, the noise to be removed in order to reconstruct the original data. Training is performed within a probabilistic framework by optimizing a 1
+
+> arXiv:2602.10221v1 [cs.CV] 10 Feb 2026
+
+variational lower bound (ELBO) on the likelihood, thereby ensuring the theoretical soundness of the model. Compared to other families of generative models, such as variational autoencoders [2, 17] or generative adversarial networks (GAN) [1, 18], PDM are distinguished by the stability of their training and the diversity of the generated samples. Equivariance plays an important role in most neural network architectures. It means that applying a transformation to the input data and then passing it through the network is equivalent to first passing the data through the network and then transforming the output. This property enables the model to learn the symmetries present in the data. This principle has recently been exploited in molecular generation by combining E( n)-equivariant graph neural networks [19] with E(3)-equivariance of the denoising distri-bution in the diffusion process of DDPM [11]. A similar approach has been proposed for 3D molecular generation [20] with a learnable forward process. An equivariant diffusion model has also been introduced in [21], exhibiting SE(3) × Z × Sn invariance of the trajectories. An E(3)-equivariant model with O(3) invariance in the conditional diffusion process has been designed in [22] for molecular linker design. Deep neural networks are naturally invariant to translations. To extend this invariance to other types of transformations, group convolutions neural networks (G-CNN) have been introduced [23, 24, 25], gen-eralizing CNN to incorporate symmetries during learning. G-CNN have shown significant improvements over traditional CNN [26, 27, 28]. Recently, a PDE-based framework referred to as PDE-G-CNN has been introduced [29, 30] as a generalization of G-CNN. In [31], equivariant PDE-G-CNN were integrated into GAN models, demonstrating substantial improvements in sample quality and increased robustness to geometric transformations of the data. PDM have been extended to Riemannian manifolds through a continuous-time Riemannian ELBO [32]. A Riemannian extension of DDPM has recently been proposed to learn distributions supported on submanifolds of Rn [33]. Score-matching models have also been generalized to Riemannian manifolds [34]. In addition, a generalized strategy for the numerical computation of the heat kernel on Riemannian symmetric spaces within the denoising score-matching framework has been proposed in [35]. These approaches primarily aim to define diffusion processes that are consistent with Riemannian geometry or to learn distributions on submanifolds of Rn. However, they generally rely on standard geometric architectures and do not explicitly investigate the impact of equivariant layers nor the integration of morphological operators within the denoising networks of PDM. The main objective of this work is to analyze the impact of equivariant operators on noise prediction, symmetry preservation, and the extraction of fine geometric structures in DDPM. 
+
+Contributions DDPM use a U-Net architecture, which theoretically satisfies only the property of translation equivariance, to predict the residual noise at each step of the diffusion process. In this work, we introduce the equivariance property via the action of a Lie group. This allows us to exploit the symmetry group structure and the underlying Riemannian geometry simultaneously. We treat each layer of the neural network as a functional operator and model the feature maps of traditional neural networks as functions. We generalize the equivariance property with respect to the more general Euclidean group of transformations, including rotations, reflections, and permutations in Rn. We also ensure that these operators commute with the group actions defined on their respective function spaces. We introduce a denoising diffusion model defined on general Riemannian manifolds. In this model, the noise prediction network is constructed from equivariant layers based on morphological group-equivariant convolutions and convection operators, which replace standard layers. We summarize our contributions as follows: 
+
+• Construction of a network capable of better capturing fine structures and nonlinearities using convection-dilation-erosion blocks (ResnetCDEBlocks). 
+
+• Proposition of a diffusion framework that integrates group morphological operators. 
+
+• Systematic preservation of translation, rotation, reflection, and permutation symmetries, and re-duction of sampling complexity. 2• Faster convergence and superior FID scores compared to baseline DDPM due to the introduction of geometric equivariance. 
+
+Figure 1: Our DEGMC approach uses equivariant group morphological convolution layers integrated into the denoising network referred to as GMCUnet (see Section 3.2). This network replaces the standard U-Net architecture used in classical DDPMs during the reverse denoising process. GMCUnet relies on convection, dilation, and erosion (CDE) operations to enforce equivariance with respect to translations, rotations, reflections, and permutations. This improves the extraction and preservation of fine geometric structures throughout the generation process. 
+
+# 2 Preliminaries 
+
+In this section, we provide the necessary background on diffusion models, as well as the key concepts from Riemannian geometry and equivariant geometry that we utilize to develop the DEGMC framework. 32.1 Probabilistic Diffusion Models 
+
+Diffusion models are a class of generative models that operate by progressively corrupting real data with random noise and subsequently learning to reverse this corruption. This denoising process is performed by a neural network that recovers the original data distribution from pure noise. For a more comprehensive derivation, refer to Appendix A. 
+
+Forward Process The forward (diffusion) process transforms data n0 into a sequence of increasingly noisy latent variables {n1, . . . , n T }. Each step t is modeled as a Markov chain where noise is added via a conditional Gaussian distribution: 
+
+q(nt | nt−1) = N (nt; √αtnt−1, (1 − αt)I)Following the variance-preserving schedule established by [5], we define the noise level as Γ t = 1 − αt.Here, αt ∈ (0 , 1) dictates the signal-to-noise ratio at each step; as t increases, the mean √αtnt−1 decays, and the signal progressively vanishes into a standard normal distribution. 
+
+Inverse Generative Process The generative process reverses the forward diffusion by sampling from the true posterior q(nt−1 | nt). While this true distribution is intractable, it can be approximated as a Gaussian for sufficiently small noise steps. We utilize a neural network ϕ, parameterized by θ, to learn the transition pθ (nt−1 | nt): 
+
+pθ (nt−1 | nt) = N (nt−1; μθ (nt, t ), Σθ (nt, t )) where μθ and Σ θ represent the predicted mean and covariance at iteration t. Following [5], the covariance is often simplified to a non-learnable time-dependent constant, Σ θ (nt, t ) = σ2 
+
+> t
+
+I.
+
+Variational Lower Bound of the Likelihood The optimization problem for the Evidence Lower Bound (ELBO) with respect to θ is given by: minimize 
+
+> θT
+
+X
+
+> t=2
+
+KL( q (nt−1 | nt, n 0) ∥ pθ (nt−1 | nt)) 
+
+− Eq(n1: T |n0)[log pθ (n0 | n1)] . (1) This equation trains the inverse distribution pθ (nt−1 | nt) to match the true denoising distribution 
+
+q(nt−1 | nt, n 0) by minimizing their KL divergence. It can therefore be used as a loss function for a neural network parameterized by θ, emphasizing the alignment between these two distributions. Details leading to (1) are provided in Appendix A. 
+
+## 2.2 U-net architecture in DDPM 
+
+The denoising function ϕ, parameterized by θ, typically uses a U-Net architecture to predict the residual noise at each step of the diffusion process. Its hierarchical structure enables multiscale feature extraction through a symmetric encoder-decoder scheme. While a standard U-Net is theoretically translation equivariant —meaning a spatial shift of the input noise nt induces a corresponding shift in the output—it does not exhibit intrinsic equivariance with respect to the more general Euclidean group E(n). This group includes rotations, reflections, and permutations in Rn.42.3 Equivariance 
+
+Let G be a connected Lie group with identity element e and ( M, g) a connected Riemannian manifold 
+
+M with metric g.Let φ : G × (M, g) → (M, g) be a left action of G on ( M, g). For a fixed g ∈ G, we define φg :
+
+φg : ( M, g) → (M, g), x 7 → φg (x) = φ(g, x ).
+
+The map φ : G × (M, g) → (M, g) is a left action if, for all g, h ∈ G, we have: 
+
+φe = id M and φg ◦ φh = φgh .
+
+Let φh : ( M, g) −→ (M, g) denote the left group action (considered here as a multiplication) by an element h ∈ G, defined for every x ∈ (M, g) by: 
+
+φh(x) = h · x. 
+
+Let Lh denote the left regular representation of G on functions f defined on M, given by: (Lhf )( x) = f (φh−1 (x)) ,
+
+where h−1 is the inverse of h ∈ G.Let x0 be an arbitrary fixed point on the connected Riemannian manifold ( M, g). Let π : G → (M, g)denote the projection defined by associating to each element h of G a point in ( M, g) as follows: 
+
+∀ h ∈ G, π (h) = φh(x0).
+
+In other words, once a reference point x0 ∈ (M, g) is chosen, the projection π(h) associates to each element h of G the unique point in ( M, g) to which h sends x0 under the action φh.Let us consider a connected Lie group G acting transitively on the connected Riemannian manifold (M, g). This means that for any points x, y ∈ (M, g), there exists an element h ∈ G such that φh(x) = y,which corresponds to the definition of a homogeneous space under G. We define the notion of equivariance as follows: 
+
+Definition 2.1. Let G be a connected Lie group with homogeneous spaces M and N , and ϕ an operator mapping functions from M to N . ϕ is equivariant with respect to G if, for all functions f , we have: 
+
+∀ h ∈ G,
+
+(ϕ ◦ L h)f = ( Lh ◦ ϕ)f ;
+
+where ◦ denotes the composition of operators. 
+
+# 3 Proposed DEGMC diffusion model 
+
+DEGMC preserves both the DDPM forward process and the ELBO. The reverse process involves using morphological group convolutions and convection operators to obtain an equivariant network for noise prediction. 
+
+## 3.1 Equivariant morphological layers model prediction 
+
+PDE-G-CNNs were formally introduced in homogeneous spaces with G-invariant tensor metric fields on quotient spaces [31]. Building on this foundational approach, the proposed DEGMC model combines traditional CNNs with group morphological convolution layers based on Hamilton-Jacobi PDEs defined on Riemannian manifolds and convection layers. The network’s output is obtained as a linear combination of these terms. This system represents our stepwise model, which is solved using operator splitting; each step corresponds to one of the preceding terms. Below, we detail each counterpart of the system: 53.1.1 Convection term 
+
+In our architecture, we use the convection part as a learned resampling operator that moves and aligns features in space according to the underlying geometry of the data. The convection term is obtained by solving the following PDE: 
+
+∂u ∂t + αu = 0 in ( M, g) × (0 , ∞)
+
+u(·, 0) = f on ( M, g), (2) where α is a G-invariant vector field on ( M, g). The convection (2) is left-invariant under the action of 
+
+G. PDE (2) is solved using the method of characteristics, and its solution is given by the result stated below: 
+
+Proposition 3.1. The solution of (2) is obtained using the method of characteristics and is given by: 
+
+u(x, t ) = ( Lh−1 
+
+> x
+
+f ) ( γc(t)−1x0)= f (hxγc(t)−1x0) = f (hxγ−c(t)x0),
+
+where hx ∈ G satisfies hxx0 = x for a fixed x0 ∈ M , and γc : R → G is the exponential curve such that 
+
+γc(0) = e and 
+
+∂∂t (γc(t)x)( t) = c(γc(t)x).
+
+i.e., γc is the exponential curve in the group G that induces the integral curves of the G-invariant vector field c on M when acting on the elements of the homogeneous space. Proof. See [29]. 
+
+3.1.2 Equivariant group morphological convolution 
+
+Here, we introduce the notion of group morphological convolutions, which are equivariant in the sense of Definition 2.1. These are derived from the multiscale morphological dilations and erosions, which are the viscosity solutions of first-order Hamilton–Jacobi type PDEs defined on compact Riemannian manifolds. Let ( M, g) be a compact, connected Riemannian manifold equipped with a metric g, and let f :(M, g) −→ R. Let T M denote the tangent bundle of ( M, g), and let L : T M → R be a Lagrangian function. Let T ∗M denote the cotangent bundle of ( M, g), and let us define the Hamiltonian H : T ∗M → 
+
+R associated with the Lagrangian L by: 
+
+H(x, q ) = sup 
+
+> v∈TxM
+
+{q(v) − L(x, v )}.
+
+We define the related Hamilton–Jacobi PDE in a Riemannian manifold as follows: 
+
+∂u ∂t + H(x, ∇u) = 0 in ( M, g) × (0 , +∞); 
+
+u(·, 0) = f on ( M, g). (3) PDE (3) admits unique viscosity solutions [36, 37]. Multiscale morphological erosions ( resp. multiscale morphological dilations) are obtained by taking H = ∥∇ gu∥k 
+
+> g
+
+(resp. H = −∥∇ gu∥k
+
+> g
+
+) in (3): 6Proposition 3.2. Let k > 1, ck = k−1 
+
+> kkk−1
+
+, and a continuous function f ∈ C0(( M, g), R). The unique viscosity solution of the Cauchy problem: 
+
+∂u ∂t + ∥∇ gu∥k 
+
+> g
+
+= 0 in (M, g) × (0 , +∞); 
+
+u(·, 0) = f on (M, g), (4) 
+
+is given by: 
+
+u(t, x ) = inf 
+
+> h∈G
+
+f  φh(x0) + ck
+
+dg
+
+ φh−1 (x), x 0
+
+ kk−1
+
+t 1
+
+> k−1
+
+ . (5) 
+
+Proof. See [31]. Morphological multiscale Riemannian dilations at scale t are obtained by reversing time: 
+
+∂w ∂t − ∥∇ gw∥k 
+
+> g
+
+= 0 in ( M, g) × (0 , +∞); 
+
+w(·, 0) = f on ( M, g). (6) The viscosity solution of the Cauchy problem (6) is obtained in a similar way and is given by: 
+
+w(t, x ) = sup 
+
+> h∈G
+
+f  φh(x0) − ck
+
+dg
+
+ φh−1 (x), x 0
+
+ kk−1
+
+t 1
+
+> k−1
+
+ . (7) We introduce the notion of group Riemannian morphological convolution below. 
+
+Definition 3.1. Let f, b : ( M, g) −→ R. The group morphological convolutions ▽ and △ between b and 
+
+f are respectively defined for all x ∈ (M, g) by: 
+
+(f ▽b)( x) = inf 
+
+> h∈G
+
+{f (φh(x0)) + b(φh−1 (x)) } (erosion) 
+
+(f △ b)( x) = sup 
+
+> h∈G
+
+{f (φh(x0)) − b(φh−1 (x)) } (dilation) 
+
+Operators ▽ and △ are dual due to the duality between the infimum and supremum operations, we have: 
+
+f ▽b = −(f ▽(−b)) .
+
+The morphological operations are equivariant with respect to G in the sense of Definition 2.1, due to the following result: 
+
+Proposition 3.3. Let x, y ∈ (M, g) such that φh(y) lies outside the cut locus of φh(x). Then, for all 
+
+h ∈ G, we have: 
+
+dg(x, y ) = dg
+
+ φh(x), φ h(y).
+
+Proof. See Appendix C. For multiscale operations, we consider the family of functions ( bkt ) defined by: 
+
+bkt (· ) = ck
+
+dg (x0, ·) kk−1
+
+t 1
+
+> k−1
+
+.
+
+The case k = 2 corresponds to quadratic structuring functions. Letting k > 1 allows us to deal with more general structuring functions than quadratic ones, leading to a better handling of thin data structures. Morphological multiscale Riemannian erosions (5) and dilations (7) at scale t can now be formulated using the group convolutions as follows: 
+
+u(t, x ) = ( f ▽bkt )( x) and w(t, x ) = ( f △ bkt )( x).
+
+73.1.3 Hyperbolic Ball example: metric, invariance and embedding 
+
+For computational purposes, let us consider the hyperbolic ball Bn, as it is a compact Riemannian manifold and provides a natural framework to represent the equivariance with respect to the Euclidean group E(n) of translations, rotations, reflections, and permutations in Rn. Bn has a negative curvature that allows for effective capture of hierarchical and non-local relationships between points, while ensuring that distances, invariant under the transformations of the group E(n) are preserved. This facilitates the definition of stable equivariant operators and improves learning in neural networks based on PDE-GCNNs. 
+
+Bn is defined by: 
+
+Bn =
+
+(
+
+(x1, . . . , x n) ∈ Rn |
+
+> n
+
+X
+
+> i=0
+
+x2 
+
+> i
+
+< 1
+
+)
+
+.
+
+Let us take M = Bn endowed with the metric g defined as follows: 
+
+g = 4( dx 21 + . . . + dx 2
+
+> n
+
+)(1 − ∥ x∥2)2 ,
+
+where ∥·∥ represents the Euclidean norm in Rn. Next, we show that the hyperbolic distance d Bn induced by g is invariant under translations, rotations, reflections, and permutations. We also show an embedding of Rn into Bn, which will preserve data structures within the hyperbolic ball Bn, enabling the desired equivariance. The length of a curve γ : [ a, b ] → Bn is given by: 
+
+L(γ) = 
+
+Z ba
+
+pg(γ′(t), γ ′(t))d t
+
+=
+
+Z ba
+
+2
+
+pγ′
+
+> 1
+
+(t)2 + . . . + γ′
+
+> n
+
+(t)2
+
+p1 − (γ1(t)2 + . . . + γn(t)2) dt, 
+
+where γ(t) = ( γ1(t), . . . , γ n(t)). The distance between two points x, y ∈ Bn is the infimum over all curves that join x and y. Then, the hyperbolic distance dBn (x, y ) between x and y is given by: cosh d Bn (x, y ) = 1 + 2∥x − y∥2
+
+(1 − ∥ x∥2)(1 − ∥ y∥2) ,
+
+and thus, we derive: dBn (x, y ) = Argcosh 
+
+
+
+1 + 2∥x − y∥2
+
+(1 − ∥ x∥2)(1 − ∥ y∥2)
+
+
+
+.
+
+Since d Bn depends only on the Euclidean norm, which is invariant under Euclidean isometries, d Bn is invariant under all elements of E(n), as stated in the following result: 
+
+Proposition 3.4. dBn is invariant under Euclidean transformations. Proof. See Appendix D. The next result is the embedding of Rn into Bn. To prove it, let us consider the mapping Φ defined from Rn to Bn by: Φ : Rn −→ Bn; x 7 → x
+
+p1 + ∥x∥2 ,
+
+where ∥ · ∥ denotes the Euclidean norm in Rn. Φ is well-defined because, ∀x ∈ Rn, we have: 
+
+∥Φ( x)∥2 = ∥x∥2
+
+1 + ∥x∥2 < 1.
+
+8Proposition 3.5. Φ is an embedding of Rn into Bn.Proof. See Appendix E. The inverse mapping S (or inverse stereographic projection) is defined by: 
+
+S : Bn → Rn
+
+x 7 → x
+
+p1 − ∥ x∥2
+
+which is well-defined as long as ∥x∥ < 1, a condition always satisfied within Bn.
+
+## 3.2 GMCUnet Network Architecture 
+
+Our architecture (Fig. 1(a)) is based on a classical U-Net structure, commonly used for noise prediction in DDPM [5]. We nonetheless incorporate the previously defined PDE layer into this architecture. In our numerical experiments, we consider M = Bn, which enables the construction of a new network that is equivariant with respect to the group E(n). A diffusion U-Net typically consists of three main components: an encoder ( Downsampling ), a decoder (Upsampling ), and a middle block ( Middle Block ). The latter, located between the encoder and the decoder, corresponds to the lowest spatial resolution and the highest number of channels. It plays a crucial role in merging, transforming, and refining the representations extracted by the encoder before their reconstruction by the decoder. It often consists of residual blocks for deeper feature extraction and may include an attention module to capture long-range dependencies. In DEGMC, we propose a novel modification in the middle block. Specifically, we replace the classical ResNetBlocks, commonly used in standard U-Nets, with ResnetCDEBlocks . As illustrated in Fig. 1(b), these blocks enhance predictive capacity while introducing explicit equivariance with respect to the group E(n). To the best of our knowledge, the combination of a diffusion U-Net and residual blocks of the CDE type (Convection, Dilation, and Erosion) has not yet been reported in the literature. Therefore, the proposed GMCUnet architecture constitutes an original contribution aimed at enhancing both the robustness and expressiveness of diffusion models. Its use in the reverse diffusion process is described in Algorithm 1. 
+
+# 4 Experiments 
+
+To evaluate the performance of our diffusion model, numerical experiments were conducted on the 
+
+MNIST , Rotated MNIST , and CIFAR-10 datasets. For MNIST and Rotated MNIST, the model is trained using a batch size of 64 images for a total of 60 , 000 training iterations. For CIFAR-10, the training is performed with a batch size of 128 images over 80 , 000 iterations. In all cases, optimization relies on the Adam algorithm ( β1 = 0 .9, β 2 = 0 .99) with a fixed learning rate of 1 × 10 −4. To stabilize training and improve the quality of the generated images, an exponential moving average (EMA) of the model parameters is applied every 10 iterations with a decay factor of 0 .995. Test image generation is periodically performed to monitor the evolution of the quality of the generated samples. For MNIST and Rotated MNIST, the sampling is carried out every 100 iterations, with 25 images generated at each step. For CIFAR-10, images are generated every 1 , 000 iterations, with 64 images produced at each step. A quantitative evaluation is performed using the Fr´ echet Inception Distance (FID) metric. FID scores are computed using features extracted from an Inception network of dimension 2048 on 2 , 500 generated images for MNIST and Rotated MNIST and on 5 , 000 generated images for CIFAR-10. Additional metrics are considered to provide a more detailed evaluation of model performance. 9Algorithm 1 Reverse Diffusion Process of DEGMC 
+
+Input: initial noise nT ∼ N (0 , I )
+
+Output: generated sample n0
+
+for t = T down to 1 do 
+
+Compute time embedding et ← MLP( t)Apply the GMCUnet network: Encoder : 
+
+ht ← Downsampling( nt, e t)Middle Block: 
+
+ht ← ResnetCDEBlocks( ht)
+
+ht ← Attention( ht)
+
+ht ← ResnetCDEBlocks( ht) (×2) 
+
+Decoder: ˆϵt ← Upsampling( ht, e t)Compute the mean of the reverse process: 
+
+μt = 1√αt
+
+
+
+nt − 1−αt√1− ¯αt
+
+ˆϵt
+
+
+
+Sample the previous state: 
+
+nt−1 ∼ N (μt, β tI)
+
+end for Return n0
+
+In this study, we choose to compare our approach exclusively with the baseline DDPM model. There are two main reasons for this choice. First, the DDPM model is foundational for diffusion-based ap-proaches and is a standard reference in much of the existing literature. Therefore, it provides a relevant baseline for objectively assessing the improvements introduced by our method. Second, rather than attempting to outperform all existing diffusion model variants, our objective is to quantify the impact of introducing equivariance through group morphological convolutions on the original model’s perfor-mance. By limiting the comparison to this reference model, we can isolate and rigorously analyze the true contribution of our approach. The following presents the results in the form of tables and figures, along with image samples generated for each dataset and model. Fig. 2 presents the samples obtained at the training iterations corresponding to the best FID scores using DEGMC (Fig. 2a) and DDPM (Fig. 2b). A visual inspection reveals that the overall quality of the generated samples is comparable with respective FID scores of 30 .94 and 36 .41. These results suggest that the DEGMC model has slightly superior generative performance on the MNIST dataset. Table 1 reports obtained quantitative results using FID and mean Inception Score (IS) metrics for the generated samples. The results for DEGMC and DDPM show comparable performance in terms of sample quality and diversity on MNIST. Specifically, DEGMC achieves an average FID of 45 .14, which is slightly lower than DDPM’s FID average of 46 .91. Furthermore, Fig. 5a shows the evolution of the FID during training. It highlights that DEGMC generates higher-quality samples during the first thirty training iterations. DDPM subsequently reaches a comparable level of quality after the thirtieth iteration. These results suggest that DEGMC converges more rapidly toward high-quality sample generation due to its equivariance property, whereas DDPM requires a larger number of iterations to reach similar performance. On the RotoMNIST dataset, the samples generated by DEGMC (Fig. 3a) exhibit superior quality, achieving an FID score of 35 .75. In contrast, DDPM (Fig. 3b) obtains a higher FID score of 44 .74. Table 1 shows that DEGMC achieves better FID and IS scores, demonstrating its ability to generate higher-quality and more diverse samples than DDPM. 10 (a) DEGMC (FID = 30.94) (b) DDPM (FID = 36.41) 
+
+Figure 2: Best samples generated on MNIST based on the lowest FID scores: DEGMC vs. DDPM. Table 1: Mean FID and IS scores on MNIST, RotoMNIST, and CIFAR-10.                              
+
+> Base DEGMC DDPM FID IS FID IS MNIST 45.14 1.21 ±0.24 46.91 1.21 ±0.24 RotoMNIST 49.30 1.33 ±0.18 54.16 1.30 ±0.14 CIFAR-10 64.83 1.50 ±0.24 65.51 1.39 ±0.12
+
+Furthermore, Fig. 5b illustrates the evolution of the FID over training iterations on the RotoMNIST dataset and highlights a significant performance gap between the two models for most of the training process. We observe that DEGMC effectively adapts to the RotoMNIST data, maintaining a performance level comparable to that obtained on MNIST. This clearly demonstrates the impact of equivariance. This property enables the model to perform similarly on untransformed data and data subjected to group transformations. In contrast, DDPM fails to maintain equivalent performance when trained for the same number of iterations. Our objective on the CIFAR-10 dataset is to evaluate the performance of our model on real-world color images. Fig. 4 presents the best samples generated during training for the two models being compared. Our DEGMC model achieves a slightly lower FID value (25 .14) than the DDPM baseline model (25 .59), indicating an improvement in image fidelity and overall visual quality. Table 1 summarizes the mean FID and Inception Score (IS) values and reports an average FID of 64.83 for DEGMC, compared to 65.51 for DDPM. These results confirm an overall improvement in generative performance relative to the DDPM model’s samples. Furthermore, the higher IS value obtained by our model indicates greater diversity in the generated images and better coverage of the real data distribution. In conclusion, both models perform similarly on the MNIST dataset, although DDPM requires more training iterations to reach similar performance levels. However, on the Rotated MNIST dataset, DDPM 11 (a) DEGMC (FID = 35.75) (b) DDPM (FID = 44.74) 
+
+Figure 3: Best samples generated on RotoMNIST based on the lowest FID scores: DEGMC vs. DDPM. fails to maintain the performance observed on MNIST. In contrast, DEGMC preserves nearly identical generation quality across both datasets. We also observe high-quality image generation on the CIFAR-10 dataset, demonstrating that our model can effectively generalize to real-world color images. This stability in performance is due to DEGMC’s intrinsic equivariance with respect to group transformations. This highlights the importance of equivariance as a key property for achieving robust and consistent generation across diverse data types. 
+
+# 5 Conclusion 
+
+We have proposed here an equivariant denoising diffusion model that integrates equivariant group mor-phological convolutions on Riemannian manifolds. Not only does the framework preserve the key data symmetries—translations, rotations, reflections, and permutations, but it also enhances geometric fea-ture extraction in the denoising process. Our experiments on the MNIST, RotoMNIST, and CIFAR-10 datasets confirm that the proposed DEGMC achieves faster convergence, superior FID scores, and im-proved robustness compared to the standard DDPM, particularly under geometric transformations. These findings highlight the potential of introducing equivariant group morphological convolution architectures in diffusion models to produce more interpretable and resilient generative frameworks. Future work will explore scaling DEGMC to higher-dimensional datasets and extending its applicability to 3D shape generation and molecular modeling. 
+
+# A Details on probabilistic diffusion models 
+
+Given observations x ∼ q(x), the model operates on latent variables n0, . . . , n T of the same dimension as 
+
+x, where n0 corresponds to the observation x and nT represents standard Gaussian noise (see Fig. 6). 12 Forward Process. The forward process is Markovian; thus, for all t ∈ { 0, . . . , T }, nt depends only on 
+
+nt−1 and not on earlier variables [38]: 
+
+q(nt | nt−1, n t−2, . . . , n 0) = q(nt | nt−1) (8) Hence, the joint distribution of this process can be written as: 
+
+q(n1, n 2, . . . , n T | n0) = 
+
+> T
+
+Y
+
+> t=1
+
+q(nt | nt−1) (9) For any t > s , the transition distribution from step s to t can be defined using the Gaussian reparam-eterization of [2], considering a standard Gaussian ε ∼ N (0 , I ). Thus, Equation (41) can be rewritten as: 
+
+nt = √αtnt−1 + √1 − αt ε (10) Consequently, for any t > s , we have: 
+
+q(nt | ns) = N (nt : √αt/s ns, Γt/s I) (11) with αt/s = Qti=s+1 αi and Γ t/s = 1 − αt/s . Relative to the initial data n0:
+
+q(nt | n0) = N (nt : √¯αn 0, ¯ΓI) (12) where ¯ α = Qti=1 αi and ¯Γ = 1 − ¯α.
+
+Inverse Generative Process. The generative process is also modeled as a first-order Markov chain, i.e., 
+
+P (nt−1 | nt, n t+1 , . . . , n T ) = P (nt−1 | nt) (13) Thus, the joint distribution of the generative process can be written as: 
+
+pθ (n0: T ) = P (nT )
+
+> T
+
+Y
+
+> t=1
+
+pθ (nt−1 | nt) (14) with P (nT ) typically defined as standard Gaussian noise: 
+
+P (nT ) = N (0 , I ) (15) The true distribution is similarly defined as in Equation (41): 
+
+P (nt−1 | nt, n 0) = N (nt−1 : ˜ μ(nt, n 0), ˜σ2I) (16) Using the same reparameterization technique as in the forward case (see Equation (44)), we can sample from a standard Gaussian ε ∼ N (0 , I ). Then, the mean in Equation (51) can be expressed as: ˜μ(nt, n 0) = 1
+
+√αt
+
+
+
+nt − Γt
+
+√1 − ¯αt
+
+ε
+
+
+
+(17) Similarly, an expression for μθ (nt, t ) in Equation (47) is given. Since the learned denoising process is defined from the true denoising process, we have: 
+
+μθ (nt, t ) = 1
+
+√αt
+
+
+
+nt − Γt
+
+√1 − ¯αt
+
+εθ (nt, t )
+
+
+
+(18) where εθ (nt, t ) = ϕ(nt, t ) is the output of the neural network ϕ at iteration t.13 Variational Lower Bound of the Likelihood. As mentioned earlier, diffusion models introduce a sequence of latent variables. The data likelihood is written as: 
+
+pθ (n0) = 
+
+Z
+
+pθ (n0, n 1: T ) dn 1: T .
+
+Direct maximization of this likelihood is intractable; therefore, diffusion models optimize a variational lower bound (ELBO) on the data likelihood: 
+
+L := Eq(n1: T |n0)[log pθ (n0 | n1: T )] 
+
+− KL( q (n1: T | n0) ∥ pθ (n1: T )) ≤ log pθ (n0) , (19) where E[·] denotes expectation and KL( ·∥· ) is the Kullback–Leibler divergence. Expanding, we obtain an equivalent expression (see [5, 12]): 
+
+L(θ) = − KL( q (nT | n0) ∥ p (nT )) 
+
+−
+
+> T
+
+X
+
+> t=2
+
+KL( q (nt−1 | nt, n 0) ∥ pθ (nt−1 | nt)) +Eq(n1: T |n0)[log pθ (n0 | n1)] .
+
+The ELBO must be maximized with respect to θ. The first KL divergence is independent of θ and can therefore be ignored during optimization. Hence, maximizing L reduces to: minimize 
+
+> θT
+
+X
+
+> t=2
+
+KL( q (nt−1 | nt, n 0) ∥ pθ (nt−1 | nt)) 
+
+−Eq(n1: T |n0)[log pθ (n0 | n1)] . (20) This equation trains the inverse distribution pθ (nt−1 | nt) to match the true denoising distribution 
+
+q(nt−1 | nt, n 0) by minimizing their KL divergence. It can thus be used as a loss function for a neural network parameterized by θ, emphasizing the alignment between these two distributions. In other words, optimizing the ELBO forces the model to learn a denoising process capable of reversing the progressive diffusion of noise. Training consists of bringing the learned inverse process pθ closer to the true denoising process q, while maximizing the likelihood of the observed data. 
+
+# B Background on morphological operators and PDEs 
+
+Let b : R2 → ¯R be a concave function, known also as the structuring function or convolution kernel. Let us consider the subset E of Z2 and the function f : E → ¯R.
+
+Definition B.1. Morphological dilation and erosion are respectively defined as: 
+
+f ⊕ b(x) = sup 
+
+> y∈E
+
+[f (y) + b(x − y)] (21) 
+
+f ⊖ b(x) = inf 
+
+> y∈E
+
+[f (y) − b(y − x)] . (22) Let B ⊆ E be a bounded set. A flat structuring function (SF) satisfies b(x) = 0 if x ∈ B and 
+
+b(x) = −∞ if x ∈ Bc. The flat morphological dilation and erosion respectively write: 
+
+f ⊕ B(x) = sup 
+
+> y∈B
+
+[f (x − y)] and f ⊖ B(x) = inf 
+
+> y∈B
+
+[f (x + y)] . (23) 14 As for an interpretation, erosion shrinks positive peaks, and peaks thinner than the structuring function disappear. One has the dual effects for morphological flat dilation. Both the morphological dilation and erosion are translation invariant. 
+
+Definition B.2. Let F be a family of real functions defined on Ω ⊆ R2. We say that T : F → F is said to be increasing (monotone) if and only if it satisfies: 
+
+∀ f1, f 2 ∈ F such that (f1 ≥ f2 on Ω) implies (T (f1) ≥ T (f2) on Ω) .
+
+Proposition B.1. Morphological dilation and erosion satisfy the following duality and adjunction prop-erties: 1. duality: f ⊕ b = −(−f ⊖ b)
+
+2. adjunction: (f1 ⊕ b ≤ f2 on E) ⇐⇒ (f1 ≤ f2 ⊖ b on E).
+
+Let ( bt)t≥0 the family of structuring functions defined by using the SF b, as follows: 
+
+bt(x) = 
+
+
+
+tb (x/t ) for t > 00 for t = 0 , x = 0 
+
+−∞ otherwise .
+
+The family ( bt)t≥0 satisfies the semi-group property: 
+
+∀ s, t ≥ 0, ( bs ⊕ bt)( x) = bs+t(x, y ). 
+
+Definition B.3. Morphological multiscale dilations and erosions are defined as follows: 
+
+(f ⊕ bt)( x) = sup 
+
+> y∈E
+
+[f (y) + bt(x − y)] (24) (f ⊖ bt)( x) = inf 
+
+> y∈E
+
+[f (y) − bt(y − x)] . (25) Considering flat structuring function (SF), morphological multiscale dilations and erosions are ob-tained equivalently by considering Bt = tB as multiscale SFs. The link between morphological scale-spaces and PDEs was established by running the following PDE that performs multiscale flat dilations and erosions on a given image f [39, 40]: 
+
+∂tu ± ∥∇ u∥ = 0; u(· , 0) = f. (26) Depending on the shape of SF, different PDEs can be obtained. For instance, considering the sets 
+
+Sp = x = ( x1, x 2) ∈ R2 : |x|p ≤ 1 , where |· | p is the Lp norm, one gets: 
+
+• for a square S1: ∂tu ± ∥∇ u∥1 = 0; u(· , 0) = f
+
+• for a dis S2: ∂tu ± ∥∇ u∥2 = 0; u(· , 0) = f
+
+• for a rhombus S∞: ∂tu ± ∥∇ u∥∞ = 0; u(· , 0) = f .Notice that PDE (26) is a special case of first order Hamilton-Jacobi equation type, which can be formu-lated in a more general form as follows: 
+
+( ∂u (x, t )
+
+∂t + H (x, ∇u(x, t )) = 0 on Rn × (0 , +∞)
+
+u(· , 0) = f on Rn.
+
+(27) 15 General Hamilton-Jacobi equation is studied in a viscosity sense, because there is no classical solution for such equations. For a convex Hamiltonian H and some regularity on f , the viscosity solution is given by Hopf-Lax formulas [41, 42]: 
+
+u(x, t ) = inf 
+
+> y∈Rn
+
+
+
+f (y) + tL 
+
+ x − yt
+
+ 
+
+, (28) where L is the Lagrangian, defined as the Legendre-Fenchel transform of H.
+
+# C Proof of Proposition 3.3 
+
+For all x ∈ (M, g ), we refer to G-invariance of vector fields X : x 7 → TxM if ∀ h ∈ G and for all differentiable functions f , one has: 
+
+X(x)f = X(φh(x))[ Lhf ]. (29) 
+
+Definition C.1. A vector field X on (M, g ) is invariant with respect to G if ∀ h ∈ G and ∀ x ∈ (M, g ),one has: 
+
+X(φh(x)) = ( φh)∗X(x). (30) 
+
+Definition C.2. A (0 , 2) -tensor field g on M is G-invariant if ∀ h ∈ G, ∀ x ∈ M and ∀ v, w ∈ Tx(M ),one has: 
+
+g|h(v, w ) = g|φh(x)(( φh)∗v, (φx)∗w). (31) It follows from Definition C.2 that properties derived from metric tensor field G invariance and vector field G invariance are the same. 
+
+Definition C.3. Let (M, g ) a connected Riemannian manifold, x, y ∈ (M, g ). The distance between x
+
+and y is defined as follows: 
+
+dg (x, y ) = inf   
+
+> γ∈Γt(x,y )
+
+Z t
+
+> 0
+
+q
+
+g|γ(t)( ˙ γ(t), ˙γ(t))d t, (32) 
+
+with Γt(x, y ) = {γ : [0 , t ] −→ (M, g ) of class C1, γ (0) = x and γ(t) = y}.
+
+Definition C.4. The cut locus is defined as the set of points x ∈ M (or h ∈ G) from which the distance map is not smooth (except at x or h). Proof. Let us perform a left multiplication by h in one direction and by h−1 in the other direction. A bijection can then be established between C1 curves connecting x to y and connecting φh(x) to φh(y). Thus, we have: dg
+
+ φh(x), φ h(y) = inf   
+
+> β∈Γt(φh(x),φ h(y))
+
+Z t
+
+> 0
+
+q
+
+g|β(t)( ˙β(t), ˙β(t))d t, 
+
+= inf   
+
+> hγ ∈Γt(φh(x),φ h(y))
+
+Z t
+
+> 0
+
+r
+
+g|hγ (t)
+
+
+
+φh( ˙ γ(t)) , φ h( ˙ γ(t)) 
+
+
+
+dt with γ ∈ Γt(φh(x), φ h(y)) = inf   
+
+> hγ ∈Γt(φh(x),φ h(y))
+
+Z t
+
+> 0
+
+r
+
+g|hγ (t)
+
+
+
+(φh)∗ ˙γ(t), (φh)∗ ˙γ(t)
+
+
+
+dt
+
+= inf   
+
+> hγ ∈Γt(φh(x),φ h(y))
+
+Z t
+
+> 0
+
+q
+
+g|γ(t)( ˙ γ(t), ˙γ(t))d t by (31) = inf   
+
+> γ∈Γt(x,y )
+
+Z t
+
+> 0
+
+q
+
+g|γ(t)
+
+  ˙γ(t), ˙γ(t)dt = d g (x, y )16 D Proof of Proposition 3.4 
+
+Proof. The case n = 2 is trivial. Let us prove the result for n = 3; the general case follows the same way. 
+
+• Rotations and Reflections 
+
+Let {⃗u,⃗ v,⃗ w } be an orthonormal basis of R3. Define Rθ in this basis as: 
+
+R =
+
+
+
+−1 0 00 cos θ − sin θ
+
+0 sin θ cos θ
+
+ , (33) which represents an anti-rotation by angle θ around ⃗u (a composition of rotation and reflection). Applying 
+
+Rθ to X = ( x, y, z ) yields: 
+
+Rθ X =
+
+ −xy cos θ − z sin θy sin θ + z cos θ
+
+ . (34) Its Euclidean norm satisfies: 
+
+∥Rθ X∥2 = ∥X∥2, (35) and similarly ∥Rθ X − Rθ Y ∥ = ∥X − Y ∥. Substituting these into the expression for d B3 , we obtain: dB3 (Rθ X, R θ Y ) = d B3 (X, Y ). (36) 
+
+• Permutations 
+
+Let us represent the group of permutations of {1, 2, 3} as follows: 
+
+σ =
+
+ 1 2 3
+
+σ(1) σ(2) σ(3) 
+
+
+
+, (37) with σ(1) = 2 , σ (2) = 3 , σ (3) = 1. It follows that ∥σX ∥ = ∥X∥ and ∥σX − σY ∥ = ∥X − Y ∥, hence: dB3 (σX, σY ) = d B3 (X, Y ). (38) 
+
+# E Proof of Proposition 3.5 
+
+Proof. Φ is well-defined and continuous. Next, we show that Φ is an injection and a Ck-diffeomorphism. 
+
+• Injectivity of P
+
+Let x, y ∈ Rn. We assume that Φ( x) = Φ( y), we need to show that x = y.Φ( x) = Φ( y) = ⇒ x
+
+p1 + ∥x∥2 = y
+
+p1 + ∥y∥2
+
+=⇒ ∥x∥
+
+p1 + ∥x∥2 = ∥y∥
+
+p1 + ∥y∥2
+
+=⇒ ∥ x∥2 = ∥y∥2
+
+=⇒ x = y. 
+
+17 Hence, Φ is injective. 
+
+• C k-diffeomorphism property of Φ:
+
+For x = ( xi)ni=1 ∈ Rn, we have Φ( x) = x
+
+p1 + ∥x∥2 = xi
+
+p1 + ∥x∥2
+
+!ni=1 
+
+, (39) and we denote Φ i(x) = xi
+
+p1 + ∥x∥2 . Then: 
+
+∂∂x j
+
+Φi(x) = δij 
+
+p1 + ∥x∥2 − xixj
+
+(1 + ∥x∥2)3/2 ,
+
+where 
+
+δij =
+
+(
+
+1 if i = j, 
+
+0 otherwise, (40) is the Kronecker symbol. Thus, the Jacobian matrix of Φ is: 
+
+JΦ( x) = 1
+
+p1 + ∥x∥2
+
+
+
+I − x ⊗ x
+
+1 + ∥x∥2
+
+
+
+,
+
+where ⊗ denotes the tensor product. In R3, we obtain: det( JΦ( x)) = 1 − ∥x∥2
+
+p1 + ∥x∥2̸ = 0 ∀x ∈ R3,
+
+which shows that JΦ( x) is invertible. Hence, Φ is a diffeomorphism onto its image, and therefore, it is an embedding of Rn into Bn.
+
+# F Additional Qualitative Results G Short review on probabilistic diffusion models 
+
+Diffusion models are generative models based on the progressive addition of noise to data, followed by learning the reverse denoising process using a neural network. Given observations x ∼ q(x), the model operates on latent variables n0, . . . , n T of the same dimension as x, where n0 corresponds to the observation x, and nT represents standard Gaussian noise (see Fig. 6). 
+
+Forward process The forward process gradually adds noise to the variables nt, for t ∈ { 0, . . . , T }, i.e., 
+
+nt+1 = nt + noise, where the noise is random. There exists a conditional distribution that models the probability of obtaining nt+1 given nt, denoted q(nt+1 | nt), which follows the Gaussian distribution: 
+
+q(nt | nt−1) = N (nt : √αtnt−1, ΓtI) (41) where we define αt by considering the special case of the variance-preserving process proposed by [5], i.e., 
+
+αt = 1 − Γt. This parameter controls the amount of signal preserved, and Γ t ∈ (0 , 1) is the noise-level 18 parameter added at each step t. It acts progressively in this process so that the mean αtnt−1 increasingly deviates from the already noised data nt−1.The forward process is Markovian; thus, for any t ∈ { 0, . . . , T }, nt depends only on nt−1 and not on other variables [38]: 
+
+q(nt | nt−1, n t−2, . . . , n 0) = q(nt | nt−1) (42) Hence, the joint distribution of this process is obtained as: 
+
+q(n1, n 2, . . . , n T | n0) = 
+
+> T
+
+Y
+
+> t=1
+
+q(nt | nt−1) (43) Moreover, for any t > s , the transition distribution from s to t can be defined using the Gaussian reparameterization of [2], considering the standard distribution ε ∼ N (0 , I ). Thus, Eq. (41) can be rewritten as: 
+
+nt = √αtnt−1 + √1 − αt ε (44) Consequently, for any t > s , we have: 
+
+q(nt | ns) = N (nt : √αt/s ns, Γt/s I) (45) with αt/s = Qti=s+1 αi, Γ t/s = 1 − αt/s . With respect to the initial data n0:
+
+q(nt | n0) = N (nt : √¯αn 0, ¯ΓI) (46) where ¯ α = Qti=1 αi and ¯Γ = 1 − ¯α.
+
+Reverse generative process The diffusion process, or reverse generative process, progressively gen-erates data from noise, following the true denoising process denoted P (nt−1 | nt), which defines the probability of obtaining nt−1 from nt. This distribution is Gaussian, similar to that of the forward process. However, since x0 is unknown during denoising, a neural network ϕ, parameterized by θ, is used to approximate the Gaussian reverse conditional distribution, denoted pθ (nt−1 | nt), defined as: 
+
+pθ (nt−1 | nt) = N (nt−1 : μθ (nt, t ), Σθ (nt, t )) (47) where μθ ∈ Rd and Σ θ ∈ Rd×d represent, respectively, the mean and covariance matrix of the distribution at iteration t. For simplicity, as proposed in [5], we fix Σ θ (nt, t ) = σ2 
+
+> t
+
+I, with time-dependent constants 
+
+σ2 
+
+> t
+
+that are not learned. The generative process is also modeled as a first-order Markov chain, i.e., 
+
+P (nt−1 | nt, n t+1 , . . . , n T ) = P (nt−1 | nt) (48) so that the joint distribution of the generative process is written as: 
+
+pθ (n0: T ) = P (nT )
+
+> T
+
+Y
+
+> t=1
+
+pθ (nt−1 | nt) (49) with P (nT ) generally defined as Gaussian noise: 
+
+P (nT ) = N (0 , I ) (50) 19 The true distribution is defined similarly to Eq. (41): 
+
+P (nt−1 | nt, n 0) = N (nt−1 : ˜ μ(nt, n 0), ˜σ2I) (51) Using the same reparameterization technique as in the forward case (see Eq. (44)), one can sample from a standard distribution ε ∼ N (0 , I ). It can then be shown that the mean of Eq. (51) can be expressed as: ˜μ(nt, n 0) = 1
+
+√αt
+
+
+
+nt − Γt
+
+√1 − ¯αt
+
+ε
+
+
+
+(52) Thus, an expression for μθ (nt, t ) in Eq. (47) can also be given. Since the learned denoising process is defined based on the true denoising process, we obtain: 
+
+μθ (nt, t ) = 1
+
+√αt
+
+
+
+nt − Γt
+
+√1 − ¯αt
+
+εθ (nt, t )
+
+
+
+(53) where εθ (nt, t ) = ϕ(nt, t ) is the output of the neural network ϕ at iteration t.
+
+Variational lower bound of the likelihood As previously mentioned, diffusion models introduce a sequence of latent variables. The likelihood of the data in these models is expressed as follows: 
+
+pθ (n0) = 
+
+Z
+
+pθ (n0, n1: T ) dn1: T .
+
+Since the direct maximization of this likelihood is intractable, diffusion models optimize a variational lower bound (ELBO) of the data likelihood: 
+
+L := Eq(n1: T |n0)[log pθ (n0 | n1: T )] − KL( q (n1: T | n0) ∥ pθ (n1: T )) ≤ log pθ (n0) , (54) where E[·] denotes the expectation and KL( ·∥· ) the Kullback–Leibler divergence. By further expansion, we obtain an equivalent expression (see [5, 12]): 
+
+L(θ) = − KL( q (nT | n0) ∥ p (nT )) −
+
+> T
+
+X
+
+> t=2
+
+KL( q (nt−1 | nt, n 0) ∥ pθ (nt−1 | nt)) +Eq(n1: T |n0)[log pθ (n0 | n1)] .
+
+The variational lower bound must be maximized with respect to θ. However, the first KL divergence is independent of θ and can therefore be ignored during optimization. Thus, maximizing L is equivalent to solving: minimize 
+
+> θT
+
+X
+
+> t=2
+
+KL( q (nt−1 | nt, n 0) ∥ pθ (nt−1 | nt)) − Eq(n1: T |n0)[log pθ (n0 | n1)] . (55) This equation drives the reverse distribution pθ (xt−1 | xt) to approximate the true denoising distri-bution q(xt−1 | xt, x0) by minimizing their KL divergence. It can therefore be used as a loss function for a neural network parametrized by θ, emphasizing the alignment between these two distributions. In other words, optimizing the ELBO forces the model to learn a denoising process capable of reversing the progressive diffusion of noise. Hence, training consists in aligning the learned reverse process pθ with the true denoising process q, while maximizing the likelihood of the real data. 20 References 
+
+[1] I. Goodfellow, J. Pouget-Abadie, M. Mirza, B. Xu, D. Warde-Farley, S. Ozair, A. Courville, and Y. Bengio, “Generative adversarial nets,” Advances in neural information processing systems , vol. 27, 2014. [2] D. P. Kingma and M. Welling, “Auto-encoding variational bayes,” arXiv preprint arXiv:1312.6114 ,2013. [3] D. P. Kingma, S. Mohamed, D. Jimenez Rezende, and M. Welling, “Semi-supervised learning with deep generative models,” Advances in neural information processing systems , vol. 27, 2014. [4] P. Dhariwal and A. Nichol, “Diffusion models beat gans on image synthesis,” Advances in neural information processing systems , vol. 34, pp. 8780–8794, 2021. [5] J. Ho, A. Jain, and P. Abbeel, “Denoising diffusion probabilistic models,” Advances in neural infor-mation processing systems , vol. 33, pp. 6840–6851, 2020. [6] N. Chen, Y. Zhang, H. Zen, R. J. Weiss, M. Norouzi, and W. Chan, “Wavegrad: Estimating gradients for waveform generation,” arXiv preprint arXiv:2009.00713 , 2020. [7] V. Popov, I. Vovk, V. Gogoryan, T. Sadekova, and M. Kudinov, “Grad-tts: A diffusion probabilistic model for text-to-speech,” in International conference on machine learning . PMLR, 2021, pp. 8599–8608. [8] M. Simonovsky and N. Komodakis, “Graphvae: Towards generation of small graphs using variational autoencoders,” in International conference on artificial neural networks . Springer, 2018, pp. 412– 422. [9] N. Gebauer, M. Gastegger, and K. Sch¨ utt, “Symmetry-adapted generation of 3d point sets for the targeted discovery of molecules,” Advances in neural information processing systems , vol. 32, 2019. [10] G. N. Simm, R. Pinsler, G. Cs´ anyi, and J. M. Hern´ andez-Lobato, “Symmetry-aware actor-critic for 3d molecular design,” arXiv preprint arXiv:2011.12747 , 2020. [11] E. Hoogeboom, V. G. Satorras, C. Vignac, and M. Welling, “Equivariant diffusion for molecule generation in 3d,” in International conference on machine learning . PMLR, 2022, pp. 8867–8887. [12] J. Sohl-Dickstein, E. A. Weiss, N. Maheswaranathan, and S. Ganguli, “Deep unsupervised learning using nonequilibrium thermodynamics,” in ICML’15: Proceedings of the 32nd International Confer-ence on International Conference on Machine Learning , vol. 37, Lille, France, July 2015, pp. 2256 – 2265. [13] Y. Song and S. Ermon, “Generative modeling by estimating gradients of the data distribution,” in 
+
+Proceedings of the 33rd International Conference on Neural Information Processing Systems , Van-couver, Canada, Dec. 2019, pp. 11 918 – 1193. [14] Y. Song, J. Sohl-Dickstein, D. P. Kingma, A. Kumar, S. Ermon, and B. Poole, “Score-Based Gener-ative Modeling through Stochastic Differential Equations,” in International Conference on Learning Representations , Vienna, Austria, May 2021. [15] F.-A. Croitoru, V. Hondru, R. T. Ionescu, and M. Shah, “Diffusion Models in Vision: A Survey,” 
+
+IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 45, no. 9, pp. 10 850–10 869, Sept. 2023. 21 [16] C.-W. Huang, J. H. Lim, and A. Courville, “A Variational Perspective on Diffusion-Based Generative Models and Score Matching,” in Conference on Neural Information Processing Systems (NeurIPS 2021) , San Diego, CA, Dec. 2021. [17] D. J. Rezende, S. Mohamed, and D. Wierstra, “Stochastic Backpropagation and Approximate Infer-encein Deep Generative Models,” in Proceedings of the International Conference on MachineLearn-ing , Beijing, China, 2014. [18] I. Goodfellow, “Generative Adversarial Networks,” in NIPS , 2017, p. 57. [19] V. G. Satorras, E. Hoogeboom, and M. Welling, “E(n) Equivariant Graph Neural Networks,” in 
+
+International Conference on MachineLearning . PMLR, 2021, pp. 9323–9332. [20] F. Cornet, G. Bartosh, M. N. Schmidt, and C. A. Naesseth, “Equivariant Neural Diffusion for Molecule Generation,” in Conference on Neural Information Processing Systems , 2024. [21] J. Brehmer, J. Bose, P. de Haan, and T. Cohen, “Edgi: Equivariant Diffusion for Planning with Embodied Agents,” in Conference on Neural Information Processing Systems , 2023. [22] I. Igashov, H. St¨ ark, C. Vignac, A. Schneuing, V. G. Satorras, P. Frossard, M. Welling, M. Bronstein, and B. Correia, “Equivariant 3D-conditional diffusion model for molecular linker design,” Nature Machine Intelligence , vol. 6, no. 4, pp. 417–427, Apr. 2024. [23] T. Cohen and M. Welling, “Group Equivariant Convolutional Networks,” in International conference on machine learning . PMLR, 2016, pp. 2990–2999. [24] E. J. Bekkers, M. W. Lafarge, M. Veta, K. A. Eppenhof, J. P. Pluim, and R. Duits, “Roto-translation covariant convolutional networks for medical image analysis,” in Medical Image Computing and Computer Assisted Intervention – MICCAI 2018: 21st International Conference, Proceedings, Part I, Granada, Spain, Sept. 2018, pp. 440–448. [25] T. S. Cohen, M. Geiger, and M. Weiler, “A general theory of equivariant cnns on homogeneous spaces,” Advances in neural information processing systems , vol. 32, 2019. [26] M. Winkels and T. S. Cohen, “3d G-CNNs for pulmonary nodule detection,” in Medical Imaging with Deep Learning , 2018. [27] T. S. Cohen, M. Geiger, J. K¨ ohler, and M. Welling, “Spherical CNNs,” in International Conference on Learning Representations , 2018. [28] E. Bekkers, “B-Spline CNNs on Lie Groups,” in International Conference on Learning Representa-tions , 2019. [29] B. M. N. Smets, J. Portegies, E. J. Bekkers, and R. Duits, “PDE-Based Group Equivariant Convolu-tional Neural Networks,” Journal of Mathematical Imaging and Vision , vol. 65, no. 1, pp. 209–239, 2022. [30] G. Bellaard, D. L. Bon, G. Pai, B. M. Smets, and R. Duits, “Analysis of (sub-)Riemannian PDE-G-CNNs,” Journal of Mathematical Imaging and Vision , pp. 1–25, 2023. [31] E. H. S. Diop, T. Fall, A. Mbengue, and M. Daoudi, GM-GAN: Geometric Generative Models Based on Morphological Equivariant PDEs and GANs . Springer Nature Switzerland, Dec. 2024, pp. 310– 325. 22 [32] C.-W. Huang, M. Aghajohari, A. J. B. Panangaden, and A. Courville, “Riemannian Diffusion Mod-els,” in Conference on Neural Information Processing Systems Conference on Neural Information Processing Systems , 2022. [33] Z. Liu, W. Zhang, C. Sch¨ utte, and T. Li, “Riemannian Denoising Diffusion Probabilistic Models,” May 2025. [34] V. D. Bortoli, ´Emile Mathieu, M. Hutchinson, J. Thornton, Y. W. Teh, and A. Doucet, “Riemannian score-based generative modelling,” Advances in neural information processing systems , vol. 35, pp. 2406–2422, 2022. [35] A. Lou, M. Xu, A. Farris, and S. Ermon, “Scaling Riemannian Diffusion Models,” in Conference on Neural Information Processing Systems , 2023. [36] A. Fathi, The Weak KAM Theorem in Lagrangian Dynamics . Cambridge University Press, 2008. [37] E. H. S. Diop, A. Mbengue, B. Manga, and D. Seck, “Extension of Mathematical Morphology in Riemannian Spaces,” in Lecture Notes in Computer Science . Springer International Publishing, 2021, pp. 100–111. [38] B. Ghojogh, F. Karray, and M. Crowley, “Hidden Markov Model: Tutorial,” engrXiv , July 2019. [39] F. Meyer and P. Maragos, “Nonlinear scale-space representation with morphological levelings,” Jour-nal of Visual Communication and Image Representation , vol. 11, pp. 245–265, 2000. [40] M. Schmidt and J. Weickert, “Morphological counterparts of linear shift-invariant scale-spaces,” 
+
+Journal of Mathematical Imaging and Vision , vol. 56, no. 2, pp. 352–366, apr 2016. [41] E. N. Barron, “A survey of Hopf-Lax Formulas and Quasiconvexity in PDEs,” Trudy Instituta Matematiki i Mekhaniki UrO RAN , vol. 27, no. 3, pp. 237–245, Sept. 2021. [42] D. D. Donato, “The intrinsic hopf-lax semigroup vs. the intrinsic slope,” Journal of Mathematical Analysis and Applications , vol. 523, no. 2, p. 127051, jul 2023. 23 (a) DEGMC (FID = 25.14) 
+
+> (b) DDPM (FID = 25.59)
+
+Figure 4: Best samples generated on CIFAR-10 by DEGMC and DDPM during training, selected based on the lowest FID score. 24 (a) FID on MNIST 
+
+> (b) FID on RotoMNIST
+
+Figure 5: FID evolution during training using DEGMC and DDPM on MNIST and RotoMNIST. 25 Figure 6: Illustration of the forward noising process and the inverse denoising process. 
+
+Figure 7: Conditional distributions in the forward and generative processes of the diffusion model.  
+
+> (a) DEGMC (FID = 36.31) (b) DDPM (FID = 41.39)
+
+Figure 8: Generated image samples on MNIST using DEGMC and DDPM (sample at iteration 30). 26 (a) DEGMC (FID = 42.20) (b) DDPM (FID = 38.86) 
+
+Figure 9: Generated image samples on MNIST using DEGMC and DDPM (sample at iteration 50).  
+
+> (a) DEGMC (FID = 45.07) (b) DDPM (FID = 48.89)
+
+Figure 10: Generated image samples on RotoMNIST using DEGMC and DDPM (sample at iteration 30). 27 (a) DEGMC (FID = 43.79) (b) DDPM (FID = 47.64) 
+
+Figure 11: Generated image samples on RotoMNIST using DEGMC and DDPM (sample at iteration 50).  
+
+> (a) DEGMC (FID = 45.00) (b) DDPM (FID = 45.11)
+
+Figure 12: Generated image samples on CIFAR-10 using DEGMC and DDPM (sample at iteration 40). 28 (a) DEGMC (FID = 34.57) (b) DDPM (FID = 34.36) 
+
+Figure 13: Generated image samples on CIFAR-10 using DEGMC and DDPM (sample at iteration 70). 29
