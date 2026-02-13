@@ -1,0 +1,1462 @@
+Title: DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target
+
+URL Source: https://arxiv.org/pdf/2602.11919v1
+
+Published Time: Fri, 13 Feb 2026 02:14:36 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target 
+
+Bocheng Hu 1 Zhonghan Zhao 1 2 Kaiyue Zhou 3 Hongwei Wang 1 Gaoang Wang 13 Backgrounds 
+
+22 Moving Types 11 Moving 
+
+Objects  
+
+> Instruction
+> Catch the red
+> apple moving in
+> circular motion.
+> Observe
+> Clockwise circular
+> motion of the apple
+> over time.
+> Move
+> Predict interception
+> point, and move
+> towards it.
+> Capture
+> Palm down to stop
+> moving object, and
+> close fingers.
+
+T1 
+
+T2 
+
+T3 
+
+T0 
+
+Figure 1. Dynamic capture in DynaHOI-10M: 11 moving objects and 22 moving types (left) . Given an instruction and a short observation window, the model must predict the interception point and capture the moving target (middle) . Existing policy models and generalist VLMs achieve low localization success rate on our benchmark, highlighting the challenge of motion-aware anticipation (right) .
+
+## Abstract 
+
+Most existing hand motion generation bench-marks for hand–object interaction (HOI) focus on static objects, leaving dynamic scenarios with moving targets and time-critical coordination largely untested. To address this gap, we intro-duce the DynaHOI-Gym , a unified online closed-loop platform with parameterized motion gener-ators and rollout-based metrics for dynamic cap-ture evaluation. Built on DynaHOI-Gym, we re-lease DynaHOI-10M , a large-scale benchmark with 10M frames and 180K hand capture trajec-tories, whose target motions are organized into 
+
+8 major categories and 22 fine-grained subcate-gories. We also provide a simple observe-before-act baseline (ObAct) that integrates short-term observations with the current frame via spatiotem-poral attention to predict actions, achieving an 
+
+8.1% improvement in location success rate. Our code is available at https://github.com/ HuBocheng/DynaHOI .
+
+> 1
+
+Zhejiang University, Hangzhou, China 2Shanghai AI Lab, Shanghai, China 3Sichuan Provincial Digital Human Center, Chengdu Minto Technology Co., Ltd., Chengdu, China. Cor-respondence to: Gaoang Wang <gaoangwang@intl.zju.edu.cn >.
+
+## 1. Introduction 
+
+Hand-object interaction in the real world is fundamentally perceptual and predictive: humans observe a moving target with their eyes, reason over its motion in the brain, and issue precise motor commands to complete the task. Tasks involv-ing moving objects place higher demands on short-horizon prediction and real-time reasoning. Although existing hand-motion generation models have demonstrated strong per-formance on various benchmarks, nearly all benchmarks focus exclusively on static objects, making them misaligned with both practical requirements and the rapidly advancing landscape of policy models (Taheri et al., 2020; Liu et al., 2022; Grauman et al., 2024; Zhan et al., 2024; Fu et al., 2025). This leaves a critical blind spot: can current models accurately forecast where a moving target will be in the near future and carry out the manipulation instructed by a hu-man? As illustrated in Figure 1, we construct a benchmark in which targets follow well-defined motion patterns. We evaluate both action-outputting policy models (VLA, diffu-sion policies) and general-purpose VLMs, and, as shown in the right portion of the figure, their performance exhibits a substantial gap from the ground-truth controller. Directly evaluating dynamic capture in the physical world is difficult: collecting human demonstrations is costly, target motion is hard to reproducibly control, and large-scale data generation and batch testing are impractical. To make dy-1
+
+> arXiv:2602.11919v1 [cs.CV] 12 Feb 2026
+
+DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target 
+
+Table 1. Comparison of hand–object benchmarks for dynamic capture. Prior datasets are mostly static and annotation-heavy, typically evaluated by framewise alignment to ground truth. DynaHOI-Gym / DynaHOI-10M instead provides parameterized target-motion generators and online closed-loop evaluation with rollout-based success and trajectory-quality metrics. Benchmark Protocol Data Collection Dataset Scale Online eval. Controlled targets. Automated collect. Parameterized variability Human annot. #Frames #Traj GRAB (Taheri et al., 2020) ✗ ✗ ✗ ✗ ✓ 1.0M 6.5K HOI4D (Liu et al., 2022) ✗ ✗ ✗ ✗ ✓ 2.4M 4K AssemblyHands (Ohkawa et al., 2023) ✗ ✗ ✗ ✗ ✓ 3.03M 62 Ego-Exo4D (Grauman et al., 2024) ✗ ✗ ✗ ✗ ✓ — —TACO (Liu et al., 2024b) ✗ ✗ ✗ ✗ ✓ 4.7M 2.3K OakInk2 (Zhan et al., 2024) ✗ ✗ ✗ ✗ ✓ 4.01M 2.8K HOT3D (Banerjee et al., 2024) ✗ ✗ ✗ ✗ ✓ 3.7M 4.1K GigaHand (Fu et al., 2025) ✗ ✗ ✗ ✗ ✓ 2.4M 13.9K        
+
+> Ours (DynaHOI-Gym / DynaHOI-10M) ✓✓✓✓✗10.0M 180K
+
+namic capture measurable and reproducible, we develop the 
+
+DynaHOI-Gym , a unified, online, closed-loop evaluation platform for dynamic hand-object interaction. It provides parameterized target-motion generators for moving targets and evaluates models from episode rollouts using success rate, trajectory quality, and task completion speed, rather than framewise alignment to mocap ground truth. On top of DynaHOI-Gym, we construct DynaHOI-10M , a large-scale benchmark dedicated to dynamic hand-motion generation for moving-target capture. DynaHOI-10M con-tains 10M frames across 180K capture trajectories, with target motion patterns organized into 8 major categories 
+
+and 22 fine-grained subcategories . Beyond motion di-versity, the benchmark features a wide range of objects, backgrounds, and textures, supporting both visual diver-sity and physically grounded motion diversity within a uni-fied evaluation setup. Unlike prior work that emphasizes frame-by-frame action prediction, each episode follows an 
+
+observe-before-act rollout: an observation phase where the hand watches the moving target to infer its motion, followed by a control phase where the model predicts an interception point and generates actions to complete the capture. In brief, our main contributions are summarized as follows: 1. DynaHOI-Gym platform. We develop DynaHOI-Gym, a unified suite for dynamic capture that supports trajec-tory generation and collection for diverse objects under pre-defined motion types. It also provides closed-loop 
+
+online evaluation with metrics covering success rate, tra-jectory quality, and task completion speed. 2. DynaHOI-10M benchmark. We build DynaHOI-10M, a large-scale benchmark with 10M frames across 180K 
+
+capture trajectories, covering 8 motion categories and 
+
+22 subcategories. It supports both frame-by-frame and observe-before-act rollouts. 3. Observe-before-act baseline. We also provide an observe-before-act baseline (ObAct) that first observes target motion, then predicts actions for interception and capture. Our method delivers consistent improvements over the prior diffusion-based models across all seven metrics , including an 8.1% gain in location success rate. 
+
+## 2. Related Work 
+
+Hand Action Generation. Recent HOI methods increas-ingly treat interaction as sequence generation rather than per-frame pose recovery, with diffusion and language-conditioned models becoming the dominant thread. In-terHandGen (Lee et al., 2024) models two-hand contact geometry via a cascaded reverse-diffusion prior that fac-torizes joint distributions to improve plausibility/diversity in close interactions . Building on diffusion backbones for controllable motion, HandDiffuse (Lin, 2025) formu-lates generative controllers for two-hand interactions and introduces interaction-aware objectives to reduce artifacts in long motions. For hand–object interaction, Text2HOI (Cha et al., 2024) pioneers text-guided 3D HOI sequence gener-ation by decomposing the problem into contact-map syn-thesis + contact-conditioned diffusion motion generation, improving physical plausibility and generalization to un-seen objects . Moving toward long-horizon composition-ality, HOIGPT (Huang et al., 2025) discretizes HOI se-quences with a physically grounded tokenizer (hand/ob-ject VQ-VAE) and trains a motion-aware language model to perform bidirectional HOI and text modeling. Open-HOI (Zhang et al., 2025c) pushes further to open-world, open-vocabulary HOI synthesis by using a 3D MLLM for affordance grounding and instruction decomposition. Only very recent efforts begin to explore policy-level generation for dexterous hands under richer formulations: DexHand-Diff investigates diffusion-based controllers for contact-rich hand manipulation (Liang et al., 2025), while Being-M0 ex-tends VLA models to fine-grained whole-body motion gen-eration and Being-H0 further extends them to hand–object interaction (Wang et al., 2025c; Luo et al., 2025). Despite these advances, a systematic evaluation of hand action gen-eration under dynamic targets remains unexplored. 2DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target VLA 
+
+VLM 
+
+Model Zoo 
+
+Diffusion Policy 
+
+> Vision
+> LM
+> Action
+> Vision
+> Vision
+> Action
+> Vision
+> LM
+> Proj.
+
+DynaHOI-Gym 
+
+Support Trajectories  
+
+> [Obs] [Act]
+> [Act]
+
+Score  
+
+> Physically Constrained Stochastic & Complex
+
+Hand Trajectories 
+
+> Observe-before-act
+> Direct act
+> Overall Metric
+> Trajectory Quality
+> Complete Speed
+> Spatial
+> Temp oral
+> Location Success
+> Grasp ing Success
+> Location Deviation
+> Grasp ing Deviation
+
+Trajectories Format 
+
+> Kinematic Primitives
+
+Figure 2. The framework of DynaHOI-10M benchmark. Model zoo with three families, VLA , diffusion policies , and VLM -based controllers. Middle: DynaHOI-Gym supports trajectories (kinematic primitives, physically constrained, stochastic & complex) and two rollout formats: observe-before-act and direct act . Right: Multi-dimensional scoring includes runtime Rtime , trajectory quality (spatial 
+
+Qline , temporal Qsmooth ), and overall metrics (location/grasp success Sloc , S gra ; deviations Eloc , E gra ). 
+
+Benchmarks for Hand–Object Interaction. A vari-ety of benchmarks have been introduced to evaluate 3D hand–object interactions. Early datasets provided precise single-frame annotations of hand and object pose in contact, like ContactPose (Brahmbhatt et al., 2020) captured 2.9M RGB-D images of 2,306 grasps with detailed hand–object contact maps. Building on these, larger-scale motion-capture datasets now cover diverse interaction scenarios. DexYCB (Chao et al., 2021) focuses on human grasps of everyday objects with accurate 3D hand and object trajecto-ries, while TACO (Liu et al., 2024b) benchmarks generaliz-able bimanual manipulation with diverse tool–action–object triplets. More recent datasets emphasize broader tasks: OakInk (Zhan et al., 2024) and HOI4D (Liu et al., 2022) curate egocentric, category-level manipulations with many object instances, ARCTIC (Fan et al., 2023)captures large-scale two-handed dexterous manipulation of articulated ob-jects; and GigaHand (Fu et al., 2025) provides a massive, 51-view, multi-camera dataset of bimanual activities. 
+
+## 3. Benchmark 
+
+Before introducing our task formulation and evaluation framework, we summarize in Table 1 how existing hand–object benchmarks differ in evaluation protocol, target controllability, and data collection paradigms. Most prior datasets emphasize offline reconstruction of static interac-tions, whereas our benchmark is designed around online, closed-loop evaluation under parameterized target motion. 
+
+3.1. Scene and Task Design 
+
+We study Dynamic Capture , where a model controls an 18-DoF five-fingered hand to intercept and capture a mov-ing target object in 3D. Each episode provides a natural-language instruction and an egocentric visual stream. The target follows a pre-defined continuous motion trajectory, while the hand must coordinate palm translation and finger articulation to achieve timely capture. At each time step t, the policy receives an observation 
+
+ot = {It, h t, q t, k t, x text }, (1) where It ∈ RH×W ×3 is the egocentric RGB image, ht ∈
+
+R3 is the palm position, qt ∈ R15 are the 15 finger joint angles, kt denotes the 6D fingertip keypoint poses, and xtext 
+
+is the task description. The policy outputs an 18-dimensional control command 
+
+at = ( aloc  
+
+> t
+
+, a gras  
+
+> t
+
+), aloc  
+
+> t
+
+∈ R3, a gras  
+
+> t
+
+∈ R15 , (2) where aloc  
+
+> t
+
+controls the palm-center translation for intercep-tion and agras  
+
+> t
+
+controls finger joint rotations for capture. 
+
+3.2. DynaHOI-Gym 
+
+To facilitate online validation of generated motions, rather than limiting evaluation to offline residuals against ground truth, we develop the DynaHOI-Gym using the Unity physics engine. It functions as a closed-loop simulation platform that allows agents to interact directly with the en-3DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target Straight 
+
+Line 
+
+Simple 
+
+Harmonic 
+
+Circular 
+
+Arc 
+
+Basic Kinematic Primitives 
+
+Stochastic & Complex 
+
+Additional Physics-Constrained 
+
+Projectile 
+
+Motion 
+
+Pendulum 
+
+Motion 
+
+Inclined 
+
+Rolling 
+
+Impact 
+
+Response 
+
+Hybrid 
+
+Traj.   
+
+> Figure 3. Motion diversity in the DynaHOI-10M benchmark. DynaHOI-10M spans 3 categories and 8 major motion types, ranging from kinematic primitives to physics-constrained and stochastic dynamics. The illustrated trajectories demonstrate rich and diverse manipulation behaviors over moving targets, enabling comprehensive evaluation of dynamic object grasping.
+
+vironment, ensuring that evaluation metrics better reflect real-world applicability. 
+
+Dynamic Grasp Trajectory Generation. DynaHOI-Gym automates the creation of diverse interaction scenarios through three core modules: 1. Parametric Motion Synthesis: Generates trajecto-ries for diverse object categories by varying motion primitives and physical parameters. 2. Adaptive Grasping Logic: Generates interception trajectories with capture actions across diverse objects and target motion states, ensuring accurate localization and stable capture under dynamic conditions. 3. Scalable Data Pipeline: An automated framework that enables the high-throughput collection of large-scale interaction data with synchronized annotations. 
+
+Unified Evaluation Interface. As shown in Figure 2, DynaHOI-Gym functions as a middleware connecting the model with the simulator. It standardizes the data flow by providing the model with real-time visual feedback and pro-prioceptive states (hand pose) while parsing the model’s 18-DoF output into low-level simulator control signals. Cru-cially, the interface enforces strict temporal synchronization, ensuring that the simulator’s physics engine and the model’s inference clock remain aligned during online evaluation. 
+
+Observe-Before-Act Mechanism. Unlike static scenar-ios, dynamic capture emphasizes temporal prediction and anticipation. To this end, DynaHOI-Gym introduces an “observe-before-act” protocol in both data collection and evaluation. As shown in the middle panel of Figure 2, the hand remains fixed while the object moves according to predefined dynamics. This observation window allows the model to perceive temporal variations and learn motion pat-terns. DynaHOI-Gym supports both observe-before-act 
+
+and direct-act formats, accommodating evaluation for both static and dynamic tasks. 
+
+Hierarchical Evaluation Metrics. In dynamic capture task, single-dimensional evaluation cannot capture overall model performance. As illustrated in the right panel of Figure 2, we design a hierarchical metric system with three levels: overall success, trajectory quality, and completion speed. Formula definitions are provided in Section 4.3. 
+
+3.3. DynaHOI-10M Benchmark Dataset Statistics. As shown in Figure 3, DynaHOI-10M organizes target dynamics into a three-level hier-archy: Basic Kinematic Primitives , Additional Physics-Constrained motions, and Stochastic & Complex dynamics. This design covers 8 major motion types (Straight Line, Simple Harmonic, Circular Arc, Projectile Motion, Pendu-lum Motion, Inclined Rolling, Impact Response, and Hy-4DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target (a) Hierarchical motion categories 
+
+(b ) Distribution of hand poses 
+
+(c) Distribution of video length in frames (f) 
+
+(d) Distribution of trajectory length   
+
+> Medium Grip Small Grip Medium Grip Large Grip
+> Distant
+> Basketball
+> Near
+> Bottle
+> Distant
+> Billiard
+> Mid-range
+> Apple
+> Near
+> Candy
+> Near
+> Tennis
+> Mid-range
+> Bucket Noodle
+> Distant
+> Battery
+
+Grasp Magnitude         
+
+> Movement Magnitude
+> Figure 4. Data statistics and diversity of DynaHOI-10M. (a) Object motions are organized into a 3-level hierarchy with 8major categories and 22 fine-grained subcategories. (b) Hand poses cover diverse object scales : larger objects correspond to smaller grasp magnitudes and smaller objects to larger grasp magnitudes; each object supports both near- and far-range manipulation. (c–d) Distributions of episode durations (frames) and trajectory lengths across the benchmark.
+
+brid Trajectory), ranging from simple kinematic patterns to physics-governed and stochastic behaviors, ensuring sys-tematic motion diversity for dynamic capture evaluation. Beyond the major types, Figure 4(a) further decomposes them into 22 fine-grained subcategories, each equipped with a compositional parameter space. For instance, circular mo-tions vary by center position, radius, and angular velocity, while projectile motions vary by peak height, initial speed, and launch angle. Combined with 11 object categories and diverse scene backgrounds and textures, DynaHOI-10M re-sults in a visually and physically diverse benchmark with 180K episodes and 10M image frames, spanning approxi-mately 140 hours. 
+
+Diversity Analysis. Figure 4(b) reports the joint distribu-tion of grasp magnitude and movement magnitude, covering a broad spectrum from precision grips to large-aperture grasps under varying motion ranges, reflecting diverse in-teraction modes between the hand and moving targets. As shown in Figure 4(c), Episode durations concentrate around 40–60 frames (36.1%) while retaining substantial coverage of shorter (20–40 frames, 20.2%) and longer horizons (60– 80 frames, 19.5%; 80–120 frames, 13.9%; >120 frames, 10.1%), yielding evaluations that jointly stress motion infer-ence (observation sufficiency) and sustained timing-aware control. Notably, longer videos do not necessarily imply longer motion paths. As shown in Figure 4(d), traveled dis-tances are dominated by moderate ranges (0.5–2m, 47.7%) but include near-field (0–0.5m, 20.1%) and long-range mo-tions (2–4m, 16.4%; >4m, 5.8%), covering both rapid local interception and long-horizon pursuit regimes. 
+
+Model Zoo. We construct a comprehensive Model Zoo on DynaHOI-10M featuring 12 representative models, rang-ing from specialized policy models to generalist vision-language models (VLMs). Specifically, we evaluate six pol-icy models, comprising two autoregressive models (Open-VLA (Kim et al., 2024), UP-VLA (Zhang et al., 2025a)) and four diffusion-based models (GR00T-N1.5 (NVIDIA et al., 2025), SmolVLA (Shukor et al., 2025), Pi-0 (Black et al., 2024), Pi-0.5 (Physical Intelligence et al., 2025)), covering mainstream architectures. Furthermore, to assess the poten-tial of general-purpose multimodal intelligence, we evaluate six mainstream VLMs, including four proprietary models (Gemini-3 Pro, GPT-5.1, Qwen3-Max, Grok4.1) and two open-weights models (Qwen3-VL 235B (Bai et al., 2025), InternVL-3.5 241B (Wang et al., 2025a)). 
+
+3.4. Observe-Before-Act Baseline 
+
+Standard policy models typically predict actions from a single visual frame, which limits their ability to reason about object motion in dynamic grasping scenarios. Since instantaneous observations lack temporal cues, such models are inherently unable to infer target velocity or acceleration, 5DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target Motion-Aware Attention Obs. frames  
+
+> Observe
+> Dynamic
+> Prompt
+> Encoder
+> Current Frame (t-0)
+> t-s,...,t-1
+> Execute
+> Action
+> Spatiotemporal
+> Attention
+> Observe
+> Tokens
+> Current Tokens
+> Structured Prompt Input
+> 3 dim location 15 dim rotation
+> Proprioception
+> Hand State
+> Prompt
+> Embedding
+> Vision
+> Encoder
+
+Figure 5. ObAct incorporates observation frames and spatiotempo-ral attention to condition action prediction on object dynamics. 
+
+often resulting in reactive and poorly timed behaviors. To address this limitation, we propose an observe-before-act baseline, ObAct , which conditions action generation on a short temporal observation window. As shown in Figure 5, ObAct uses the backbone VLM to encode egocentric images and task text into visual–language tokens, then applies spa-tiotemporal attention over historical observation ( s frames) and the current frame to implicitly capture target motion dy-namics. The resulting motion-aware representation is fused with the current proprioceptive state and injected as con-ditioning into a diffusion policy that reuses GR00T-N1.5’s action head and weights to output continuous hand actions. 
+
+## 4. Experiments 
+
+4.1. Experiment Setup 
+
+All experiments are conducted on the proposed DynaHOI-Gym, which is implemented on the Unity engine (editor version 2022.3.58f1c1). For reproducibility, the internal clock is disabled and the simulator advances with fixed-step intervals to ensure consistent timing. Model training and evaluation are deployed on a distributed GPU cluster with CUDA 12.4 and 4 × A100 GPUs (80GB). For a fair comparison, we reproduce all policy models using official implementations and minimally fine-tune action-related components on DynaHOI-10M training set to align with our hand-control space. For VLMs, we run closed-loop online rollouts by streaming the current RGB ob-servation and 18-D hand state to the model. Similar to VLABench (Zhang et al., 2025b), we prompt the VLM to output a parameterized skill program (a sequence of skills with associated parameters) along with an explicit low-level rollout of the next T steps as 18-D control vectors in a constrained JSON format. DynaHOI-Gym parses and exe-cutes them to compute task outcomes and trajectory-level metrics. All evaluations use a fixed random seed to ensure reproducibility (Testing details are in Appendix E). 
+
+4.2. Evaluation metrics Overall Metrics. This level directly reflects whether the task is completed as well as the overall error. We report four overall metrics: localization success rate 
+
+(Sloc ), the fraction of trajectories in which the hand comes within a distance threshold of the target; grasping suc-cess rate (Sgra ), the fraction of trajectories that achieve a successful grasp conditioned on successful localization ;
+
+localization error (Eloc ), the minimum distance between the palm center and the target object over the execution; and 
+
+grasping error (Egra ), the minimum distance between the fingertips and the target surface over the execution. 
+
+Trajectory Quality Metrics. We evaluate temporal smoothness and spatial linearity. For temporal smoothness , given a trajectory {pt}Nt=1 ⊂
+
+R3, we define step lengths dt = ∥pt+1 − pt∥2 and d =(d1, . . . , d N −1). We measure step consistency by the coeffi-cient of variation ( CV ): 
+
+Qsmooth = 11 + CV (d) ∈ [0 , 1] , CV (d) = 
+
+( σd 
+
+> μd
+
+, μd̸ = 0 ,
+
+0, μd = 0 .
+
+Here, μd and σd denote the mean and standard deviation of {dt}. Smaller variation yields higher Qsmooth , indicating smoother trajectories. For spatial linearity , let segment directions be ˆst = ( pt+1 −
+
+pt)/∥pt+1 − pt∥2. When ∥pN − p1∥2 > 0, the overall direction is ˆv = ( pN − p1)/∥pN − p1∥2 and we compute 
+
+Qline = 1
+
+N − 1 
+
+> N−1
+
+X
+
+> t=1
+
+ˆst · ˆv ∈ [−1, 1] .
+
+If ∥pN − p1∥2 = 0 , we set Qline = 0 . Higher Qline indicates a straighter trajectory, whereas lower values suggest unnec-essary curvature or deviation from the overall direction. 
+
+Completion Speed Metric. Let N be the total frames in the test video and T is the frame index at task completion. The time score (higher scores indicate faster completion) is: 
+
+Rtime = 1 − TN , Rtime ∈ [0 , 1] .
+
+4.3. Evaluation on Model Zoo Evaluation on Policy Models. As shown in Table 2, dy-namic capture remains far from solved. Even the best model (GR00T-N1.5) attains only 27 .90% localization success rate (Sloc ), indicating that reliably aligning with a moving target is still a primary bottleneck. More strikingly, once localiza-tion succeeds, grasping is still rarely successful: the best conditional grasping success rate is merely Sgra = 3 .50% 
+
+(GR00T-N1.5), suggesting that contact-rich closing under motion remains highly challenging. Trajectory quality further reveals a clear trade-off. Diffu-sion policies attain higher task success but exhibit unstable 6DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target 
+
+Table 2. Online evaluation of mainstream policy models. Sloc /S gra are success rates, Eloc /E gra are minimum overall/endpoint distance. 
+
+Qsmooth and Qline measure trajectory smoothness and line-adherence. Rtime is normalized completion speed. ↑ and ↓ indicate higher/lower values are better. Bold / underline denote best / second-best among learned policies; the GT row is an oracle upper bound. Model Architecture Params Localization Grasping Trajectory Quality Runtime 
+
+Sloc (%) ↑ Eloc ↓ Sgra (%) ↑ Egra ↓ Qsmooth ↑ Qline ↑ Rtime ↑
+
+GT — — 100.00 0.16 100.00 0.09 0.90 0.96 0.75 OpenVLA AutoRegressive 7B 10.30 3.23 0.80 2.83 0.41 0.46 0.04 UP-VLA 2B 24.50 0.84 0.40 0.75 0.46 0.47 0.13 GR00T-N1.5 Diffusion 3B 27.90 0.91 3.50 0.68 0.27 0.12 0.09 SmolVLA 500M 10.00 2.14 0.50 1.72 0.41 0.20 0.05 Pi-0 4B 13.60 2.35 0.60 2.03 0.27 -0.05 0.03 Pi-0.5 4B 10.20 2.91 0.10 2.47 0.32 0.18 0.04 ObAct (Ours) Diffusion 3B 36.00 0.65 4.60 0.41 0.43 0.22 0.20 
+
+Table 3. Online evaluation of mainstream VLMs. Metrics follow Table 2; S∗ 
+
+> loc
+
+uses a more lenient localization threshold (See Appendix E for details).                                                                     
+
+> Model Localization Grasping Trajectory Quality Runtime
+> S∗
+> loc (%) ↑Eloc ↓Sgra (%) ↑Egra ↓Qsmooth ↑Qline ↑Rtime ↑
+> GT 100.00 0.16 100.00 0.09 0.90 0.96 0.75
+> Closed-source VLMs
+> Gemini-3 Pro 7.00 4.09 2.00 3.98 0.56 0.76 0.02
+> GPT-5.1 4.00 4.02 2.00 4.05 0.49 0.81 0.02
+> Qwen3-Max 3.00 4.70 1.00 4.43 0.69 0.96 0.01 Grok4.1 0.00 5.33 0.00 5.29 0.51 0.68 0.00
+> Open-source VLMs
+> Qwen3-VL 3.00 4.91 1.00 4.41 0.00 0.00 0.01 InternVL-3.5 0.00 5.06 0.00 5.10 0.46 0.50 0.01
+
+paths (e.g., GR00T-N1.5: Qsmooth = 0 .27 , Qline = 0 .12 ;Pi-0/Pi-0.5 show near-zero/negative Qline ), whereas the au-toregressive UP-VLA produces the cleanest geometry and trajectories ( Eloc = 0 .84 , Qsmooth = 0 .46 , Qline = 0 .47 )yet with limited success ( Sloc = 24 .50% , Sgra = 0 .40% ). Finally, our ObAct baseline consistently outperforms all prior diffusion-based policy models across all seven 
+
+metrics, while achieving trajectory quality comparable to autoregressive-based models (e.g., near-second-best 
+
+Qsmooth ). Notably, a lightweight temporal mechanism yields substantial gain in motion-aware interception: Sloc improves by 8.1% over the strongest diffusion baseline. The highest 
+
+Rtime further suggests that temporal context accelerates tar-get locking and localization. Since ObAct reuses GR00T-N1.5’s action head and weights, the improvements can be attributed primarily to better temporal modeling rather than better low-level control. 
+
+Evaluation on VLM Models. As shown in Table 3, 
+
+motion-aware localization is the core bottleneck : all VLMs obtain only Sloc ≤ 7% with large errors ( Eloc ≈ 4–5), indicating persistent perception–timing mismatch when in-tercepting moving targets. Even conditioned on successful localization, grasping remains rare ( Sgra ≤ 2% , Egra ≈ 4–
+
+5), suggesting that contact-rich closure/stabilization is an-other major failure mode rather than a trivial “last step”. Model behaviors further decouple path quality from task success : Qwen3-Max achieves the best trajectory met-rics ( Qsmooth = 0 .69 , Qline = 0 .96 ) yet still has low 
+
+Sloc /S gra , while Gemini-3 Pro leads success ( Sloc = 7% ,
+
+Sgra = 2% ) but with similarly high endpoint errors. 
+
+Effectiveness of ObAct Baseline. Figure 6 further studies the effect of temporal context by varying the number of ob-servation frames. More observation frames yield consistent improvements (higher success rate and lower error), confirm-ing that additional temporal evidence directly translates into better anticipation and capture timing. In contrast, trajectory metrics ( Qsmooth , Qline ) change only modestly, suggesting they are intrinsic to the policy architecture (diffusion vs. autoregressive) rather than temporal context size. 
+
+4.4. Detailed Analysis Do Policy Models Learn to “Grasp”? As discussed in Section 4.2, grasping success is assessed only at the first localization-success frame, i.e., the hand pose is judged for capture exactly when localization is achieved, which makes the metric stringent and often yields low Sgra scores. We therefore perform an additional analysis over the full roll-out by checking, at every frame, whether the instantaneous grasp action is sufficient to capture the target. As illustrated in Figure 7, we define three difficulty levels and observe consistently higher per-frame success rate under relaxed criteria. Notably, diffusion policies yield significant gains when relaxing finger requirements (5 →4→3). This sug-gests their grasps are locally consistent but lack the global synchronization required for strict, multi-finger success. Even under the Loose criterion, most models struggle to 7DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target 1 3 5 7 9 All                       
+
+> Number of Obs-Frames
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Rate [%]
+> Sloc ↑
+> Sgra ↑
+> 13579All
+> Number of Obs-Frames
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> 1.4
+> Error
+> Eloc ↓
+> Egra ↓
+> 13579All
+> Number of Obs-Frames
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> Quality Score
+> Qsmooth ↑
+> Qline ↑
+> 13579All
+> Number of Obs-Frames
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> Time Score
+> Rtime ↑
+
+Figure 6. Obs-frames ablation . Scaling the number of sampled frames in the observation window steadily improves localization/grasping and reduces endpoint errors, with minor changes in trajectory quality. UpVLA   
+
+> (2B)
+> OpenVLA
+> (7B)
+> Pi-0.5
+> (4B)
+> Pi0
+> (4B)
+> SmolVLA
+> (500M)
+> Baseline
+> (3B)
+> GR00T-N1.5
+> (3B)
+> 0
+> 20
+> 40
+> 60
+> 80
+> Success Rate (%)
+> +26.3 +6.6
+> +43.5 +46.0
+> +52.4
+> +53.3
+> +78.6 Gain: 3→4
+> Gain: 4→5
+> Loose (≥3 Fingers)
+> Medium (≥4 Fingers)
+> Strict (=5 Fingers)
+
+Figure 7. Grasp success rate under per-frame evaluation. Suc-cess rate over the trajectory under Loose/Medium/Strict settings (requiring at least 3, 4 and 5 fingers holding target). 
+
+surpass a 60% success rate, whereas GR00T-N1.5 reaches 
+
+78 .6% . This temporal inconsistency helps explain the low 
+
+Sgra in Table 2: grasp imitation is already inconsistent over time, making it unlikely to achieve a correct grasp precisely at the localized interception frame. Finally, grasp-action consistency exhibits weak correlation with model size, echoing recent findings that VLA perfor-mance scales non-monotonically with parameter count (Liu et al., 2024a; Wen et al., 2025; Wang et al., 2025b). 
+
+Data Scaling. As shown in Figure 8, task-level perfor-mance scales consistently with Sloc rises steadily, while Eloc 
+
+and Egra decrease near-monotonically, indicating progres-sively more accurate motion-aware interception and capture execution. The smooth scaling trends across all task metrics further suggest that DynaHOI-10M provides high-quality and well-aligned supervision; substantial label noise or dis-tributional shifts would typically manifest as unstable or non-monotonic behavior rather than sustained gains. In contrast, trajectory-quality metrics exhibit early satura-tion: Qsmooth and Qline vary only mildly across data scales, implying that additional data primarily benefits when and where to intercept and grasp, rather than further refining path smoothness or spatial linearity. These geometry-level properties are instead more strongly governed by model 
+
+Figure 8. Training-data scaling. Test metrics vs. training data percentage (higher is better after normalization). 
+
+inductive biases and architectural choices (e.g., diffusion-based vs. auto-regressive). 
+
+## 5. Conclusion 
+
+We presented the first evaluation platform and benchmark dedicated to Dynamic Capture: the DynaHOI-Gym and the large-scale DynaHOI-10M benchmark. Our frame-work addresses the unique challenges of dynamic scenarios, moving targets, temporal alignment, and motion prediction, while supporting unified evaluation of VLAs, diffusion poli-cies, and VLMs. We further establish an ObAct baseline that integrates short-horizon temporal observation with spa-tiotemporal attention, and show it consistently outperforms prior diffusion-based policies across all seven metrics (e.g., 
+
++8 .1% Sloc ). Our results show that despite strong perfor-mance in static settings, current models still struggle to antic-ipate and act under dynamic conditions. DynaHOI-Gym and DynaHOI-10M shift the focus to dynamic grasping, advanc-ing research toward motion-aware hand intelligence. 
+
+## Impact Statement 
+
+Dynamic hand–object interaction is relevant to many em-bodied systems where agents must act under changing con-ditions. This work contributes an evaluation-focused bench-mark and protocol that can support more consistent com-parisons across methods and help diagnose when models succeed or fail. Such evaluation infrastructure may benefit research on dexterous manipulation and perception–action 8DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target 
+
+integration, and can inform downstream applications (e.g., assistive robotics) once combined with appropriate engi-neering and validation. At the same time, improvements in physical interaction capabilities can be misused in harm-ful or unauthorized settings. We encourage responsible use, including safety constraints in development, careful real-world testing, and domain-specific safeguards before deployment. 
+
+## References 
+
+Bai, S., Cai, Y., Chen, R., Chen, K., Chen, X., Cheng, Z., Deng, L., Ding, W., Gao, C., Ge, C., Ge, W., Guo, Z., Huang, Q., Huang, J., Huang, F., Hui, B., Jiang, S., Li, Z., Li, M., Li, M., Li, K., Lin, Z., Lin, J., Liu, X., Liu, J., Liu, C., Liu, Y., Liu, D., Liu, S., Lu, D., Luo, R., Lv, C., Men, R., Meng, L., Ren, X., Ren, X., Song, S., Sun, Y., Tang, J., Tu, J., Wan, J., Wang, P., Wang, P., Wang, Q., Wang, Y., Xie, T., Xu, Y., Xu, H., Xu, J., Yang, Z., Yang, M., Yang, J., Yang, A., Yu, B., Zhang, F., Zhang, H., Zhang, X., Zheng, B., Zhong, H., Zhou, J., Zhou, F., Zhou, J., Zhu, Y., and Zhu, K. Qwen3-vl technical report. 
+
+arXiv preprint arXiv:2511.21631 , 2025. Banerjee, P., Shkodrani, S., Moulon, P., Hampali, S., Zhang, F., Fountain, J., Miller, E., Basol, S., Newcombe, R. A., Wang, R., Engel, J. J., and Hodan, T. Introducing HOT3D: an egocentric dataset for 3d hand and object tracking. 
+
+arXiv preprint arXiv:2406.09598 , 2024. Black, K., Brown, N., Driess, D., et al. π0: A vision-language-action flow model for general robot con-trol, 2024. URL https://arxiv.org/abs/2410. 24164 .Brahmbhatt, S., Tang, C., Twigg, C. D., Kemp, C. C., and Hays, J. Contactpose: A dataset of grasps with object contact and hand pose. In Computer Vision–ECCV 2020: 16th European Conference, Glasgow, UK, August 23–28, 2020, Proceedings, Part XIII 16 , pp. 361–378. Springer, 2020. Cha, J., Kim, J., Yoon, J. S., and Baek, S. Text2hoi: Text-guided 3d motion generation for hand-object interaction. In IEEE CVPR , 2024. Chao, Y.-W., Yang, W., Xiang, Y., Molchanov, P., Handa, A., Tremblay, J., Narang, Y. S., Van Wyk, K., Iqbal, U., Birchfield, S., Kautz, J., and Fox, D. DexYCB: A benchmark for capturing hand grasping of objects. In 
+
+IEEE CVPR , 2021. Dubins, L. E. On curves of minimal length with a constraint on average curvature, and with prescribed initial and ter-minal positions and tangents. American Journal of Math-ematics , 79(3):497–516, 1957. doi: 10.2307/2372560. Fan, Z., Taheri, O., Tzionas, D., Kocabas, M., Kaufmann, M., Black, M. J., and Hilliges, O. ARCTIC: A dataset for dexterous bimanual hand-object manipulation. In IEEE CVPR , 2023. Fu, R., Zhang, D., Jiang, A., Fu, W., Funk, A., Ritchie, D., and Sridhar, S. Gigahands: A massive annotated dataset of bimanual hand activities. In IEEE CVPR , 2025. Grauman, K., Westbury, A., Torresani, L., Kitani, K., Ma-lik, J., Afouras, T., Ashutosh, K., Baiyya, V., Bansal, S., Boote, B., Byrne, E., Chavis, Z., Chen, J., Cheng, F., Chu, F., Crane, S., Dasgupta, A., Dong, J., Escobar, M., Forigua, C., Gebreselasie, A., Haresh, S., Huang, J., Islam, M. M., Jain, S. D., Khirodkar, R., Kukreja, D., Liang, K. J., Liu, J., Majumder, S., Mao, Y., Martin, M., Mavroudi, E., Nagarajan, T., Ragusa, F., Ramakrishnan, S. K., Seminara, L., Somayazulu, A., Song, Y., Su, S., Xue, Z., Zhang, E., Zhang, J., Castillo, A., Chen, C., Fu, X., Furuta, R., Gonz ´alez, C., Gupta, P., Hu, J., Huang, Y., Huang, Y., Khoo, W., Kumar, A., Kuo, R., Lakhavani, S., Liu, M., Luo, M., Luo, Z., Meredith, B., Miller, A., Ogun-tola, O., Pan, X., Peng, P., Pramanick, S., Ramazanova, M., Ryan, F., Shan, W., Somasundaram, K. K., Song, C., Southerland, A., Tateno, M., Wang, H., Wang, Y., Yagi, T., Yan, M., Yang, X., Yu, Z., Zha, S. C., Zhao, C., Zhao, Z., Zhu, Z., Zhuo, J., Arbel ´aez, P., Bertasius, G., Damen, D., Engel, J. J., Farinella, G. M., Furnari, A., Ghanem, B., Hoffman, J., Jawahar, C. V., Newcombe, R. A., Park, H. S., Rehg, J. M., Sato, Y., Savva, M., Shi, J., Shout, M. Z., and Wray, M. Ego-exo4d: Understanding skilled human activity from first- and third-person perspectives. In IEEE CVPR , pp. 19383–19400, 2024. Huang, M., Chu, F.-J., Tekin, B., Liang, K. J., Ma, H., Wang, W., Chen, X., Gleize, P., Xue, H., Lyu, S., Kitani, K., Feiszli, M., and Tang, H. Hoigpt: Learning long sequence hand-object interaction with language models. In IEEE CVPR , 2025. Kim, M. J., Pertsch, K., Karamcheti, S., Xiao, T., Balakr-ishna, A., Nair, S., Rafailov, R., Foster, E. P., Sanketi, P. R., Vuong, Q., Kollar, T., Burchfiel, B., Tedrake, R., Sadigh, D., Levine, S., Liang, P., and Finn, C. Openvla: An open-source vision-language-action model. In CoRL ,2024. LaValle, S. M. Planning Algorithms . Cambridge University Press, Cambridge, UK, 2006. ISBN 9780521862050. URL http://planning.cs.uiuc.edu/ .Lee, J., Saito, S., Nam, G., Sung, M., and Kim, T.-K. Inter-handgen: Two-hand interaction generation via cascaded reverse diffusion. In IEEE CVPR , 2024. Liang, Z., Mu, Y., Wang, Y., Chen, T., Shao, W., Zhan, W., Tomizuka, M., Luo, P., and Ding, M. Dexhanddiff: 9DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target 
+
+Interaction-aware diffusion planning for adaptive dexter-ous manipulation. In IEEE CVPR , 2025. Lin, P. Handdiffuse: Generative controllers for two-hand interactions via diffusion models. In AAAI , 2025. Liu, J., Liu, M., Wang, Z., An, P., Li, X., Zhou, K., Yang, S., Zhang, R., Guo, Y., and Zhang, S. Robomamba: Efficient vision-language-action model for robotic reasoning and manipulation. In NeurIPS , 2024a. Liu, Y., Liu, Y., Jiang, C., Lyu, K., Wan, W., Shen, H., Liang, B., Fu, Z., Wang, H., and Yi, L. Hoi4d: A 4d egocentric dataset for category-level human-object interaction. In 
+
+IEEE CVPR , pp. 21013–21022, 2022. Liu, Y., Yang, H., Si, X., Liu, L., Li, Z., Zhang, Y., Liu, Y., and Yi, L. Taco: Benchmarking generalizable bimanual tool-action-object understanding. In IEEE CVPR , pp. 21740–21751, 2024b. Luo, H., Feng, Y., Zhang, W., Zheng, S., Wang, Y., Yuan, H., Liu, J., Xu, C., Jin, Q., and Lu, Z. Being-h0: Vision-language-action pretraining from large-scale hu-man videos. arXiv preprint arXiv:2507.15597 , 2025. NVIDIA, Bjorck, J., Fernando Casta ˜neda, N. C., Da, X., Ding, R., Fan, L. J., Fang, Y., Fox, D., Hu, F., Huang, S., Jang, J., Jiang, Z., Kautz, J., Kundalia, K., Lao, L., Li, Z., Lin, Z., Lin, K., Liu, G., Llontop, E., Magne, L., Mandlekar, A., Narayan, A., Nasiriany, S., Reed, S., Tan, Y. L., Wang, G., Wang, Z., Wang, J., Wang, Q., Xiang, J., Xie, Y., Xu, Y., Xu, Z., Ye, S., Yu, Z., Zhang, A., Zhang, H., Zhao, Y., Zheng, R., and Zhu, Y. GR00T N1: An open foundation model for generalist humanoid robots. In ArXiv Preprint , March 2025. Ohkawa, T., He, K., Sener, F., Hodan, T., Tran, L., and Keskin, C. AssemblyHands: towards egocentric activity understanding via 3d hand pose estimation. In IEEE CVPR , pp. 12999–13008, 2023. Physical Intelligence, Black, K., Brown, N., et al. π0.5:a vision-language-action model with open-world gener-alization, 2025. URL https://arxiv.org/abs/ 2504.16054 .Reeds, J. A. and Shepp, L. A. Optimal paths for a car that goes both forwards and backwards. Pacific Journal of Mathematics , 145(2):367–393, 1990. doi: 10.2140/pjm. 1990.145.367. Shukor, M., Aubakirova, D., Capuano, F., Kooijmans, P., Palma, S., Zouitine, A., Aractingi, M., Pascal, C., Russi, M., Marafioti, A., Alibert, S., Cord, M., Wolf, T., and Cadene, R. Smolvla: A vision–language–action model for affordable and efficient robotics. arXiv preprint arXiv:2506.01844 , 2025. Taheri, O., Ghorbani, N., Black, M. J., and Tzionas, D. GRAB: A dataset of whole-body human grasping of ob-jects. In ECCV , 2020. Wang, W., Gao, Z., Gu, L., Pu, H., Cui, L., Wei, X., Liu, Z., Jing, L., Ye, S., Shao, J., et al. Internvl3. 5: Advancing open-source multimodal models in versatility, reasoning, and efficiency. arXiv preprint arXiv:2508.18265 , 2025a. Wang, Y., Ding, P., Li, L., Cui, C., Ge, Z., Tong, X., Song, W., Zhao, H., Zhao, W., Hou, P., Huang, S., Tang, Y., Wang, W., Zhang, R., Liu, J., and Wang, D. Vla-adapter: An effective paradigm for tiny-scale vision-language-action model. arXiv preprint arXiv:2509.09372 , 2025b. Wang, Y., Zheng, S., Cao, B., Wei, Q., Zeng, W., Jin, Q., and Lu, Z. Scaling motion generation model with million-level human motions. In International Conference on Machine Learning (ICML) , 2025c. Wen, J., Zhu, Y., Li, J., Zhu, M., Wu, K., Xu, Z., Liu, N., Cheng, R., Shen, C., Peng, Y., et al. Tinyvla: Towards fast, data-efficient vision-language-action models for robotic manipulation. In IEEE Robotics and Automation Letters (RA-L) , 2025. Zhan, X., Yang, L., Zhao, Y., Mao, K., Xu, H., Lin, Z., Li, K., and Lu, C. Oakink2 : A dataset of bimanual hands-object manipulation in complex task completion. In IEEE CVPR , pp. 445–456, 2024. Zhang, J., Guo, Y., Hu, Y., Chen, X., Zhu, X., and Chen, J. Up-vla: A unified understanding and prediction model for embodied. In ICML , 2025a. Zhang, S., Xu, Z., Liu, P., Yu, X., Li, Y., Gao, Q., Fei, Z., Yin, Z., Wu, Z., Jiang, Y.-G., and Qiu, X. Vlabench: A large-scale benchmark for language-conditioned robotics manipulation with long-horizon reasoning tasks. In IEEE ICCV , 2025b. Zhang, Z., Shi, Y., Yang, L., Ni, S., Ye, Q., and Wang, J. Openhoi: Open-world hand-object interaction synthe-sis with multimodal large language model. In NeurIPS ,2025c. 10 DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target 
+
+## A. Kinematic Primitive Foundations 
+
+We model moving targets in DynaHOI-10M using a compact vocabulary of basic kinematic primitives—linear ( L), circular-arc ( A), and simple-harmonic ( H) motion. These three families strike a practical balance between expressiveness and controllability: they admit clean physical parameters (e.g., velocity/acceleration, curvature/radius, frequency/phase), support systematic difficulty scaling, and serve as composable “motion tokens” from which richer dynamics can be built. The remainder of this appendix formalizes this choice by stating our introducing notation for trajectories and curvature, and providing complementary signal-theoretic and geometric intuitions. 
+
+Notation. A trajectory is a differentiable curve r : [0 , T ] → Rd with velocity v(t) = ˙ r(t) and acceleration a(t) = ¨ r(t).For planar curves parameterized by time, curvature is 
+
+κ(t) = ∥v(t) × a(t)∥∥v(t)∥3 , (3) and in the arc-length parameter s we use the Frenet-Serret frame (T, N, B). For plane curves, the fundamental theorem of curves states that the curvature function κ(s) determines the curve up to a rigid motion. We use τ (s) for torsion in 3D when needed. 
+
+Signal-theoretic (harmonic) view. Treat each coordinate of r(t) as a scalar time signal. If x(t) ∈ L2([0 , T ]) is T -periodic, then by the Riesz-Fischer theorem its Fourier series converges in the L2 sense: 
+
+x(t) = a0 +
+
+> ∞
+
+X
+
+> k=1
+
+ ak cos( kωt ) + bk sin( kωt ), ω = 2πT . (4) Hence r(t) can be approximated arbitrarily well (in energy) by a finite trigonometric polynomial. Uniform-frequency sine/cosine pairs with phase shift realize circular motions in (x, y ), the affine (zero-frequency) part gives linear drift. This motivates a small set of frequency tokens (dominant {k, A k, ϕ k} over local windows) to summarize oscillatory micro-motions under a controllable truncation budget. 
+
+Geometric (curvature) view. Because planar shape is encoded by κ(s), approximating κ(s) by a step function yields a piecewise constant-curvature curve, i.e. , a concatenation of straight segments ( κ ≈ 0) and circular arcs ( κ ≈ 1/R ). This discretization aligns with nonholonomic optimal-control results: (i) Dubins : with bounded curvature and forward-only motion, the shortest path between two poses consists of at most three pieces from {L, R, S } (left/right arcs and straight lines). (ii) Reeds–Shepp : allowing reversals, shortest paths admit finite canonical sequences of arcs/segments. When steering-rate continuity is required, clothoids (Euler spirals, linearly varying curvature) provide G2-friendly connectors between L/A 
+
+pieces. These facts justify a compact geometry-token vocabulary with interpretable parameters (length, radius/sign, curvature slope). (Dubins, 1957; Reeds & Shepp, 1990; LaValle, 2006) 
+
+## B. Motivation Claim 
+
+Current work on hand action generation mainly focuses on manipulating static objects, with limited models and benchmarks for dynamic object interaction. In static grasping tasks, evaluation can rely directly on ground-truth (GT) trajectories since the target remains fixed and a unique reference exists. In dynamic tasks, however, the agent may choose to grasp the moving object at different valid time points, and even if a GT is defined, it represents only one of many feasible solutions. This necessitates an interactive environment to assess whether a model can capture motion patterns and successfully grasp within the effective time window. To this end, we introduce the DynaHOI-Gym , a unified platform for data generation and interactive evaluation in dynamic hand grasping. 
+
+## C. Limitations and Future Work 
+
+Limitations. Despite the strengths of DynaHOI-Gym and DynaHOI-10M in evaluating dynamic capture under controlled target motion, the current study has several limitations: 11 DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target 
+
+1. Limited appearance and material diversity. The benchmark prioritizes motion diversity and temporal alignment, but the range of object appearances and material properties remains limited. While multiple shapes and scales are included, challenging visual factors such as transparency, deformability, and strong specular reflections are not yet systematically modeled. 2. Simplified perception setting. Observations are restricted to single-view RGB inputs with fixed camera poses. This design isolates motion-aware reasoning but simplifies perception compared to real-world scenarios involving multi-view sensing, viewpoint changes, and severe hand–object occlusions. 3. Entangled localization and grasping failures. The evaluation focuses on end-to-end action generation, revealing that successful localization does not reliably translate into successful grasping. However, the current setup does not explicitly disentangle the failure modes of localization and contact-rich grasp execution. 
+
+Future Work. These limitations suggest several promising directions for future research: 1. Stage-wise coupling of localization and grasping. Our results indicate that grasping frequently fails even when localization succeeds at the interception frame, pointing to a weak coupling between spatial alignment and finger closure. A natural extension is to decompose dynamic capture into explicit stages, where successful localization triggers a dedicated grasping phase. For example, once the palm enters a valid interception region, the policy could receive an explicit transition signal or conditioning cue that shifts its objective from motion anticipation to contact stabilization, thereby more tightly linking localization and grasp execution. 2. Structured multi-stage pipelines beyond end-to-end policies. While this work focuses on evaluating zero-shot, end-to-end models, future studies may explore more structured multi-stage approaches. Such pipelines could integrate specialized components, including explicit depth or geometry estimation for spatial reasoning, short-horizon motion prediction for target forecasting, and dedicated hand controllers that output coordinated wrist and finger trajectories. Although these designs may reduce generality, they provide stronger inductive biases for precise interception and contact-rich manipulation. 3. Benchmarking modular and hybrid designs. DynaHOI-Gym offers a controlled and reproducible testbed for systematically comparing end-to-end policies with stage-wise or hybrid systems. Future work can leverage this platform to analyze how modular structure affects robustness, timing accuracy, and grasp reliability under dynamic conditions. 
+
+## D. Data Collection and Processing. 
+
+Data collection. During data collection, we run the Unity simulation with fixed-step logging at 20 Hz (i.e., 
+
+sendInterval = 0.05 s). For each episode, an egocentric hand-mounted camera renders to a dedicated 
+
+RenderTexture of size width ×height , and every logged frame is saved as a JPEG image ( EncodeToJPG(85) )to episode {id }/img {t:04d }.jpg . Synchronously, we record the full hand kinematic state as a per-frame JSON file episode {id }/joints {t:04d }.json . Specifically, we serialize a set of tracked transforms storeList that includes (i) the 15 actuated finger joints, (ii) five fingertip “nail” keypoints, (iii) the wrist root ( handsRoot ), (iv) the palm-center marker ( palmCenter ), and (v) the egocentric camera itself. For each tracked transform, we store its 3D world position and 3D orientation in Euler angles ( joint.eulerAngles ), yielding a time-aligned sequence of RGB observations and hand poses. Episodes are parameterized by motion scripts, whose per-episode configurations are loaded from JSON via an EpisodeManager . At the beginning of each episode (saved once), we also write meta data.json 
+
+containing the task type, motion parameters for the active script, the predicted intercept position targetPosition 
+
+(computed from the motion model using interceptTime with an anticipation margin leadTime and an observation delay observationTime ), and the resulting hand translation speed moveSpeed required to reach the intercept point in time. The hand executes an observe-before-act state machine: after an observation wait, it moves toward the predicted intercept, optionally waits for the target to enter a small planar tolerance, and then closes the fingers until either all five fingers make contact (detected by sphere-overlap tests on collision-enabled joints) or a maximum joint-rotation limit is reached ( maxGrabRotation = 90 ◦). To improve data integrity, failed simulations are automatically retried up to three 12 DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target                   
+
+> (a) Centered (b) Z: +0.3 (c) Z: –0.3 (d) X: +0.3 (e) X: –0.3
+> Figure 9. Qualitative visualization of target offsets. We render five representative views under different offset settings (centered, ±0.3
+> along the Zaxis, and ±0.3along the Xaxis), illustrating how the target region shifts relative to the hand.
+
+times; on each retry we clear previously saved frames for that episode and re-run the same configuration, while successful episodes are explicitly finalized and advanced to the next configuration. 
+
+Post-processing and quality control. After collection, we convert the recorded pose streams into action sequences at 20 Hz (e.g., joint-rotation increments for the 15 actuated joints, optionally augmented with palm/wrist motion depending on the downstream policy interface), and compute dataset-wide descriptive statistics for each action dimension, including min ,
+
+max , and robust quantiles ( q01 , q99 ). We visualize per-dimension frequency histograms to inspect scale and saturation effects, then apply outlier filtering by clipping or removing samples outside the robust range (e.g., beyond [q01 , q99 ] with a small safety margin) and by rejecting entire trajectories that exhibit systematic corruption (e.g., persistent saturation at limits, discontinuous jumps inconsistent with the control rate, or missing/invalid frames). Finally, we perform stratified random sampling for manual inspection: we replay sampled episodes by synchronizing RGB frames with the recorded kinematics and actions to verify temporal alignment, motion plausibility, and successful grasp–release behavior, and we remove any remaining “dirty” trajectories that fail these checks. 
+
+## E. Testing Details on DynaHOI-Gym 
+
+E.1. DynaHOI-Gym Settings 
+
+During evaluation, the policy model communicates with DynaHOI-Gym in real time. At each time step, the simulator provides the latest observation (image and hand state), which is immediately forwarded to the model for inference, and the predicted action is then transmitted back to the simulator for execution. Although we configure the simulator to maintain strict synchronization between the model and the simulated environment (ensuring that object and hand positions in the captured images are accurate), the real-time rendering process introduces subtle pixel-level variations across repeated trials at the same timestep. These variations are imperceptible to the human eye yet can slightly perturb the model’s outputs. This setting imposes a stricter robustness requirement: while the critical information (object location and hand position) remains consistent, the model should not produce unstable or divergent actions due to visually negligible background differences. 
+
+E.2. Evaluation Criteria 
+
+1. Localization success: we deem the palm center successfully localized if its distance to the object center is below 0.3 Unity world units, a threshold that ensures the palm can cover at least half of the object area (see Figure 9). For VLM evaluation, we relax this threshold to 1.0 Unity units to avoid near-zero success rates and improve score sensitivity. 2. Grasping success: Following the grasping abstractions in Habitat 2.0 and the attachment mechanisms in MuJoCo (weld constraints) and Isaac Sim (surface grippers), we automatically attach the target object to the hand once the hand–object distance meets the localization criterion. A grasp is then deemed successful if the current grasp configuration matches 13 DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target System Role. You are a Vision-Language-Action agent for dynamic hand–object interaction.                                                    
+
+> Task. <TASK TEXT>
+> Input. RGB image + current hand state st∈R18 :[x, y, z, 15 joint angles (rad)] .
+> Skill Set. {WAIT, APPROACH, INTERCEPT, GRASP, LIFT, ADJUST }.
+> Output. Return (i) a parameterized skill program whose durations sum to T, and (ii) an explicit low-level rollout of the next Tframes, each with 18 values in the same order.
+> Return only the following JSON:
+> {"action_sequence": [{"skill": "APPROACH", "params": {"target": "object",......}, "duration": 4, "terminate_if": ..., }, {"skill": "GRASP", "params": {...}, "duration": 6}], "predicted_motion": [{"frame_index": 1, "hand_params": [18 values]}, ..., {"frame_index": T, "hand_params": [18 values]} ]}
+> Figure 10. Hybrid prompt template for VLM online control. <TASK TEXT> specifies the motion instruction, and Tis the action horizon (default 10 ). The model outputs a parameterized skill program ( action sequence ) and a T-step low-level control rollout.
+
+the GT sufficiently well: for each of the 15 joints, the predicted rotation has the correct direction and reaches at least 
+
+0.9× the GT rotation magnitude. While Unity’s real-time rendering engine ensures high physical realism, its inherent nondeterminism poses challenges to evaluation consistency. To address this, we employ Unity’s internal clock for environment stepping during data collection, ensuring realistic yet diverse sampling. During model testing, the platform advances the simulator manually in a timed manner, synchronizing environment updates with model inference on the temporal axis. This mechanism guarantees time consistency between the environment and the model, enabling DynaHOI-Gym to serve as a reliable online evaluation platform and providing a unified benchmark for dynamic hand grasping research. 
+
+E.3. Details for Evaluating VLMs Online evaluation protocol. We evaluate VLMs in a closed-loop Unity simulator via a WebSocket interface. For each episode, the Python controller first reads the episode metadata (episode id, task type, and episode length L) from a LeRobot-formatted dataset. It then sends a start episode signal to Unity, including the action horizon T (we use T =10 ). During the rollout, Unity repeatedly streams the current observation as image and state , consisting of an RGB image and the current 18D hand state st ∈ R18 (3D hand position plus 15 finger-joint angles). At each step, the VLM receives (image, prompt) and predicts the next T frames of 18D hand parameters, which are sent back to Unity as action data ; if the remaining episode length is shorter than T , we truncate the action chunk to match the episode boundary. The episode terminates when Unity returns a metrics message, from which we record success and distance-based scores, and we additionally log the raw VLM outputs for auditing. 
+
+Prompt format. We use a fixed structured prompt that specifies (i) the task instruction, (ii) the current 18D hand state, (iii) the prediction horizon T , and (iv) a strict JSON-only output requirement to ensure reliable parsing. 14 DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target Circular         
+
+> Periodic Linear
+> 0
+> 20
+> 40 Y-axis: Sloc
+> Circular
+> Periodic Linear
+> 0.0
+> 0.5
+> 1.0
+> 1.5 Y-axis: Eloc
+> Circular
+> Periodic Linear
+> 0.0
+> 0.2
+> 0.4
+> Y-axis: Qline
+
+GR00T Our Baseline UP-VLA  
+
+> Figure 11. Periodicity-stratified performance.
+
+## F. Why Qline and Qsmooth for GT are < 1.0.
+
+In principle, the scripted hand trajectory during the approach phase is designed to be constant-speed translation, and thus an idealized ground-truth (GT) trajectory would yield Qline = Qsmooth = 1 .0. In our Unity-based data generation, however, the recorded waypoints are sampled from the real-time simulation loop and therefore exhibit mild temporal jitter, which propagates into the geometry-based quality scores. Concretely, joint states are logged inside FixedUpdate() using a time-gated condition of the form Time.time -lastSendTime ≥ sendInterval . This couples a physics-timestep callback ( FixedUpdate ) with the wall-clock-like game time ( Time.time ) rather than a strictly uniform sampling clock (e.g., Time.fixedTime with deterministic accumulation). As a result, the effective sampling intervals are not exactly constant: small fluctuations in frame scheduling lead to non-uniform timestamps, and thus the consecutive recorded positions may not be evenly spaced even when the underlying motion is close to constant-velocity. This effect is further amplified by the per-sample I/O workload executed within FixedUpdate() , including camera rendering, GPU →CPU readback ( ReadPixels ), JPEG encoding, and synchronous disk writes for images and JSON metadata. These operations introduce variable latency and occasional stalls, which perturb the cadence at which the logging condition is satisfied and yield uneven inter-sample spacing. Because Qline and Qsmooth are computed from the discrete recorded trajectory (rather than from an analytic, continuous-time reference), such sampling irregularities manifest as small but systematic deviations from an ideal straight and smooth polyline, producing GT scores slightly below 1.0
+
+(e.g., Qline ≈ 0.96 and Qsmooth ≈ 0.90 ). Importantly, this gap reflects instrumentation and scheduling artifacts of the simulation/recording pipeline rather than imperfections in the intended GT motion itself. 
+
+## G. Stratified Performance Analysis 
+
+Periodicity-stratified evaluation. We stratify test trajectories by periodicity strength : (i) Circular exhibits the clearest periodic signature since each sampled frame provides phase-distinct visual evidence, making motion state more identifiable under sparse observations; (ii) Periodic (like harmonic and pendulum motions) are weaker-periodic, characterized by higher positional revisitation and larger low-speed occupancy (dwelling near turning points). It reduces effective phase diversity given the same sampling budget; (iii) Linear (like straight line and projectile motions) are non-periodic. As shown in Figure 11, diffusion-based policies show a pronounced periodicity sensitivity: they achieve higher Sloc and lower Eloc on more periodic motions, suggesting stronger reliance on recognizable temporal patterns for interception timing. For trajectory quality, both AR-based and diffusion-based models improve on more periodic motions, yielding higher Qline ,indicating more stable, motion-consistent control when dynamics are more predictable. Finally, Egra follows the same trend as Eloc , and Qsmooth mirrors Qline . Details are reported in Appendix H. 
+
+Length-stratified trends. As shown in Figure 12, diffusion-based policies exhibit the clearest length sensitivity on task outcomes : Sloc increases with longer observation (video length), while Sgra decreases accordingly; notably, the gain in 
+
+Sloc becomes non-monotonic when conditioned on trajectory length. In contrast, grasping endpoint error shows a more consistent improvement: Egra decreases markedly as both video length and trajectory length grow, indicating more accurate contact execution under longer temporal context and longer-horizon motion. 15 DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target 50 100 150 
+
+Video Length (Frames) 
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+
+Y-axis: Sloc   
+
+> 50 100 150
+
+Video Length (Frames) 
+
+> 0.5
+> 1.0
+
+Y-axis: Egra   
+
+> 50 100 150
+
+Video Length (Frames)  
+
+> 0.2
+> 0.4
+> 0.6
+
+Y-axis: Qline   
+
+> 10 20 30
+
+Trajectory Length (m)  
+
+> 0.2
+> 0.4
+> 0.6
+
+Y-axis: Sloc   
+
+> 10 20 30
+
+Trajectory Length (m) 
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+
+Y-axis: Egra   
+
+> 10 20 30
+
+Trajectory Length (m) 
+
+> 0.2
+> 0.4
+
+Y-axis: Qline 
+
+GR00T-N1.5 Our Baseline UP-VLA 
+
+Figure 12. Length-stratified performance. 
+
+For both diffusion- and AR-based models, trajectory quality is largely length-invariant: Qsmooth and Qline show no systematic correlation with either video length or trajectory length, suggesting that path regularity is governed more by the policy/decoder bias than by temporal/trajectory scale. Finally, the paired metrics co-vary as expected: Sgra tracks Sloc , Egra mirrors Eloc ,and Qsmooth mirrors Qline ; full trend plots are provided in Appendix I. 
+
+## H. Details about Periodicity-Stratified Evaluation Circular Periodic Linear 
+
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> Srate  (%)
+
+Circular Periodic Linear 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> 1.4
+> Eloc
+
+Circular Periodic Linear 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Egra
+
+Circular Periodic Linear 
+
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> Qsmooth
+
+Circular Periodic Linear 
+
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> Qline
+
+Circular Periodic Linear 
+
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> Rtime
+
+GR00T Our Baseline UP-VLA 
+
+Figure 13. All periodicity-stratified performance. 
+
+16 DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target 
+
+## I. Details about Length-Stratified Trends 50 100 150 
+
+Video length (frames) 
+
+0.0 
+
+0.5 
+
+1.0 
+
+> Sloc
+
+50 100 150 
+
+Video length (frames) 
+
+0
+
+2
+
+4
+
+> Eloc
+
+50 100 150 
+
+Video length (frames) 
+
+0
+
+2
+
+4
+
+> Sgra
+
+50 100 150 
+
+Video length (frames) 
+
+0.2 
+
+0.4 
+
+0.6 
+
+> Egra
+
+50 100 150 
+
+Video length (frames) 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+> Qsmooth
+
+50 100 150 
+
+Video length (frames) 
+
+0.00 
+
+0.25 
+
+0.50 
+
+0.75 
+
+> Qline
+
+50 100 150 
+
+Video length (frames) 
+
+0.0 
+
+0.5 
+
+1.0 
+
+> Rtime
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0.0 
+
+0.5 
+
+1.0 
+
+> Sloc
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0
+
+2
+
+4
+
+> Eloc
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0
+
+2
+
+4
+
+> Sgra
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0.2 
+
+0.4 
+
+0.6 
+
+> Egra
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+> Qsmooth
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0.00 
+
+0.25 
+
+0.50 
+
+0.75 
+
+> Qline
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0.0 
+
+0.5 
+
+1.0 
+
+> Rtime
+
+Figure 14. All length-stratified performance (GR00T-N1.5). 50 100 150 
+
+Video length (frames) 
+
+0.0 
+
+0.5 
+
+1.0 
+
+> Sloc
+
+50 100 150 
+
+Video length (frames) 
+
+0
+
+1
+
+2
+
+3
+
+> Eloc
+
+50 100 150 
+
+Video length (frames) 
+
+0
+
+1
+
+2
+
+3
+
+> Sgra
+
+50 100 150 
+
+Video length (frames) 
+
+0.25 
+
+0.50 
+
+0.75 
+
+1.00 
+
+> Egra
+
+50 100 150 
+
+Video length (frames) 
+
+0.0 
+
+0.5 
+
+1.0 
+
+> Qsmooth
+
+50 100 150 
+
+Video length (frames) 
+
+0.0 
+
+0.5 
+
+1.0 
+
+> Qline
+
+50 100 150 
+
+Video length (frames) 
+
+0.0 
+
+0.5 
+
+1.0 
+
+> Rtime
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0.0 
+
+0.5 
+
+1.0 
+
+> Sloc
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0
+
+1
+
+2
+
+3
+
+> Eloc
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0
+
+1
+
+2
+
+3
+
+> Sgra
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0.25 
+
+0.50 
+
+0.75 
+
+1.00 
+
+> Egra
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0.0 
+
+0.5 
+
+1.0 
+
+> Qsmooth
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0.0 
+
+0.5 
+
+1.0 
+
+> Qline
+
+0 10 20 30 40 
+
+Trajectory length (m) 
+
+0.0 
+
+0.5 
+
+1.0 
+
+> Rtime
+
+Figure 15. All length-stratified performance (our baseline). 
+
+17 DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target 
+
+## J. Comprehensive Distribution of Hand Motion 0.0 0.1 0.2 0.3 0.4 
+
+Rotation (rad) 
+
+0
+
+10000 
+
+20000 
+
+30000 
+
+40000 
+
+50000 
+
+> Frequency
+
+finger1_1 
+
+0.0 0.1 0.2 0.3 0.4 
+
+Rotation (rad) 
+
+0
+
+10000 
+
+20000 
+
+30000 
+
+40000 
+
+50000 
+
+> Frequency
+
+finger1_2 
+
+0.0 0.1 0.2 0.3 
+
+Rotation (rad) 
+
+0
+
+10000 
+
+20000 
+
+30000 
+
+40000 
+
+50000 
+
+> Frequency
+
+finger1_3 
+
+0.0 0.2 0.4 0.6 
+
+Rotation (rad) 
+
+0
+
+2000 
+
+4000 
+
+6000 
+
+8000 
+
+> Frequency
+
+finger2_1 
+
+0.0 0.5 1.0 
+
+Rotation (rad) 
+
+0
+
+2000 
+
+4000 
+
+6000 
+
+8000 
+
+> Frequency
+
+finger2_2 
+
+0.0 0.5 1.0 1.5 2.0 
+
+Rotation (rad) 
+
+0
+
+2000 
+
+4000 
+
+6000 
+
+8000 
+
+> Frequency
+
+finger2_3 
+
+0.0 0.2 0.4 0.6 
+
+Rotation (rad) 
+
+0
+
+2000 
+
+4000 
+
+6000 
+
+> Frequency
+
+finger3_1 
+
+0.00 0.25 0.50 0.75 1.00 1.25 
+
+Rotation (rad) 
+
+0
+
+2000 
+
+4000 
+
+6000 
+
+> Frequency
+
+finger3_2 
+
+0.0 0.5 1.0 1.5 2.0 
+
+Rotation (rad) 
+
+0
+
+2000 
+
+4000 
+
+6000 
+
+> Frequency
+
+finger3_3 
+
+0.0 0.2 0.4 0.6 
+
+Rotation (rad) 
+
+0
+
+2000 
+
+4000 
+
+6000 
+
+8000 
+
+10000 
+
+12000 
+
+> Frequency
+
+finger4_1 
+
+0.0 0.5 1.0 
+
+Rotation (rad) 
+
+0
+
+2000 
+
+4000 
+
+6000 
+
+8000 
+
+10000 
+
+12000 
+
+> Frequency
+
+finger4_2 
+
+0.0 0.5 1.0 1.5 2.0 
+
+Rotation (rad) 
+
+0
+
+2000 
+
+4000 
+
+6000 
+
+8000 
+
+10000 
+
+12000 
+
+> Frequency
+
+finger4_3 
+
+0.0 0.2 0.4 0.6 0.8 
+
+Rotation (rad) 
+
+0
+
+10000 
+
+20000 
+
+30000 
+
+40000 
+
+> Frequency
+
+finger5_1 
+
+0.0 0.5 1.0 1.5 
+
+Rotation (rad) 
+
+0
+
+10000 
+
+20000 
+
+30000 
+
+40000 
+
+> Frequency
+
+finger5_2 
+
+0.0 0.5 1.0 1.5 2.0 
+
+Rotation (rad) 
+
+0
+
+10000 
+
+20000 
+
+30000 
+
+40000 
+
+> Frequency
+
+finger5_3 
+
+Figure 16. Distribution of 15-DoF joint rotation deltas. The histograms visualize the frame-to-frame rotation changes across all joints. 
+
+18 DynaHOI: Benchmarking Hand-Object Interaction for Dynamic Target 0 2 4 6 8
+
+Displacement (m) 
+
+> 0
+> 500
+> 1000
+> 1500
+> 2000
+> 2500
+> 3000
+> Frequency
+
+X Displacement      
+
+> 012345
+
+Displacement (m) 
+
+> 0
+> 500
+> 1000
+> 1500
+> 2000
+> 2500
+> 3000
+> 3500
+> Frequency
+
+Y Displacement    
+
+> 2468
+
+Displacement (m) 
+
+> 0
+> 500
+> 1000
+> 1500
+> 2000
+> 2500
+> 3000
+> 3500
+> Frequency
+
+Z Displacement 
+
+Figure 17. Distribution of 3D Cartesian displacements. The frequency of positional changes in X, Y, and Z directions for the hand root, demonstrating the spatial coverage of the benchmark. 
+
+19
