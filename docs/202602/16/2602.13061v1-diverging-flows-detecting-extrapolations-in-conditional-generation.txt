@@ -1,0 +1,702 @@
+Title: Diverging Flows: Detecting Extrapolations in Conditional Generation
+
+URL Source: https://arxiv.org/pdf/2602.13061v1
+
+Published Time: Mon, 16 Feb 2026 02:12:56 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+Constantinos Tsakonas 1 Serena Ivaldi 1 Jean-Baptiste Mouret 1
+
+## Abstract 
+
+The ability of Flow Matching (FM) to model com-plex conditional distributions has established it as the state-of-the-art for prediction tasks (e.g., robotics, weather forecasting). However, deploy-ment in safety-critical settings is hindered by a critical extrapolation hazard: driven by smooth-ness biases, flow models yield plausible outputs even for off-manifold conditions, resulting in silent failures indistinguishable from valid pre-dictions. In this work, we introduce Diverg-ing Flows , a novel approach that enables a sin-gle model to simultaneously perform conditional generation and native extrapolation detection by structurally enforcing inefficient transport for off-manifold inputs. We evaluate our method on syn-thetic manifolds, cross-domain style transfer, and weather temperature forecasting, demonstrating that it achieves effective detection of extrapola-tions without compromising predictive fidelity or inference latency. These results establish Diverg-ing Flows as a robust solution for trustworthy flow models, paving the way for reliable deployment in domains such as medicine, robotics, and climate science. 
+
+## 1. Introduction 
+
+Conditional generative models have transcended their initial successes in media synthesis to become effective tools for probabilistic regression in scientific discovery and decision-making. Unlike traditional deterministic regression, which outputs a single mean prediction, these models learn the full conditional density p(y|x) mapping complex inputs to high-dimensional target states. While Diffusion models initially drove this wave (Sohl-Dickstein et al., 2015; Ho et al., 2020), Flow Matching (FM) (Lipman et al., 2022; Tong et al., 2023) has emerged as a superior alternative for physical model-ing. Crucially, whereas Diffusion models induce complex, 
+
+> 1
+
+Inria, Universit ´e de Lorraine, CNRS, Loria, F-54000. Correspondence to: Constantinos Tsakonas <konstanti-nos.tsakonas@inria.fr >.
+
+Preprint. February 16, 2026. Flow Matching 
+
+> Flow ODE
+
+Diverging Flows  
+
+> ::
+> Conditions
+
+Figure 1. Conceptual overview of Diverging Flows. (Top) Flow Matching minimizes transport cost everywhere, forcing off-manifold inputs (red) to converge silently. (Bottom) Diverging Flows breaks this symmetry by enforcing transport inefficiency for invalid conditions. This ensures valid conditions ( c) induce optimal flows, while off-manifold inputs ( ˜c) trigger detectable divergence. 
+
+curved trajectories due to their underlying noise schedules, Optimal Transport FM (OT-FM) explicitly optimizes for straight-line, constant-velocity paths. This makes OT-FM more computationally efficient and numerically stable than Diffusion, providing the precise, high-fidelity control re-quired in critical domains such as robotics (Chi et al., 2023; Black et al., 2024; Rouxel et al., 2024; 2025) and climate forecasting (Chen & Lipman, 2024). However, a fundamental limitation of these models is their lack of transparency. It is a core requirement of responsible AI that models should not be trusted on inputs for which they were not trained (Cao & Yousefzadeh, 2023). Yet, FM models inherently violate this principle. Driven by strong inductive biases towards smoothness and generalization (Ra-haman et al., 2019), they tend to fail silently when queried with off-manifold conditions. 1
+
+> arXiv:2602.13061v1 [cs.LG] 13 Feb 2026 Diverging Flows: Detecting Extrapolations in Conditional Generation
+
+Rather than signaling uncertainty, these models extrapolate, generating plausible-looking outputs even for physically impossible or semantically meaningless inputs. Addition-ally, standard likelihood-based safety checks are ineffective, due to the ”likelihood paradox” where models assign high confidence to simple off-manifold inputs (Nalisnick et al., 2018; Serr `a et al., 2019). While such hallucination is a fea-ture in creative synthesis (Mariani et al., 2024; Guerreiro et al., 2024; Kim et al., 2024; Ki et al., 2025), in scientific and industrial domains, knowing whether a model has ex-trapolated is a fundamental requirement for transparency and accountability (Herrera-Poyatos et al., 2025). Without this mechanism, high-stakes deployment remains danger-ous (Price et al., 2025; Rouxel et al., 2024). To understand the critical role of these models as regressors, consider an autonomous energy grid relying on generative model for weather forecasts to balance load. In this setting, the model’s greatest strength, its ability model a complex conditional distribution, becomes its most dangerous prop-erty. If a satellite sensor malfunctions and feeds the model thermodynamically impossible data, a standard FM model will not fail visibly. Instead, it will silently hallucinate a coherent, high-resolution storm front to reconcile the glitch. The grid control system, receiving a technically valid fore-cast, might trigger emergency measures based on a phantom event. Hence, in high-stakes regression, the capacity to re-ject an invalid input is as critical as the capacity to predict a future one. Addressing this effectively is difficult because the source of the error is the model’s own capabilities to create a smooth flow. Modern backbones (e.g., Transformers, U-Nets) are so effective at generalizing that they can find a smooth path between almost any arbitrary input and output. Existing solutions often rely on training separate classifiers or One-Class Classifiers (Cui et al., 2023; Chalapathy & Chawla, 2019), doubling the computational cost. Others rely on explicit outlier exposure (Hendrycks et al., 2018), which requires a representative dataset of ”unknowns”, an assump-tion that requires knowing what you do not know. Regarding OT-FM, we believe that the solution for that problem lies in the geometry of the generative process. We hypothesize that an FM model should exhibit a geometric phase transition : valid conditions must induce optimal trans-port, while off-manifold queries should trigger a breakdown in the vector field. This structural divergence transforms de-tection from a statistical problem into a geometric constraint, allowing the model to signal its limits via path turbulence. Closely related to the standard out-of-distribution (OOD) detection, this re-frames the problem as conservative distri-bution learning (Ma et al., 2021; Shao et al., 2024; Lubold & Taylor, 2022). To this end, our core contribution is a unified framework that enables a single Flow Matching model to perform high-fidelity prediction while detecting extrapolations , eliminating the need for external models. 
+
+## 2. Related Work 
+
+2.1. Generative Models for Predictive Tasks 
+
+In robotics, Flow Matching and Diffusion models have be-come a successful alternative for visuomotor control poli-cies, learning to map sensory observations to precise action trajectories (Chi et al., 2023; Black et al., 2024; Rouxel et al., 2024). Additionally, in computational biology, these models have been successfully applied to protein backbone design, regressing 3D molecular structures from sequence condi-tioning (Jing et al., 2023; Bose et al., 2023). Similarly, in earth sciences and healthcare, FM and diffusion models are deployed for global weather forecasting (Chen & Lipman, 2024; Price et al., 2025; Andrae et al., 2025; Chan et al., 2024), clinical time-series modeling (Zhang et al., 2024), as well as, general time-series forecasting (Kollovieh et al., 2024; 2023). However, while these works demonstrate the efficacy of generative models for high-fidelity regression, they typically prioritize in-distribution performance. They lack intrinsic mechanisms to flag off-manifold queries, re-lying entirely on the model’s ability to extrapolate, which poses severe risks in safety-critical deployments. 
+
+2.2. Off-Manifold Detection with Generative Models 
+
+While extensive literature exists for OOD detection in dis-criminative models (Liang et al., 2017; Sun et al., 2022; Li et al., 2023), addressing this challenge in conditional generative models remains underexplored. Prior unsuper-vised efforts primarily rely on likelihood criteria or recon-struction scores. However, likelihood-based approaches are not sufficient (Nalisnick et al., 2018; Hendrycks et al., 2018). Attempts to mitigate this via input complexity cor-rections (Serr `a et al., 2019) or generative ensembles (Choi et al., 2018) have met with limited success, often function-ing as computationally expensive post-hoc solutions than tackling the root cause. Similarly, reconstruction-based methods using autoencoders or diffusion models (Liu et al., 2023; Graham et al., 2023) detect anomalies based on restoration errors. While effec-tive as solely OOD detector, these strategies operate on the 
+
+output space, assessing generation quality rather than vali-dating the conditioning input itself, and typically serve as expensive external wrappers rather than integrated safety mechanisms. Lastly, DiffPath (Heng et al., 2024) proposes a passive de-tection strategy based on analyzing the dynamics of the reverse generation process. However, the applicability of this framework to our setting is restricted by two structural differences. First, it is designed strictly for unconditional 2Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+models and has not been extended to conditional generation. Consequently, it inherently lacks a mechanism to explicitly evaluate the validity of the conditioning input. Second, the method relies on the specific curvature of diffusion SDE trajectories. It is incompatible with OT-FM, where Opti-mal Transport induces straight-line geodesics that erase the geometric signals DiffPath requires. 
+
+## 3. Diverging Flows 
+
+3.1. Problem Formulation 
+
+We define the task of Extrapolation-Aware Probabilistic Regression as learning a mapping fθ : X → P (Y) × R that outputs both a predictive distribution and an extrapolation indicator. Formally, for an input x:
+
+fθ (x) = ( pθ (y|x), S θ (x)) (1) where pθ (·| x) approximates the conditional data density 
+
+pdata (y|x), and Sθ (x) serves as an extrapolation score. To ensure safety, this tuple must satisfy two critical prop-erties: (i) Fidelity , where for in-distribution inputs ( x ∈MID ), pθ minimizes the divergence from the true condi-tional distribution; and (ii) Trust , where the score acts as a discriminator for manifold membership, effectively separat-ing valid from invalid inputs such that Sθ (˜ x) > S θ (x) for any ˜x / ∈ M ID and x ∈ M ID .
+
+3.2. Flow Matching 
+
+We realize the predictive component of our formulation using the OT-FM framework (Lipman et al., 2022). For consistency with FM literature, we denote the target state as x ∈ X and the conditioning input as c ∈ C . While we frame our analysis in terms of probabilistic regression, this formulation is mathematically general and naturally extends to conditional generation tasks .The generative process in conditional generation is governed by the flow ODE: 
+
+dψ t(x)
+
+dt = vθt (ψt(x), c ), (2) where t ∈ [0 , 1] , and vθt is a neural vector field that pushes a noise prior p0 to the target density p1(·| c). This proba-bilistic formulation naturally handles aleatoric uncertainty arising from inherent data noise. By sampling N trajecto-ries {ψ(i)1 (c)}Ni=1 ∼ pθ (·| c) generated by solving Eq. 2, we approximate the conditional expectation to obtain a robust prediction: 
+
+ˆx = Epθ [x|c] ≈ 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+ψ1(x(i)0 ; c). (3) While this Monte Carlo integration effectively filters stochas-tic noise, it fails to guarantee model trustworthiness. For an off-manifold condition ˜c disjoint from the training sup-port, the FM continues to generate a coherent, low-variance predictive distribution, yielding a plausible but extrapolated prediction ˆx, rendering the standard estimator insufficient for safety-critical applications. 
+
+3.3. The Extrapolation Risk 
+
+Let X = Rd denote the data space and C = Rk the conditioning space. We assume valid conditions lie on a lower-dimensional manifold MID ⊂ C with support defined by the data distribution p1(c). The complement 
+
+COOD = Rk \ M ID represents the off-manifold regime. Optimal Transport theory establishes that the most ef-ficient probability path follows the Euclidean geodesic 
+
+uOT t (x|x1) = x1 − x0, minimizing the kinetic energy of the transport (Benamou & Brenier, 2000). We define the 
+
+Transport Energy Excess , E(vθ ; c), as the deviation of the learned vector field from this optimal geodesic: 
+
+E(vθ ; c) = Et,x t
+
+|| vθt (xt, c ) − uOT t (xt|x1)|| 2 . (4) We highlight that minimizing E(vθ ; c) is equivalent to the OT-FM objective, LFM (Lipman et al., 2022). Thus, standard training explicitly optimizes for efficiency, unintentionally enforcing the silent failure mode on invalid inputs. Ideally, a safe predictor would exhibit a geometric phase transition : minimizing E(vθ ; c) → 0 for c ∈ M ID (high fidelity) while maximizing E(vθ ; ˜ c) ≫ 0 for ˜c ∈ C OOD 
+
+(detectable divergence). However, for the ODE solution ψt to be unique and well-defined, the vector field ut must be locally Lipschitz con-tinuous with respect to c (Coddington & Levinson, 1955; Lipman et al., 2024). That is, there exists a constant K such that for any x ∈ X and c, c ′ ∈ C :
+
+|| ut(x, c ) − ut(x, c ′)|| 2 ≤ K|| c − c′|| 2. (5) Combined with the spectral bias of deep neural networks (Rahaman et al., 2019), which preferentially learns low-frequency functions, the trained model inherently mini-mizes this Lipschitz constant K. This regularity creates a fundamental extrapolation hazard . For any off-manifold query ˜c residing in an ϵ-neighborhood of a valid condition 
+
+c ∈ M ID , the change in transport energy is bounded by the Lipschitz property: 
+
+|E (vθ ; ˜ c) − E (vθ ; c)| ≤ L · || ˜c − c|| 2 ≈ 0 (6) where L is a constant dependent on K. Since E(vθ ; c) ≈ 0
+
+for valid data (by training), the inequality forces E(vθ ; ˜ c) ≈
+
+0. Eq. 6 constrains pointwise velocities but not the full 3Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+trajectories defining E(vθ ; ˜ c), yet it describes the silent ex-trapolation behavior observed in FM models. Consequently, the model predicts efficient paths even for invalid inputs. This silent failure creates trajectories that resemble valid ones, making standard detection ineffective. We attribute this to the smoothness of the vector field: without explicit penalties, the model defaults to the simplest path for any input, regardless of its validity. 
+
+3.4. Contrasting Vector Fields 
+
+To enforce the geometric property described in Sec. 3.3, we adapt contrastive learning principles (Hadsell et al., 2006; Chen et al., 2020). Traditionally, contrastive learning orga-nizes data in an embedding space by pulling semantically similar inputs (positives) together while pushing dissimilar ones (negatives) apart. We extend this logic to the space of vector fields, treating the optimal geodesic uOT t as a ge-ometric anchor . By pulling valid vector fields toward this anchor and pushing off-manifold ones away, we induce a controlled violation of the smoothness bias. This locally maximizes the Lipschitz constant at the manifold boundary, transforming the smooth extrapolation into a sharp gradient that signals invalidity. Let (x1, c ) be a valid data-condition pair from the training set. We define the predicted velocity field under the valid condition, ˆut,c = vθt (xt, c ), as the positive sample, and the velocity field under the off-manifold condition, ˆut, ˜c =
+
+vθt (xt, ˜c), as the negative sample. We introduce two margin-based penalty terms inspired by triplet loss objectives (Balntas et al., 2016). These terms con-strain the geometric relationship between the target vector field ut and the model’s predictions. First, the repulsion loss ( Lrepel ) encourages separation in Euclidean magnitude, ensuring that the error for the off-manifold condition is significantly higher than for the on-manifold condition. Second, the curvature loss ( Lcurve ) pro-motes directional divergence, penalizing off-manifold flows that align with the optimal transport path. We define these formally as: 
+
+Lrepel = max {d1(ut, ˆuc) − d1(ut, ˆu˜c) + mr , 0} (7) 
+
+Lcurve = max {d2(ut, ˆuc) − d2(ut, ˆu˜c) + mc, 0} (8) where d1(a, b ) = ∥a − b∥2 is the Euclidean distance, and 
+
+d2(a, b ) = 1 − a·b 
+
+> ∥a∥∥ b∥
+
+is the cosines distance. The hy-perparameters mr and mc represent the desired margin of separation for magnitude and angle, respectively. The final training objective, Diverging Flows (DiFlo), com-bines the FM loss with these contrastive regularizers: 
+
+LDiFlo = ∥uOT t − vθt (xt, c )∥2 + λL repel + βL curve (9) where λ and β, the weights of each contrastive component. This objective equips the model with an implicit ability to capture the manifold of valid conditions. The repulsion term forces the kinetic energy of off-manifold flows to deviate from the optimal transport cost, while the curvature term steers the vector field orthogonally to the geodesic path. As a result, solving the ODE (Eq. 2) yields flows that di-verge substantially depending on the conditioning input, as illustrated in Figure 1. 
+
+3.5. Negative Sample Creation 
+
+The effectiveness of the contrastive objective is dependent on the quality of the negative samples. Random noise is often too easy to distinguish, failing to shape the decision boundary tightly around the MID . To induce a sharp ge-ometric transition, we require hard negatives, inputs that occupy the ϵ-neighborhood of the valid support but violate the underlying properties. We employ an adversarial outlier mining strategy. We define the optimal negative sample ˜c∗ as the local perturbation that maximizes the model’s transport energy, effectively identifying the direction of highest geometric sensitivity: 
+
+˜c∗ = argmax 
+
+> ˜c:|| ˜c−c||≤ ϵ
+
+|| vθt (xt, ˜c) − uOT t || 2. (10) In practice, we use Projected Gradient Descent (PGD) (Madry et al., 2017). PGD performs an iterative ascent along the gradient of LF M , projecting perturbations back onto the ϵ-ball Bϵ(c) at each step: 
+
+˜ck+1 = Π Bϵ(c) (˜ ck + η · sgn (∇˜cLF M (˜ ck))) . (11) We employ PGD to target local directions where the model attempts to generalize via smoothness, rather than enumerat-ing infinite off-manifold inputs. Because the model relies on Lipschitz continuity to extend valid transport dynamics to off-manifold regions, structurally breaking this smoothness at the immediate boundary forces the model to implicitly learn the valid support. For the training algorithm of Diverg-ing Flows see Appendix A.1. 
+
+3.6. Detection of Off-Manifold Inputs 
+
+We propose a detection metric grounded in the geometry of OT-FM. As established in the previous section, the target probability path for valid data is the straight line connecting the source p0 and the target p1 (Lipman et al., 2022). At inference time, given a starting noise sample x0 and a condition c, the model generates a trajectory {ˆxt}1
+
+> t=0
+
+ending at the predicted sample ˆx1. Hence, we can evaluate the efficiency of the path taken to reach the prediction. We define the ideal optimal transport trajectory xopt as the direct linear interpolation between the start and the generated end, 
+
+xopt  
+
+> t
+
+= (1 − t)x0 + tˆx1, where t ∈ [0 , 1] .4Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+A well-trained FM model conditioned on on-manifold data approximates this linear path, resulting in a generated trajec-tory where ˆxt ≈ xopt  
+
+> t
+
+. Conversely, our contrastive objective (Eq. 9) prompts the vector field to diverge significantly from this linearity when the condition is off-manifold. To quantify this behavior, we introduce the Divergence from Optimal Trajectory (DOT) score. We define the DOT score as the integral of the L1 distance between the generated trajectory ˆxt and the ideal linear interpolant xopt  
+
+> t
+
+over the generation interval: 
+
+SDOT (ˆ x0:1 ) = 
+
+Z 10
+
+∥ˆxt − xopt  
+
+> t
+
+∥1 dt. (12) This metric effectively measures the area between the actual flow path and the chord connecting x0 and ˆx1. In practice, we solve the flow ODE using a numerical solver with N dis-crete time steps {t0, . . . , t N }. The discrete approximation of the SDOT score, averaged over spatial dimensions D, is given by: 
+
+ˆSDOT =
+
+> N
+
+X
+
+> i=0
+
+1
+
+D
+
+> D
+
+X
+
+> d=1
+
+|ˆx(d) 
+
+> ti
+
+− xopt (d) 
+
+> ti
+
+|
+
+!
+
+(13) where ˆx(d) 
+
+> ti
+
+is the value of the d-th dimension of the gener-ated trajectory at time step ti, and xopt (d) 
+
+> ti
+
+is the correspond-ing value on the ideal linear path. This metric captures the turbulence induced by our contrastive training. While on-manifold flows remain nearly straight (yielding ˆSDOT ≈ 0), extrapolation flows exhibit significant curvature and devi-ation from the geodesic (Figure 1), resulting in positive, large ˆSDOT values. For the algorithmic formulation of the inference refer to Appendix A.2. 
+
+3.7. Split Conformal Prediction 
+
+To ensure safety-critical reliability, we employ split con-formal prediction (Gammerman et al., 1998; Angelopoulos et al., 2024) to construct a statistically valid decision bound-ary. Given a user-specified error rate α ∈ (0 , 1) , our goal is to identify a validity interval [qlo , q hi ] such that the proba-bility of a valid on-manifold input falling outside this range is bounded by α.We reserve a calibration dataset of M exchangeable on-manifold conditions. We first compute the ˆSDOT for these samples and sort them in ascending order, denoting the sorted scores as Scal = {s(1) , s (2) , . . . , s (M )}. We imple-ment a two-sided conformal interval approach to determine the decision boundaries. Specifically, we distribute the error budget α equally between the lower and upper tails of the distribution. We calculate the indices for the lower and upper bounds as klo = ⌊(M + 1) α 
+
+> 2
+
+⌋ and khi = ⌈(M + 1)(1 − α 
+
+> 2
+
+)⌉.The decision thresholds are then defined by the scores at these ranks: qlo = s(klo ) and qhi = s(khi ).At inference time, a query condition ctest is accepted as in-distribution if and only if its score lies within the calibrated interval: qlo ≤ ˆSDOT (x(ctest )) ≤ qhi 
+
+If the score falls outside this range, the input is flagged as invalid. Based on the exchangeability of the calibra-tion and test data, this procedure provides a rigorous guar-antee on the marginal coverage. The probability that a valid on-manifold input is correctly accepted satisfies, 
+
+P(qlo ≤ ˆSDOT (xtest ) ≤ qhi ) ≥ 1 − α. This ensures that the False Positive Rate (FPR), the rate at which valid inputs are incorrectly rejected, is controlled at level α.
+
+## 4. Experiments 
+
+We evaluate Diverging Flows (DiFlo) across three distinct regimes that showcase the geometric behavior and deploy-ment viability: (i) geometric verification on synthetic mani-folds, (ii) weather temperature forecasting, and (iii) cross-domain style transfer. Since no existing Flow or Diffu-sion models inherently integrate off-manifold detection, we benchmark primarily against standard FM. To strictly eval-uate intrinsic extrapolation detection, we exclude methods requiring auxiliary networks or post-hoc pipelines, instead evaluating the baseline via two distinct scoring mechanisms. First, we employ our proposed DOT score on the standard model; this acts a verification that detection capabilities stem from the contrastive reshaping of the vector field rather than the metric alone. Second, we compare against the FM model’s likelihood, representing the conventional statistical approach. Following Lipman et al. (2024), we estimate this using the instantaneous change of variables formula with Hutchinson’s trace estimator: 
+
+log p1(ψ1(x)) = log p0(ψ0(x)) 
+
+−EZ
+
+Z 10
+
+tr ZT ∂xvt(ψt(x)) Z dt, (14) where Z ∈ Rd×d is a random variable with E[Z] = 0 
+
+and Cov (Z, Z ) = I. This formulation allows for scalable likelihood estimation via vector-Jacobian products. Finally, for completeness, we provide a pure detection benchmark comparing Diverging Flows against the DiffPath detector in Appendix B.4. We quantify Safety via two metrics: (1) the AUROC (Fawcett, 2006), measuring global separability; and (2) the FPR governed by split conformal prediction constraints. We calibrate a decision region Cα to guarantee a marginal cov-erage of 1 − α for on-manifold inputs. The FPR reports the percentage of off-manifold anomalies ˜c that incorrectly satisfy this condition, defined formally as FPR = P(S(˜ c) ∈Cα | ˜c / ∈ M ID ). For Fidelity , we ensure our contrastive objective does not degrade predictive performance using task-specific metrics. In regression, we monitor physical consistency via Mean Squared Error ( MSE = E[∥y − ˆy∥22]), 5Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+Figure 2. Vector Dynamics on Synthetic Manifolds. Two experiments, Probabilistic Regression (left), with horizon of 10 steps, and Conditional Generation (right). Top: Standard FM forces smooth convergence for all inputs, causing silent hallucinations. Bottom: Diverging Flows learns a conservative field: on-manifold inputs (green) follow optimal paths, while off-manifold queries (orange) trigger divergent flows, creating a geometric detection signal. 
+
+Peak Signal-to-Noise Ratio ( PSNR ) (Hore & Ziou, 2010), and Structural Similarity ( SSIM ) (Wang et al., 2003; 2004). In generative tasks, we assess distribution quality via the Fr ´echet Inception Distance (Heusel et al., 2017), defined as FID = ∥μr − μg ∥2 + Tr (Σ r + Σ g − 2(Σ r Σg )1/2), and Perceptual Similarity (LPIPS) (Zhang et al., 2018). De-tailed hyperparameters and architecture specifications are provided in Appendix B. 
+
+4.1. Synthetic Manifold Experiments 
+
+We validate our framework on a 2D spiral manifold MID ⊂
+
+[−1, 1] 2 parameterized by θ ∼ U [0 , 5π]. A valid sam-ple x(θ) is defined as: x(θ) = r(θ)(cos θ sin θ)⊺ + ξ,where ξ ∼ N (0 , σ 2I), r(θ) = θ 
+
+> 5π
+
+is the normalized ra-dius and σ = 0 .005 represents intrinsic noise. The out-of-distribution set is defined as the ambient space strictly sepa-rated from the manifold support: COOD = {c ∈ [−1, 1] 2 |
+
+min c′∈M ID ∥c − c′∥2 > ϵ }.We evaluate two conditional tasks: (i) Probabilistic Regres-sion: Given a current state c = x(θk), the model predicts the future trajectory y = [ x(θk+1 ), . . . , x (θk+10 )] . This tests the preservation of local dynamics alongside the abil-ity to reject invalid inputs. (ii) Conditional Generation: 
+
+The model learns pθ (x|c) ≈ p1(x) for any valid condition 
+
+c ∈ M ID , subject to x̸ = c. Here, c acts as a validity token; off-manifold conditions must trigger vector field divergence rather than sampling valid data. The results of the experi-ments are illustrated in Figure 2, where we show how the flow ODE of FM and DiFlo behaves when an off-manifold input is encountered. 
+
+Ablation Study. To isolate the contribution of each ob-jective component, we compare Diverging Flows against three variants: (i) w/o Lrepel (λ = 0 ) to test directional divergence alone; (ii) w/o Lcurve (β = 0 ) to test magnitude penalties alone; and (iii) Random Noise, replacing PGD negative mining with ˜c ∼ U [−1, 1] to validate the necessity of adversarial examples. 
+
+Table 1. Results on Synthetic Manifolds. We report detection metrics (AUROC, FPR) for both tasks and predictive accuracy (MSE) for regression. FM fails to detect off-manifold inputs effec-tively, while Diverging Flows achieves consistently high separation (> 0.98 AUROC) with low FPR after the conformal calibration.                                                     
+
+> Algorithm AUROC ↑FPR (%) ↓MSE ↓
+> Conditional Generation
+> FM-Likelihood 0.510 94.62 –FM-DOT 0.507 95.10 –DiFlo (Ours) 0.981 5.46 –
+> Probabilistic Regression
+> FM-Likelihood 0.565 93.32 6×10 −4
+> FM-DOT 0.602 92.34 6×10 −4
+> DiFlo w/o Lrepel 0.711 10.45 7×10 −4
+> DiFlo w/o Lcurve 0.931 20.69 5×10 −4
+> DiFlo w/ ˜c∼ U [−1,1] 0.662 90.45 7×10 −4
+> DiFlo (Ours) 0.998 3.45 7×10 −4
+
+In Table 1, we empirically confirm the smoothness hazard inherent to Flow Matching. The baseline yields AUROC scores near 0.50 for both tasks, effectively reducing off-manifold detection to random guessing. This proves that without explicit constraints, the model extrapolates efficient linear paths even for invalid inputs. In contrast, Diverg-ing Flows induces a sharp geometric transition, achieving consistently high separation (AUROC > 0.98 ) while main-taining predictive fidelity comparable to the baseline. This confirms that safety can be embedded into the vector field 6Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+without compromising in-distribution dynamics. The ablation study highlights the critical role of PGD. Re-placing PGD with random noise negatives degrades perfor-mance significantly (AUROC 0.662 ), confirming that easy negatives fail to tighten the vector field around the mani-fold support. Furthermore, we observe that the repulsion term Lrepel is the primary driver of the detection signal; removing it causes a sharper drop in performance compared to removing the curvature penalty Lcurve , though both are required for optimal separation. 
+
+4.2. Weather Temperature Forecasting 
+
+We evaluate the deployment viability of Diverging Flows on the ERA5 dataset (Hersbach et al., 2020), by forecasting surface temperature heatmaps ( 64 × 64 ) six hours into the future. The model pθ (xt+6 h|xt) is parameterized as a U-Net, where the current atmospheric state xt is injected via cross-attention layers to condition the generation of the future state. This domain demands strict adherence to physical laws; a re-liable model must reject inputs that violate thermodynamic principles. To test the physical consistency, we adopt the artificial hotspot setup from Chan et al. (2024). We perturb valid inputs by injecting thermal anomalies into historically cold regions. These perturbations are semantically plau-sible as images but violate local thermodynamic laws. A conservative forecaster must identify these inputs as physi-cally infeasible rather than hallucinating. We compare our method against standard FM and HyperDM, the diffusion-based baseline proposed in the original benchmark, however, this approach does not provide off-manifold detection. 
+
+Table 2. Weather Temperature Forecasting Performance (ERA5). We compare predictive fidelity (MSE, SSIM, PSNR) and detection (AUROC). Diverging Flows achieves robust detection of physical anomalies ( 0.98 AUROC), while maintaining competitive predic-tive fidelity on valid forecasts, compared to the random guessing of the FM baseline. 
+
+Algorithm MSE ↓ SSIM ↑ PSNR ↑ AUROC ↑
+
+HyperDM 0.004 0.954 33.15 —FM-Likelihood 0.0038 0.955 34.23 0.556 FM-DOT 0.0038 0.955 34.23 0.601 DiFlo (Ours) 0.0034 0.951 34.03 0.980 
+
+Table 2 demonstrate that standard models fail to capture physical constraints. The FM baseline yields a near-random AUROC because it ignores the violation, treating the hotspot as valid high-frequency noise, as illustrated in Figure 3. Compared to the HyperDM baseline, flow-based methods perform slightly better, in terms of predictive fidelity. In contrast, Diverging Flows achieves near-perfect detec-tion. By altering the transport for invalid inputs, the model effectively learns to check for physical validity. Critically, this mechanism improves predictive fidelity, since Diverging Flows achieves an MSE of 0.0034 , while slightly decreasing in SSIM metric. This confirms that geometric regularization effectively filters unphysical dynamics without hindering the learning of valid temperature patterns. Lastly, conformal prediction ( α = 0 .05 ) yields a 5.20% FPR, providing a rigorous statistical guarantee of 95% coverage while identi-fying extrapolations. On-Manifold              
+
+> Input ( xt)Prediction ( xt+ 1 )
+> Predicted Shift
+> (ˆxt+ 1 −xt)
+> True Shift
+> (xt+ 1 −xt)
+> Diverging Flows
+> Off-Manifold Input
+> Diverging Flows
+> Prediction
+> Flow Matching
+> Off-Manifold Input
+> Flow Matching
+> Prediction
+> SDOT Valid Invalid
+> SDOT Valid Invalid SDOT Valid Invalid
+> Diverging Flows Prediction Example
+> Behavior on Off-Manifold Conditions
+
+Figure 3. High-Fidelity Forecasts with Diverging Flows. (Top) Visual comparison of 6-hour temperature forecasts. Diverging Flows accurately captures complex thermal fronts and fine-grained dynamics with MSE and SSIM of 0.0004 and 0.961 respectively, demonstrating that the regularization for hallucination detection does not compromise the model’s capacity for precise physical regression. (Bottom) Comparison of the behavior of Diverging Flows and FM when an invalid condition is encountered. 
+
+4.3. Cross-Domain Style Transfer 
+
+Finally, we investigate the model’s ability to handle structurally disjoint conditioning manifolds by mapping grayscale MNIST digits ( c) (LeCun & Cortes, 1998) to RGB Street House View Numbers (SVHN) ( x) (Netzer et al., 2011). We introduce Fashion-MNIST (FMNIST) (Xiao et al., 2017) and Kuzushiji-MNIST (KMNIST) (Clanuwat et al., 2018) to probe whether Diverging Flows implicitly captures the semantic support of valid conditions. FM-NIST represents a clear structural shift (clothing vs. digits), whereas KMNIST poses a harder semantic shift , sharing significant low-level statistics (e.g., stroke density) with MNIST. Table 3 highlights that FM ignores the semantic meaning, since it extrapolates confident paths for KMNIST (near-random AUROC). In contrast, Diverging Flows imposes a robust boundary via PGD, learning to reject non-digit con-cepts ( > 0.86 AUROC). Crucially, this awareness comes with negligible cost to generation quality; as shown in Fig-ure 4, the model retains expressivity for valid inputs, con-firming that geometric regularization targets invalid seman-tics without constraining the valid generative distribution. 7Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+Table 3. Cross-Domain Style Transfer Results. We evaluate gener-ation quality (FID, LPIPS) and detection (AUROC) against struc-tural (FMNIST) and semantic (KMNIST) shifts. Diverging Flows successfully learns a semantic boundary, rejecting invalid queries without degrading the generative quality (FID) compared to the baseline. 
+
+Algorithm FID-50K ↓ LPIPS ↓ AUROC ↑
+
+vs FMNIST vs KMNIST FM-Likelihood 4.102 0.2172 0.529 0.516 FM-DOT 4.102 0.2172 0.527 0.513 DiFlo (Ours) 4.104 0.2202 0.955 0.860 Valid Invalid    
+
+> Valid Invalid
+> SDOT
+> SDOT
+> On-Manifold
+> Input
+> Domain
+> Transfer
+> Off-Manifold
+> Input
+> Domain
+> Transfer
+> Cross-Domain Style Transfer:
+> MNIST →SVHN
+
+Figure 4. Generative Quality in Cross-Domain Transfer. Sam-ples mapping structural inputs (MNIST) to street-view imagery (SVHN). Diverging Flows preserves the semantic identity of the digit. This demonstrates that regularization targets invalid seman-tics without restricting diversity. 
+
+4.4. Efficacy of Negative Sampling Strategies 
+
+To isolate the contribution of our adversarial negative min-ing, we compare Diverging Flows trained with PGD against three alternative negative sampling strategies: (i) Heuristics :Domain-specific augmentations (random resized crops, ro-tations, and Gaussian blur) intended to create near-manifold perturbations; (ii) Masking : Random and checkerboard masking strategies that remove spatial information; and (iii) 
+
+Outlier Exposure : Using the Omniglot (Lake et al., 2015) dataset as a source of explicit, fixed negative samples. 
+
+Table 4. Negative Sampling Ablation. Comparison of sampling strategies across domains. While domain-specific heuristics fail to generalize (e.g., Weather), PGD achieves consistent high perfor-mance on all tasks.                 
+
+> Sampling Method Temperature Forecasting Style Transfer
+> Hotspots FMNIST KMNIST Masking 0.729 0.654 0.541 Outlier Exposure N/A 0.710 0.572 Domain Transforms 0.733 0.987 0.892 PGD (Ours) 0.980 0.955 0.860
+
+The results in Table 4 highlight a limitation of static nega-tive sampling: it requires prior knowledge of the manifold boundary. Heuristic Transforms perform exceptionally well on the digit tasks (outperforming PGD slightly on FM-NIST/KMNIST) because shifts like rotation and cropping directly align with the known invariances of character recog-nition. However, the same strategy fails completely on the Weather task. In a physical system, a rotated pressure field is not an off-manifold sample, it is often a impossible or represents a completely different valid state, making sim-ple augmentations insufficient for defining the boundary of thermodynamic validity, without the required domain knowl-edge. Similarly, Outlier Exposure and Masking struggle to generalize. Outlier exposure effectively overfits to the specific negative dataset (Omniglot) and fails to detect shifts in semantic structure (KMNIST) that do not resemble the training negatives. In contrast, PGD proves to be the only modality-agnostic so-lution. By dynamically optimizing for the hardest negative in the local neighborhood of the input, PGD automatically discovers the relevant boundary constraints. While it may be slightly outperformed by hand-crafted heuristics in simple domains, it achieves consistent, high-performance detection across domains without requiring manual, domain-specific engineering. 
+
+## 5. Conclusion and Limitations 
+
+Diverging Flows allows a single Flow Matching model to si-multaneously perform high-fidelity prediction and intrinsic extrapolation detection. Our core contribution is the formu-lation of a geometric phase transition: by actively enforcing trajectory divergence for off-manifold inputs, we transform the vector field from a generator into a self-monitoring mech-anism. This shifts extrapolation detection from a post-hoc statistical estimation problem to a geometric constraint, en-suring that safety is an inherent property of the dynamics rather than an external add-on. Crucially, this design of Di-verging Flows introduces zero inference overhead, establish-ing it as a robust solution for real-time critical applications. A limitation of our approach is the training overhead re-quired to create hard negatives via iterative adversarial up-dates. Additionally, our current formulation relies on Eu-clidean Optimal Transport; but the contrastive principles developed here can easily be extended to Riemannian mani-folds, which would make it effective to support geometric deep learning tasks (Chen & Lipman, 2024). Finally, we plan to deploy Diverging Flows in real-world robotic tasks, where detecting extrapolations is essential to avert poten-tially harmful outcomes. 
+
+## Acknowledgments 
+
+This work was supported by a DGA-Inria contract (ATOR Project), the EU Horizon project euROBIN (GA n.101070596), and the France 2030 program through the PEPR O2R projects AS3 and PI3 (ANR-22-EXOD-007, 8Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+ANR-22-EXOD). 
+
+## Impact Statement 
+
+The goal of this work is to advance the reliability of genera-tive models in scientific and industrial tasks. By enabling models to detect and reject extrapolations, our method miti-gates the risks of silent hallucinations in safety-critical ap-plications such as weather forecasting, autonomous systems, and scientific discovery. We believe this work contributes positively to the responsible deployment of machine learn-ing in high-stakes domains by transforming invisible failure modes into detectable signals. We do not foresee specific negative societal consequences, as the primary focus of this work is to advance machine learning for reliability and transparency. 
+
+## References 
+
+Andrae, M., Landelius, T., Oskarsson, J., and Lindsten, F. Continuous ensemble weather forecasting with diffusion models. In The Thirteenth International Conference on Learning Representations , 2025. Angelopoulos, A. N., Barber, R. F., and Bates, S. Theoreti-cal foundations of conformal prediction. arXiv preprint arXiv:2411.11824 , 2024. Balntas, V., Riba, E., Ponsa, D., and Mikolajczyk, K. Learn-ing local feature descriptors with triplets and shallow convolutional neural networks. In Bmvc , volume 1, pp. 3, 2016. Benamou, J.-D. and Brenier, Y. A computational fluid me-chanics solution to the monge-kantorovich mass transfer problem. Numerische Mathematik , 84(3):375–393, 2000. Black, K., Brown, N., Driess, D., Esmail, A., Equi, M., Finn, C., Fusai, N., Groom, L., Hausman, K., Ichter, B., et al. π0: A vision-language-action flow model for general robot control. arXiv preprint arXiv:2410.24164 ,2024. Bose, A. J., Akhound-Sadegh, T., Huguet, G., Fatras, K., Rector-Brooks, J., Liu, C.-H., Nica, A. C., Korablyov, M., Bronstein, M., and Tong, A. Se (3)-stochastic flow matching for protein backbone generation. arXiv preprint arXiv:2310.02391 , 2023. Cao, X. and Yousefzadeh, R. Extrapolation and ai trans-parency: Why machine learning models should reveal when they make decisions beyond their training. Big Data & Society , 10(1):20539517231169731, 2023. doi: 10.1177/20539517231169731. Chalapathy, R. and Chawla, S. Deep learning for anomaly detection: A survey. arXiv preprint arXiv:1901.03407 ,2019. Chan, M., Molina, M., and Metzler, C. Estimating epistemic and aleatoric uncertainty with a single model. Advances in Neural Information Processing Systems , 37:109845– 109870, 2024. Chen, R. T., Rubanova, Y., Bettencourt, J., and Duvenaud, D. K. Neural ordinary differential equations. Advances in Neural Information Processing Systems , 31, 2018. Chen, R. T. Q. and Lipman, Y. Flow matching on general geometries. In The Twelfth International Conference on Learning Representations , 2024. Chen, T., Kornblith, S., Norouzi, M., and Hinton, G. Asimple framework for contrastive learning of visual rep-resentations. In International Conference on Machine Learning , pp. 1597–1607. PMLR, 2020. Chi, C., Xu, Z., Feng, S., Cousineau, E., Du, Y., Burchfiel, B., Tedrake, R., and Song, S. Diffusion policy: Visuomo-tor policy learning via action diffusion. The International Journal of Robotics Research , pp. 02783649241273668, 2023. Choi, H., Jang, E., and Alemi, A. A. Waic, but why? gen-erative ensembles for robust anomaly detection. arXiv preprint arXiv:1810.01392 , 2018. Clanuwat, T., Bober-Irizar, M., Kitamoto, A., Lamb, A., Yamamoto, K., and Ha, D. Deep learning for classical japanese literature. arXiv preprint arXiv:1812.01718 ,2018. Coddington, E. A. and Levinson, N. Theory of ordinary differential equations. 1955. Cui, Y., Liu, Z., and Lian, S. A survey on unsupervised anomaly detection algorithms for industrial images. IEEE Access , 11:55297–55315, 2023. doi: 10.1109/ACCESS. 2023.3282993. Fawcett, T. An introduction to roc analysis. Pattern recog-nition letters , 27(8):861–874, 2006. Gammerman, A., Vovk, V., and Vapnik, V. Learning by transduction. In Proceedings of the Fourteenth Confer-ence on Uncertainty in Artificial Intelligence , UAI’98, pp. 148–155, San Francisco, CA, USA, 1998. Morgan Kaufmann Publishers Inc. ISBN 155860555X. Graham, M. S., Pinaya, W. H., Tudosiu, P.-D., Nachev, P., Ourselin, S., and Cardoso, J. Denoising diffusion models for out-of-distribution detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 2948–2957, 2023. 9Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+Guerreiro, J. J. A., Inoue, N., Masui, K., Otani, M., and Nakayama, H. Layoutflow: flow matching for layout generation. In European Conference on Computer Vision ,pp. 56–72. Springer, 2024. Hadsell, R., Chopra, S., and LeCun, Y. Dimensionality reduction by learning an invariant mapping. In 2006 IEEE Computer Society Conference on Computer Vision and Pattern Recognition (CVPR’06) , volume 2, pp. 1735– 1742. IEEE, 2006. Hendrycks, D., Mazeika, M., and Dietterich, T. Deep anomaly detection with outlier exposure. arXiv preprint arXiv:1812.04606 , 2018. Heng, A., Soh, H., et al. Out-of-distribution detection with a single unconditional diffusion model. Advances in Neural Information Processing Systems , 37:43952–43974, 2024. Herrera-Poyatos, A., Del Ser, J., de Prado, M. L., Wang, F.-Y., Herrera-Viedma, E., and Herrera, F. Responsible artificial intelligence systems: A roadmap to society’s trust through trustworthy ai, auditability, accountability, and governance. arXiv preprint arXiv:2503.04739 , 2025. Hersbach, H., Bell, B., Berrisford, P., Hirahara, S., Hor ´anyi, A., Mu ˜noz-Sabater, J., Nicolas, J., Peubey, C., Radu, R., Schepers, D., Simmons, A., Soci, C., Abdalla, S., Abel-lan, X., Balsamo, G., Bechtold, P., Biavati, G., Bidlot, J., Bonavita, M., De Chiara, G., Dahlgren, P., Dee, D., Diamantakis, M., Dragani, R., Flemming, J., Forbes, R., Fuentes, M., Geer, A., Haimberger, L., Healy, S., Hogan, R. J., H ´olm, E., Janiskov ´a, M., Keeley, S., Laloyaux, P., Lopez, P., Lupu, C., Radnoti, G., de Rosnay, P., Rozum, I., Vamborg, F., Villaume, S., and Th ´epaut, J.-N. The era5 global reanalysis. Quarterly Journal of the Royal Meteorological Society , 146(730):1999–2049, 2020. doi: https://doi.org/10.1002/qj.3803. Heusel, M., Ramsauer, H., Unterthiner, T., Nessler, B., and Hochreiter, S. Gans trained by a two time-scale update rule converge to a local nash equilibrium. Advances in Neural Information Processing Systems , 30, 2017. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. Advances in Neural Information Process-ing Systems , 33:6840–6851, 2020. Hore, A. and Ziou, D. Image quality metrics: Psnr vs. ssim. In 2010 20th International Conference on Pattern Recognition , pp. 2366–2369. IEEE, 2010. Jing, B., Berger, B., and Jaakkola, T. Alphafold meets flow matching for generating protein ensembles. In NeurIPS 2023 Generative AI and Biology (GenBio) Workshop ,2023. Ki, T., Min, D., and Chae, G. Float: Generative motion latent flow matching for audio-driven talking portrait. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 14699–14710, 2025. Kim, B., Kim, J., Kim, J., and Ye, J. C. Generalized consis-tency trajectory models for image manipulation. arXiv preprint arXiv:2403.12510 , 2024. Kollovieh, M., Ansari, A. F., Bohlke-Schneider, M., Zschiegner, J., Wang, H., and Wang, Y. B. Predict, refine, synthesize: Self-guiding diffusion models for probabilis-tic time series forecasting. Advances in Neural Informa-tion Processing Systems , 36:28341–28364, 2023. Kollovieh, M., Lienen, M., L ¨udke, D., Schwinn, L., and G ¨unnemann, S. Flow matching with gaussian process priors for probabilistic time series forecasting. arXiv preprint arXiv:2410.03024 , 2024. Lake, B. M., Salakhutdinov, R., and Tenenbaum, J. B. Human-level concept learning through probabilistic pro-gram induction. Science , 350(6266):1332–1338, 2015. LeCun, Y. and Cortes, C. The mnist database of handwritten digits. 1998. Li, J., Chen, P., He, Z., Yu, S., Liu, S., and Jia, J. Rethinking out-of-distribution (ood) detection: Masked image mod-eling is all you need. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 11578–11589, June 2023. Liang, S., Li, Y., and Srikant, R. Enhancing the reliability of out-of-distribution image detection in neural networks. 
+
+arXiv preprint arXiv:1706.02690 , 2017. Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. Lipman, Y., Havasi, M., Holderrieth, P., Shaul, N., Le, M., Karrer, B., Chen, R. T., Lopez-Paz, D., Ben-Hamu, H., and Gat, I. Flow matching guide and code. arXiv preprint arXiv:2412.06264 , 2024. Liu, Z., Zhou, J. P., Wang, Y., and Weinberger, K. Q. Unsu-pervised out-of-distribution detection with diffusion in-painting. In International Conference on Machine Learn-ing , pp. 22528–22538. PMLR, 2023. Lubold, S. and Taylor, C. N. Formal definitions of conserva-tive probability distribution functions (pdfs). Information Fusion , 88:175–183, 2022. Ma, Y., Jayaraman, D., and Bastani, O. Conservative offline distributional reinforcement learning. Advances in Neural Information Processing Systems , 34:19235–19247, 2021. 10 Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+Madry, A., Makelov, A., Schmidt, L., Tsipras, D., and Vladu, A. Towards deep learning models resistant to adversarial attacks. arXiv preprint arXiv:1706.06083 ,2017. Mariani, G., Tallini, I., Postolache, E., Mancusi, M., Cosmo, L., and Rodol `a, E. Multi-source diffusion models for simultaneous music generation and separation. In The Twelfth International Conference on Learning Represen-tations , 2024. Nalisnick, E., Matsukawa, A., Teh, Y. W., Gorur, D., and Lakshminarayanan, B. Do deep generative models know what they don’t know? arXiv preprint arXiv:1810.09136 ,2018. Netzer, Y., Wang, T., Coates, A., Bissacco, A., Wu, B., Ng, A. Y., et al. Reading digits in natural images with unsu-pervised feature learning. In NIPS Workshop on Deep Learning and Unsupervised Feature Learning , volume 2011, pp. 7. Granada, 2011. Price, I., Sanchez-Gonzalez, A., Alet, F., Andersson, T. R., El-Kadi, A., Masters, D., Ewalds, T., Stott, J., Mohamed, S., Battaglia, P., et al. Probabilistic weather forecasting with machine learning. Nature , 637(8044):84–90, 2025. Rahaman, N., Baratin, A., Arpit, D., Draxler, F., Lin, M., Hamprecht, F., Bengio, Y., and Courville, A. On the spec-tral bias of neural networks. In International Conference on Machine Learning , pp. 5301–5310. PMLR, 2019. Rouxel, Q., Ferrari, A., Ivaldi, S., and Mouret, J.-B. Flow matching imitation learning for multi-support manipula-tion. In 2024 IEEE-RAS 23rd International Conference on Humanoid Robots (Humanoids) , pp. 528–535. IEEE, 2024. Rouxel, Q., Donoso, C., Chen, F., Ivaldi, S., and Mouret, J.-B. Extremum flow matching for offline goal conditioned reinforcement learning. arXiv preprint arXiv:2505.19717 ,2025. Serr `a, J., ´Alvarez, D., G ´omez, V., Slizovskaia, O., N ´u ˜nez, J. F., and Luque, J. Input complexity and out-of-distribution detection with likelihood-based generative models. arXiv preprint arXiv:1909.11480 , 2019. Shao, Z., Zhuang, L., Yan, J., and Chen, L. Conser-vative in-distribution q-learning for offline reinforce-ment learning. In 2024 International Joint Confer-ence on Neural Networks (IJCNN) , pp. 1–8, 2024. doi: 10.1109/IJCNN60899.2024.10650768. Sohl-Dickstein, J., Weiss, E., Maheswaranathan, N., and Ganguli, S. Deep unsupervised learning using nonequi-librium thermodynamics. In International Conference on Machine Learning , pp. 2256–2265. PmLR, 2015. Sun, Y., Ming, Y., Zhu, X., and Li, Y. Out-of-distribution de-tection with deep nearest neighbors. In International Con-ference on Machine Learning , pp. 20827–20840. PMLR, 2022. Tong, A., Malkin, N., Huguet, G., Zhang, Y., Rector-Brooks, J., FATRAS, K., Wolf, G., and Bengio, Y. Improving and generalizing flow-based generative models with mini-batch optimal transport. In ICML Workshop on New Frontiers in Learning, Control, and Dynamical Systems ,2023. Wang, Z., Simoncelli, E. P., and Bovik, A. C. Multiscale structural similarity for image quality assessment. In The thrity-seventh asilomar conference on signals, systems & computers, 2003 , volume 2, pp. 1398–1402. IEEE, 2003. Wang, Z., Bovik, A. C., Sheikh, H. R., and Simoncelli, E. P. Image quality assessment: from error visibility to structural similarity. IEEE Transactions on Image Processing , 13(4):600–612, 2004. Xiao, H., Rasul, K., and Vollgraf, R. Fashion-mnist: a novel image dataset for benchmarking machine learning algorithms. arXiv preprint arXiv:1708.07747 , 2017. Zhang, R., Isola, P., Efros, A. A., Shechtman, E., and Wang, O. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pp. 586– 595, 2018. Zhang, X. N., Pu, Y., Kawamura, Y., Loza, A., Bengio, Y., Shung, D., and Tong, A. Trajectory flow matching with applications to clinical time series modelling. Advances in Neural Information Processing Systems , 37:107198– 107224, 2024. 11 Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+## A. Diverging Flows Algorithms 
+
+A.1. Training Algorithm 
+
+Below, we summarize the training algorithm of Diverging Flows. 
+
+Algorithm 1 Training of Diverging Flows 
+
+1: Input: Dataset D, Parameters λ, β, η, K 
+
+2: Initialize: Neural Network vθt
+
+3: for each iteration do 
+
+4: 1. Data Sampling 
+
+5: Sample (x1, c ) ∼ D , x0 ∼ p0, t ∼ U [0 , 1] 
+
+6: Interpolate: xt = (1 − t)x0 + tx 1
+
+7: Target velocity: vt = x1 − x0
+
+8: 2. Standard Flow Matching 
+
+9: Predict velocity: ˆvc = vθt (xt, c )
+
+10: LF M = Et,x 0,x 1,c 
+
+∥ˆvc − vt∥2
+
+11: 3. Adversarial Negative Mining (PGD) 
+
+12: Initialize ˜c0 = c
+
+13: for k = 1 to K do 
+
+14: g = ∇˜c∥ˆv˜ck−1 − vt∥2
+
+15: ˜ck = ˜ ck−1 + η · sign (g)
+
+16: ˜ck = Project (˜ ck, Bϵ(c)) 
+
+17: end for 
+
+18: Set final off-manifold condition: ˜c = ˜ cK
+
+19: 4. Contrastive Regularization 
+
+20: Predict off-manifold velocity: ˆv˜c = vθt (xt, ˜c)
+
+21: // Repulsion ( L2)
+
+22: Lrepel = Et,x 0,x 1,c [max( ∥vt − ˆvc∥2 − ∥ vt − ˆv˜c∥2 + mr , 0)] 
+
+23: // Curve 
+
+24: dcos (a, b ) = 1 − a·b
+
+> ∥a∥∥ b∥
+
+25: Lcurve = Et,x 0,x 1,c [max( dcos (vt, ˆvc) − dcos (vt, ˆv˜c) + mc, 0)] 
+
+26: 5. Optimization 
+
+27: Total Loss: L = LF M + λLrepel + βLcurve 
+
+28: Update θ using ∇θ L
+
+29: end for A.2. Inference and Detection Algorithm 
+
+Standard Flow Matching inference involves numerically integrating the learned velocity field vθt from a noise sample x0 to the data manifold x1. Algorithm 2 details this procedure in Diverging Flows. First, we generate the full trajectory {ˆxti }Ni=0 ,typically using Euler integration. Second, we define the ideal transport path as the linear interpolation between the fixed source x0 and the generated prediction ˆx1. The anomaly score ˆSDOT is computed as the L1 deviation between the actual neural trajectory and this ideal path, averaged over spatial dimensions and summed over time steps, as defined in Eq. 13. The DOT score depends on the discretized trajectory produced by the numerical ODE solver. In practice, we observe that the relative separation between on- and off-manifold inputs remains stable across reasonable step counts and solver choices, as both valid and invalid trajectories are affected similarly by discretization. To formulate a binary decision, we compare the calculated score ˆSDOT against the conformal interval [qlo , q hi ] pre-calibrated on a hold-out set at significance level α. The input condition c is accepted as valid if and only if ˆSDOT ∈ [qlo , q hi ]; otherwise, the prediction is flagged as an extrapolation. 12 Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+Algorithm 2 Inference with DOT Scoring using Euler Integrator  
+
+> 1:
+
+Input: Condition c, Noise x0 ∼ p0, Steps N 
+
+> 2:
+
+Output: Prediction ˆx1, Score ˆSDOT  
+
+> 3:
+
+Initialize:  
+
+> 4:
+
+dt = 1 /N  
+
+> 5:
+
+x = x0 
+
+> 6:
+
+Xtraj = [ x0] ▷ Store trajectory points  
+
+> 7:
+
+1. Generation Loop (Euler)  
+
+> 8:
+
+for i = 0 to N − 1 do  
+
+> 9:
+
+t = i/N  
+
+> 10:
+
+Predict velocity: v = vθt (x, c ) 
+
+> 11:
+
+Update state: x ← x + v · dt  
+
+> 12:
+
+Append x to Xtraj  
+
+> 13:
+
+end for  
+
+> 14:
+
+Set prediction: ˆx1 = x 
+
+> 15:
+
+2. Calculate ˆSDOT  
+
+> 16:
+
+ˆSDOT = 0  
+
+> 17:
+
+for i = 0 to N do  
+
+> 18:
+
+Get time: t = i/N  
+
+> 19:
+
+Get actual point: ˆxt = Xtraj [i] 
+
+> 20:
+
+Compute ideal point: xopt t = (1 − t)x0 + tˆx1 
+
+> 21:
+
+// Accumulate L1 deviation (averaged over dims D)  
+
+> 22:
+
+ˆSDOT ← ˆSDOT + 1
+
+> D
+
+PDd=1 |ˆx(d) 
+
+> t
+
+− xopt, (d) 
+
+> t
+
+| 
+
+> 23:
+
+end for  
+
+> 24:
+
+Return ˆx1, ˆSDOT 
+
+## B. Experiment Details 
+
+B.1. Synthetic Manifold Experiment Details Data Generation. We utilize the 2D spiral and ambient OOD setup as formally defined in Section 4.1. We strictly enforce a buffer of ϵ = 0 .025 between the manifold support and the OOD sampling region to ensure the detection task is unambiguous. 
+
+Model Architecture. We employ a time-conditioned Multi-Layer Perceptron (MLP) that processes inputs as flat vectors. • Input: A direct concatenation of the noisy state xt ∈ R2 in the conditional generation task or xt ∈ R20 in the regression task, the condition c ∈ R2, and the time scalar t ∈ [0 , 1] .• Backbone: Three hidden layers of width 512 using SiLU activations. • Output: A linear projection to R2 predicting the velocity field ut.
+
+Training Setup. The model is trained for 20,000 iterations using the AdamW optimizer. Detailed hyperparameters for the architecture and the contrastive loss functions are listed in Table 5. 
+
+Note on the Spiral Benchmark. The 2D spiral is a canonical benchmark in the study of Neural ODEs and continuous-time dynamical systems (Chen et al., 2018). Unlike simple shapes, a spiral represents a stiff geometric structure where the optimal transport path (a straight line) often intersects regions that are off-manifold. In the context of probabilistic regression, this experiment is critical because it validates that the learned vector field captures the true non-linear differential equation governing the system’s evolution, rather than memorizing discrete point-to-point mappings. Successfully modeling this dynamics while simultaneously detecting off-manifold perturbations demonstrates that Diverging Flows can enforce safety constraints without over-simplifying the complex curvature of the underlying data manifold. 13 Diverging Flows: Detecting Extrapolations in Conditional Generation  
+
+> Table 5. Hyperparameters for Synthetic Manifold Experiments.
+
+Hyperparameter Conditional Generation Probabilistic Regression 
+
+Hidden Layers 3 3Hidden Dimension 512 512 Activation SiLU SiLU Optimizer AdamW AdamW Learning Rate 3 × 10 −4 3 × 10 −4
+
+Weight Decay 1 × 10 −3 1 × 10 −3
+
+Batch Size 256 256 Iterations 10,000 20,000 PGD Steps ( K) 3 3Perturbation ( η) 0.1 0.1 Repulsion Weight ( λ) 0.1 0.1 Curvature Weight ( β) 0.05 0.1 Margins ( mr /m c) 1.0 / 0.9 1.0 / 0.9 Integrator RK4 RK4 Integration Steps 50 50 Significance Level ( α) 0.05 0.05 Target Coverage 95% 95% 
+
+B.2. Weather Temperature Forecasting Dataset. We utilize the ERA5 reanalysis dataset (Hersbach et al., 2020), regressing the surface temperature field six hours into the future. The data is cropped to 64 × 64 spatial resolution with a single channel (temperature). 
+
+Model Architecture. We employ a U-Net backbone modified for conditional generation. • Time Conditioning: The time step t ∈ [0 , 1] is embedded using Fourier features followed by an MLP to produce a 128-dimensional time embedding vector. This embedding is injected into every residual block via FiLM layers. • Condition Encoder: The conditioning input c (current state) is processed by a separate, learnable encoder network. This encoder consists of a convolution followed by 2 residual blocks and 1 downsampling operation. • Cross-Attention Injection: The resulting latent representation from the condition encoder is projected to match the time embedding dimension and injected into the U-Net backbone via cross-attention layers at the 16 × 16 resolution (lowest level). 
+
+Training Setup. We train for 1,000 epochs with a batch size of 64. To ensure stability, we use gradient clipping (norm 1.0) and an Exponential Moving Average (EMA) of model weights with decay 0.9999 .
+
+B.3. Cross-Domain Style Transfer Details Dataset. We perform a cross-domain translation task mapping grayscale MNIST digits ( 1 × 32 × 32 ) to RGB SVHN digits (3 × 32 × 32 ). 
+
+Model Architecture. We use a U-Net backbone similar to the weather temperature forecasting experiment, but with a stronger dual-conditioning mechanism to preserve high-frequency structural details: • Input Concatenation: Unlike the pure cross-attention approach, here we explicitly concatenate the conditioning image 
+
+c (1 channel) with the noisy state xt (3 channels) at the model input, resulting in a 4-channel input tensor. This provides strong spatial guidance for the digit structure. 14 Diverging Flows: Detecting Extrapolations in Conditional Generation  
+
+> Table 6. Hyperparameters used in the Weather Temperature Forecasting (ERA5) experiment.
+
+Hyperparameters 
+
+Input Resolution 64 × 64 
+
+Channels [64, 64, 128] ResBlocks per Scale 2Attention Resolution 16 × 16 
+
+Conditioning Cross-Attention Time Embedding Dim 128 Optimizer AdamW Learning Rate 3 × 10 −4
+
+Weight Decay 1 × 10 −2
+
+AdamW Betas [0.9, 0.95] Batch Size 64 EMA Decay 0.9999 Gradient Clip 1.0 PGD Steps ( K) 5Perturbation ( η) 0.1 Repulsion Weight ( λ) 0.7 Curvature Weight ( β) 0.9 Margin mr 100.0 Margin mc 0.9 Integrator Euler Integration Steps ( N ) 50 Significance Level ( α) 0.05 Target Coverage 95% • Cross-Attention: Additionally, c is processed by a shallow condition encoder (1 ResBlock) and injected via cross-attention at resolutions 16 × 16 and 8 × 8.• Backbone: The U-Net has channel widths of [64, 64, 128] with attention layers at the two lower resolutions. 
+
+Training & Inference. The model is trained using AdamW with a learning rate decay schedule. For inference, we employ a 4th-order Runge-Kutta (RK4) integrator with N = 50 steps. 
+
+B.4. Comparison with DiffPath 
+
+For completeness, we provide a reference comparison against DiffPath (Heng et al., 2024), an approach of using diffusion model’s reverse generation path for OOD detection. Unlike our framework, which actively shapes the vector field during training, DiffPath operates as a post-hoc, static detector on a frozen model. DiffPath usually utilizes a pre-trained model, which is not required to be trained on the in-distribution data. However, due to the lack of pre-trained models for our datasets, we trained a standard Diffusion Model from scratch on the exact in-distribution datasets used in our experiments. DiffPath utilizes this model to perform the reverse generation process on a set of ID calibration samples. It extracts various statistics from these generated trajectories and fits a statistical density estimator (GMM or KDE) to these features. At inference time, the validity of a query input is determined by the likelihood of its trajectory statistics under this fitted distribution. Table 8 presents the detection performance. While DiffPath serves as an effective external auditor of the generation process, it relies on the assumption that the frozen model will implicitly produce distinguishable trajectory features for OOD inputs. In contrast, Diverging Flows embeds safety directly into the dynamics, ensuring a certified geometric divergence. We observe that our active training approach yields results comparable to this post-hoc analysis. 15 Diverging Flows: Detecting Extrapolations in Conditional Generation    
+
+> Table 7. Hyperparameters used in the Style Transfer (MNIST →SVHN) experiment.
+
+Hyperparameters 
+
+Input Resolution 32 × 32 
+
+Channels [64, 64, 128] ResBlocks per Scale 2Attention Resolutions 16 × 16 , 8 × 8
+
+Conditioning Concat + Cross-Attention Optimizer AdamW Learning Rate 1 × 10 −4
+
+Weight Decay 1 × 10 −3
+
+AdamW Betas [0.9, 0.95] Accumulation Steps 4EMA Decay 0.9999 PGD Steps ( K) 5Perturbation ( η) 0.2 Repulsion Weight ( λ) 0.1 Curvature Weight ( β) 0.7 Margin mr 10.0 Margin mc 1.3 Integrator RK4 Integration Steps ( N ) 50 Significance Level ( α) 0.05 Target Coverage 95%  
+
+> Table 8. Unified Off-Manifold Detection Performance (AUROC). We report results for the post-hoc detector DiffPath alongside Diverging Flows. Note that we compare only detection capabilities, as DiffPath does not perform the generative prediction task.
+
+Method Temperature Forecasting Style Transfer Hotspots vs FMNIST vs KMNIST 
+
+Post-Hoc Statistics 
+
+DiffPath-1D 0.973 0.981 0.863 DiffPath-6D 0.989 0.991 0.929 
+
+Active Training (Ours) 
+
+Diverging Flows (Transformations) 0.733 0.987 0.892 
+
+Diverging Flows (PGD) 0.980 0.955 0.860 
+
+Remark on Flow vs. Diffusion Dynamics. It is important to note that DiffPath was originally designed for Diffusion Models, which solve a stochastic differential equation (SDE) or its probability flow ODE equivalent. In that regime, the learned vector fields often exhibit complex, non-linear trajectories where OOD inputs might induce detectable behavior, such as jittering. However, deploying such passive detectors on Flow Matching models is fundamentally challenging. As discussed in Section 3.3, standard Flow Matching explicitly minimizes transport energy, forcing trajectories to be straight-line geodesics. Due to this strong smoothness bias, unregularized FM models collapse OOD trajectories into efficient, straight paths indistinguishable from valid data. Consequently, passive monitoring of path statistics is often insufficient for Flow Models, necessitating the active geometric regularization introduced in Diverging Flows to explicitly enforce divergence. 16 Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+## C. Visualization of Detection Landscapes 
+
+In this section, we visualize the decision boundaries learned by the models within the 2D ambient conditioning space. Figures 5 and 6 depict the landscape of accepted versus rejected conditions. In these plots, the underlying data manifold is the 2D spiral. The background represents the full ambient space [−1, 1] 2. We evaluate the model on a dense grid of conditions; regions highlighted in red indicate conditions flagged as extrapolations (i.e., inputs that trigger a high SDOT score). The results visually confirm the silent failure hypothesis: Standard Flow Matching (left) accepts almost the entire ambient space as valid, driven by its inherent smoothness bias. In contrast, Diverging Flows (right) effectively creates a tight validity boundary that strictly follows the data support, while rejecting the surrounding off-manifold regions (red).          
+
+> (a) Flow Matching (b) Diverging Flows (Ours)
+> Figure 5. Detection Landscape: Conditional Generation. The standard model (a) fails to distinguish the manifold from the background. Diverging Flows (b) successfully identifies the ambient space as invalid (red), accepting only the spiral support.
+> (a) Flow Matching (b) Diverging Flows (Ours)
+> Figure 6. Detection Landscape: Probabilistic Regression. Even in the regression task, where the condition represents a dynamic state xt,Diverging Flows (b) maintains a precise decision boundary around the valid trajectory path.
+
+## D. Extended Conformal Analysis 
+
+In the main text, we report the False Positive Rate (FPR) at a fixed error rate α = 0 .05 (Target Coverage 95%). Here, we expand on the relationship between Target Coverage ( 1 − α) and FPR to characterize detector performance across all operating points. In Split Conformal Prediction, the True Positive Rate (TPR) is fixed by design to match the target coverage (e.g., setting 
+
+α = 0 .05 guarantees valid inputs are accepted 95% of the time). Therefore, the quality of a detector is determined entirely by how few off-manifold samples it accepts at these forced levels of on-manifold acceptance. 17 Diverging Flows: Detecting Extrapolations in Conditional Generation 
+
+• Ideal Behavior: An ideal detector perfectly separates on- and off-manifold scores. Consequently, even as we lower the threshold to accept 99% of on-manifold data, the FPR should remain near 0% .• Random Guessing (Baseline): If the on and off-manifold score distributions overlap perfectly (as seen with standard Flow Matching), accepting X% of the on-manifold volume statistically necessitates accepting ≈ X% of the OOD volume. This results in a diagonal line where FPR ≈ Coverage. Our results show that Diverging Flows maintains an FPR < 10% even as Target Coverage approaches 95% , whereas the baseline FPR rises linearly with coverage. This confirms that our geometric score provides a high-margin separation, allowing for safe deployment even at strict recall requirements. 
+
+## E. Additional Qualitative Results 
+
+In this section, we provide weather temperature forecasting (Figure 8) and style transfer (Figure 7) samples from Diverging Flows. Style Transfer (MNIST → SVHN) Examples   
+
+> Figure 7. Extended Style Transfer Samples. Pairs of Conditioning Inputs (MNIST) and Generated Outputs (SVHN). The model successfully maps the sparse structural guidance of the grayscale digit to the rich, multi-modal distribution of street view imagery.
+
+18 Diverging Flows: Detecting Extrapolations in Conditional Generation On-Manifold 
+
+> Input ( xt)
+> Prediction
+> (xt + 1 )
+> Predicted Shift
+> (ˆxt + 1  − xt)
+> True Shift
+> (xt + 1  − xt)
+> On-Manifold
+> Input ( xt)
+> Prediction
+> (xt + 1 )
+> Predicted Shift
+> (ˆxt + 1  − xt)
+> True Shift
+> (xt + 1  − xt)
+> On-Manifold
+> Input ( xt)
+> Prediction
+> (xt + 1 )
+> Predicted Shift
+> (ˆxt + 1  − xt)
+> True Shift
+> (xt + 1  − xt)
+
+Diverging Flows Weather Forecasts 
+
+Figure 8. Extended Weather Temperature Forecasting Samples. Randomly selected 6-hour temperature forecasts generated by Diverging Flows on the ERA5 validation set. The model generates physically consistent heatmaps that align with the ground truth dynamics. 
+
+19

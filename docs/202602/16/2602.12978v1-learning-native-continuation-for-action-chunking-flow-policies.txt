@@ -1,0 +1,804 @@
+Title: Learning Native Continuation for Action Chunking Flow Policies
+
+URL Source: https://arxiv.org/pdf/2602.12978v1
+
+Published Time: Mon, 16 Feb 2026 02:07:52 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# Learning Native Continuation for Action Chunking Flow Policies 
+
+Yufeng Liu 1,2 , Hang Yu 2,4 , Juntu Zhao 1,2 , Bocheng Li 2,5 , Di Zhang 2,4 , Mingzhu Li 2, Wenxuan Wu 2,Yingdong Hu 3, Junyuan Xie 2, Junliang Guo 2‡ , Dequan Wang 1† , Yang Gao 2,3† 
+
+> 1
+
+Shanghai Jiao Tong University 2Spirit AI 3Tsinghua University 
+
+> 4
+
+Tongji University 5University of Science and Technology of China Project page: lyfeng001.github.io/Legato/ 
+
+Abstract —Action chunking enables Vision Language Action (VLA) models to run in real time, but naive chunked execution often exhibits discontinuities at chunk boundaries. Real-Time Chunking (RTC) alleviates this issue but is external to the policy, leading to spurious multimodal switching and trajectories that are not intrinsically smooth. We propose Legato, a training-time continuation method for action-chunked flow-based VLA policies. Specifically, Legato initializes denoising from a schedule-shaped mixture of known actions and noise, exposing the model to partial action information. Moreover, Legato reshapes the learned flow dynamics to ensure that the denoising process remains consistent between training and inference under per-step guidance. Legato further uses randomized schedule condition during training to support varying inference delays and achieve controllable smoothness. Empirically, Legato produces smoother trajectories and reduces spurious multimodal switching during execution, leading to less hesitation and shorter task completion time. Extensive real-world experiments show that Legato consis-tently outperforms RTC across five manipulation tasks, achieving approximately 10% improvements in both trajectory smoothness and task completion time. 
+
+I. I NTRODUCTION 
+
+Action chunking [20] has become a widely adopted strategy for deploying large Vision Language Action (VLA) models in real-world robotic systems [7, 19, 37–43, 46]. By predicting sequences of action vectors, chunking amortizes inference cost and enables high-frequency control. However, naive chun-ked execution introduces a fundamental drawback: due to inference delay and the intrinsic multimodality of flow-based policies [24], transitions between consecutive chunks are often not smooth, leading to visible discontinuities during execution. Real-Time Chunking (RTC) [8] was proposed to mitigate this issue by applying inference-time inpainting [29, 32] that partially constrains newly generated action chunks to previously generated actions in their overlapping regions. While RTC improves continuity compared to naive chunked execution, its continuation mechanism is applied only at inference time and is not learned as part of the policy. As a result, the policy is prone to spurious multimodal switching across chunk boundaries and producing trajectories that are not intrinsically smooth. Spurious multimodal switching often leads to hesitation and prolonged task completion time, as shown in fig. 1. 
+
+This work was done during the internship at Spirit AI.  
+
+> †
+
+Corresponding authors. ‡ Project leader.  
+
+ 
+
+   
+
+>  
+> 
+>  
+> '&%
+> $#
+> 
+
+   
+
+ 
+
+ 
+
+ 
+
+ $  
+
+>  
+>  
+>  
+> '&%
+> $#
+> %!
+> $!&#("!$  
+> Multimodal Switching and
+> Poor Overlap Alignment
+> Reduced Multimodal Switching
+> and Better Overlap Alignment
+
+Moving 
+
+Hesitation     
+
+>  
+
+!"%! $   
+
+> 
+> 
+> 
+> !!% $$    
+> !'
+> #'#
+> "
+> !'
+> !&#(
+>  
+> 
+> %!
+> Less Hesitation
+> Smoother
+
+Fig. 1. Legato reduces task completion time while improving trajectory smoothness compared to RTC [8]. Across five real-world manipulation tasks, Legato consistently achieves shorter execution time and lower NSPARC [2] (indicating smoother trajectories, discussed in section IV-A2) than RTC. The bottom plot shows an example execution trace on the pour task, as defined in section IV-A1, where Legato produces smoother action trajectories with fewer hesitation-induced slowdowns than RTC. 
+
+In this work, we argue that stable chunked execution re-quires chunk continuation to be a native, learned property of the policy. Achieving this entails two requirements: (i) per-step guidance , where guidance is applied repeatedly across denoising steps, and (ii) training-inference consistency . We propose Legato, a training-time continuation mechanism for action-chunked flow-based VLA policies. Rather than learning the canonical flow-matching velocity field [6, 24] and relying on inference-time correction, Legato internalizes chunk-to-chunk continuation into the learned denoising dynamics. To satisfy requirement per-step guidance , we first define a guidance schedule that specifies how strongly each timestep should adhere to the guidance actions. Unlike Training-time RTC [9], which enforces continuation via a hard clamp on the prefix, Legato uses a smooth schedule: it anchors the beginning of the chunk to known actions and gradually ramps 
+
+> arXiv:2602.12978v1 [cs.RO] 13 Feb 2026
+
+## 𝜔 
+
+Action Chunk 
+
+Robot Execution Guidance Schedule  
+
+> 0
+> 1
+> sd
+> Horizon
+> 𝜔
+> Padding
+
+Prefix Truncation    
+
+> (The first ssteps )
+
+Guidance 
+
+Action 
+
+Noise 
+
+> r
+
+## Legato  
+
+> G
+
+Guiding  
+
+> D
+
+Denoising         
+
+> Guided Action
+> Guidance Action
+> Noisy Action Mixture
+> 𝜔
+> 1−𝜔
+> Policy
+> Guided Action Next Noisy Action
+> Guiding before Every
+> Denoising Step
+> Different Strength
+> According to 𝜔
+
+Noise 
+
+Guidance 
+
+Action  
+
+> Output
+> Action Chunk
+
+G DGD DG        
+
+> Next Noisy Action Fig. 2. Overview of Legato with schedule-shaped continuation dynamics. The schedule parameters are defined as follows: sis the executed length per cycle,
+> dsets the fully guided prefix (inference delay), and rcontrols the ramp-down length of the guidance schedule over the remaining horizon. Given ω, Legato initializes actions via an action–noise mixture and learns a reshaped velocity field so that the native schedule effect is realized during multi-step denoising.
+
+the guidance strength down to zero. During training, the known actions are the ground-truth of the same chunk [8]. During inference, the known actions correspond to the overlapping prefix of the previously generated chunk. This schedule-shaped design provides fine-grained control over the continuity strength between adjacent chunks. With the schedule-shaped guidance, we enforce requirement 
+
+training-inference consistency under per-step guidance. At inference time, action generation proceeds through multiple denoising steps, and empirically proved by section III-B, effective continuation requires per-step guidance before every denoising step. Training-time RTC [9] achieves this by hard-fixing the executed prefix and learning to denoise only the remaining horizon. In contrast, Legato trains the policy to generate the entire chunk under per-step, schedule-shaped guidance by reshaping the velocity field. This yields strict training-inference consistency, as shown in fig. 2. To make the above dynamics usable in real-world de-ployments, we account for variations in inference latency and desired continuation strength. In real-world deployment, inference latency can vary across hardware and runtime opti-mizations [8]. Under a fixed guidance schedule, such variations lead to mismatched overlap regions and require retraining to maintain consistent behavior. At the same time, we may want to adjust the schedule (i.e., ramp length) to control how strongly continuation is enforced. To handle both factors, we randomize the schedule parameters during training and condition the policy on the resulting schedule, so the same model can adapt to different latencies and ramp lengths. We evaluate Legato extensively in real-world environments to assess the necessity of learning action continuation as part of the policy dynamics. We consider five diverse robotic manipu-lation tasks. Across all settings, Legato consistently produces smoother trajectories and achieves significantly shorter task completion time by suppressing spurious multimodal switch-ing compared to RTC, as shown in fig. 1. Additional abla-tion studies further validate the robustness of Legato across different guidance schedules, VLA models, and conditioning strategies, demonstrating that its learned continuation behavior generalizes well under varying inference conditions. Our work offers three main contributions:  
+
+> •
+
+We propose Legato, a training-time continuation frame-work that enables per-step, schedule-shaped guidance while maintaining strict training-inference consistency by reshaping the flow dynamics of action-chunked policies.  
+
+> •
+
+We introduce randomized schedule conditioning to sup-port varying inference delays and to provide flexible control over trajectory smoothness.  
+
+> •
+
+Extensive real-robot experiments across five manipulation tasks show that Legato consistently outperforms RTC and training-time RTC, producing smoother trajectories and shorter task completion time. II. R ELATED WORKS 
+
+A. VLA and Action Chunking Methods 
+
+Recent Vision Language Action (VLA) models couple large vision–language representations with learned heads to enable end-to-end visuomotor policies [5–7, 11, 22, 25, 33–35, 44, 45]. Most VLA systems generate actions in chunks, predicting a sequence of future controls per inference step [30, 35, 42]. Action chunking has been successfully combined with avariety of generative policy formulations, including diffusion-based [3, 13, 14, 21, 27, 36, 38], flow-based [6, 7, 10, 23], and discrete action representations [4, 28]. However, chunked execution trades off responsiveness for smoothness [8], and inference latency further increases discontinuities between suc-cessive chunks, motivating methods to improve continuation. B. Trajectory Continuation in Learned Policies 
+
+Building on action chunking, a common approach to im-prove responsiveness is asynchronous execution, where ac-tion generation overlaps with execution [31, 43]; however, without explicit continuation constraints, independently gen-erated chunks can exhibit abrupt multimodal switches at their boundaries. Bidirectional decoding (BID) [26] uses rejection sampling to keep continuity across chunks. Real-time chunk-ing (RTC) [8] addresses continuation under asynchronous inference by conditioning new action chunks on previously issued actions that are guaranteed to execute. While RTC effectively mitigates boundary artifacts caused by inference latency, it is an inference-time mechanisms, leaving open the question of how to induce robust trajectory continuation without additional test-time intervention. 
+
+C. Conditioning in Diffusion- and Flow-Based Policies 
+
+Recent diffusion- [16] and flow-based [24] policies explore conditioning mechanisms to improve temporal coherence and execution efficiency. Diffusion Forcing [12] and Fast Policy Synthesis with Variable Noise Diffusion Models [17] adopt a timestep-level diffusion formulation, generating a single action per inference step and improving reactivity through noise modulation, but without explicitly modeling continuation across action chunks. Rolling Diffusion Policy [18] similarly operates at the timestep level, incrementally refining future actions via rolling denoising to enhance temporal awareness. In contrast, SAIL [1] performs chunk-level conditioning by leveraging overlapping actions between consecutive chunks using classifier-free guidance [15], which mitigates discontinu-ities under fast execution but provides only soft alignment and limited control over continuation strength. Concurrent with our work, training-time RTC [9] introduces continuation during training by conditioning on a hard action prefix that simulates inference delay. While this exposes the policy to prefix-based continuation, the conditioning remains an external constraint and does not account for the effective denoising dynamics induced by repeated, schedule-shaped guidance at inference time, leaving continuation outside the learned policy dynamics. III. M ETHODOLOGY 
+
+A. Preliminaries 
+
+We consider Vision Language Action (VLA) policies that generate action sequences in fixed-length chunks using flow-based generative models. Let A ∈ RH×Da denote a ground-truth action chunk of horizon H, where Da is the action dimension, and let ϵ ∼ N (0, I) denote Gaussian noise of the same shape. Flow matching (FM) [24] constructs a continuous-time interpolation between noise and action, and trains a neural velocity field to transport samples along this path. 
+
+1) Flow matching : Given a time variable t ∈ [0 , 1] ,standard flow matching defines the interpolation 
+
+Xt = (1 − t) ϵ + t A, (1) and supervises the model to predict the corresponding velocity field 
+
+uFM (Xt, t ) = A − ϵ. (2) At inference time, action generation begins from an initial noise sample ϵ and progressively transforms it into an action chunk by integrating the learned velocity field from t = 0 to 
+
+t = 1 .
+
+2) Real-Time Chunking : Real-Time Chunking (RTC) [8] enforces continuity between successive action chunks through a test-time guidance mechanism inspired by inpainting, which encourages partial agreement with previously generated ac-tions. Beyond continuity, RTC also introduces an asynchronous execution scheme that overlaps inference and action execution to mitigate model latency. For an action chunk of horizon H,the first d timesteps correspond to inference latency, during which the robot continues executing the previous chunk. The next s timesteps correspond to the portion of the current chunk that will be executed before the next inference completes. Once (s − d) timesteps of this portion have been executed, inference for the next chunk is triggered while execution continues, enabling overlapped computation and control. RTC further employs a structured guidance schedule over the chunk horizon. The initial d timesteps receive full guidance to strictly enforce continuity with past actions, followed by a ramp-down phase. Let r denote the length of this ramp; the schedule commonly satisfies 
+
+r + s + d = H. (3) This design enforces strong adherence to previously executed actions near the chunk boundary while gradually relaxing constraints toward the end of the horizon. Our method draws inspiration from RTC in both its use of previously executed actions and its structured guidance scheduling, as shown in fig. 2. 
+
+B. Why per-step guidance matters? 
+
+We aim to learn a policy that remains strictly consistent between training and inference. To satisfy this requirement, guidance must be incorporated during training. Under the standard FM formulation, training optimizes the velocity field that transports samples from an initial noise to the ground-truth action. The only inference strategy that remains strictly consistent with training is to apply guidance only once at initialization and then perform multi-step denoising. To verify whether the one-shot guidance is enough for continuous guidance, we trained a flow policy where the standard noise initialization was replaced with a prefix-guided variant ϵ′. Let m ∈ { 0, 1}H denote a horizon-wise mask for the overlap region, and let Aref be the ground-truth reference actions on this overlap. We construct the guided noise: 
+
+ϵ′ = ( 1 − m) ⊙ ϵ + m ⊙ Aref , ϵ ∼ N (0, I), (4) where ⊙ denotes element-wise multiplication. Training fol-0 2 4 6               
+
+> Timestep
+> 110
+> 105
+> 100
+> Value (mm)  LeftArm X
+> 0246
+> Timestep
+> 40
+> 32
+> 24
+> LeftArm Y
+> 0246
+> Timestep
+> 18
+> 24
+> 30
+> 36 LeftArm Z
+> GT
+> t=0.8
+> t=0.6
+> t=0.4
+> t=0.2
+> t=0.0 Fig. 3. One-shot prefix guidance cannot preserve prefix constraints during denoising. Trajectories show three dimensions of the overlap (prefix) actions across denoising steps; colors indicate diffusion times t(from 1to 0), and GT denotes the ground-truth prefix. Although clamped at initialization, the overlap actions drift from the reference as denoising proceeds, motivating the need for per-step guidance. Evaluated on the pour task, as defined in section IV-A1.
+
+lows standard flow matching, but with ϵ′ as the start point: 
+
+Xt = (1 − t) ϵ′ + t A, uFM (Xt, t ) = A − ϵ′. (5) During inference, we apply the same prefix clamp only at initialization, X0 = ϵ′, and then perform standard multi-step denoising without any intermediate guidance. However, empirical results reveal that one-shot guidance is insufficient for continuous guidance. As the denoising process iterates, the overlap region in the generated chunk progres-sively deviates from the reference actions as shown in fig. 3 (details are shown in the appendix). The prefix part moves away from the desired constraint without repeated guidance. This study leads to a crucial conclusion: effective continu-ation requires per-step guidance. However, simply applying per-step guidance on the standard FM remains inconsistent with the training objective. This dilemma motivates Legato: we reshape the flow dynamics during training so that the model can support per-step, schedule-shaped guidance while remaining fully consistent with the training objective. 
+
+C. Native Continuation for Action Chunk Generation 
+
+We aim to make action continuation a native property of the learned policy. This entails two requirements: (i) per-step guidance as discussed in section III-B, where guidance is applied repeatedly across denoising steps, and (ii) training-inference consistency .Accordingly, we first construct a schedule-shaped training path, then derive the induced guided dynamics, and finally reshape the velocity field to eliminate the train-test mismatch. 
+
+1) Action-noise mixture : To incorporate guidance into training, we introduce a horizon-wise continuation vector 
+
+ω ∈ [0 , 1] H , which encodes the guidance schedule over the chunk horizon, i.e., full guidance near the chunk beginning and a gradual ramp-down toward the end of the horizon. Using ω, we define an action-noise mixture 
+
+ϵeff = ( 1 − ω) ⊙ ϵ + ω ⊙ A, (6) where ⊙ denotes element-wise multiplication and ϵeff repre-sents the effective noise initialization induced by continuation guidance, interpolating between the action chunk and pure noise in a horizon-wise manner. 
+
+Algorithm 1 Legato: Training and Inference 
+
+Require: policy fθ ; observation o; horizon H; denoising steps 
+
+N ; schedule params (d, r ); executed length s 
+
+> 1:
+
+Construct schedule ω ∈ [0 , 1] H from (d, r ) 
+
+> 2:
+
+∆t ← 1/N , κ ← ω/∆t 
+
+> 3:
+
+if training then  
+
+> 4:
+
+Sample t ∼ U (0 , 1) , ϵ ∼ N (0, I) 
+
+> 5:
+
+ϵeff ← ω ⊙ A + ( 1 − ω) ⊙ ϵ 
+
+> 6:
+
+Yt ← (1 − t)ϵeff + tA 
+
+> 7:
+
+vtarget ← (1 − κ ⊙ (1 − t)) ⊙ (A − ϵ) 
+
+> 8:
+
+Update θ by ∥fθ (Yt, o, t, ω) − vtarget ∥22 
+
+> 9:
+
+else ▷ Inference  
+
+> 10:
+
+Sample ϵ ∼ N (0, I) 
+
+> 11:
+
+if no previous chunk then  
+
+> 12:
+
+Aprev ← 0 
+
+> 13:
+
+end if  
+
+> 14:
+
+Aref ← PAD LAST (Aprev [s:H]) 
+
+▷ Truncate and pad with the last value to length H 
+
+> 15:
+
+X0 ← ϵ 
+
+> 16:
+
+for k = 0 to N − 1 do  
+
+> 17:
+
+Yk ← (1 − ω) ⊙ Xk + ω ⊙ Aref ▷ Guiding  
+
+> 18:
+
+Xk+1 ← Yk + ∆ t f θ (Yk, o, t k, ω) ▷ Denoising  
+
+> 19:
+
+end for  
+
+> 20:
+
+return ˆA ← XN 
+
+> 21:
+
+end if 
+
+Based on this mixture, we construct the interpolation path 
+
+Yt = (1 − t) ϵeff + t A, (7) which reduces to the standard flow-matching path when ω = 0
+
+and collapses to the action chunk for all t when ω = 1.The corresponding flow-matching velocity is 
+
+uFM (Yt, t ) = A − ϵeff = ( 1 − ω) ⊙ (A − ϵ), (8) reflecting a horizon-wise modulation of the FM velocity. 
+
+Multimodal persistence and smoothness: Eq. (8) reveals a schedule-shaped velocity: the target transport magnitude is modulated by ω. In timesteps with large ωi (strong continua-tion), the effective uFM  
+
+> i
+
+is suppressed as uFM  
+
+> i
+
+∝ (1 − ωi),making the overlap and the ramp region intrinsically less mutable than the none-guidance region during denoising. This discourages frequent switching among competing action modes in highly multimodal tasks. Moreover, since ω decreases from 1 along the horizon, the effect of continuation is gradually relaxed through aramp, yielding a smooth transition from strict guidance to free generation. As a result, Legato reduces chunk-boundary discontinuities and improves trajectory smoothness. 
+
+2) Effective dynamics of repeated continuation guidance :
+
+The velocity construction above specifies the schedule-shaped guidance. At inference time, continuation requires per-step guidance to keep effective. We therefore derive the exact dynamics induced by the per-step guidance. At each denoising step k, the current noisy action is first guided toward the reference action according to the guidance schedule ω:
+
+Yk = ( 1 − ω) ⊙ Xk + ω ⊙ A, (9) where A denotes the reference action and Xk is the current noisy action before guidance. We then perform one denoising update: 
+
+Xk+1 = Yk + ∆ t f θ (Yk, t k), (10) after which the same guidance in eq. (9) is applied again at the next step, as shown in fig. 2. Eliminating Xk yields the exact recurrence 
+
+Yk+1 = ω⊙A+( 1−ω)⊙Yk +( 1−ω)⊙∆t f θ (Yk, t k). (11) Taking the continuous-time limit, this recurrence corresponds to the ordinary differential equation 
+
+˙Y(t) = ( 1 − ω) ⊙ fθ (Y(t), t ) − κ ⊙ (Y(t) − A), κ = ω/∆t. 
+
+(12) Importantly, eq. (12) is not an approximation: it is the exact continuous-time system whose Euler discretization reproduces repeated continuation guidance. 
+
+3) Training-inference consistency : Having characterized the dynamics induced by per-step guidance, we now turn to the second requirement: training-inference consistency. Standard flow matching supervises the velocity field uFM , whereas inference with repeated continuation guidance follows the dynamics in eq. (12). To eliminate this mismatch, we require the executed velocity field to coincide with the flow-matching target: 
+
+(1 − ω) ⊙ fθ (Y, t ) − κ ⊙ (Y − A) = uFM (Y, t ). (13) Solving eq. (13) for fθ yields the Legato velocity field 
+
+fθ (Y, t ) = ( 1 − ω)−1 ⊙ uFM (Y, t ) + κ ⊙ (Y − A), (14) where the inverse is taken element-wise. Substituting eq. (7) and eq. (8) into eq. (14), we obtain a closed-form target velocity 
+
+vtarget (t, A, ϵ, ω) =  1 − κ ⊙ (1 − t) ⊙ (A − ϵ), (15) The network is trained by regressing fθ (Yt, o, t, ω) to vtarget .Thus, Legato preserves the geometric direction of standard flow matching while reshaping the velocity magnitude to internalize continuation dynamics. 
+
+Inference: At inference time, we use the previously gen-erated (but haven’t been executed) chunk as the reference for continuation. We construct a reference action chunk Aref 
+
+from the previous prediction using the alignment procedure as shown in algorithm 1. We then instantiate the guidance term in eq. (12) by setting A ← Aref .Given a schedule ω, we initialize 
+
+Y0 = ω ⊙ Aref + ( 1 − ω) ⊙ ϵ, ϵ ∼ N (0, I), (16) We integrate eq. (12) forward in time from t = 0 to t = 1 
+
+using the learned velocity field in eq. (14), with the same 1       
+
+> 2
+> Stack Bowls Pour Things
+> Open Drawer Fold Towel Pick Place
+> Fig. 4. Real-world evaluation tasks on a dual-arm robot. We consider five manipulation tasks (stack bowls, pour things, pick and place, fold towel and open drawer) covering diverse motion patterns and multimodal choices such as alternative grasp goals and left/right arm selection.
+
+discretization (number of denoising steps N ) as used during training. This enable the strict training-inference alignment. 
+
+D. Schedule Randomization and Conditioning 
+
+In our framework, the continuation schedule over an action chunk of horizon H is fully specified by two scalar parameters: the inference delay d and the ramp length r. Given (d, r ),the guidance schedule ω ∈ [0 , 1] H is uniquely determined, consisting of a full-guidance prefix of length d followed by a ramp part of length r.In real-world deployment, effective inference delay varies across hardware platforms, model sizes, and inference op-timizations. To account for this variability while enabling flexible control over continuation smoothness, we randomize 
+
+(d, r ) during training, thereby exposing the policy to a diverse family of guidance schedules. When training with randomized schedules, the policy must be informed of the schedule at inference time. We there-fore explicitly condition the action decoder on the sched-ule. Concretely, if the noisy action Yt ∈ RH×Da , where 
+
+Da denotes the action dimension, we append the guidance schedule along the feature dimension, resulting in an noisy action of shape (H, D a + 1) . At inference time, adapting to a new continuation regime only requires changing the guidance schedule ω, without retraining the model. Empirically, this schedule conditioning substantially improves robustness across hardware platforms and inference budgets. IV. E XPERIMENTS 
+
+A. Experimental Setups 1) Tasks and Environments : We evaluate our method on five real-world manipulation tasks: (i) stack the bowls, (ii) pour things into the bowl, (iii) put all the items into the box, (iv) fold the towel, and (v) open the drawer, as shown in fig. 4. These tasks jointly test different action patterns (e.g., rotation- or translation-dominant motions) and multimodal action selection (e.g., multiple valid grasp goals or the choice of different arms for execution). All tasks are evaluated with a fixed time cutoff of 120 s. Details are provided in the appendix. TABLE I MAIN REAL -WORLD RESULTS COMPARING RTC AND LEGATO ACROSS FIVE TASKS . W E REPORT TASK SCORE (↑), COMPLETION TIME IN SECONDS (↓),  
+
+> AND SMOOTHNESS METRICS
+
+(↓): NLDLJ (N EGATIVE LOG DIMENSIONLESS JERK [1, 2]), NSPARC (N EGATIVE LINEAR AND ANGULAR SPECTRAL 
+
+ARC LENGTH [1, 2]), AND OVERLAP RMSE (R OOT MEAN SQUARED ERROR , ×10 3 ). V ALUES ARE REPORTED AS MEAN ± STANDARD ERROR .
+
+Task Score ↑ Completion Time (s) ↓ Smoothness ↓
+
+NLDLJ ↓ NSPARC ↓ Overlap RMSE (×10 3) ↓
+
+RTC Legato RTC Legato RTC Legato RTC Legato RTC Legato Bowls 8.68 ± 0.35 9.08 ± 0.33 52.88 ± 3.54 42.66 ± 2.68 36.00 ± 0.34 35.86 ± 0.38 1.82 ± 0.04 1.63 ± 0.02 6.83 ± 0.50 4.58 ± 0.17 
+
+Pour 9.34 ± 0.18 9.72 ± 0.13 95.07 ± 2.86 75.73 ± 1.51 39.82 ± 0.15 39.50 ± 0.13 2.85 ± 0.24 1.65 ± 0.08 7.64 ± 0.70 5.14 ± 0.17 
+
+PickPlace 9.47 ± 0.15 9.53 ± 0.12 35.53 ± 1.24 30.37 ± 0.65 34.42 ± 0.18 34.34 ± 0.14 2.10 ± 0.08 1.89 ± 0.05 10.17 ± 0.66 5.98 ± 0.40 
+
+Drawer 9.20 ± 0.16 9.50 ± 0.13 25.97 ± 0.74 21.80 ± 0.72 32.73 ± 0.13 28.55 ± 0.26 2.24 ± 0.05 1.99 ± 0.08 12.11 ± 0.66 11.74 ± 0.55 
+
+Towel 7.33 ± 0.62 8.17 ± 0.56 25.93 ± 0.98 20.00 ± 0.78 32.79 ± 0.20 32.43 ± 0.24 2.17 ± 0.07 1.97 ± 0.05 11.28 ± 0.55 6.22 ± 0.66 Legato  RTC 
+
+Grasp Goal 
+
+Changing 
+
+Execution Arm 
+
+Changing 
+
+Grasp Goal 
+
+Changing 
+
+More Stable Goal and Execution Arm 
+
+Fig. 5. Legato suppresses spurious multimodal switching across chunk boundaries. In a representative bowl-stacking rollout, RTC alternates (arrow) between competing grasp goals (green circle) and execution arms (red circle) over successive chunks, producing visibly hesitant corrections. Legato preserves a consistent grasp goal and arm choice (blue circle), leading to steadier progress. 
+
+2) Evaluation Metrics : The following evaluation metrics are used to assess real-world experimental performance. 
+
+Task completion score. Each rollout is assigned a task-specific completion score based on task progress and failure cases (e.g., partial success, object drops, or incorrect actions). Higher scores indicate better task completion. 
+
+Task completion time. We measure the total time required to complete each task. This metric reflects the execution efficiency of the policy, capturing delays caused by hesitation or spurious action switching during real-world execution. 
+
+Trajectory smoothness metrics. Following prior work on action smoothness, we evaluate smoothness on the model out-put commands rather than robot executed states. This decou-ples model behavior from low-level controller performance. Specifically, we report three smoothness-related metrics that capture complementary aspects of trajectory quality [1, 2]:  
+
+> •
+
+Negative SPARC (NSPARC) , where SPARC [1, 2] (Linear and Angular Spectral Arc Length) measures the smoothness of the velocity profile in the frequency do-main over the entire trajectory . Lower values of NSPARC indicate smoother global speed modulation with reduced high-frequency fluctuations.  
+
+> •
+
+Negative LDLJ (NLDLJ) , where LDLJ [1, 2] (Log Dimensionless Jerk) quantifies high-order geometric smoothness by integrating squared jerk over the entire trajectory . Lower NLDLJ correspond to reduced overall jerk energy and smoother motion at a global level.  
+
+> •
+
+Chunk-overlap RMSE , computed over the overlapping delay segment between consecutive action chunks, which evaluates local trajectory continuity at chunk connections rather than global smoothness. Except for the task completion score, lower values indicate better performance for all metrics. Details of all metrics are provided in the appendix. 
+
+3) Models and Training Protocol : We compare the RTC baseline and our proposed Legato method under a strictly controlled setting. Both methods are initialized from the same 
+
+π0.5 pretrained checkpoint, trained on identical task datasets, and optimized using the same training hyperparameters and number of training steps. 
+
+B. Main Results 
+
+In this section, we report real-world evaluation results of Legato and RTC across five manipulation tasks executed on physical robotic platforms. As summarized in table I, Legato consistently outperforms RTC across all evaluated tasks. 
+
+1) Task efficiency : Legato consistently achieves shorter task completion time than RTC across all tasks. As analyzed in section III-C, the schedule-shaped velocity reweighting increases the difficulty of switching between competing action modes, effectively suppressing frequent multimodal oscilla-tions during execution. Empirically, this leads to more decisive action generation with reduced hesitation before execution, thereby shortening TABLE II COMPARISON OF TRAINING -T IME RTC AND LEGATO . T HE GUIDANCE CONFIGURATION OF LEGATO IS d=8 , s=30 , r=22 . V ALUES ARE REPORTED AS MEAN ± STANDARD ERROR .
+
+Metric Training-time RTC Legato Score ↑ 9.46 ± 0.16 9.72 ± 0.13 
+
+Completion Time (s) ↓ 81.73 ± 1.12 75.73 ± 1.51 
+
+NSPARC ↓ 2.46 ± 0.14 1.65 ± 0.08 
+
+NLDLJ ↓ 39.95 ± 0.13 39.50 ± 0.13 
+
+overall task duration. The effect is particularly pronounced in the bowl-stacking task, where multiple visually similar bowls induce a large number of plausible action modes, as shown in fig. 5. In such settings, RTC often alternates between competing strategies, while Legato maintains consistent mode selection and completes the task more efficiently. 
+
+2) Trajectory smoothness : Legato also demonstrates clear advantages in trajectory smoothness compared to RTC. With the exception of NLDLJ, all smoothness-related metrics show statistically significant improvements in favor of Legato. Specifically, Legato consistently achieves lower NSPARC values across all tasks. This result indicates that Legato pro-duces commands with reduced high-frequency velocity fluctu-ations and more regular speed modulation. Such improvements correspond to smoother and more visually coherent motions observed during real-world execution, as shown in the trajec-tories in fig. 1. In addition, Legato substantially reduces the chunk-overlap RMSE across tasks. The observed improvements indicate that Legato generates more coherent chunk-to-chunk transitions, leading to improved continuity at action boundaries and smoother chunk-to-chunk stitching. In contrast, improvements in NLDLJ do not consistently reach statistical significance across all tasks. NLDLJ measures high-order geometric smoothness by integrating squared jerk over the entire trajectory and is therefore dominated by mo-tion segments outside the chunk overlap regions. Importantly, NLDLJ does not degrade under Legato compared to RTC, indicating that while trajectory continuity is improved at chunk boundaries, the remaining portions of the trajectory do not exhibit degraded smoothness. 
+
+3) Task success : Finally, Legato exceeds the task com-pletion scores achieved by RTC. This confirms that the ob-served improvements in execution efficiency and trajectory smoothness do not come at the cost of task success, but instead translate into more reliable and effective real-world manipulation performance. 
+
+C. Comparison with Training-Time RTC 
+
+We compare Legato with the recently proposed training-time RTC [9] on the pour task, which also introduces con-tinuation during training by constraining overlapping action segments. We implement training-time RTC following the original formulation and compare it against Legato under the same experimental settings. As shown in table II, Legato achieves higher task scores, shorter completion times, and improved smoothness metrics compared to training-time RTC. 8-30-22 8-8-22 8-8-8        
+
+> 0
+> 50
+> 100
+> Completion Time (s)
+> 8-30-22 8-8-22 8-8-8
+> 2
+> 1
+> 0
+> NSPARC
+> Legato
+> RTC
+> 8-30-22 8-8-22 8-8-8
+> 42
+> 41
+> 40
+> 39
+> NLDLJ
+> 8-30-22 8-8-22 8-8-8
+> 0
+> 2
+> 4
+> 6
+> Overlap RMSE ( ×10  3)
+> Schedule Configuration
+> Fig. 6. Schedule ablation reveals a controllable trade-off between local overlap consistency and smoothness. Across schedule configurations ( d, s, r ), Legato outperforms RTC on completion time and smoothness. Decreasing stride strengthens overlap coupling but can increase high-frequency content; shortening the ramp partially recovers frequency-domain smoothness at the cost of weaker overlap alignment.
+
+To contextualize this comparison, when the ramp length in our guidance schedule is set to zero, the schedule reduces to a hard overlap constraint that is similar in form to training-time RTC. However, this similarity is limited to the constraint shape: the two approaches differ fundamentally in how con-tinuation is incorporated into the learned policy. Training-time RTC treats continuation as an external constraint via hard prefix conditioning while leaving the underlying flow dynam-ics unchanged. In contrast, Legato reshapes the learned flow dynamics to match the effective denoising behavior induced by repeated, schedule-shaped guidance, so continuation becomes a native property of the policy dynamics. Overall, these results suggest that reshaping the policy dy-namics (rather than enforcing hard overlap constraints alone) is important for effective chunk continuation, and that using a non-zero ramp further enables smoother transitions between consecutive action chunks. 
+
+D. Ablation Studies 
+
+In this section, we conduct a comprehensive set of ablation studies to analyze the applicability and robustness of the proposed method. Specifically, we examine: (i) the effect of different guidance schedule settings at inference time, (ii) the role of the condition row used in our policy, and (iii) the performance of Legato across different VLA models. 
+
+1) Varying the execution stride s : RTC recommends set-ting the execution stride s to at least half of the action chunk length. However, since s directly determines the effective inference frequency, a larger stride inevitably reduces the model’s responsiveness. This reveals an inherent trade-off between inference efficiency and control reactivity, motivating a detailed ablation over guidance schedule configurations. When the execution stride s becomes smaller than half of the chunk length, the ramp segment may extend beyond the immediate next chunk. To avoid that, we shorten the ramp TABLE III ABLATION STUDY ON ROBUSTNESS TO INFERENCE DELAY . W E VARY THE INFERENCE DELAY d WITH A FIXED EXECUTION STRIDE s, WHERE THE RAMP LENGTH r CHANGES ACCORDINGLY DUE TO THE SCHEDULE CONSTRAINT . V ALUES ARE REPORTED AS MEAN ± STANDARD ERROR .
+
+(d, s, r ) Method NSPARC ↓ Overlap RMSE ↓
+
+(10,30,20) RTC 2.03 ± 0.08 9.23 ± 0.75 
+
+Legato 1.68 ± 0.09 7.00 ± 0.50 
+
+(8,30,22) RTC 2.10 ± 0.09 7.00 ± 0.52 
+
+Legato 1.50 ± 0.07 5.94 ± 0.38 
+
+(6,30,24) RTC 2.03 ± 0.08 9.23 ± 0.75 
+
+Legato 1.38 ± 0.05 5.44 ± 0.31 
+
+segment as s decreases, ensuring that the ramp always remains confined within the next chunk. We evaluate several guidance schedule configurations on the pour task, as illustrated in fig. 6. Our findings can be summarized as follows: 
+
+a) Legato consistently outperforms RTC on almost all metrics : The only exception is the overlap RMSE in the d =
+
+s = r = 8 setting, which is discussed in the appendix. 
+
+b) Reducing the execution stride s improves chunk-to-chunk consistency but can degrade global smoothness :
+
+Under the constraint r+s+d = H, a smaller s implies a larger ramp length r, which improves chunk-to-chunk continuity, as reflected by lower overlap RMSE. At the same time, smaller strides lead to more frequent overlap regions, causing high-frequency components to accumulate and resulting in degraded whole-trajectory smoothness metrics. 
+
+c) Shortening the ramp while keeping s small improves frequency-domain smoothness at the expense of overlap consistency : When s remains small but the ramp length is shortened, NSPARC improves, indicating smoother frequency-domain behavior. However, this reduces overlap consistency, reflecting a weaker coupling between adjacent chunks. Overall, these results demonstrate that the execution stride 
+
+s and ramp length jointly control a fundamental trade-off between local chunk connection quality and global frequency-domain smoothness. By adjusting their relative proportions, Legato enables flexible control over trajectory smoothness. 
+
+2) Varying the inference delay d: In addition to the execution stride, the inference delay d also plays an important role in shaping trajectory smoothness. To isolate its effect, we fix the execution stride s and vary the delay length d,conducting evaluations on the pour task. The quantitative results are summarized in table III. Across all evaluated metrics, Legato consistently outper-forms RTC, demonstrating the robustness of the proposed method to variations in inference latency. When analyzing Legato specifically, we find that reducing the delay length decreases the size of the overlap region while simultaneously increasing the relative length of the ramp segment. This leads to improved chunk-to-chunk continuity and smoother execu-tion, as reflected by better overlap consistency and frequency-domain smoothness metrics. Overall, these results indicate that both execution stride s
+
+and inference delay d provide effective control knobs for shap-      
+
+> TABLE IV ABLATION STUDY ON THE EFFECT OF THE CONDITION ROW UNDER DIFFERENT GUIDANCE CONFIGURATIONS . W E VARY THE INFERENCE DELAY dAND RAMP LENGTH rTO CONSTRUCT DIFFERENT SCHEDULES .VALUES ARE REPORTED AS MEAN ±STANDARD ERROR .
+
+(d, s, r ) Method NSPARC ↓ Overlap RMSE ↓
+
+(10,30,20) w/o cond 1.64 ± 0.07 7.88 ± 0.70 
+
+w/ cond 1.68 ± 0.09 7.00 ± 0.50 
+
+(8,30,22) w/o cond 1.52 ± 0.09 7.21 ± 0.68 
+
+w/ cond 1.50 ± 0.07 5.94 ± 0.38 
+
+(6,30,24) w/o cond 1.49 ± 0.10 6.40 ± 0.52 
+
+w/ cond 1.38 ± 0.05 5.44 ± 0.31           
+
+> TABLE V ABLATION RESULTS ON THE π0MODEL COMPARING RTC AND LEGATO UNDER THE SAME GUIDANCE CONFIGURATION (d=8 ,s=30 ,r=22 ). VALUES ARE REPORTED AS MEAN ±STANDARD ERROR .
+
+Metric π0 + RTC π0 + Legato Completion Time ↓ 92.93 ± 1.90 88.30 ± 1.29 
+
+NSPARC ↓ 2.00 ± 0.09 1.83 ± 0.08 
+
+NLDLJ ↓ 40.48 ± 0.21 40.27 ± 0.09 
+
+Overlap RMSE ↓ 8.63 ± 0.65 7.50 ± 0.49 
+
+ing smoothness properties of generated trajectories. Legato can flexibly adapt to different schedule configurations while consistently maintaining superior performance over RTC. 
+
+3) Condition Row : To evaluate whether the condition row is useful, we conduct an ablation study in which the guidance schedule is no longer provided as an explicit condition. We perform this ablation on the pour task, and report the results in table IV. As shown, removing the condition row leads to a degradation in performance, particularly in trajectory smoothness and execution stability. This suggests that explicitly providing the guidance schedule helps the model disambiguate different continuation regimes induced by varying (d, r ) pairs, and enables more reliable adaptation to dynamic inference conditions. 
+
+4) Different Models : In the main results table I, we eval-uate our method on the π0.5 model. To evaluate whether the proposed method generalizes across different VLA models, we further conduct experiments on the π0 model. We select the representative task pour things . As shown in table V, Legato consistently outperforms RTC on the π0 model on the task. These results demonstrate that the proposed method is not tied to a specific policy backbone or training configuration, and can be effectively transferred across different flow-based VLA models, highlighting its robustness and model generality. V. C ONCLUSION 
+
+In this work, we propose Legato, a training-time contin-uation method for action-chunked flow-based VLA policies. Legato reshapes the learned flow dynamics to align training and inference under schedule-shaped, per-step continuation, making chunk continuation a native property of the pol-icy. This design improves trajectory smoothness and reduces spurious multimodal switching at chunk boundaries, leading to smoother action and more consistent action modes, less hesitation, and shorter task completion time. By conditioning on randomized schedules, a single policy can adapt to different inference delays and flexibly control trajectory smoothness. In the current formulation, the denoise step is specified at training time, limiting the ability to adjust it during inference. Future work could investigate more flexible native continua-tion schemes with consistent training and inference dynamics. REFERENCES 
+
+[1] Nadun Ranawaka Arachchige, Zhenyang Chen, Wonsuhk Jung, Woo Chul Shin, Rohan Bansal, Pierre Barroso, Yu Hang He, Yingyang Celine Lin, Benjamin Joffe, Shreyas Kousik, et al. Sail: Faster-than-demonstration execution of imitation learning policies. arXiv preprint arXiv:2506.11948 , 2025. [2] Sivakumar Balasubramanian, Alejandro Melendez-Calderon, Agn` es Roby-Brami, and Etienne Burdet. On the analysis of movement smoothness. Journal of NeuroEngineering and Rehabilitation , 12, 2015. [3] Jose Barreiros, Andrew Beaulieu, Aditya Bhat, Rick Cory, Eric Cousineau, Hongkai Dai, Ching-Hsin Fang, Kunimatsu Hashimoto, Muhammad Zubair Irshad, Masha Itkina, et al. A careful examination of large behavior models for multitask dexterous manipulation. 
+
+arXiv preprint arXiv:2507.05331 , 2025. [4] Suneel Belkhale and Dorsa Sadigh. Minivla: A better vla with a smaller footprint, 2024. [5] Johan Bjorck, Fernando Casta˜ neda, Nikita Cherniadev, Xingye Da, Runyu Ding, Linxi Fan, Yu Fang, Dieter Fox, Fengyuan Hu, Spencer Huang, et al. Gr00t n1: An open foundation model for generalist humanoid robots. arXiv preprint arXiv:2503.14734 , 2025. [6] Kevin Black, Noah Brown, Danny Driess, Adnan Es-mail, Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, et al. π0: A vision-language-action flow model for general robot control. 
+
+arXiv preprint arXiv:2410.24164 , 2024. [7] Kevin Black, Noah Brown, James Darpinian, Karan Dhabalia, Danny Driess, Adnan Esmail, Michael Robert Equi, Chelsea Finn, Niccolo Fusai, Manuel Y Galliker, et al. π0.5: a vision-language-action model with open-world generalization. In 9th Annual Conference on Robot Learning , 2025. [8] Kevin Black, Manuel Y Galliker, and Sergey Levine. Real-time execution of action chunking flow policies. 
+
+arXiv preprint arXiv:2506.07339 , 2025. [9] Kevin Black, Allen Z Ren, Michael Equi, and Sergey Levine. Training-time action conditioning for efficient real-time chunking. arXiv preprint arXiv:2512.05964 ,2025. [10] Max Braun, No´ emie Jaquier, Leonel Rozo, and Tamim Asfour. Riemannian flow matching policy for robot motion learning. In 2024 IEEE/RSJ International Con-ference on Intelligent Robots and Systems (IROS) , pages 5144–5151. IEEE, 2024. [11] Chilam Cheang, Sijin Chen, Zhongren Cui, Yingdong Hu, Liqun Huang, Tao Kong, Hang Li, Yifeng Li, Yuxiao Liu, Xiao Ma, et al. Gr-3 technical report. arXiv preprint arXiv:2507.15493 , 2025. [12] Boyuan Chen, Diego Mart´ ı Mons´ o, Yilun Du, Max Simchowitz, Russ Tedrake, and Vincent Sitzmann. Diffu-sion forcing: Next-token prediction meets full-sequence diffusion. Advances in Neural Information Processing Systems , 37:24081–24125, 2024. [13] Cheng Chi, Zhenjia Xu, Chuer Pan, Eric Cousineau, Benjamin Burchfiel, Siyuan Feng, Russ Tedrake, and Shuran Song. Universal manipulation interface: In-the-wild robot teaching without in-the-wild robots. arXiv preprint arXiv:2402.10329 , 2024. [14] Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau, Yilun Du, Benjamin Burchfiel, Russ Tedrake, and Shuran Song. Diffusion policy: Visuomotor policy learning via action diffusion. The International Journal of Robotics Research , 44(10-11):1684–1704, 2025. [15] Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 , 2022. [16] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. Advances in neural infor-mation processing systems , 33:6840–6851, 2020. [17] Sigmund H Høeg, Yilun Du, and Olav Egeland. Streaming diffusion policy: Fast policy synthesis with variable noise diffusion models. arXiv preprint arXiv:2406.04806 , 2024. [18] Chanhyuk Jung, Dasom Ahn, Sangwon Kim, In-su Jang, Kwang-Ju Kim, Sungkeun Yoo, and Byoung Chul Ko. Rolling diffusion policy for robotic action prediction: Enhancing efficiency and temporal awareness. In ICRA 2025 Workshop on Foundation Models and Neuro-Symbolic AI for Robotics , 2025. [19] Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao, Ashwin Balakrishna, Suraj Nair, Rafael Rafailov, Ethan Foster, Grace Lam, Pannag Sanketi, et al. Openvla: An open-source vision-language-action model. arXiv preprint arXiv:2406.09246 , 2024. [20] Lucy Lai, Ann Zixiang Huang, and Samuel J Gershman. Action chunking as policy compression. PsyArXiv , 2022. [21] Zhixuan Liang, Yizhuo Li, Tianshuo Yang, Chengyue Wu, Sitong Mao, Tian Nian, Liuao Pei, Shunbo Zhou, Xiaokang Yang, Jiangmiao Pang, et al. Discrete dif-fusion vla: Bringing discrete diffusion to action decod-ing in vision-language-action policies. arXiv preprint arXiv:2508.20072 , 2025. [22] Fanqi Lin, Ruiqian Nai, Yingdong Hu, Jiacheng You, Junming Zhao, and Yang Gao. Onetwovla: A unified vision-language-action model with adaptive reasoning. 
+
+ArXiv , abs/2505.11917, 2025. [23] Tao Lin, Yilei Zhong, Yuxin Du, Jingjing Zhang, Jiting Liu, Yinxinyu Chen, Encheng Gu, Ziyan Liu, Hongyi Cai, Yanwen Zou, et al. Evo-1: Lightweight vision-language-action model with preserved semantic align-ment. arXiv preprint arXiv:2511.04555 , 2025. [24] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maxim-ilian Nickel, and Matt Le. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. [25] Songming Liu, Lingxuan Wu, Bangguo Li, Hengkai Tan, Huayu Chen, Zhengyi Wang, Ke Xu, Hang Su, and Jun Zhu. Rdt-1b: a diffusion foundation model for bimanual manipulation. arXiv preprint arXiv:2410.07864 , 2024. [26] Yuejiang Liu, Jubayer Ibn Hamid, Annie Xie, Yoonho Lee, Maximilian Du, and Chelsea Finn. Bidirectional decoding: Improving action chunking via closed-loop resampling. arXiv preprint arXiv:2408.17355 , 2024. [27] Tim Pearce, Tabish Rashid, Anssi Kanervisto, Dave Bignell, Mingfei Sun, Raluca Georgescu, Sergio Valcar-cel Macua, Shan Zheng Tan, Ida Momennejad, Katja Hofmann, et al. Imitating human behaviour with dif-fusion models. arXiv preprint arXiv:2301.10677 , 2023. [28] Karl Pertsch, Kyle Stachowicz, Brian Ichter, Danny Driess, Suraj Nair, Quan Vuong, Oier Mees, Chelsea Finn, and Sergey Levine. Fast: Efficient action tokeniza-tion for vision-language-action models. arXiv preprint arXiv:2501.09747 , 2025. [29] Ashwini Pokle, Matthew Muckley, Ricky T. Q. Chen, and Brian Karrer. Training-free linear image inverses via flows. Trans. Mach. Learn. Res. , 2024, 2023. [30] Delin Qu, Haoming Song, Qizhi Chen, Zhaoqing Chen, Xianqiang Gao, Xinyi Ye, Qi Lv, Modi Shi, Guanghui Ren, Cheng Ruan, et al. Eo-1: Interleaved vision-text-action pretraining for general robot control. arXiv preprint arXiv:2508.21112 , 2025. [31] Mustafa Shukor, Dana Aubakirova, Francesco Ca-puano, Pepijn Kooijmans, Steven Palma, Adil Zouitine, Michel Aractingi, Caroline Pascal, Martino Russi, An-dres Marafioti, et al. Smolvla: A vision-language-action model for affordable and efficient robotics. arXiv preprint arXiv:2506.01844 , 2025. [32] Jiaming Song, Arash Vahdat, Morteza Mardani, and Jan Kautz. Pseudoinverse-guided diffusion models for in-verse problems. In International Conference on Learning Representations , 2023. [33] Gemini Robotics Team, Saminda Abeyruwan, Joshua Ainslie, Jean-Baptiste Alayrac, Montserrat Gonzalez Arenas, Travis Armstrong, Ashwin Balakrishna, Robert Baruch, Maria Bauza, Michiel Blokzijl, et al. Gemini robotics: Bringing ai into the physical world. arXiv preprint arXiv:2503.20020 , 2025. [34] Octo Model Team, Dibya Ghosh, Homer Walke, Karl Pertsch, Kevin Black, Oier Mees, Sudeep Dasari, Joey Hejna, Tobias Kreiman, Charles Xu, et al. Octo: An open-source generalist robot policy. arXiv preprint arXiv:2405.12213 , 2024. [35] Yating Wang, Haoyi Zhu, Mingyu Liu, Jiange Yang, Hao-Shu Fang, and Tong He. Vq-vla: Improving vision-language-action models via scaling vector-quantized ac-tion tokenizers. ArXiv , abs/2507.01016, 2025. [36] Junjie Wen, Minjie Zhu, Jiaming Liu, Zhiyuan Liu, Yicun Yang, Linfeng Zhang, Shanghang Zhang, Yichen Zhu, and Yi Xu. dvla: Diffusion vision-language-action model with multimodal chain-of-thought. arXiv preprint arXiv:2509.25681 , 2025. [37] Junjie Wen, Yichen Zhu, Jinming Li, Minjie Zhu, Zhibin Tang, Kun Wu, Zhiyuan Xu, Ning Liu, Ran Cheng, Chaomin Shen, et al. Tinyvla: Towards fast, data-efficient vision-language-action models for robotic manipulation. 
+
+IEEE Robotics and Automation Letters , 2025. [38] Yuqing Wen, Hebei Li, Kefan Gu, Yucheng Zhao, Tiancai Wang, and Xiaoyan Sun. Llada-vla: Vision language dif-fusion action models. arXiv preprint arXiv:2509.06932 ,2025. [39] Bin Yu, Shijie Lian, Xiaopeng Lin, Yuliang Wei, Zhao-long Shen, Changti Wu, Yuzhuo Miao, Xinming Wang, Bailing Wang, Cong Huang, et al. Twinbrainvla: Un-leashing the potential of generalist vlms for embodied tasks via asymmetric mixture-of-transformers. arXiv preprint arXiv:2601.14133 , 2026. [40] Hang Yu, Juntu Zhao, Yufeng Liu, Kaiyu Li, Cheng Ma, Di Zhang, Yingdong Hu, Guang Chen, Junyuan Xie, Jun-liang Guo, et al. Point what you mean: Visually grounded instruction policy. arXiv preprint arXiv:2512.18933 ,2025. [41] Juntu Zhao, Wenbo Lu, Di Zhang, Yufeng Liu, Yushen Liang, Tianluo Zhang, Yifeng Cao, Junyuan Xie, Ying-dong Hu, Shengjie Wang, et al. Do you need propri-oceptive states in visuomotor policies? arXiv preprint arXiv:2509.18644 , 2025. [42] Qingqing Zhao, Yao Lu, Moo Jin Kim, Zipeng Fu, Zhuoyang Zhang, Yecheng Wu, Zhaoshuo Li, Qianli Ma, Song Han, Chelsea Finn, Ankur Handa, Ming-Yu Liu, Donglai Xiang, Gordon Wetzstein, and Tsung-Yi Lin. Cot-vla: Visual chain-of-thought reasoning for vision-language-action models. 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 1702–1713, 2025. [43] Tony Z Zhao, Vikash Kumar, Sergey Levine, and Chelsea Finn. Learning fine-grained bimanual manipulation with low-cost hardware. arXiv preprint arXiv:2304.13705 ,2023. [44] Haoyu Zhen, Xiaowen Qiu, Peihao Chen, Jincheng Yang, Xin Yan, Yilun Du, Yining Hong, and Chuang Gan. 3d-vla: A 3d vision-language-action generative world model. 
+
+arXiv preprint arXiv:2403.09631 , 2024. [45] Ruijie Zheng, Yongyuan Liang, Shuaiyi Huang, Jianfeng Gao, Hal Daum´ e III, Andrey Kolobov, Furong Huang, and Jianwei Yang. Tracevla: Visual trace prompting en-hances spatial-temporal awareness for generalist robotic policies. arXiv preprint arXiv:2412.10345 , 2024. [46] Brianna Zitkovich, Tianhe Yu, Sichun Xu, Peng Xu, Ted Xiao, Fei Xia, Jialin Wu, Paul Wohlhart, Stefan Welker, Ayzaan Wahid, et al. Rt-2: Vision-language-action models transfer web knowledge to robotic control. In Conference on Robot Learning , pages 2165–2183. PMLR, 2023. APPENDIX 
+
+A. Task Details 
+
+We evaluate all methods on five real-world manipulation tasks that span diverse object interactions, action patterns, and execution characteristics. Across all tasks, the robot starts from an identical initial configuration for all models. Unless other-wise specified, object positions, orientations, and appearances are randomized per trial but kept identical across different models to ensure fair comparison. Unless otherwise noted, for all tasks except bowl, each model is evaluated over 30 trials. All ablation studies follow the same evaluation protocol, with 30 trials conducted per model for each task. 
+
+1) Bowl Stacking (bowl) : The objective of this task is to stack all bowls placed on a tabletop into a single vertical stack. We consider five settings with the number of bowls equal to {3, 4, 5, 6, 7}. For each setting, 10 trials are conducted, resulting in a total of 50 trials. In each trial, the initial positions and colors of the bowls are randomly sampled. To ensure fair comparison, the same set of 50 initial configurations is used across all models. A trial is considered successful if all bowls are stacked into one pile without any bowl falling off the table. 
+
+2) Pouring (pour) : This task evaluates coordinated grasp-ing, lifting, and rotational control. Two bowls of different colors are placed on the tabletop, one of which initially contains a set of small blocks. The robot is required to grasp the bowl containing the blocks, pour all blocks into the empty bowl, then grasp the second bowl and pour the blocks back into the original bowl. This sequence constitutes one complete pouring operation, as illustrated in fig. 1. Each trial consists of three consecutive pouring operations. 
+
+3) Pick-and-Place (pickplace) : In this task, the robot must place all items on the table into a white box. The objects include a small jar, a marker pen, and a small ball. The white box and all three objects are randomly placed on the tabletop at the beginning of each trial, with configurations shared across models. A trial is considered successful if all three objects are fully placed inside the box. 
+
+4) Drawer Opening (drawer) : This task requires the robot to open the second drawer of a white three-layer drawer cabinet. At the beginning of each trial, the drawer cabinet is placed on the table with a randomly sampled position and orientation, while remaining consistent across models. The task is considered successful if the second drawer is pulled open beyond a predefined distance threshold. 
+
+5) Towel Folding (towel) : The objective of this task is to fold a towel placed on the tabletop. The towel’s initial position and orientation are randomly sampled for each trial and kept identical across models. A trial is considered successful if the towel is folded into a compact configuration according to predefined geometric criteria. 
+
+B. Delay Construction Details 
+
+In our experiments, the guidance schedule is fully deter-mined by two parameters: the inference delay d and the ramp length r. Once these two parameters are specified, the corresponding guidance schedule is uniquely defined. This section details how the delay parameter d is constructed and controlled in our experiments. All experiments are conducted using the π0.5 model on a single RTX 4090 GPU. Without enabling inference-time optimizations, a single forward pass of the model takes ap-proximately 170 ms. We adopt an action chunk size of 60, where each chunk corresponds to 2 seconds of continuous actions. Under this setting, the minimum delay induced by inference latency corresponds to approximately 6 timesteps. Through careful empirical measurements, we observe that when running on the same hardware, the inference delay remains stable across executions and does not exhibit large fluctuations, typically staying within a one-timestep variation. To ensure experimental consistency and precise control over the delay parameter, we explicitly construct the effective delay duration. Specifically, after generating an action chunk, if the actual inference time does not occupy the prescribed number of delay timesteps, we introduce additional idle time to ensure that the total delay equals the target value. Owing to the stability of inference latency on the same hardware, the actual delay does not exceed the prescribed value in practice, and we further allow a small tolerance margin to guarantee this condition. In the main experiments, we fix the delay to d = 8
+
+timesteps. This corresponds to an effective delay of approx-imately 266.7 ms. For the delay ablation study, we evaluate three different delay settings with d ∈ { 6, 8, 10 } timesteps, corresponding to delays of approximately 200 ms, 266.7 ms, and 333.3 ms, respectively. We emphasize that this explicit construction of delay is introduced solely to control experimental variables and ensure fair comparison across different settings. Our experiments show that the proposed method maintains strong performance across a range of delay values. In practical real-world deploy-ments, the delay does not need to be fixed and can instead be handled using a delay buffer, similar to the strategy adopted in Real-Time Chunking (RTC), allowing the guidance schedule to adapt dynamically to runtime conditions. 
+
+C. Experiments Details 
+
+We clarify the experimental protocol for the pour task. The main experiments and the ablation studies were conducted with a time gap of approximately one month. To ensure that potential changes in the environment or updates to the robot system did not affect the reported results, experiments with identical settings to the main experiments were re-run during the ablation phase to enable fully fair comparisons. Specifically, the main experiments reported in table 1 and table 2, together with the preliminary study shown in table A.2, were conducted in the same experimental batch. The remaining ablation experiments were performed at a later time. By re-evaluating overlapping settings, we ensure that all reported comparisons reflect methodological differences rather than changes in the experimental setup. TABLE A.1 TASK COMPLETION SCORING SCHEMES FOR ALL FIVE TASKS . P OSITIVE SCORES ARE AWARDED FOR COMPLETING TASK -RELEVANT STEPS , WHILE PENALTIES ARE APPLIED FOR EXECUTION ERRORS . E ACH PENALTY ITEM IS CAPPED AT A MAXIMUM DEDUCTION OF 3 POINTS PER TRIAL .
+
+Task Scoring Item Score 
+
+Bowl Successfully stack one bowl +2 
+
+Bowl tipping or falling −1
+
+Empty grasp −1
+
+Grasping an already stacked bowl −1
+
+Pour Complete one pouring operation +(10/3) 
+
+Bowl tipping or falling −1
+
+Empty grasp −1
+
+Blocks spilled outside the bowl −1
+
+PickPlace All three objects placed into the box +10 
+
+Object dropped −1
+
+Empty grasp −1
+
+Object not placed into the container −1
+
+Drawer Successfully open the drawer +10 
+
+Pushing the drawer cabinet −1
+
+Empty grasp −1
+
+Incorrect pulling direction −1
+
+Towel Complete the first fold +5 
+
+Complete the second fold +5 
+
+D. Metric Details 1) Task Completion Score : Trajectory smoothness is only one of several factors that influence a model’s final task per-formance. Whether a task can be successfully completed also depends on factors such as the generalization of the training data, the consistency between the deployment environment and the data collection setup, and the overall quality of model training. As a result, using a single binary success rate is insufficient to fully characterize model performance, especially for long-horizon manipulation tasks. In long-horizon settings, early execution errors can propa-gate and significantly affect subsequent actions. Under such conditions, a binary success metric fails to reflect partial progress or distinguish between qualitatively different failure modes. To more accurately measure task performance, we in-troduce a task completion score that provides graded feedback based on the extent to which task objectives are achieved. For each task, we define a structured scoring scheme in which completing meaningful intermediate steps yields posi-tive scores, while execution errors incur penalties. The scoring design follows two principles. First, executions that complete more task-relevant steps receive higher scores than those completing fewer steps. Second, trajectories that complete the task with recoverable errors receive higher scores than those that fail to complete the task, but lower scores than trajectories that complete the task without errors. We design task-specific completion criteria and penalty rules for all five tasks to ensure that the resulting scores consistently reflect execution quality and task progress, rather than relying solely on a binary notion of success or failure, as shown in table A.1. 
+
+2) Smoothness Metrics : We evaluate trajectory smooth-ness using three complementary metrics that capture different aspects of execution quality: NSPARC, NLDLJ, and overlap RMSE. All metrics are reported such that smaller values indi-cate smoother trajectories . For clarity, NSPARC and NLDLJ are defined as the negations of SPARC and LDLJ, respectively. 
+
+a) NSPARC (Negative SPARC) : SPARC (Spectral Arc Length) measures smoothness in the frequency domain by quantifying the arc length of the normalized velocity mag-nitude spectrum. Given a scalar velocity signal v(t) sampled at interval ∆t, we first compute its discrete Fourier transform and obtain the magnitude spectrum |V (ω)|. The spectrum is normalized by its DC component, 
+
+ˆV (ω) = |V (ω)||V (0) | . (A.1) An adaptive cutoff frequency ωc is selected as the smallest frequency at which ˆV (ω) falls below a predefined threshold, bounded by a maximum cutoff. The frequency axis is normal-ized as 
+
+˜ω = ωωc
+
+, (A.2) and the spectral arc length is computed as 
+
+SPARC( v) = −
+
+Z ωc
+
+> 0
+
+vuut d˜ωdω 
+
+2
+
++ d ˆV (ω)
+
+dω 
+
+!2
+
+dω. (A.3) We report the negated quantity 
+
+NSPARC ≜ −SPARC , (A.4) such that smaller NSPARC values correspond to smoother trajectories. For multi-dimensional end-effector trajectories, SPARC is computed separately for translational and rotational motion. Translational NSPARC is computed using the Euclidean norm of the 3D linear velocity, while rotational NSPARC is com-puted using the magnitude of the angular velocity after un-wrapping the rotation representation. The final NSPARC score is obtained by averaging over all end-effectors and motion types. NSPARC primarily captures the distribution of motion en-ergy across frequencies. Trajectories with oscillations, hes-itation, or frequent corrective motions introduce higher-frequency components and yield larger NSPARC values, whereas smooth, continuous motions concentrate energy in low frequencies and result in smaller NSPARC values. 
+
+b) NLDLJ (Negative LDLJ) : LDLJ (Log Dimensionless Jerk) is a time-domain smoothness metric that penalizes rapid changes in acceleration. Given a trajectory of duration T with scalar velocity v(t) and scalar jerk j(t), LDLJ is defined as 
+
+LDLJ = − log T 5
+
+v2peak 
+
+Z T
+
+> 0
+
+∥j(t)∥2 dt 
+
+!
+
+, (A.5) TABLE A.2 ABLATION RESULTS COMPARING ONE -SHOT GUIDANCE AND LEGATO UNDER THE SAME GUIDANCE CONFIGURATION (d=8 , s=30 , r=22 ). VALUES ARE REPORTED AS MEAN ± STANDARD ERROR .
+
+Metric One-shot Guidance Legato Completion Time ↓ 88.44 ± 1.67 75.73 ± 1.51 
+
+NSPARC ↓ 1.77 ± 0.17 1.65 ± 0.08 
+
+NLDLJ ↓ 40.69 ± 0.21 39.50 ± 0.13 
+
+Overlap RMSE ↓ 12.69 ± 1.55 5.14 ± 0.17 
+
+where vpeak = max t |v(t)| is the peak velocity. We report the negated quantity 
+
+NLDLJ ≜ −LDLJ , (A.6) so that smaller NLDLJ values indicate smoother motion. For multi-dimensional trajectories, jerk is computed by successively differentiating position or rotation vectors to obtain vector jerk, followed by taking the Euclidean norm. NLDLJ is computed separately for translational and rotational motion, and the final score is averaged across all end-effectors. To avoid artificially inflated jerk values at chunk boundaries, jerk samples corresponding to chunk connection points are excluded from the computation. NLDLJ measures smoothness in terms of higher-order tem-poral continuity. Trajectories with abrupt acceleration changes or sharp corrective motions yield larger NLDLJ values, while trajectories with gradual acceleration profiles achieve smaller NLDLJ values. 
+
+c) Overlap RMSE : Overlap RMSE directly measures consistency across consecutive action chunks. Let a(k)1: H and 
+
+a(k+1) 1: H denote two consecutive predicted action chunks of length H, and let the last O steps of a(k) overlap with the first O steps of a(k+1) . The overlap RMSE is defined as 
+
+RMSE overlap =
+
+vuut 1
+
+O
+
+> O
+
+X
+
+> i=1
+
+a(k) 
+
+> H−O+i
+
+− a(k+1) 
+
+> i
+> 22
+
+. (A.7) Overlap RMSE explicitly measures inter-chunk consistency. Lower overlap RMSE values indicate better alignment between consecutive chunks and smoother continuation behavior at chunk boundaries. 
+
+E. Preliminary Study Details 
+
+This appendix provides additional empirical evidence sup-porting the conclusion in section. III-B that one-shot guidance is insufficient for effective continuation and that guidance must be applied before every denoising step. Following the setup described in the main text, we compare a one-shot guidance baseline with Legato on the pour task. Both methods are evaluated under the same experimental conditions as the main experiments. For the one-shot baseline, guidance is applied only at initialization, after which standard multi-step denoising is performed without any intermediate guidance. Legato, in contrast, applies guidance before every denoising step while remaining consistent with the training objective. 
+
+> TABLE A.3 HYPERPARAMETER CONFIGURATION USED IN THE MAIN EXPERIMENTS AND ABLATION STUDIES .
+
+Symbol Description Value 
+
+H Action chunk size 60 
+
+f Action execution frequency 30 Hz 
+
+N Number of denoising steps 5
+
+d ∼ Uni[ ·] Training-time delay range Uni[0 , 10] 
+
+r ∼ Uni[ ·] Training-time ramp range Uni[0 , 50] 
+
+We use a guidance schedule with stride s = 30 , delay 
+
+d = 8 , and ramp length r = 22 for both methods. Quan-titative results are reported in table A.2. The results show that Legato significantly outperforms the one-shot baseline, with particularly pronounced improvements in overlap RMSE. This indicates that without repeated guidance, the overlap region progressively deviates from the desired continuation, even when the initial condition is properly constrained. These results empirically confirm the observation in section. III-B that guidance applied only at initialization cannot reliably preserve constraints throughout the denoising process. Re-peated, per-step guidance is necessary to maintain consistent continuation across action chunks. 
+
+F. Robot Hardware Configuration 
+
+All experiments in this paper are conducted on the same dual-arm robotic platform. The robot is equipped with a left arm and a right arm, where each arm consists of seven actuated joints and a gripper, resulting in eight degrees of freedom per arm. The perception system includes one head-mounted RGB camera providing a global view of the workspace, as well as one wrist-mounted RGB camera on each arm. In total, the robot uses three cameras for visual observation. For VLA training and inference, actions are represented in the end-effector space. Each arm’s action consists of a 6-dimensional end-effector pose, including 3D position and 3D rotation vector, together with a 1-dimensional gripper command. As a result, the action vector for each arm has 7 dimensions, and the full action space for the dual-arm system is 14-dimensional. 
+
+G. Hyperparameter Configuration 
+
+Table A.3 summarizes the hyperparameter configuration used in the main experiments and ablation studies. Unless otherwise specified, all experiments share the same config-uration. We note that d and r denote the delay and ramp-length parameters of the guidance schedule; they are fixed at evaluation time, while during training we optionally randomize them by uniform sampling within specified ranges. 
+
+H. Results Analysis 1) Analysis of the d=s=r=8 setting : We analyze an ab-normal behavior observed under the d=s=r=8 configuration,       
+
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+>  
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+>   Fig. A.1. Trajectory example for the pour task under the d=s=r=8
+> configuration. The top panels show a full pouring operation, and the bottom panels show a zoomed-in view of the first 5 seconds. Red dashed lines indicate chunk boundaries. RTC exhibits pronounced low-frequency, large-amplitude oscillations, with direction changes occurring mostly within chunks, indicating increased spurious multimodal switching. Despite achieving lower overlap RMSE, RTC produces visibly less smooth trajectories in this regime.
+
+where RTC exhibits counterintuitive trends on specific smooth-ness metrics. Under this setting, the model initiates the next inference immediately after generating each action chunk. When the delay d is fixed, setting s=r=d corresponds to the highest possible inference frequency. In this regime, the oscillatory behavior of RTC becomes visually apparent, with motion fluctuations reaching ampli-tudes that are clearly observable. To better understand this phenomenon, we visualize the executed trajectories in fig. A.1. The plots reveal large-amplitude oscillations in RTC trajecto-ries, whereas Legato produces substantially smoother motion. The lower panels show a zoomed-in view of the first 5 seconds of execution. The vertical red dashed lines indicate chunk boundaries. Notably, most direction changes occur 
+
+within individual chunks rather than at chunk boundaries. This suggests that under frequent re-inference, RTC suffers from more severe spurious multimodal switching inside each chunk, rather than discontinuities caused purely by chunk transitions. Under this setting, NSPARC more faithfully reflects the perceived smoothness difference between RTC and Legato. Since NSPARC captures the spectral distribution of motion energy, it is particularly sensitive to low-frequency, large-amplitude oscillations, which dominate RTC trajectories in this regime. In contrast, Legato suppresses such oscillatory behavior by maintaining stronger mode persistence across denoising steps, as shown in fig. A.1 and fig. 6. Interestingly, RTC achieves a lower overlap RMSE than Legato in this configuration. This observation indicates that overlap RMSE may fail to fully capture smoothness degrada-tion when oscillations are dominated by low-frequency, large-amplitude motion. Although the overlap between consecutive chunks remains numerically consistent, the resulting trajectory still exhibits pronounced oscillations that negatively impact execution quality. This case highlights a limitation of overlap RMSE as a standalone smoothness indicator under high-frequency inference settings. 
+
+2) Analysis of the condition row : We further analyze the effect of introducing the condition row in the guidance schedule. As shown in table IV, adding the condition row does not lead to a significant improvement in NSPARC, whereas it consistently yields a substantial reduction in overlap RMSE across different guidance configurations. This suggests that the condition row primarily improves inter-chunk consistency rather than intra-chunk smoothness. When the delay d decreases and the ramp length r corre-spondingly increases due to parameter constraints, the overlap RMSE of models without the condition row also decreases. Although adding the condition row provides clear benefits under identical (d, s, r ) configurations, we observe that a model without the condition row under (d, s, r ) = (6 , 30 , 24) 
+
+achieves better overlap RMSE than a model with the condition row under (d, s, r ) = (10 , 30 , 20) . This observation suggests that when the delay d is sufficiently small, acceptable contin-uation behavior can be achieved even without the condition row. In such regimes, omitting the condition row may serve as a viable alternative with reduced conditioning overhead.

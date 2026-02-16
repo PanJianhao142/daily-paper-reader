@@ -1,0 +1,492 @@
+Title: SafeFlowMPC: Predictive and Safe Trajectory Planning for Robot Manipulators with Learning-based Policies
+
+URL Source: https://arxiv.org/pdf/2602.12794v1
+
+Published Time: Mon, 16 Feb 2026 01:40:32 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# SafeFlowMPC: Predictive and Safe Trajectory Planning for Robot Manipulators with Learning-based Policies 
+
+Thies Oelerich 1, Gerald Ebmer 1, Christian Hartl-Nesic 1, Andreas Kugi 1,2
+
+Abstract — The emerging integration of robots into everyday life brings several major challenges. Compared to classical industrial applications, more flexibility is needed in combination with real-time reactivity. Learning-based methods can train powerful policies based on demonstrated trajectories, such that the robot generalizes a task to similar situations. However, these black-box models lack interpretability and rigorous safety guar-antees. Optimization-based methods provide these guarantees but lack the required flexibility and generalization capabilities. This work proposes SafeFlowMPC, a combination of flow matching and online optimization to combine the strengths of learning and optimization. This method guarantees safety at all times and is designed to meet the demands of real-time execution by using a suboptimal model-predictive control for-mulation. SafeFlowMPC achieves strong performance in three real-world experiments on a KUKA 7-DoF manipulator, namely two grasping experiment and a dynamic human-robot object handover experiment. A video of the experiments is available at https://www.acin.tuwien.ac.at/en/42d6. The code is available at https://github.com/TU-Wien-ACIN-CDS/SafeFlowMPC. 
+
+I. INTRODUCTION Trajectory planning for robot manipulators is inherently difficult due to multiple factors. Firstly, the kinematics are non-linear, which leads to multiple solutions for a given task, and have singularities and physical limits that must be considered [1]. Secondly, the environment in which the robot acts in may change during operation, requiring online adap-tions of the motion during the operation. This might happen due to a change of the task initiated by an operator [2], moving obstacles in the scene [3], [4], or other actors in the environment [5], [6]. Thirdly, many task objectives for robot motions are hard to encode in numerical objective functions. Hence, existing optimization algorithms are difficult to apply. Examples include human-robot object handovers [5], [7], [8], cleaning of sinks [9], and generalizability to different environments [10]. Lastly, physical interaction with the world requires safety considerations for actors in the scene, other objects, and the robot's hardware. The robot must not collide with obstacles to avoid physical damage to the environment and itself. Many solutions exist to tackle motion planning in such challenging environments. Notably, global optimization-based and sampling-based planners [11], [12] exist to plan a trajectory for the entire task with constraints. These require a numerical objective and are not capable to adapt the robot     
+
+> 1All authors are with the Automation and Control Institute (ACIN), TU Wien, Vienna, Austria,
+
+{oelerich, ebmer, hartl, kugi }@acin.tuwien.ac.at                   
+
+> 2Andreas Kugi is with the center for Vision, Automation &Con-trol, AIT Austrian Institute of Technology GmbH, Vienna, Austria
+
+andreas.kugi@ait.ac.at 
+
+motion in real time, which is necessary to react to changes in the environment. To improve the computational efficiency, finite-horizon planning, e.g., using model-predictive control strategies [13], [14] or sampling-based approaches [15], is employed. The improved computational efficiency comes at the cost of degraded optimality of the solution but enables reactive behavior in real-time to changes in the environ-ments. However, these approaches need well-posed problem formulations, i.e., a numerical reward must be designed for the task, which is often complicated. An alternative are learning-based methods [16], [17], [18], which enable fast inference times to plan motions online. The design of numerical rewards can be avoided by learning from a dataset of demonstrations [19], [20]. These demonstrations encode the desired behavior in diverse scenarios and the learning agent learns generalized behavior in similar situations. The downside of these approaches is the lack of systematic safety considerations as the learning agent is often modeled as a black box. Flow matching [21] and diffusion models [16] have re-cently shown promising results in robot trajectory planning. Instead of learning the distribution over desired trajectories, these methods learn probability paths from a source distri-bution to the target distribution. This involves an iterative procedure during inference to create trajectories of the target distribution. During these iterative steps, the intermediate trajectories can be adapted to bias the model towards a desired behavior, e.g., enforcing safety. Current approaches include solving an optimization problem [22], using control barrier functions [23], and using cost guidance [17]. We extend this work by tailoring it further toward robot manip-ulators. As non-convex optimization [22] compromises real-time capabilitiy as it my exhibit significant variety in terms of computation time. Cost guidance with gradients [17] is unreliable as it cannot guarantee constraint satisfaction and does not scale well to complex environments and models. Control barrier functions [23] are difficult to design and therefore limit the performance of the system. In real-world applications safety is critical and needs to be systematically enforced. For example, safety filters [24], [25], [26] are employed to project a potentially unsafe input signal into a set of safe inputs. This is generally possible for any kind of learning policy but has the disadvantage that the system behavior changes, which alters the state distribution and, thus, deteriorates performance of the policy. Therefore, it is advantageous to incorporate the safety filter-ing more deeply with the agent. The work in [27] includes the safety consideration directly in the learning process, but 
+
+> arXiv:2602.12794v1 [cs.RO] 13 Feb 2026
+
+this approach does not scale well to predictive planning. In [28], the authors use Hamilton-Jacobi reachability [29] to improve safety. A one-step QP-projection is used to create a safe reinforcement learning policy update in [30]. Con-strained reinforcement learning often considers the expected constraint violations [30], which is extended to worst-case safety constraints in [31]. A learning objective in Lagrangian formulation is proposed in [32] to improve safe behavior, which is applied to learning from demonstrations in [33]. The authors in [34] rely on Gaussian processes with a safe backup policy to ensure safety. However, these methods struggle to scale to complicated systems like robot manipulators, or cannot ensure constraint satisfaction at all times, providing only probabilistic bounds. For many constraints like colli-sion avoidance or physical manipulator limits, probabilistic bounds are not sufficient, and the policy cannot be safely employed on the robot. This work focuses on safe learning from demonstrations for online trajectory planning for robot manipulators. In particular, we use an adapted flow-matching model to enforce safe behavior and present constraint design considerations to enforce safety at all times. The contributions of this work are as follows:  
+
+> •
+
+A novel safe flow-matching procedure, called Safe-FlowMPC, is developed, where the flow-matching model improves performance and a suboptimal real-time optimization solver enforces safety. This provides a deep integration of the learning agent and constraint enforcement.  
+
+> •
+
+SafeFlowMPC guarantees safety at all times by enforc-ing a safe terminal constraint.  
+
+> •
+
+Reactive motion planning is demonstrated on a real-world 7-DoF robot manipulator. Two challenging sce-narios are considered: An object grasp with a dynam-ically changing grasping position, and a human-robot object handover. By integrating a flow-matching model with a real-time op-timization backend, our method combines the adaptability of learning-based planning with the safety guarantees of classical control methods. This addresses the challenges of safety, reactivity, and real-time applicability in dynamic environments. II. F ORMULATION 
+
+The motion planning problem consists of finding a trajec-tory q∗(t) for the configuration state q of a robot manipulator that satisfies the motion constraints and achieves the desired objective. Formally, this is defined as 
+
+q∗(t) = arg min 
+
+> q(t)∈M safe
+
+Z t0+Tt0
+
+J(q(t))d t , (1) where the trajectory q∗(t) starts at t0 with a trajectory duration T . The manifold of allowed trajectories Msafe is defined by enforcing all motion constraints, and the objective function J(q(t)) is minimal when the desired objective is achieved. A visualization of the formulation is shown in Fig. 1. For a simple movement task, the objective function             
+
+> Fig. 1. Visual explanation of the optimization scheme of the proposed method. At time step ithe trajectory qis(t)on the safety manifold Msafe
+> is improved by a flow matching step (red) and projected back onto Msafe
+> (blue) to obtain the safe trajectory qi
+> s+∆s (t). These two steps are executed multiple times for each time step (dashed lines) to traverse the flow from
+> s= 0 to s= 1 .
+
+is defined as the distance to a desired configuration. The constraints limit the allowed trajectories to the manifold 
+
+Msafe which contains all safe trajectories. Difficulties arise due to the complicated form of Msafe and the numerical objective function J(q(t)) that achieves the desired task. For the latter, learning from demonstrations [19] has been successful in planning robot motions without explicitly spec-ifying J(q(t)) . Instead, motions are learned that behave similar to a set of demonstrated trajectories. These learning-based methods often lack the ability to adhere to certain constraints and to keep the robot on Msafe at all times. In this work, we propose a combination of flow match-ing [21] for learning behavior from demonstrations and op-timizing J(q(t)) with an optimization-based MPC to adhere to motion constraints and keep q(t) on Msafe .
+
+A. Safety Manifolds 
+
+The manifold of all possible trajectories is defined as Mq.The safety manifold 
+
+Msafe = {q(t) : h(q(t)) ≤ 0 ∧ g(q(t)) = 0} (2) consists of all trajectories that satisfy the inequality con-straints h(q(t)) ≤ 0 and the equality constraints g(q(t)) = 
+
+0. Furthermore, the performance manifold M∗ = {q(t) : 
+
+q(t) ∈ M safe ∧ J(q(t)) is minimized } is constructed based on the trajectories that are in Msafe and also minimize the objective function J(q(t)) . When optimizing a trajectory 
+
+qsafe (t) ∈ M safe to move it onto M∗, it is possible to define the projection operator 
+
+q∗(t) = P∗
+
+> safe
+
+(qsafe (t)) (3) that projects qsafe (t) onto M∗. However, such a projection is generally non-trivial for manipulator motion planning as it poses a non-convex optimization problem. Another approach is to use the local properties of Msafe at qsafe (t) to move the trajectory iteratively toward M∗. This iterative procedure is formally defined as 
+
+q+safe (t) = Psafe  
+
+> q
+
+(qsafe (t) + ∆ qsafe (t)) , (4) where Psafe  
+
+> q
+
+projects the initial trajectory modified by 
+
+∆qsafe (t) onto Msafe . The modification ∆qsafe (t) may be arbitrary, but it is assumed to be small. A possible choice is the gradient of the objective function J(qsafe (t)) projected onto the tangent space of Msafe at qsafe (t). This choice results in the projection-gradient method. Generally, any choice is viable as the projection operator Psafe  
+
+> q
+
+projects 
+
+qsafe (t) + ∆ qsafe back onto Msafe . The projection in (4) is simpler than the projection in (3) due to the assumption that 
+
+∆qsafe is small. This is valid, if the projection is assumed to be performed by gradient-based non-convex optimization where the problem simplifies if the initial guess qsafe (t) is close to the optimal solution q+safe (t). The components in (4) are described more thoroughly in Sections II-B and II-C. 
+
+B. Flow Matching on Manifolds 
+
+The trajectory modification ∆qsafe (t) in (4) is chosen to be computed by a flow matching model. Flow matching models are used in motion planning to learn a motion policy from a set of demonstrations D. This is achieved by learning a flow model that transforms samples from an initial distribution over trajectories p0(q(t)|O (t)) into a target distribution p1(q(t)|O (t)) . It is assumed that the demonstrations in D are samples of p1(q(t)|O (t)) . The distributions are conditioned on the observation O(t), which differs from formulations used in similar work. Further, the source distribution p0(q(t)|O (t)) may be an arbitrary distri-bution and is not limited to normal distributions. Sampling from a normal distribution over joint configurations will generally not output trajectories that are on the manifold 
+
+Msafe . This work focuses on having safe trajectories during the transfer from the source distribution p0(q(t)|O (t)) to the target distribution p1(q(t)|O (t)) . The source distribution is the distribution over safe trajectories on Msafe given the current observation O(t), and the target distribution is the distribution over safe trajectories that also optimize the objective function J(q(t)) and, thus, lie on M∗.
+
+1) Mathematical Formulation: Transforming a sample 
+
+q0(t) from the initial distribution p0(q(t)|O (t)) to a sample 
+
+q1(t) of p1(q(t)|O (t)) is done using a conditional flow 
+
+uϕs (q(t)|O (t)) with 0 ≤ s ≤ 1 such that 
+
+q1(t) = q0(t) + 
+
+Z 10
+
+uϕs (q(t)|O (t))d s . (5) The flow uϕs is parametrized by the parameters ϕ, which are learned using the loss function 
+
+LFM = Es, q0∼p0,
+
+> q1∼p1
+
+∥uϕs (q(t)|O (t)) −us(q(t)|q0(t), q1(t)) ∥22 ,(6) where the target flow 
+
+us(q(t)|q0(t), q1(t)) = ∂∂s Psafe  
+
+> q
+
+(q0(t) + s(q1(t) − q0(t))) 
+
+(7) is computed using the projection operator from (4) and con-ditioned on q0(t) and q1(t) for its tractability. The projection operator ensures that the path (5) always remains on Msafe 
+
+as long as q0(t) ∈ M safe . It further ensures that the path ends on M∗ as s → 1 because q1(t) = Psafe  
+
+> q
+
+(q1(t)) . For more information on flow matching, the reader is referred to [21]. 
+
+2) Training Procedure: Training our model is a two-step procedure. First a model is trained without any safety considerations by trying to match the demonstrations as done in standard flow matching [21]. Secondly, this model is finetuned on a safety dataset, which is the original dataset, but each demonstration is adapted to be on Msafe . Specif-ically, the output distribution p1(q(t)|O (t)) is computed by projecting each sample in D onto Msafe . Furthermore, the safe input distribution p0(q(t)|O (t)) , needed in (7), is approximated by sampling and projection. The derivative of the projection operator (4) with respect to s in (7) is computed using finite differences. This way the safety dataset consists of samples of (7) for different values of s and samples of q0(t) that move toward q1(t).
+
+C. Trajectory projection 
+
+Projecting joint-space trajectories q(t) onto the safety manifold Msafe is described as a non-convex optimization problem to enforce the constraints h(q(t)) and g(q(t)) .This assumes that h(q(t)) and g(q(t)) are continuously differentiable to make gradient-based optimization feasible. The projection operator Psafe  
+
+> q
+
+in (4) is defined as 
+
+Psafe  
+
+> q
+
+(qinit (t)) = arg min  
+
+> q(t)
+
+D(q(t), qinit (t)) (8a) s.t. h(q(t)) = 
+
+ ht(q(t)) 
+
+hT (q(t)) 
+
+
+
+≤ 0 (8b) 
+
+g(q(t)) = 
+
+ gt(q(t)) 
+
+gT (q(t)) 
+
+
+
+= −1 (8c) where D(·) is an appropriate distance measure for the trajectories. The constraints (8b) and (8c) comprise the constraints during the trajectory ht(q(t)) and gt(q(t)) , and terminal constraints at the end of the trajectory hT (q(t)) 
+
+and gT (q(t)) at time t = t0 + T . These terminal constraints define the safety set ST .
+
+Assumption 1. A controller exists that has a control-invariant safety set that encompasses the terminal safety set 
+
+ST defined by hT (q(t)) and gT (q(t)) .
+
+Theorem 1. The projected trajectory qproj (t) =
+
+Psafe  
+
+> q
+
+(qinit (t)) extending from the initial time t = t0
+
+to the end time t = t0 + T is safe for all times t > t 0 + T .Safety at time t is defined by satisfying the constraints 
+
+h(q(t)) and g(q(t)) .Proof. The trajectory qproj (t) will end in the terminal safety set ST defined by hT (q(t)) and gT (q(t)) at time t = t0 +T .At time t = t0 + T the controller from Assumption 1 is employed to keep the trajectory in the terminal safety set 
+
+ST for all times t > t 0 + T .
+
+D. Inference 
+
+After training the model on the dataset D with the loss (6), the model is used for inference. Similar to the work [10], [22], we use the model in closed-loop, where the model predicts the trajectory qi(t) at time step i for the time span 
+
+T = N T s, with the prediction horizon N and the sampling time Ts. The trajectory qi(t) is executed for the time Ts only, and then a new trajectory qi+1 (t) is computed at time step 
+
+i + 1 . A step-by-step explanation is given in Algorithm 1. The prediction step is executed with 
+
+qis+∆ s(t) = Psafe 
+
+> q
+
+
+
+qis(t) + ∆ suϕs (qis(t)|O (t)) + wguide ∇q(t)Jguide (q(t)) 
+
+ (9) for a fixed flow step ∆s to get from qi
+
+> 0
+
+(t) to qi
+
+> 1
+
+(t), where the subscript denotes the probability flow time with bounds 
+
+0 ≤ s ≤ 1. This is visualized in Fig. 1. The derivative of the guidance cost term Jguide (q(t)) is added with the weight 
+
+wguide > 0, similar to diffusion guidance [17]. Its particular design is application dependent and will be explained in the experiments section. The trajectory for the next step i + 1 is then defined by 
+
+qi+1 0 (t) = 
+
+(
+
+qi
+
+> 1
+
+(t) t0 + Ts < t < t 0 + T ,
+
+qiT (t) t0 + T ≤ t ≤ t0 + T + Ts
+
+, (10) where t0 is the starting time of qi
+
+> 1
+
+(t). This sets the initial trajectory for (9) at step i + 1 to the optimized trajectory at step i until it ends at t0 +T and afterward applies the terminal trajectory qiT (t) according to Assumption 1, which keeps the robot in the terminal safety set ST . A visual explanation of the iterative planning is provided in Fig. 2. 
+
+Assumption 2. There exists a safe trajectory q0(t) at the start of the robot movement such that the robot stays on the safety manifold Msafe .
+
+This assumption is not very restrictive as it is often possible to stay in the safe initial state indefinitely. 
+
+Theorem 2. The iterative trajectory generation (10) will keep the robot safe at all times. Proof. At the start of the movement, the robot is in a safe state according to Assumption 2. After moving from step i
+
+to step i + 1 , the robot is safe because the projection in (9) keeps the new trajectory qis(t) on the safety manifold Msafe .This proof by induction works as long as the projection in (9) converges. However, the projection operator Psafe  
+
+> q
+
+(·)
+
+introduced in (8) is a non-convex optimization problem where convergence cannot be ensured. In case of a failure in (9) at s = sfail , the current trajectory qisfail (t) is executed, which keeps the system safe according to Theorem 1 at all times due to enforcing the terminal safety set ST .III. P RACTICAL IMPLEMENTATION : R OBOT 
+
+MANIPULATOR 
+
+This section discusses the implementation details of using the safe trajectory generation described in Section II for the motion planning of a robot manipulator, for which q(t)
+
+denotes the joint-position trajectory. For shorter notation, 
+
+Algorithm 1 SafeFlowMPC Inference                                                                                       
+
+> Require: Initial safe trajectory q00(t), flow model uϕs, guidance cost Jguide ,projection operator Psafe
+> q, weight for cost guidance wguide
+> Require: Number of flow steps Ns, prediction horizon N, sampling time
+> Ts
+> 1: Initialize i←0,t0←0
+> 2: while task not completed do
+> 3: qis(t)←qi
+> 0(t)▷Initialize flow trajectory 4: ∆s←1/N s▷Flow step size 5: Retrieve observation O(t)
+> 6: for k= 1 to Nsdo ▷Safe flow matching steps 7: Compute qis+∆ s(t)from qis(t)using (9) 8: s←s+ ∆ s
+> 9: end for
+> 10: qi
+> 1(t)←qis(t)▷Final flow trajectory 11: Execute the trajectory qi
+> 1(t)for one time step Ts
+> 12: Update the initial trajectory using (10) 13: i←i+ 1
+> 14: t0←t0+Ts
+> 15: end while
+> Fig. 2. Planning scheme of SafeFlowMPC for the trajectory planning of a robot manipulator around an obstacle O. At step i, the robot plans the trajectory qi
+> 1(t)on the safety manifold Mi
+> safe . This trajectory ends in the terminal safety set SiTindicated by the blue shaded area. At step i+ 1 the planner reuses the previous trajectory according to (10) and transfers it (red shaded area) to qi+1 1(t)on Mi+1 safe .
+
+we use the state xT(t) = [ qT(t), ˙qT(t), ¨qT(t),... 
+
+qT(t)] . The constraints of the safety manifold Msafe in (2) are given by 
+
+h(q(t)) = 
+
+
+
+x ≤ x(t) ≤ x ∀ t0 ≤ t ≤ t0 + T
+
+ffk ,i (q(t)) ∈ S free ∀ t0 ≤ t ≤ t0 + Ti = 1 , . . . , N fk 
+
+(11) and 
+
+g(q(t)) = 
+
+(
+
+x(t0) = x0
+
+[ ˙ qT(t0 + T ), ¨qT(t0 + T ),... 
+
+qT(t0 + T )] = 0 ,(12) where the initial state x0 is taken from the previous trajectory according to (10), which ensures continuity across time steps. The state x is kinematically bounded by the lower bound 
+
+x and the upper bound x. The second constraint in (12) ensures containment in the terminal set ST and, thus, safety of the robot for t ≥ t0 + T . The constraint ffk ,i (q(t)) ∈Sfree in (11) uses the forward kinematics ffk ,i (q(t)) of the manipulator to ensure that the kinematic chain is collision free. In this work, the collision formulation from [2] is utilized, which uses collision-free convex sets around Nfk 
+
+key points of the manipulator. This approach scales well with the number of obstacles and is real-time capable. For more information on this approach, the reader is referred to [2]. The forward kinematics ffk ,i (q(t)) are nonlinear, rendering the problem (8) non-convex. This implies that (8) has multiple (local) minima, making it difficult to reliably solve. Employing a non-convex solver for this projection and solving it optimally is computationally infeasible as the projection is performed multiple times to get from qi
+
+> 0
+
+(t) to 
+
+qi
+
+> 1
+
+(t) using (9). Therefore, this work adapts a suboptimal approach using the real-time-iteration (RTI) scheme [35] in the acados framework [36], which solves exactly one QP problem based on (8) for each step (9). In practice, a suboptimal solution is often sufficient and will converge to the optimal solution over multiple steps using (9). In this work, Ns = 7 steps of (9) are used in each time step. IV. E XPERIMENTS 
+
+Three experiments are presented in this section to evaluate performance, versatility, and adherence to safety constraints of the developed method. The first experiment utilizes our method to learn from a global trajectory planner to achieve fast local planning in a global context. The second experi-ment focuses on reactive online replanning in an obstructed environment. The third experiment is a dynamic human-robot object handover where the robot learns behavior from a human-human handover dataset [7]. We compare our method to the following formulations: 1) VP-STO : VP-STO [37] is a global trajectory planner based on stochastic sampling. 2) BoundMPC : BoundMPC [13] is a model-predictive trajectory planner with a path-following-based formu-lation. The path is computed by BoundPlanner [2]. 3) BC : Behavior cloning [38] using a multi-layer percep-tron, which takes the last trajectory and the current state as input and outputs the next trajectory. The training only includes safe trajectories to incentivize safe behavior. 4) FM : The baseline flow-matching training procedure without any safety considerations [21]. 5) Ours with NL-Opt : Our proposed method, but the projection (8) is solved to optimality instead of us-ing the real-time iteration approach described in Sec-tion III. The IPOPT [39] solver with the MA57 linear solver [40] is used in this work. To increase the speed, only 4 steps of (9) are used in each time step. 6) Ours w/o finetuning : Our proposed method without the finetuning on the safety dataset described in Section II-B.2. The training simplifies to the standard flow match-ing training procedure. The flow network architecture for all flow matching mod-els is a temporal U-Net network as in [16]. All online planners are executed at 10 Hz . A video of the experiments is available at https://www.acin.tuwien.ac.at/en/42d6.          
+
+> −1
+> 0
+> 1−1−0.500.5
+> 0
+> 0.5
+> 1
+> pf
+> p0
+> x/m
+> y/m
+> z / m
+> SafeFlowMPC
+> BoundPlanner
+> VP-STO
+> Fig. 3. Experiment 1: Environment with red obstacles and green object to grasp. An example trajectory for three planners is shown. The robot is visualized for the start and end configuration of the SafeFlowMPC trajectory.
+
+A. Experiment 1: Global trajectory planning made local 
+
+By learning from global trajectory planners, Safe-FlowMPC is able to exhibit close-to-optimal behavior while being real-time executable, thus, combining the advantages of global and local planners. To learn this behavior, a dataset 
+
+D was created using the global planner VP-STO [37] in the environment depicted in Fig. 3 with two obstacles forming a narrow passage. The goal is to plan from an initial joint configuration qinit (0) , where the end-effector is at pose p0,to a final end-effector pose pf , where an object is picked up. The dataset consists of 4100 trajectories, i.e., 4000 for training and 100 for evaluation. The guidance function 
+
+Jguide (q(t)) = 
+
+> Ns
+
+X
+
+> j=1
+
+Dpose (ffk ,ee (q(t0 + jT s)) , pf ) (13) used in (9) is defined by the distance between the current end-effector pose ffk ,ee (q(t)) and the final pose pf , where the function Dpose measures the distance between two poses. It is the sum of the Cartesian distance for the position and the rotation vector angle difference between two orientations. Equation (13) ensures convergence to the final pose pf . The weight 
+
+wguide (t) = exp 
+
+
+
+−α
+
+ ∥ffk ,ee (q(t)) − p0∥2
+
+∥p0 − pf ∥2
+
+− β
+
+ 
+
+(14) is chosen such that it only influences the behavior close to 
+
+pf with the parameters α > 0 and β > 0. The observation 
+
+O(t) consists of the joint positions of the previous 10 time steps, the Cartesian positions of the collision-checked points on the robot, the current pose of the end effector, and the desired pose of the end effector pf .The results of all planners described above are in Ta-ble I for the 100 evaluation trajectories in terms of aver-age trajectory duration Ttraj , planning time Tplan , success rate rsuccess for reaching the final pose without collisions, and the maximum obstacle collision cobs . The latter is the maximum obstacle penetration depth in case of a collision and zero otherwise. SafeFlowMPC shows low trajectory times Ttraj comparable to the global planner VP-STO it 0 1 2 3 4 5 6 7 8   
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> t/s
+> max  | ˙q/ ˙q| VPSTO
+> SafeFlowMPC
+> BoundMPC
+> Fig. 4. Experiment 1: Maximum values of the normalized joint velocity for the example trajectories in Fig. 3.
+
+learned from. Additionally, the robot moves through the environment without violating the constraints. The success rate rsuccess is higher than for the MPC-based planner BoundMPC. BoundMPC is also safe but has considerably longer trajectory times Ttraj since it only plans locally. Behavior cloning (BC) has fast planning time Tplan since it is only executed once every time step. However, this model is unable to solve the task successfully most of the time. The baseline flow-matching method (FM) is fast in comparison to SafeFlowMPC in terms of Ttraj , but has much a lower success rate rsuccess due to collisions. The average planning time Tplan is fast for BoundMPC, but the time to solve its nonlinear optimization problem varies significantly. Therefore, its planning horizon needs to be chosen such that the average time is low to account for potential longer solves. SafeFlowMPC is much better at exploiting the maximum planning time of 100 ms because the iterations (9) are designed such that staying on the safety manifold is incentivized and a safe trajectory always exists according to Theorem 2. Solving the projection problem (8) to optimality (Ours w/ NL-Opt) leads to similar success rates as our method but incurs much higher computational cost as indicated by the average planning time Tplan . The large standard deviation of Tplan is especially problematic as it frequently violates the real-time property. This is more pronounced than for BoundMPC, which also solves a nonlinear optimization problem, because the flow network presents an unknown input to the solver, which complicates the problem. The finetuning for SafeFlowMPC, described in Section II-B.2, is very important as the model without the finetuning (Ours w/o finetuning) has a considerably lower task success rsuccess . Note that even without the finetuning, the model remains safe, i.e., cobs = 0 . Furthermore, the maximum of the normalized joint velocities in Fig. 4 shows that SafeFlowMPC is able to exploit the full range of the joint velocities without violating the limits. This leads to a shorter trajectory compared to BoundMPC. Additionally, the joint states at the end of each planning horizon, depicted in Fig. 5, are close to zero such that the horizon always ends in the safe terminal set ST according to (12). The states are not exactly zero as this is difficult to enforce but sufficiently low for the low-level joint controller to stabilize around the final point as demonstrated in the supplementary video. 
+
+B. Experiment 2: Online replanning for object grasps 
+
+The reactivity of SafeFlowMPC is compared in the envi-ronment shown in Fig. 3 by changing the pose of the object                                                                                         
+
+> 01234567
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> t/s
+> Norm of terminal states
+> ∥˙qT∥2/◦s−1
+> ∥¨qT∥2/◦s−2
+> ∥...
+> qT∥2/◦s−3
+> Fig. 5. Experiment 1: Norm of joint velocity ˙qT, acceleration ¨qT, and jerk ...
+> qTat the end of each planning horizon using SafeFlowMPC for the example trajectory in Fig. 3. TABLE I EXPERIMENT 1: R ESULTS OF DIFFERENT PLANNERS IN TERMS OF AVERAGE TRAJECTORY DURATION Ttraj ,AVERAGE PLANNING TIME
+> Tplan ,OBSTACLE COLLISIONS cobs >0,AND SUCCESS RATE rsuccess
+> Method Ttraj /sTplan /ms cobs /mrsuccess
+> VP-STO 4.46 11400 (offline) 0100 %
+> BoundMPC 6.16 35 ±10 076 %
+> BC 7.61±10.08 2 %
+> FM 5.77 33 ±20.08 22 %
+> Ours w/ NL-Opt
+> 5.69 93 ±178 087 %
+> Ours w/o finetuning
+> 6.40 64 ±5058 %
+> SafeFlowMPC (Ours)
+> 5.12 62 ±5086 %
+
+during the motion three times randomly. The results for the real-time capable methods are reported in Table II. A motion is counted as successful if it reaches the last replanned object pose and has no collisions. Generally, the drop in success rate for all methods indicates that this task is more challenging than Experiment 1 in Section IV-A. SafeFlowMPC is the most successful method and is able to replan motions in real time without any collisions in 82 % of the trails. Thus, the SafeFlowMPC formulation enables fast and safe trajectory planning with similar quality as global trajectory planners. At the same time, it allows for more reactivity due to the online replanning. 
+
+C. Experiment 3: Dynamic human-robot object handover 
+
+While the objective for the point-to-point motions in Sections IV-A and IV-B is easily encoded as a numerical function, i.e., minimizing the distance to the goal pose, this is not the case for many other objectives. Especially in human-robot interactions, it is difficult to find such functions. Safe-FlowMPC allows using models learned from demonstrated trajectories instead of optimizing a scenario-specific reward                                                  
+
+> TABLE II EXPERIMENT 2: R ESULTS OF DIFFERENT PLANNERS IN TERMS OF AVERAGE PLANNING TIME Tplan ,OBSTACLE COLLISIONS cobs >0,AND SUCCESS RATE rsuccess
+> Method Tplan /ms cobs /mrsuccess
+> BoundMPC 36 ±11 074 %
+> BC 1±10.08 0 %
+> FM 33 ±20.08 15 %
+> Ours w/o finetuning 62 ±5052 %
+> SafeFlowMPC (Ours) 63 ±5082 % 0
+> 2
+> −2−101
+> 0
+> 1
+> ph,0
+> ph,ho
+> ph,f
+> p0
+> pho
+> pf
+> x/m
+> y/m
+> z / m
+> SafeFlowMPC
+> Human Hand
+> Fig. 6. Experiment 3: Example handover trajectory from the handover dataset. The robot is visualized for the start, handover, and end configuration of the SafeFlowMPC trajectory. The human is represented by the red box at the handover location grabbing the green object from the robot's end-effector.
+
+function. We demonstrate this with a dynamic human-robot object handover, where a robot hands an object to a human as the human passes the robot. The human-human handover dataset from [7] is used for this task. The human hand trajectories of the giver are converted to the joint space of the robot using a trajectory optimization problem. The dataset contains 900 trajectories for training and 100 for testing of which 67 where successfully translated to the joint space. An example trajectory is depicted in the environment in Fig. 6. In this example, the human hand moves from the initial position 
+
+ph,0 to the handover location ph,ho to grab the object and then continues to the final position ph,f . The corresponding robot end-effector poses are p0, pho , and pf . At the handover location, the human hand is above the robot's end-effector, as the object extends in the z-direction. Safety is introduced by modeling the human body as an obstacle. This does not include the arm of the human as it needs to grab the object and come in close proximity to the end effector. As (11) limits the joint jerk of the robot, the resulting trajectory is smooth, which is important for the perceived safety for the human [8], [41]. Furthermore, the constraint 
+
+ffk (q(t0 + T )) ∈ S T, ho (15) is added to (11) as a terminal constraint to ensure that the robot returns the end-effector to a safe set when planning fails. As the human always passes the robot on the neg-ative y-direction (see Fig. 6), the safe terminal set ST, ho 
+
+constraints the end-effector to limit the y-position to remain close to the robot such that it cannot interfere with the human. SafeFlowMPC computes the robot joint trajectory and the binary gripper state to learn the release timing of the object. No guiding function Jguide (q(t)) is used here. The comparison in Table III on the test dataset shows that SafeFlowMPC computes trajectories that are closest to the demonstrations while remaining safe according to (15) and real-time capable. Note that the average distance to the demonstrations ddemo assumes no reaction of the human to the differing robot motions, which is not applicable to real-world object handovers. Therefore, several real-world                                 
+
+> TABLE III EXPERIMENT 3: R ESULTS OF DIFFERENT PLANNERS IN TERMS OF AVERAGE PLANNING TIME Tplan ,TERMINAL CONSTRAINT VIOLATIONS
+> cT>0,AND AVERAGE POSITION DISTANCE TO THE DEMONSTRATED TRAJECTORIES ddemo
+> Method Tplan /ms cT/mddemo /m
+> BC 1±10.00.28
+> FM 31 ±20.05 0.21
+> SafeFlowMPC (Ours) 63 ±60.00.12
+
+handovers are shown in the supplementary video, where the human hand is tracked with an OptiTrack system 1. They show that SafeFlowMPC succeeds to hand over an object in the real world by learning from human demonstrations. V. L IMITATIONS 
+
+Despite its strengths, SafeFlowMPC has notable limita-tions. It assumes the availability of a suitable dataset and requires a finetuning step to achieve optimal . Additionally, the method is restricted to constraints expressible as differ-entiable functions over the planning horizon. The design of safe terminal constraints also remains non-trivial, particularly for complex kinematics. Furthermore, ensuring safety in interactive scenarios, such as the presented dynamic object handover in Section IV-C, is generally difficult. In this work, we simplified the safety definition by considering the collisions with the current position of the human. However, the human is moving around, which is difficult to predict, requiring a trade-off between safety and performance [8]. A possible approach for future work is the prediction of the trajectory distribution of other actors [42] in combination with safety constraints [8]. This is out of the scope of this work as the dataset [7] contains very noisy data of the human movements, which is unsuitable for such models. The object handover further simplifies the interactions within human-robot handovers by only considering the human hand trajectory as input for SafeFlowMPC. Improvements in per-formance can be gained by considering other factors such as trust, gaze, or other actors in the scene [41], which requires more expressive datasets. VI. C ONCLUSIONS AND FUTURE WORK 
+
+This work introduced SafeFlowMPC, a novel method for online trajectory planning that integrates safety manifolds with conditional flow-matching. The approach optimizes receding-horizon trajectories through an iterative process: a flow matching network generates desired motions, while an online optimizer enforces safety constraints. By carefully designing terminal constraints, SafeFlowMPC guarantees safety throughout operation. We demonstrated the effective-ness of SafeFlowMPC in three challenging scenarios—static and dynamic object grasping with obstacles, and human-robot object handover—where it outperformed the baseline methods. Successful deployment on a real-world KUKA 7-DoF manipulator further validated the method’s real-time 
+
+> 1OptiTrack https://www.optitrack.com/
+
+feasibility and practical applicability. Future research will focus on extending SafeFlowMPC with learning-based safety filters [25] and terminal constraints, aiming to broaden its applicability and robustness in dynamic, real-world settings. REFERENCES [1] K. M. Lynch and F. C. Park, Modern Robotics: Mechanics, Planning, and Control . Cambridge University Press, 2017. [2] T. Oelerich, C. Hartl-Nesic, F. Beck, and A. Kugi, “BoundPlanner: A Convex-Set-Based Approach to Bounded Manipulator Trajectory Planning,” IEEE Robotics and Automation Letters , vol. 10, no. 6, pp. 5393–5400, 2025. [3] S. M. Khansari-Zadeh and A. Billard, “Realtime Avoidance of Fast Moving Objects: A Dynamical System-based Approach,” in Workshop on Robot Motion Planning: Online, Reactive, and in Real-time. International Conference on Intelligent Robots and Systems , 2012. [4] J. Kiemel, L. Righetti, T. Kr¨ oger, and T. Asfour, “Safe Reinforcement Learning of Robot Trajectories in the Presence of Moving Obstacles,” 
+
+IEEE Robotics and Automation Letters , vol. 9, no. 12, pp. 11 353– 11 360, 2024. [5] T. Oelerich, C. Hartl-Nesic, and A. Kugi, “Model Predictive Trajectory Planning for Human-Robot Handovers,” in Proceedings of the VDI Mechatroniktagung , 2024. [6] M. Khoramshahi and A. Billard, “A dynamical system approach to task-adaptation in physical human–robot interaction,” Autonomous Robots , vol. 43, no. 4, pp. 927–946, 2019. [7] H. Kim, C. Kim, M. Pan, K. Lee, and S. Choi, “Learning-based Dynamic Robot-to-Human Handover,” Preprint (arXiv.2502.12602) ,2025. [8] V. Ortenzi, A. Cosgun, T. Pardi, W. P. Chan, E. Croft, and D. Kulic, “Object Handovers: A Review for Robotics,” IEEE Transactions on Robotics , vol. 37, no. 6, pp. 1–19, 2021. [9] C. Unger, C. Hartl-Nesic, M. N. Vu, and A. Kugi, “ProSIP: Probabilis-tic Surface Interaction Primitives for Learning of Robotic Cleaning of Edges,” in Proceedings of the International Conference on Intelligent Robots and Systems , 2024, pp. 5956–5963. [10] M. J. Kim et al. , “OpenVLA: An Open-Source Vision-Language-Action Model,” in Proceedings of the Conference on Robot Learning ,2025, pp. 2679–2713. [11] M. Elbanhawi and M. Simic, “Sampling-Based Robot Motion Plan-ning: A Review,” IEEE Access , vol. 2, pp. 56–77, 2014. [12] J. Schulman et al. , “Motion planning with sequential convex opti-mization and convex collision checking,” The International Journal of Robotics Research , vol. 33, no. 9, pp. 1251–1270, 2014. [13] T. Oelerich, F. Beck, C. Hartl-Nesic, and A. Kugi, “BoundMPC: Cartesian path following with error bounds based on model predictive control in the joint space,” The International Journal of Robotics Research , vol. 44, no. 8, pp. 1287–1316, 2025. [14] F. Beck, M. N. Vu, C. Hartl-Nesic, and A. Kugi, “Model Predictive Trajectory Optimization With Dynamically Changing Waypoints for Serial Manipulators,” IEEE Robotics and Automation Letters , vol. 9, no. 7, pp. 6488–6495, 2024. [15] M. Otte and E. Frazzoli, “RRTX: Asymptotically optimal single-query sampling-based motion planning with quick replanning,” The International Journal of Robotics Research , vol. 35, no. 7, pp. 797– 822, 2016. [16] M. Janner, Y. Du, J. Tenenbaum, and S. Levine, “Planning with Diffusion for Flexible Behavior Synthesis,” in Proceedings of the International Conference on Machine Learning , 2022, pp. 9902–9915. [17] K. Saha et al. , “EDMP: Ensemble-of-costs-guided Diffusion for Mo-tion Planning,” in Proceedings of the International Conference on Robotics and Automation , 2024, pp. 10 351–10 358. [18] R. Figueiredo Prudencio, M. R. O. A. Maximo, and E. L. Colombini, “A Survey on Offline Reinforcement Learning: Taxonomy, Review, and Open Problems,” IEEE Transactions on Neural Networks and Learning Systems , vol. 35, no. 8, pp. 10 237–10 257, 2024. [19] H. Ravichandar, A. S. Polydoros, S. Chernova, and A. Billard, “Recent Advances in Robot Learning from Demonstration,” Annual Review of Control, Robotics, and Autonomous Systems , vol. 3, no. 1, pp. 297– 330, 2020. [20] S. Ross, G. Gordon, and D. Bagnell, “A reduction of imitation learning and structured prediction to no-regret online learning,” in Proceedings of the International Conference on Artificial Intelligence and Statistics ,vol. 15, 2011, pp. 627–635. [21] Y. Lipman et al. , “Flow Matching Guide and Code,” Preprint (arXiv:2412.06264) , 2024. [22] R. R¨ omer, A. von Rohr, and A. P. Schoellig, “Diffusion Predictive Control with Constraints,” Preprint (arXiv:2412.09342) , 2025. [23] X. Dai et al. , “Safe Flow Matching: Robot Motion Planning with Control Barrier Functions,” Preprint (arXiv:2504.08661) , 2025. [24] K. P. Wabersich and M. N. Zeilinger, “A predictive safety filter for learning-based control of constrained nonlinear dynamical systems,” 
+
+Automatica , vol. 129, p. 109597, 2021. [25] K. P. Wabersich et al. , “Data-Driven Safety Filters: Hamilton-Jacobi Reachability, Control Barrier Functions, and Predictive Methods for Uncertain Systems,” IEEE Control Systems Magazine , vol. 43, no. 5, pp. 137–177, 2023. [26] K. Garg, S. Zhang, O. So, C. Dawson, and C. Fan, “Learning safe control for multi-robot systems: Methods, verification, and open challenges,” Annual Reviews in Control , vol. 57, p. 100948, 2024. [27] P. Liu, H. Bou-Ammar, J. Peters, and D. Tateo, “Safe Reinforcement Learning on the Constraint Manifold: Theory and Applications,” IEEE Transactions on Robotics , vol. 41, pp. 3442–3461, 2025. [28] J. F. Fisac, N. F. Lugovoy, V. Rubies-Royo, S. Ghosh, and C. J. Tomlin, “Bridging Hamilton-Jacobi Safety Analysis and Reinforcement Learn-ing,” in Proceedings of the International Conference on Robotics and Automation , 2019, pp. 8550–8556. [29] S. Bansal, M. Chen, S. Herbert, and C. J. Tomlin, “Hamilton-Jacobi reachability: A brief overview and recent advances,” in Proceedings of the Annual Conference on Decision and Control , 2017, pp. 2242– 2253. [30] C. Sun, D.-K. Kim, and J. P. How, “FISAR: Forward Invariant Safe Reinforcement Learning with a Deep Neural Network-Based Opti-mizer,” in Proceedings of the International Conference on Robotics and Automation , 2021, pp. 10 617–10 624. [31] Q. Yang, T. D. Sim˜ ao, S. H. Tindemans, and M. T. J. Spaan, “WCSAC: Worst-Case Soft Actor Critic for Safety-Constrained Reinforcement Learning,” Proceedings of the AAAI Conference on Artificial Intelli-gence , vol. 35, no. 12, pp. 10 639–10 646, 2021. [32] A. Stooke, J. Achiam, and P. Abbeel, “Responsive Safety in Reinforce-ment Learning by PID Lagrangian Methods,” in Proceedings of the International Conference on Machine Learning , 2020, pp. 9133–9143. [33] Z. Liu et al. , “Datasets and benchmarks for offline safe reinforcement learning,” Journal of Data-centric Machine Learning Research , 2024. [34] F. Berkenkamp, M. Turchetta, A. P. Schoellig, and A. Krause, “Safe model-based reinforcement learning with stability guarantees,” in 
+
+Proceedings of the International Conference on Neural Information Processing Systems , 2017, pp. 908–919. [35] M. Diehl, H. G. Bock, and J. P. Schl¨ oder, “A Real-Time Iteration Scheme for Nonlinear Optimization in Optimal Feedback Control,” 
+
+SIAM Journal on Control and Optimization , vol. 43, no. 5, pp. 1714– 1736, 2005. [36] R. Verschueren et al. , “Acados—a modular open-source framework for fast embedded optimal control,” Mathematical Programming Compu-tation , vol. 14, no. 1, pp. 147–183, 2022. [37] J. Jankowski, L. Bruderm¨ uller, N. Hawes, and S. Calinon, “VP-STO: Via-point-based Stochastic Trajectory Optimization for Reactive Robot Behavior,” in Proceedings of the International Conference on Robotics and Automation , 2023, pp. 10 125–10 131. [38] D. A. Pomerleau, “ALVINN: An autonomous land vehicle in a neural network,” in Advances in Neural Information Processing Systems ,1988. [39] A. W¨ achter and L. T. Biegler, “On the implementation of an interior-point filter line-search algorithm for large-scale nonlinear program-ming,” Mathematical Programming , vol. 106, no. 1, pp. 25–57, 2006. [40] I. S. Duff, “MA57—a code for the solution of sparse symmetric definite and indefinite systems,” ACM Transactions on Mathematical Software , vol. 30, no. 2, pp. 118–144, 2004. [41] A. Zacharaki, I. Kostavelis, A. Gasteratos, and I. Dokas, “Safety bounds in human robot interaction: A survey,” Safety Science , vol. 127, p. 104667, 2020. [42] L. Hewing, E. Arcari, L. P. Fr¨ ohlich, and M. N. Zeilinger, “On Simu-lation and Trajectory Prediction with Gaussian Process Dynamics,” in 
+
+Proceedings of the Conference on Learning for Dynamics and Control ,2020, pp. 424–434.

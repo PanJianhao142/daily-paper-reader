@@ -1,0 +1,1420 @@
+Title: FLAC: Maximum Entropy RL via Kinetic Energy Regularized Bridge Matching
+
+URL Source: https://arxiv.org/pdf/2602.12829v1
+
+Published Time: Mon, 16 Feb 2026 01:51:15 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# FLAC: Maximum Entropy RL via Kinetic Energy Regularized Bridge Matching 
+
+## Lei Lv 1,2,3∗, Yunfei Li 2, Yu Luo 3, Fuchun Sun 3†, Xiao Ma 2†
+
+> 1
+
+Shanghai Research Institute for Intelligent Autonomous Systems , 2ByteDance Seed , 3Tsinghua University 
+
+> ∗
+
+The work was accomplished during the author’s internship at ByteDance Seed , †Corresponding authors 
+
+## Abstract 
+
+Iterative generative policies, such as diffusion models and flow matching, offer superior expressivity for continuous control but complicate Maximum Entropy Reinforcement Learning because their action log-densities are not directly accessible. To address this, we propose Field Least-Energy Actor-Critic (FLAC) , a likelihood-free framework that regulates policy stochasticity by penalizing the kinetic energy of the velocity field. Our key insight is to formulate policy optimization as a Generalized Schrödinger Bridge (GSB) problem relative to a high-entropy reference process (e.g., uniform). Under this view, the maximum-entropy principle emerges naturally as staying close to a high-entropy reference while optimizing return, without requiring explicit action densities. In this framework, kinetic energy serves as a physically grounded proxy for divergence from the reference: minimizing path-space energy bounds the deviation of the induced terminal action distribution. Building on this view, we derive an energy-regularized policy iteration scheme and a practical off-policy algorithm that automatically tunes the kinetic energy via a Lagrangian dual mechanism. Empirically, FLAC achieves superior or comparable performance on high-dimensional benchmarks relative to strong baselines, while avoiding explicit density estimation.  
+
+> Date:
+
+February 16, 2026  
+
+> Project Page:
+
+https://pinkmoon-io.github.io/flac.github.io/  
+
+> Correspondence:
+
+Fuchun Sun at fcsun@tsinghua.edu.cn , Xiao Ma at xiao.ma@bytedance.com 
+
+## 1 Introduction 
+
+Iterative generative policies, including flow matching and diffusion models [ 7, 12 , 17 ], have recently emerged as a powerful paradigm in reinforcement learning [ 24 , 38 ]. Unlike conventional Gaussian actors [ 10 ] that output actions directly, these implicit policies define the policy through a sequential generation procedure that transport a simple base noise distribution to complex, state-conditioned action distributions. This expressiveness allows for modeling rich, multi-modal behaviors [ 6], enabling these policies to achieve superior performance in high-dimensional control tasks and data-driven settings where simple unimodal distributions fall short. However, coupling these iterative generative policies with Maximum-Entropy RL [ 10 , 41 ] is nontrivial. In RL, a Maximum-Entropy objective is often essential for preventing premature collapse and for sustaining exploration by explicitly encouraging stochasticity. Yet Maximum-Entropy methods typically rely on the 1
+
+> arXiv:2602.12829v1 [cs.LG] 13 Feb 2026
+
+policy log-density log π(a | s) to quantify and regulate this stochasticity. For iterative generators, log π(a | s)
+
+is not directly accessible and is often difficult to compute since the action distribution is only defined implicitly through a multi-step generation procedure. Consequently, existing approaches resort to additional estimation machinery [ 3], such as training auxiliary networks [ 40 ] or regularizing tractable distributional proxies [ 37 ]. While effective in some cases, these strategies introduce extra complexity and computation, and often lead to suboptimal exploration. To address this, we propose a fundamental shift in perspective: instead of explicitly estimating and tuning terminal entropies, we cast entropy-regularized policy optimization as a Generalized Schrödinger Bridge (GSB) problem [ 18 ]. The Schrödinger Bridge Problem (SBP) [ 5, 25 , 28 ] studies entropy-regularized transport by finding a trajectory distribution that stays close to a reference stochastic process while inducing desired terminal behavior. In this framework, the Maximum Entropy principle is no longer an external heuristic; rather, it follows from a structured trade-off between terminal utility and closeness to a high-entropy reference on path space. In particular, our derivation characterizes the induced terminal action distribution as a reweighting of the reference terminal marginal; when this reference marginal is set to be approximately uniform over the bounded action domain, the characterization aligns with the standard maximum-entropy principle. Crucially, we theoretically show that controlling deviation from the reference on the path space also controls the induced terminal action distribution. Moreover, for velocity-field-driven iterative generators, we show that this path-space deviation can be controlled via the kinetic energy of the flow [ 18 ] (i.e., the expected path integral of the squared velocity/drift magnitude along the generation trajectory), which directly motivates a least-kinetic regularizer. Motivated by this perspective, we propose Field Least-Energy Actor-Critic (FLAC) , a novel framework that instantiates this least-kinetic GSB regularization in RL. The actor is optimized to maximize Q-values while simultaneously minimizing this kinetic energy, effectively balancing reward maximization with the preservation of generation stochasticity. Furthermore, we introduce an automatic tuning mechanism for the energy penalty, ensuring the policy adapts its exploration level dynamically during training. We evaluate FLAC on a suite of challenging continuous control benchmarks, including DMControl [ 33 ] and HumanoidBench [ 27 ]. Our results demonstrate that FLAC achieves competitive or superior performance compared to state-of-the-art baselines. 
+
+## 2 Related Work  
+
+> Iterative Generative Policies.
+
+In offline RL and imitation learning, diffusion/flow policies serve as flexible behavior models or policy classes trained from fixed datasets, where mode coverage are central [ 6, 16 , 24 , 38 , 39 ]. Recent work studies value-/energy-guided training and sampling, where Q-values or learned energies bias generators toward high-return actions while maintaining data support [ 8, 13 , 21 , 26 ]. For online RL, iterative policies have begun to be combined with actor-critic updates and efficiency-oriented designs [ 3, 22 , 37 , 40 ]. Beyond RL benchmarks, diffusion/flow policies are also used in robotics and visuomotor control as general action-generation modules, underscoring their practical scalability when coupled with strong representation learning [6].  
+
+> Entropy Regulators for Generative Policies.
+
+Maximum-entropy RL encourages exploration via entropy or KL regularization [ 10 , 41 ]. However, for policies defined implicitly by iterative samplers (diffusion/flow), the induced action density may be unavailable, making density-based regularization expensive or fragile in online RL with limited solver budgets. Likelihood evaluation can be tied to change-of-variables along ODE dynamics [ 4 ] or path marginalization in SDEs [ 30 ], both of which are nontrivial in practice. Recent methods integrate iterative generative policies with off-policy actor–critic learning by introducing practical entropy/exploration regulators tailored to diffusion/flow samplers. DIME [ 3] optimizes a complex variational surrogate objective of entropy to control stochasticity. Wang et al. [ 37 ] approximate the policy entropy with a multivariate Gaussian and use it to calibrate exploration noise. Zhang et al. [ 40 ] train an additional noise-estimation network to enable entropy-style regularization for flow policies.  
+
+> Schr ¨odinger Bridges: Path-Space KL, Optimal Transport, and GSB.
+
+Schrödinger bridges provide a variational formulation for the most likely stochastic evolution between distributions relative to a reference diffusion, 2linking entropy regularization, stochastic control, and optimal transport [ 14 , 15 , 36 ]. Deterministic limits recover Benamou–Brenier kinetic-energy optimal transport [ 2, 23 ], which also motivates transport-learning methods [ 17 , 20 ]. On the stochastic side, learning-based SB solvers and diffusion-SB connections have been developed for fitting stochastic transports [ 25 , 28 , 35 ]. The generalized Schrödinger bridge further relaxes hard terminal constraints into soft terminal potentials, yielding one-ended objectives aligned with decision-making settings where targets are specified by utilities or rewards [18]. 
+
+## 3 Preliminaries 
+
+3.1 Entropy-Regularized RL 
+
+We consider a Markov Decision Process (MDP) [ 1] defined by the tuple M = ( S, A, p, r, γ ), with continuous state space S ∈ Rds and action space A ∈ Rda . The transition dynamics are p(s′ | s, a ), the reward function is 
+
+r(s, a ), and γ ∈ [0 , 1) is the discount factor. The goal is to learn a policy π(a | s) that maximizes the expected return [31]. In continuous control, to prevent premature convergence and encourage exploration, the objective is often augmented with an entropy term (Maximum Entropy RL): 
+
+JMaxEnt (π) = Eπ
+
+" ∞X
+
+> t=0
+
+γt(r(st, a t)+ αH(π(· | st))) 
+
+#
+
+, (1) where H(π) = −Ea∼π [log π(a | s)] , and maximizing H(π) is equivalent to minimizing DKL (π(· | s) ∥ Unif (A)) .Notably, MaxEnt RL yields a Boltzmann optimal policy of the form π∗(a | s) ∝ exp (Q(s, a )/α ), mirroring the exponential-tilting closed-form structure that will reappear in our GSB formulation. 
+
+3.2 Iterative Generative Policies 
+
+Unlike explicit policies (e.g., Gaussians) that directly output action samples, iterative generative policies define the distribution π(a | s) implicitly through a transport process. Let τ ∈ [0 , 1] denote the continuous generation time. The action generation is modeled as the solution to a state-conditioned Stochastic Differential Equation (SDE) [19, 30]: 
+
+dX τ = u(s, τ, X τ )dτ + σdW τ , X0 ∼ μ0, (2) where Xτ ∈ Rda is the latent state, X0 is sampled from a simple prior μ0 (typically N (0 , I ) or uniform distribution), and a := X1 is the realized action. The drift term uθ : S × [0 , 1] × Rda → Rda is a learnable vector field (velocity field), and Wτ is a standard Wiener process. A key property of Eq. (2) is that the marginal density of the terminal state, π(X1 | s) is not directly accessible. Evaluating log π(a | s) requires solving the instantaneous change of variables formula or marginalizing over all possible paths, which is computationally expensive and numerically unstable during online training. This necessitates a likelihood-free approach to stochasticity regulation. 
+
+3.3 The Schr ¨odinger Bridge Problem 
+
+The Schrödinger Bridge (SB) problem [ 5] addresses the question of finding the most likely stochastic evolution between two probability distributions given a reference process. Formally, let Ω = C([0 , 1] , Rd) be the path space, and let Xτ : Ω → Rd be the canonical coordinate process defined by Xτ (ω) = ω(τ ), where ω ∈ Ω. We denote the marginal distribution at time τ as 
+
+Pτ := ( Xτ )#P.
+
+Given a reference Pref (typically the uncontrolled Brownian motion) [ 15 ] and two marginals μ0, μ 1, the SB problem seeks a measure P∗ that minimizes a divergence metric D with respect to the reference, subject to matching the marginals: 
+
+min  
+
+> P
+
+D(P∥Pref ) s.t. P0 = μ0, P1 = μ1. (3) 3Specifically, for SDEs, D is the KL divergence; for ODEs, it connects to the Wasserstein-2 distance [ 32 ]. This formulation is often referred to as a “Data-to-Data” bridge, commonly used in generative modeling to connect noise and data. Recent works [ 18 ] have extended this to the Generalized Schrödinger Bridge (GSB), where the hard terminal constraint P1 = μ1 is relaxed into a soft potential or functional constraint. This generalization is crucial for our formulation in Section 4, where the target is defined by rewards rather than samples. 
+
+3.4 Kinetic Energy and Path Constraint 
+
+To regulate the policy without access to terminal log-densities, we lift the perspective from the action space to the path space. We define the Kinetic Energy of the generation process as the expected physical work done by the drift field: 
+
+E(s) := E
+
+Z 10
+
+12 ∥uθ (s, τ, X τ )∥2dτ 
+
+
+
+. (4) This quantity serves as a unified proxy for the divergence from the reference measure Pref (the base noise process) across both stochastic and deterministic regimes. 
+
+Stochastic Regime ( σ > 0). The path divergence is proportional to the energy [ 34 ]. As derived in Ap-pendix A.1: 
+
+DKL (Pθ ∥Pref ) = 1
+
+σ2 E(s). (5) Here, Pθ and Pref denote the policy and reference path measures (both initialized with X0 ∼ μ0), and their terminal marginals at τ = 1 are πθ (· | s) and μref 1 . Crucially, we establish that the divergence between path measures strictly upper-bounds the divergence between π(·| s) and the reference terminal marginal μref 1 :
+
+DKL (πθ ∥μref 1 ) ≤ DKL (Pθ ∥Pref ) = 1
+
+σ2 E(s). (6) We provide the proof of this inequality in Appendix A.3. This theoretical result is fundamental to our framework, as it guarantees that minimizing the kinetic energy is a sufficient condition to enforce the constraint on the terminal action distribution . 
+
+Deterministic Regime ( σ → 0). In the ODE case, the kinetic energy relates to the Optimal Transport cost [2, 23]. As detailed in Appendix A.2: 
+
+W22 (μ0, π θ ) ≤ 2E(s). (7) In the deterministic (ODE) case, the reference dynamics keeps Xτ = X0, hence μref 1 = μ0. Note, while ODE flow is deterministic, the randomness comes from X0. Minimizing kinetic energy acts as a geometric regularizer that strictly bounds the deviation (in Wasserstein-2 distance) from this prior. When μ0 is uniform over a bounded action domain, this follows a similar principle to maximum-entropy RL, namely discouraging overly concentrated action distributions and encouraging broadly supported, stochastic policies over the action domain, although it does not provide a strict entropy guarantee in the deterministic limit as we discussed in Appendix A.2. Thus, minimizing kinetic energy consistently enforces closeness to the prior, interpreted as entropic proximity (in SDEs) or geometric proximity (in ODEs). Hence, minimizing this path energy is sufficient to bound the divergence of the terminal action distribution. 
+
+## 4 Reinforcement Learning as a Generalized Schr ¨odinger Bridge Problem 
+
+In this section, we formally derive FLAC. We begin by reframing the policy optimization problem not merely as maximizing returns, but as a Generalized Schrödinger Bridge (GSB) problem. This perspective unifies the generative dynamics and the exploration objective into a single, coherent physical transport formulation. 44.1 The Generalized Schr ¨odinger Bridge Formulation 
+
+Standard RL treats the policy as a conditional distribution. Here, we view it as a controlled stochastic process. Following the formulation in Liu et al. [18] , we define our goal as finding a path measure P on the space of trajectories that minimizes a composite objective: a divergence cost relative to a high-entropy reference process, and a terminal potential cost reflecting the task reward. Let Pref denote a fixed reference path measure (e.g., Brownian motion) starting from a high-entropy prior 
+
+μ0 (instantiated as a uniform distribution). We formulate the One-Ended Generalized Schrödinger Bridge problem as 
+
+min  
+
+> P
+
+JGSB (P) := α D(P∥Pref )
+
+| {z }
+
+> Divergence Cost
+
++ EX1∼P [G(X1)] 
+
+| {z }
+
+> Terminal Potential
+
+s.t. P0 = μ0. (8) This optimization is subject to specific boundary conditions that distinguish it from classical transport problems. First, the process is anchored at a fixed start, constrained to initialize from the reference prior μ0.Second, unlike the standard Schrödinger Bridge which imposes a hard constraint on the terminal marginal (i.e., forcing X1 to match a data distribution), our formulation is one-ended (or “free-end”): the terminal distribution P1 is free to evolve, regularized only by the soft potential G(X1).We analyze the theoretical properties of this formulation. The optimization problem in Eq. (8) admits a closed-form solution for the terminal marginal distribution. 
+
+Proposition 1 (Optimal GSB Solution) . The optimal path measure P∗ that minimizes Eq. (8) induces a terminal marginal distribution p∗(X1) of the form: 
+
+p∗(X1) ∝ μref 1 (X1) · exp 
+
+
+
+− G(X1)
+
+α
+
+
+
+, (9) 
+
+where μref 1 (X1) is the marginal distribution of the reference process at τ = 1 .Proof. See Appendix A.4. Proposition 1 reveals an exponential-tilting closed form for the optimal terminal marginal. When μref 1 is approximately uniform over a bounded action domain, the solution reduces to p∗(X1) ∝ exp( −G (X1)/α ).To connect this general form to RL, we introduce a state-conditioned terminal potential Gs(X1), so that the induced terminal marginal defines a policy π(· | s) over actions a := X1. In particular, we will instantiate Gs(·)
+
+using a critic-like, value-informed potential (lower potential for higher-value actions), yielding a Boltzmann-style policy family like SAC [10]: 
+
+π(a | s) ∝ μref 1 · exp 
+
+
+
+− Gs(a)
+
+α
+
+
+
+.
+
+4.2 Energy-Regularized Policy Optimization 
+
+While Proposition 1 characterizes the optimal equilibrium, directly sampling from the unnormalized Boltzmann distribution is intractable in high-dimensional continuous spaces. Therefore, we solve the variational problem (Eq. 8) directly by parameterizing the generation process and instantiating the abstract GSB components into a tractable RL objective. 
+
+Deriving the FLAC Objective. First, leveraging the connection established in Section 3.4, we substitute the abstract divergence term with the expected kinetic energy of the velocity field: 
+
+D(Pθ ∥Pref ) ∝ E
+
+Z 10
+
+12 ∥uθ ∥2dτ 
+
+
+
+.
+
+56 3 0 3 6                                  
+
+> 6
+> 3
+> 0
+> 3
+> 6
+> Naive Flow
+> Step 0
+> 0.0
+> 63036
+> 6
+> 3
+> 0
+> 3
+> 6
+> Step 666
+> 12.3
+> 63036
+> 6
+> 3
+> 0
+> 3
+> 6
+> Step 1333
+> 13.0
+> 63036
+> 6
+> 3
+> 0
+> 3
+> 6
+> Step 1999
+> 13.0
+> 63036
+> 6
+> 3
+> 0
+> 3
+> 6
+> FLAC
+> 0.0
+> 63036
+> 6
+> 3
+> 0
+> 3
+> 6
+> 1.6
+> 63036
+> 6
+> 3
+> 0
+> 3
+> 6
+> 3.0
+> 63036
+> 6
+> 3
+> 0
+> 3
+> 6
+> 3.1
+> 0.0 2.5 5.0 7.5 10.0 12.5 15.0
+> Energy
+> Goal region
+> Velocity field
+
+Figure 1 Kinetic Energy Regularization Encourage Exploration. Toy example on a 2D multi-goal landscape. (Top) Unconstrained: The high-velocity field overpowers the intrinsic noise, forcing the policy to collapse into a single deterministic mode. (Bottom) FLAC: By penalizing kinetic energy, the policy is constrained to preserve stochasticity. This low-energy field successfully recovers the full multimodal distribution. 
+
+Second, to align with the actor-critic framework, we instantiate the terminal potential as the negative (expected) discounted return after taking action a := X1 at state s:
+
+Gs(X1) := −R(s, X 1) = −E
+
+" TX
+
+> t=0
+
+γtr(st, a t)
+
+#
+
+.
+
+Substituting these terms into Eq. 8, we obtain the training objective for our proposed method, Field Least-Energy Actor-Critic (FLAC): 
+
+min  
+
+> θ
+
+JFLAC (θ) = EPθ
+
+"
+
+α
+
+Z 10
+
+12 ∥uθ (s, τ, X τ )∥2 dτ 
+
+| {z }
+
+> Minimize Kinetic
+
+−R(s, X 1)
+
+| {z }
+
+> Maximize Return
+
+#
+
+, s.t. X0 ∼ μ0. (10) Here, the expectation is taken over the trajectory generated by the current policy. The term “Least-Kinetic” reflects the physical intuition of our approach: the kinetic energy term acts as a dynamic regularizer. Since the reference process (Brownian motion) has zero drift (zero kinetic energy), minimizing energy compels the policy to adhere to the intrinsic stochasticity of the reference, exerting effort only when necessary to steer towards high-value regions. To demonstrate the efficacy of this regularization, we visualize the evolution of the learned vector fields on a 2D multi-goal toy environment (Figure 1). In the Naive Flow case (Top), the policy maxmizes reward without regularization. As observed during the learning progress, it learns an aggressive, high-velocity field (depicted by long red arrows) that rapidly concentrates probability mass. This high kinetic energy completely overpowers the noise, causing the action distribution to suffer from severe mode collapse, capturing only a single goal. In contrast, FLAC (Bottom) penalizes the kinetic energy. The resulting field exerts minimal control effort, indicated by the subtle, low-magnitude field vectors. In the end of training, FLAC successfully maintains sufficient stochasticity to cover all 8 optimal modes, validating our hypothesis that limiting kinetic energy prevents the premature elimination of diverse solution paths. 65 Field Least-Energy Actor-Critic 
+
+Building on the GSB formulation, we propose Field Least-Energy Actor-Critic (FLAC) , which optimizes a velocity field to transport the prior noise to high-reward regions with minimal kinetic energy. This section details the practical algorithm, deriving a rigorous energy-regularized policy iteration scheme and its implementation with automatic energy tuning. 
+
+5.1 Energy-Regularized Policy Iteration 
+
+We incorporate the kinetic energy penalty directly into the Bellman operator. This allows us to extend standard Policy Iteration guarantees to our setting. Analogous to SAC, which derives a soft Bellman backup with an entropy regularizer, we derive an energy-regularized Bellman operator by incorporating the kinetic-energy cost of the action-generation process into the backup. 
+
+Policy Evaluation. For a fixed policy π, we define the energy-regularized Bellman evaluation operator T π
+
+acting on Q : S × A → R as 
+
+(T π Q)( s, a ) := r(s, a ) + γ EQ(s′, a ′) − α Eπ (s′), (11) where Eπ (s′) denotes the expected kinetic energy required to sample a′ ∼ π(· | s′).
+
+Proposition 2 (Convergence of Policy Evaluation) . Assume rewards are bounded and the energy term is finite. The operator T π is a γ-contraction in the L∞ norm. Consequently, the iterative update Qk+1 = T π Qk
+
+converges to the unique regularized value function Qπ .(Proof in Appendix A.5) Policy Improvement. Given the value function Qπ , we update the policy to maximize the regularized objective. This corresponds to finding a policy that maximizes the expected Q-value while minimizing its generation energy: 
+
+π ← arg max  
+
+> π
+
+Es∼D 
+
+Ea∼π(·| s)[Qπ (s, a )] − αEπ (s) . (12) 
+
+Proposition 3 (Monotonic Improvement) . The update rule guarantees monotonic improvement of the generalized objective, i.e., JGSB (πnew ) ≥ JGSB (π). This drives the policy towards the optimal transport plan that balances reward maximization and entropic exploration. (Proof in Appendix A.6) 
+
+5.2 Practical Implementation 
+
+We instantiate the above framework into a practical off-policy actor-critic algorithm. We parameterize the vector field uθ (s, τ, X τ ) (Actor) and the state-action value function Qψ (s, a ) (Critic). 
+
+Critic Update. The critic is trained to minimize the Bellman residual derived from Eq. (11) . To estimate the target value, we sample the next action a′ from the current policy at state s′ using a numerical solver, and simultaneously compute its discretized kinetic energy bEθ (s′). The target value y is constructed as: 
+
+y = r + γ
+
+
+
+min  
+
+> i=1 ,2
+
+Q ¯ψi (s′, a ′) − α bEθ (s′)
+
+
+
+, (13) where Q ¯ψi are the target critic networks. The critic parameters ψ are updated by minimizing the Bellman Error. 7Actor Update. The actor updates θ to maximize the improvement objective. Since the action aθ is generated via a differentiable solver, we can backpropagate gradients from the critic through the entire generation trajectory (pathwise derivative). The actor loss is: 
+
+Jπ (θ) = Es∼B 
+
+h
+
+α bEθ (s) − Qψ (s, a )
+
+i
+
+, (14) where a ∼ πθ (·| s). Minimizing this loss encourages the velocity field to find trajectories that lead to high-value actions while maintaining low kinetic energy. 
+
+5.3 Automatic Energy Tuning 
+
+Selecting a fixed regularization coefficient α is challenging, as the magnitude of kinetic energy varies significantly across different tasks and training stages. A fixed α may lead to over-exploration or premature convergence to deterministic behavior. To address this, we formulate the energy regulation as a constrained optimization problem. Instead of manually tuning the penalty weight, we specify a target energy budget Etgt , representing the desired level of stochasticity in the generation process. The objective is to maximize the expected return subject to the constraint that the average kinetic energy remains below this threshold: 
+
+max  
+
+> π
+
+Es∼D ,a ∼π [Qπ (s, a )] s.t. Es∼D [ bEπ (s)] ≤ Etgt . (15) We solve this constrained problem via the Lagrangian dual method. We construct the Lagrangian with respect to a learnable multiplier α ≥ 0:
+
+min  
+
+> α≥0
+
+max  
+
+> π
+
+L(π, α ) = E
+
+h
+
+Qπ (s, a ) − α( bEπ (s) − Etgt )
+
+i
+
+. (16) The optimization of the policy π (Actor Update) corresponds to maximizing L with respect to π, which recovers the energy-regularized objective in Eq. (14). For the multiplier α, we minimize the dual objective: 
+
+J(α) = Es∼D 
+
+h
+
+α · (Etgt − bEπ (s)) 
+
+i
+
+. (17) In practice, to ensure positivity, we parameterize the multiplier as α = exp ( log α) and update the log-multiplier 
+
+log α via gradient descent: 
+
+log α ← log α − β · Es∼B 
+
+h
+
+Etgt − stopgrad( bEθ (s)) 
+
+i
+
+. (18) where β is the learning rate. This mechanism functions as a dynamic regulator for policy stochasticity. When the policy becomes too deterministic, α increases, forcing the generation process to adhere more closely to the high-entropy prior. Conversely, when the policy is sufficiently stochastic, α decreases, allowing the agent to pursue aggressive, high-reward trajectories. 
+
+## 6 Experiment 
+
+To comprehensively evaluate the effectiveness and generality of FLAC , we conduct experiments on a diverse set of challenging tasks from DMControl [ 33 ] and HumanoidBench [ 27 ]. These benchmarks encompass high-dimensional locomotion and human-like robot (Unitree H1) control tasks. Our evaluation aims to answer the following key questions: 
+
+• Q1: How does FLAC compare against state-of-the-art model-free and model-based baselines in terms of sample efficiency and asymptotic performance on high-dimensional continuous control tasks? 
+
+• Q2: Does the proposed kinetic energy regularization effectively regulate policy stochasticity and improve performance? 8• Q3: How sensitive is FLAC to its key hyperparameters, specifically the target energy budget, and does the automatic Lagrangian tuning mechanism outperform fixed regularization schemes? We compare FLAC against two categories of strong baselines: 
+
+• Model-free RL: We include deterministic policies (TD7 [ 9]), standard Gaussian policies (SAC [ 10 ]), and recent diffusion/flow-based methods (DIME [3], SAC-FLOW [40], and FlowRL [22]). 
+
+• Model-based RL: We include TD-MPC2 [ 11 ], a leading model-based algorithm across different benchmarks, to benchmark the asymptotic performance limits. Note that model-based methods are not directly comparable to model-free approaches due to differences in underlying assumptions and access to environment dynamics; TD-MPC2 is included as a reference for asymptotic performance. 
+
+6.1 Main Results 0.00 0.25 0.50 0.75 1.00                                           
+
+> 0
+> 300
+> 600
+> 900
+> Episodic Reward
+> h1-stand
+> 0.00 0.25 0.50 0.75 1.00
+> 0
+> 300
+> 600
+> 900
+> h1-walk
+> 0.00 0.25 0.50 0.75 1.00
+> 0
+> 1500
+> 3000
+> 4500
+> h1-reach
+> 0.00 0.25 0.50 0.75 1.00
+> 250
+> 500
+> 750
+> 1000
+> h1-crawl
+> 0.00 0.25 0.50 0.75 1.00
+> 0
+> 250
+> 500
+> 750
+> h1-run
+> 0.00 0.25 0.50 0.75 1.00
+> Timesteps (1M)
+> 0
+> 300
+> 600
+> 900
+> Episodic Reward
+> h1-pole
+> 0.00 0.25 0.50 0.75 1.00
+> Timesteps (1M)
+> 0
+> 250
+> 500
+> 750
+> humanoid_walk
+> 0.00 0.25 0.50 0.75 1.00
+> Timesteps (1M)
+> 0
+> 300
+> 600
+> 900
+> humanoid_stand
+> 0.00 0.25 0.50 0.75 1.00
+> Timesteps (1M)
+> 0
+> 200
+> 400
+> 600
+> dog_run
+> 0.00 0.25 0.50 0.75 1.00
+> Timesteps (1M)
+> 0
+> 250
+> 500
+> 750
+> dog_trot
+> FLAC (ours) DIME FLOWRL SAC-FLOW SAC TD-MPC2 TD7
+
+Figure 2 Main results. We provide performance comparisons on two challenging benchmarks. For comprehensive results, please refer to Appendix D. All model-free algorithms are evaluated with 5 random seeds, while the model-based algorithm (TD-MPC2) uses 3 seeds. DIME incorporates cross Q-learning [ 29 ] to boost performance, whereas FLAC does not rely on these enhancements. 
+
+Performance across Environments. Figure 2 presents the comparative learning curves across diverse continuous control tasks. We observe that FLAC consistently matches or exceeds strong model-free baselines. This robustness extends to high-dimensional state spaces, specifically in the DMC Dog domain ( s ∈ R223 , a ∈ R38 )and the contact-rich HumanoidBench Unitree H1 task. Furthermore, compared to the model-based benchmark TD-MPC2 [ 11 ], FLAC attains comparable asymptotic returns, achieving this within a model-free framework that bypasses the need for world model learning or online planning. 
+
+Comparison with Other Diffusion/Flow-based Policies. When compared with prior diffusion-based and flow-based policies, FLAC demonstrates superior or comparable asymptotic performance relative to strong baselines such as DIME [ 3] and SAC-Flow [ 40 ]. FLAC attains these results using N = 2 number of function evaluations (NFE) per action throughout training and evaluation. In contrast, these baselines typically require more discretization steps to approximate the policy, with DIME using N = 16 and SAC-Flow using N = 4 .Moreover, DIME further benefits from cross Q-learning [ 29 ] as an additional performance enhancement, whereas FLAC does not rely on this technique. 
+
+6.2 Ablation Studies 
+
+To rigorously verify the robustness and the internal mechanism of FLAC, we conduct two sets of ablation studies. 
+
+Sensitivity to Target Energy Budget. We first investigate the sensitivity of FLAC to the target energy budget Etgt . As shown in Appendix E, under an isotropic action-generation prior the expected kinetic energy 90.0 0.2 0.4 0.6 0.8 1.0 
+
+> Timesteps (1M)
+> 0
+> 300
+> 600
+> 900
+> Episodic Reward
+> coef=0.0
+> coef=0.1
+> coef=0.5
+> coef=1.0
+> coef=2.5
+
+(a) 0.0 0.2 0.4 0.6 0.8 1.0       
+
+> Timesteps (1M)
+> 0
+> 250
+> 500
+> 750
+> Episodic Reward
+> fixed
+> autotune
+> log_alpha
+> 10
+> 8
+> 6
+> 4
+> 2
+> log_alpha 0.0 0.2 0.4 0.6 0.8 1.0
+> Timesteps (1M)
+> 0
+> 300
+> 600
+> 900
+> Episodic Reward
+> fixed
+> autotune
+> log_alpha
+> 10
+> 8
+> 6
+> 4
+> 2
+> log_alpha
+
+(b) Figure 3 Ablation Studies. (a) Sensitivity to target energy budget Etgt on h1-walk task. FLAC maintains high performance across a wide range of budgets, indicating robustness. (b) Efficacy of automatic Lagrangian tuning on h1-run (left) and h1-walk (right). Evolution of log α during training shows a “decrease-then-increase” pattern, indicating that FLAC automatically relaxes constraints for early learning and tightens them later to enforce exploration. 
+
+scales approximately linearly with the action dimension, motivating a dimension-normalized parametrization 
+
+Etgt = C · dim( A). We evaluate performance across a wide range of coefficients C ∈ { 0, 0.1, 0.5, 2.5}.As shown in Figure 3a, FLAC exhibits robustness, maintaining high performance across a broad range of energy budgets. Significant performance degradation is observed when the budget is tight ( C ∈ { 0, 0.1}). Specifically, the limiting case of C = 0 corresponds to a vanishing kinetic energy budget. In this regime, the regulation mechanism strictly suppresses the learned velocity field, compelling the policy to be fully random. The resulting poor performance is theoretically expected and empirically validates the efficacy of our kinetic energy constraint, confirming that the mechanism effectively governs the deviation from the prior.Beyond this extreme regime, the exact value of Etgt is not critical, simplifying hyperparameter tuning. 
+
+Efficacy and Dynamics of Automatic Tuning. 
+
+To understand FLAC’s automatic tuning, we compare it against fixed regularization schemes. Figure 3b confirms that the adaptive method consistently outperforms static settings, which typically suffer from either restrictive priors or instability due to insufficient regularization. The evolution of log α further reveals a distinct “decrease-then-increase” pattern: initially relaxing constraints to facilitate aggressive value maximization, then tightening them to force the policy geometrically closer to the prior, thereby preventing mode collapse. Furthermore, the evolution of the learnable multiplier log α (shown in Figure 3b) reveals the inner workings of FLAC. We observe a distinct trend where log α initially decreases and subsequently increases. During the early stages, the penalty decreases; this relaxation allows the agent to prioritize value maximization by reaching high-reward regions. In the later stages, however, log α increases, tightening the kinetic energy constraint. By forcing the generation flow to maintain lower energy, the mechanism pulls the policy geometrically closer to the high-entropy prior. Consequently, this process actively enhances exploration as the policy converges, effectively preventing premature mode collapse. This dynamic behavior firmly validates our hypothesis: the kinetic energy regularization serves as an active, state-aware regulator that automatically transitions the agent from aggressive learning to entropy-constrained convergence. 
+
+## 7 Conclusions 
+
+In this work, we introduced Field Least-Energy Actor-Critic (FLAC) , establishing a unified perspective that maps Reinforcement Learning onto the Generalized Schrödinger Bridge framework. We theoretically demonstrated that the Maximum Entropy principle naturally emerges from minimizing kinetic energy, which acts as a computable geometric proxy for bounding the divergence from the reference process without explicit density estimation. Empirically, FLAC demonstrates highly competitive performance against strong baselines. However, similar to standard maximum entropy approaches, our current framework applies an isotropic regularization across all action dimensions. This treats distinct actuators uniformly, leaving for future work in developing anisotropic or state-dependent energy constraints to better accommodate tasks where varying degrees of stochasticity are required across different control channels. 10 References 
+
+[1] Richard Bellman. A markovian decision process. Journal of mathematics and mechanics, pages 679–684, 1957. [2] Jean-David Benamou and Yann Brenier. A computational fluid mechanics solution to the monge-kantorovich mass transfer problem. Numerische Mathematik, 84(3):375–393, 2000. [3] Onur Celik, Zechu Li, Denis Blessing, Ge Li, Daniel Palenicek, Jan Peters, Georgia Chalvatzaki, and Gerhard Neumann. Dime: Diffusion-based maximum entropy reinforcement learning. arXiv preprint arXiv:2502.02316, 2025. [4] Ricky TQ Chen, Yulia Rubanova, Jesse Bettencourt, and David K Duvenaud. Neural ordinary differential equations. Advances in neural information processing systems, 31, 2018. [5] Raphaël Chetrite, Paolo Muratore-Ginanneschi, and Kay Schwieger. E. schrödinger’s 1931 paper “on the reversal of the laws of nature”[“über die umkehrung der naturgesetze”, sitzungsberichte der preussischen akademie der wissenschaften, physikalisch-mathematische klasse, 8 n9 144–153]. The European Physical Journal H, 46(1):28, 2021. [6] Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau, Yilun Du, Benjamin Burchfiel, Russ Tedrake, and Shuran Song. Diffusion policy: Visuomotor policy learning via action diffusion. The International Journal of Robotics Research, page 02783649241273668, 2023. [7] Prafulla Dhariwal and Alexander Nichol. Diffusion models beat gans on image synthesis. Advances in neural information processing systems, 34:8780–8794, 2021. [8] Shutong Ding, Ke Hu, Zhenhao Zhang, Kan Ren, Weinan Zhang, Jingyi Yu, Jingya Wang, and Ye Shi. Diffusion-based reinforcement learning via q-weighted variational policy optimization. arXiv preprint arXiv:2405.16173, 2024. [9] Scott Fujimoto, Wei-Di Chang, Edward Smith, Shixiang Shane Gu, Doina Precup, and David Meger. For sale: State-action representation learning for deep reinforcement learning. Advances in neural information processing systems, 36:61573–61624, 2023. [10] Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-policy maximum entropy deep reinforcement learning with a stochastic actor. In International conference on machine learning, pages 1861–1870. Pmlr, 2018. [11] Nicklas Hansen, Hao Su, and Xiaolong Wang. Td-mpc2: Scalable, robust world models for continuous control. arXiv preprint arXiv:2310.16828, 2023. [12] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. Advances in neural information processing systems, 33:6840–6851, 2020. [13] Vineet Jain, Tara Akhound-Sadegh, and Siamak Ravanbakhsh. Sampling from energy-based policies using diffusion. arXiv preprint arXiv:2410.01312, 2024. [14] Christian Léonard. From the schrödinger problem to the monge–kantorovich problem. Journal of Functional Analysis, 262(4):1879–1920, 2012. [15] Christian Léonard. A survey of the schr \" odinger problem and some of its connections with optimal transport. arXiv preprint arXiv:1308.0215, 2013. [16] Sergey Levine, Aviral Kumar, George Tucker, and Justin Fu. Offline reinforcement learning: Tutorial, review, and perspectives on open problems. arXiv preprint arXiv:2005.01643, 2020. [17] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747, 2022. [18] Guan-Horng Liu, Yaron Lipman, Maximilian Nickel, Brian Karrer, Evangelos A. Theodorou, and Ricky T. Q. Chen. Generalized schrödinger bridge matching, 2024. URL https://arxiv.org/abs/2310.02233 .[19] Jie Liu, Gongye Liu, Jiajun Liang, Yangguang Li, Jiaheng Liu, Xintao Wang, Pengfei Wan, Di Zhang, and Wanli Ouyang. Flow-grpo: Training flow matching models via online rl. arXiv preprint arXiv:2505.05470, 2025. [20] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003, 2022. 
+
+11 [21] Cheng Lu, Huayu Chen, Jianfei Chen, Hang Su, Chongxuan Li, and Jun Zhu. Contrastive energy prediction for exact energy-guided diffusion sampling in offline reinforcement learning. In International Conference on Machine Learning, pages 22825–22855. PMLR, 2023. [22] Lei Lv, Yunfei Li, Yu Luo, Fuchun Sun, Tao Kong, Jiafeng Xu, and Xiao Ma. Flow-based policy for online reinforcement learning. arXiv preprint arXiv:2506.12811, 2025. [23] Toshio Mikami. Monge’s problem with a quadratic cost by the zero-noise limit of h-path processes. Probability theory and related fields, 129(2):245–260, 2004. [24] Seohong Park, Qiyang Li, and Sergey Levine. Flow q-learning. arXiv preprint arXiv:2502.02538, 2025. [25] Michele Pavon, Giulio Trigila, and Esteban G Tabak. The data-driven schrödinger bridge. Communications on Pure and Applied Mathematics, 74(7):1545–1573, 2021. [26] Michael Psenka, Alejandro Escontrela, Pieter Abbeel, and Yi Ma. Learning a diffusion model policy from rewards via q-score matching. arXiv preprint arXiv:2312.11752, 2023. [27] Carmelo Sferrazza, Dun-Ming Huang, Xingyu Lin, Youngwoon Lee, and Pieter Abbeel. Humanoidbench: Simulated humanoid benchmark for whole-body locomotion and manipulation. arXiv preprint arXiv:2403.10506, 2024. [28] Yuyang Shi, Valentin De Bortoli, Andrew Campbell, and Arnaud Doucet. Diffusion schrödinger bridge matching. Advances in Neural Information Processing Systems, 36:62183–62223, 2023. [29] Riley Simmons-Edler, Ben Eisner, Eric Mitchell, Sebastian Seung, and Daniel Lee. Q-learning for continuous actions with cross-entropy guided policies. arXiv preprint arXiv:1903.10605, 2019. [30] Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equations. arXiv preprint arXiv:2011.13456, 2020. [31] Richard S Sutton, Andrew G Barto, et al. Reinforcement learning: An introduction , volume 1. MIT press Cambridge, 1998. [32] Kirill Tamogashev and Nikolay Malkin. Data-to-energy stochastic dynamics. arXiv preprint arXiv:2509.26364, 2025. [33] Yuval Tassa, Yotam Doron, Alistair Muldal, Tom Erez, Yazhe Li, Diego de Las Casas, David Budden, Abbas Abdolmaleki, Josh Merel, Andrew Lefrancq, et al. Deepmind control suite. arXiv preprint arXiv:1801.00690, 2018. [34] Belinda Tzen and Maxim Raginsky. Theoretical guarantees for sampling and inference in generative models with latent diffusions. In Conference on Learning Theory, pages 3084–3114. PMLR, 2019. [35] Francisco Vargas, Pierre Thodoroff, Austen Lamacraft, and Neil Lawrence. Solving schrödinger bridges via maximum likelihood. Entropy, 23(9):1134, 2021. [36] Cédric Villani. Optimal Transport: Old and New, volume 338 of Grundlehren der mathematischen Wissenschaften. Springer Berlin Heidelberg, Berlin, Heidelberg, 2009. ISBN 978-3-540-71050-9. doi: 10.1007/978-3-540-71050-9. URL https://link.springer.com/book/10.1007/978-3-540-71050-9 .[37] Yinuo Wang, Likun Wang, Yuxuan Jiang, Wenjun Zou, Tong Liu, Xujie Song, Wenxuan Wang, Liming Xiao, Jiang Wu, Jingliang Duan, et al. Diffusion actor-critic with entropy regulator. Advances in Neural Information Processing Systems, 37:54183–54204, 2024. [38] Zhendong Wang, Jonathan J Hunt, and Mingyuan Zhou. Diffusion policies as an expressive policy class for offline reinforcement learning. arXiv preprint arXiv:2208.06193, 2022. [39] Long Yang, Zhixiong Huang, Fenghao Lei, Yucun Zhong, Yiming Yang, Cong Fang, Shiting Wen, Binbin Zhou, and Zhouchen Lin. Policy representation via diffusion probability model for reinforcement learning. arXiv preprint arXiv:2305.13122, 2023. [40] Yixian Zhang, Shu’ang Yu, Tonghe Zhang, Mo Guang, Haojia Hui, Kaiwen Long, Yu Wang, Chao Yu, and Wenbo Ding. Sac flow: Sample-efficient reinforcement learning of flow-based policies via velocity-reparameterized sequential modeling. arXiv preprint arXiv:2509.25756, 2025. [41] Brian D Ziebart. Modeling purposeful adaptive behavior with the principle of maximum causal entropy. Carnegie Mellon University, 2010. 
+
+12 Appendix 
+
+## A Proofs in the Main Text 
+
+Notation. In this appendix, we denote the generic distance by D(·∥· ). We analyze the Kinetic Energy 
+
+E(u) = E[R 1012 ∥uτ ∥2dτ ] in both stochastic and deterministic regimes. 
+
+Technical Assumptions. To ensure the well-posedness of the theoretical results, we make the following standard assumptions throughout the paper: 1. Regularity of Drift: The vector field uθ (s, τ, x ) is Lipschitz continuous in x and adapted to the filtration. It satisfies the Novikov condition E[ exp ( 12σ2
+
+R ∥u∥2dτ )] < ∞, ensuring the validity of the Girsanov transformation. 2. Boundedness: The action space A is bounded (e.g., [−1, 1] d), and the reward function r(s, a ) is bounded. The reference prior μ0 is uniform over A.3. Absolute Continuity: The policy distribution π(·| s) is absolutely continuous with respect to the reference prior μ0 (i.e., π ≪ μ0), ensuring the KL divergence is well-defined. 
+
+A.1 Stochastic Regime: Energy as KL Divergence 
+
+We derive the equivalence between KL divergence and Kinetic Energy for SDEs ( σ > 0). 
+
+Setup. Let Pref  
+
+> s
+
+be the reference path measure induced by dX τ = σdW τ . Let Pθs be the policy path measure induced by dX τ = uθ dτ + σdW τ . Both share the initial distribution X0 ∼ μ0.
+
+Derivation. Define βτ := 1 
+
+> σ
+
+uθ (s, τ, X τ ). By Girsanov’s Theorem, the log-Radon-Nikodym derivative is: 
+
+log dPθs
+
+dPref 
+
+> s
+
+=
+
+Z 10
+
+β⊤ 
+
+> τ
+
+dW τ − 12
+
+Z 10
+
+∥βτ ∥2dτ. (19) Under the measure Pθs , we can rewrite dW τ = dfWτ + βτ dτ , where fWτ is a standard Brownian motion. Substituting this back: 
+
+log dPθs
+
+dPref 
+
+> s
+
+=
+
+Z 10
+
+β⊤ 
+
+> τ
+
+dfWτ + 12
+
+Z 10
+
+∥βτ ∥2dτ. (20) Taking the expectation EPθs , the stochastic integral (martingale) term vanishes: 
+
+DKL (Pθs ∥Pref  
+
+> s
+
+) = EPθs
+
+ 12
+
+Z 10
+
+∥βτ ∥2dτ 
+
+
+
+= 1
+
+σ2 E(u). (21) 
+
+□
+
+A.2 Deterministic Regime: Energy as Wasserstein-2 Distance 
+
+We show that in the ODE limit ( σ → 0), the Kinetic Energy bounds the Wasserstein-2 distance. 13 Setup. Consider the continuity equation describing the evolution of the probability density ρτ driven by the vector field uτ :
+
+∂τ ρτ + ∇ · (ρτ uτ ) = 0 . (22) The Benamou-Brenier formula [ 2] states that the squared Wasserstein-2 distance between two distributions μ0
+
+and μ1 is the infimum of the kinetic energy over all valid velocity fields transporting μ0 to μ1:
+
+W22 (μ0, μ 1) = inf 
+
+> (v,ρ )
+
+Z 10
+
+Z
+
+> Rd
+
+∥v(x, τ )∥2ρ(x, τ )dxdτ 
+
+
+
+, (23) subject to the continuity equation and boundary conditions ρ0 = μ0, ρ 1 = μ1.
+
+Connection to FLAC. Our learned policy uθ generates a specific flow that transports μ0 to a terminal distribution πθ = ρ1. By definition, the energy of our specific flow E(uθ ) is one candidate in the set of all possible transport plans. Therefore, it serves as an upper bound on the optimal transport cost: 
+
+W22 (μ0, π θ ) ≤ 2E(uθ ). (24) Minimizing E(uθ ) thus minimizes the upper bound on the geometric distance between the prior μ0 and the policy πθ . Moreover, when μ0 is a uniform distribution, this objective is related to the maximum entropy objective which pushing policy close to a uniform distribution. 
+
+Remark (ODE limit and entropy). In the deterministic (ODE) limit, controlling the deviation from a uniform prior in W2 is a geometric proximity constraint and does not, in general, imply a large terminal (differential) entropy. Nevertheless, in continuous-control RL the practical role of maximum-entropy regularization is often to prevent premature policy concentration and early commitment to suboptimal modes (i.e., poor local optima), by maintaining broadly supported stochastic action sampling and sustained exploration. From this perspective, this energy/ W2 regularization provides a useful surrogate: it penalizes aggressive, large-scale transport (high control effort), which empirically discourages rapid concentration of probability mass and promotes coverage of the bounded action domain. Moreover, the theoretical constructions that decouple W2-proximity from distributional spread typically rely on extreme local volume compression, and are often associated with highly non-uniform Jacobians of the induced flow. In practice, such behaviors are less likely to be realized under our policy parameterization and training dynamics: neural networks trained with first-order methods exhibit an empirical bias toward smoother, low-complexity solutions (often referred to as spectral bias), and the resulting learned transports tend to remain relatively regular under our energy regularization. Accordingly, in the deterministic regime we view the energy/ W2 constraint as a geometric inductive bias that empirically mitigates global collapse and encourages broadly supported action sampling, rather than as a strict information-theoretic bound. 
+
+□
+
+A.3 Proof of Terminal Entropy Control 
+
+We prove that minimizing path divergence controls the terminal distribution. Let Π( X0:1 ) = X1 be the projection to the terminal state. Let πθ = Pθs ◦ Π−1 and μref 1 = Pref  
+
+> s
+
+◦ Π−1.By the Data Processing Inequality (DPI) for f-divergences (including KL): 14 DKL (πθ ∥μref 1 ) ≤ DKL (Pθs ∥Pref  
+
+> s
+
+). (25) Combining this with the result from Appendix A.1, we have: 
+
+DKL (πθ ∥μref 1 ) ≤ 1
+
+σ2 E(s). (26) Thus, minimizing Kinetic Energy forces the terminal policy πθ to remain close to the high-entropy prior 
+
+μref 1 .Moreover, when μref 1 is a uniform distribution, this objective is related to the maximum entropy objective. 
+
+□
+
+A.4 Proof of Proposition 1 (Optimal GSB Solution)  
+
+> Proposition Restatement.
+
+The unique optimal path measure P∗ that minimizes the One-Ended GSB objective (Eq. 8) induces a terminal marginal distribution p∗(X1) of the form: 
+
+p∗(X1) ∝ pref (X1) · exp 
+
+
+
+− G(X1)
+
+α
+
+
+
+.
+
+Proof. The Generalized Schrödinger Bridge problem can be viewed as a static variational problem on the space of path measures. The objective function is: 
+
+J (P) = αD(P∥Pref ) + EP[G(X1)] . (27) Recall that the KL divergence is defined as 
+
+D(P | Q) = 
+
+Z
+
+log 
+
+ dP
+
+dQ
+
+
+
+dP.
+
+Substituting this into the objective: 
+
+J (P) = α
+
+Z
+
+log 
+
+ dP
+
+dPref 
+
+
+
+dP +
+
+Z
+
+G(X1)dP (28) 
+
+= α
+
+Z 
+
+log 
+
+ dP
+
+dPref 
+
+
+
++ G(X1)
+
+α
+
+
+
+dP. (29) Note that G(X1) 
+
+> α
+
+= log exp 
+
+ G(X1)
+
+> α
+
+
+
+, thus: 
+
+J (P) = α
+
+Z
+
+log 
+
+ dP
+
+dPref · exp 
+
+ G(X1)
+
+α
+
+ 
+
+dP. (30) Define an unnormalized auxiliary measure ˜Q such that 
+
+d ˜Q = exp 
+
+
+
+− G(X1)
+
+α
+
+
+
+dPref .
+
+Then the term inside the logarithm becomes dP  
+
+> d˜Q
+
+. The objective is minimized when P matches the normalized version of ˜Q. Therefore, the optimal measure P∗ satisfies: 
+
+dP∗
+
+dPref (ω) ∝ exp 
+
+
+
+− G(X1(ω)) 
+
+α
+
+
+
+. (31) Marginalizing this path measure at τ = 1 , we obtain the terminal distribution: 
+
+p∗(X1) = dP∗
+
+> 1
+
+dx (x) ∝ pref (X1) exp 
+
+
+
+− G(X1)
+
+α
+
+
+
+. (32) This concludes the proof. 15 A.5 Proof of Proposition 2 
+
+Fix a policy π.
+
+Bellman operator. Recall the energy-regularized Bellman evaluation operator: 
+
+(T π Q)( s, a ) := r(s, a ) + γ Es′∼p(·| s,a )
+
+> a′∼π(·| s′)
+
+[ Q(s′, a ′) − α Eπ (s′) ] . (33) Here Eπ (s′) denotes the expected kinetic energy required to sample a′ ∼ π(· | s′).
+
+Contraction in ∥ · ∥ ∞. For any two bounded functions Q1, Q 2 and any (s, a ), we have 
+
+(T π Q1)( s, a ) − (T π Q2)( s, a ) = γ Es′,a ′
+
+Q1(s′, a ′) − Q2(s′, a ′) (34) 
+
+≤ γ Es′,a ′
+
+ Q1(s′, a ′) − Q2(s′, a ′)  (35) 
+
+≤ γ ∥Q1 − Q2∥∞, (36) where the expectations are over s′ ∼ p(· | s, a ) and a′ ∼ π(· | s′).Taking the supremum over (s, a ) yields 
+
+∥T π Q1 − T π Q2∥∞ ≤ γ∥Q1 − Q2∥∞.
+
+Thus T π is a γ-contraction. 
+
+Existence and uniqueness of the fixed point. By fixed-point theorem, T π has a unique fixed point Qπ .
+
+Identification with the regularized return. Unrolling the fixed-point equation Qπ = T π Qπ gives 
+
+Qπ (s, a ) = E
+
+h
+
+r(s0, a 0) + γ Qπ (s1, a 1) − α Eπ (s1) s0 = s, a 0 = a
+
+i
+
+(37) 
+
+= E
+
+h X 
+
+> t≥0
+
+γtr(st, a t) − α X
+
+> t≥1
+
+γtEπ (st) s0 = s, a 0 = a
+
+i
+
+, (38) where st+1 ∼ p(· | st, a t) and at+1 ∼ π(· | st+1 ).
+
+□
+
+A.6 Proof of Proposition 3 
+
+Fix a policy π and let Qπ be the unique fixed point of T π defined in Eq. (11) (i.e., Qπ = T π Qπ ). 
+
+Policy improvement condition. Assume the updated policy πnew satisfies, for all states s,
+
+Ea∼πnew (·| s)[Qπ (s, a )] − α Eπnew (s) ≥ Ea∼π(·| s)[Qπ (s, a )] − α Eπ (s). (39) 
+
+Show one-step improvement in Bellman backup. Consider the Bellman evaluation operators T π and T πnew .For any (s, a ),
+
+(T πnew Qπ )( s, a ) = r(s, a ) + γ Es′∼p(·| s,a )Ea′∼πnew (·| s′) [Qπ (s′, a ′) − α Eπnew (s′)] . (40) Applying (39) at state s′ yields 
+
+Ea′∼πnew (·| s′)[Qπ (s′, a ′)] − α Eπnew (s′) ≥ Ea′∼π(·| s′)[Qπ (s′, a ′)] − α Eπ (s′).
+
+Taking expectation over s′ ∼ p(· | s, a ) and substituting back gives 
+
+(T πnew Qπ )( s, a ) ≥ r(s, a ) + γ Es′∼p(·| s,a )Ea′∼π(·| s′) [Qπ (s′, a ′) − α Eπ (s′)] (41) 
+
+= ( T π Qπ )( s, a ). (42) Since Qπ is the fixed point of T π , we have (T π Qπ )( s, a ) = Qπ (s, a ); therefore 
+
+(T πnew Qπ )( s, a ) ≥ Qπ (s, a ), ∀(s, a ). (43) 16 Monotone convergence to the fixed point. The operator T πnew is monotone: if Q1 ≤ Q2 pointwise then 
+
+T πnew Q1 ≤ T πnew Q2 (the reward and energy terms do not depend on Q and expectations preserve order). Apply T πnew iteratively to (43): 
+
+Qπ ≤ T πnew Qπ ≤ (T πnew )2Qπ ≤ · · · .
+
+By Proposition 2, T πnew is a γ-contraction; hence the sequence converges in ∥ · ∥ ∞ to its unique fixed point 
+
+Qπnew . Taking limits yields 
+
+Qπnew (s, a ) ≥ Qπ (s, a ), ∀(s, a ),
+
+which proves monotonic improvement. 
+
+□  
+
+> Table 1 Hyperparameters
+> Hyperparameter Value Hyperparameters
+
+Optimizer Adam Critic learning rate 3 × 10 −4
+
+Actor learning rate 3 × 10 −4
+
+Discount factor 0.99 Batch Size 256 Replay buffer size 1 × 10 6
+
+Target energy 0.5*dim(A) NFE steps N 2Solver Midpoint Euler 
+
+> Value network
+
+Network hidden dim 512 Network hidden layers 3Network activation function gelu 
+
+> Policy network
+
+Network hidden dim 512 Network hidden layers 2Network activation function elu 
+
+## B Baselines 
+
+In our experiments, we have implemented SAC, TD7, DIME,SAC-FLOW and TD-MPC2 using their original code bases and official results. 
+
+• SAC [ 10 ], we utilized the open-source PyTorch implementation, available at https://github.com/ pranz24/pytorch-soft-actor-critic .
+
+• TD7 [ 9 ] was integrated into our experiments through its official codebase, accessible at https://github. com/sfujim/TD7 .
+
+• TD-MPC2 [ 11 ] was employed with its official implementation from https://github.com/nicklashansen/ tdmpc2 and used their official results. 
+
+• SAC-FLOW [ 40 ] was employed with its official implementation from https://github.com/Elessar123/ SAC-FLOW.git 
+
+• DIME [ 3] was employed with its official implementation from https://github.com/ALRhub/DIME.git 
+
+and used their official results. 
+
+• FlowRL [ 22 ] was employed with its official implementation from https://github.com/bytedance/ FlowRL 
+
+17 C Environment Details 
+
+We validate our algorithm on the DMControl [ 33 ] and HumanoidBench [ 27 ], including the most challenging high-dimensional and Unitree H1 humanoid robot control tasks. On DMControl, we focus on the most challenging tasks(dog and humanoid domains). On HumanoidBench, we focus on tasks that do not require dexterous hands.   
+
+> Task State dim Action dim
+
+Humanoid Stand 67 24 Humanoid Run 67 24 Humanoid Walk 67 24 Dog Run 223 38 Dog Trot 223 38 Dog Stand 223 38 Dog Walk 223 38    
+
+> Table 2 Task dimensions for DMControl.
+> Task Observation dim Action dim
+
+H1 Crawl 51 19 H1 Hurdle 51 19 H1 Maze 51 19 H1 Pole 51 19 H1 Reach 57 19 H1 Run 51 19 H1 Sit Hard 64 19 H1 Sit Simple 51 19 H1 Slide 51 19 H1 Stair 51 19 H1 Stand 51 19 H1 Walk 51 19  
+
+> Table 3 Task dimensions for HumanoidBench.
+
+## D Toy Example Setup 
+
+We consider a 2D multi-goal bandit to illustrate the effect of least-action regularization. The action space is 
+
+A = R2, with 8 goal positions placed uniformly on a circle of radius 4: 
+
+gk =
+
+
+
+4 cos 
+
+ 2πk 
+
+8
+
+
+
+, 4 sin 
+
+ 2πk 
+
+8
+
+ 
+
+, k = 0 , 1, . . . , 7. (44) The reward function is the maximum Gaussian bump over all goals: 
+
+r(a) = max  
+
+> k
+
+exp 
+
+
+
+− ∥a − gk∥2
+
+2
+
+
+
+. (45) Both policies use a 2-layer MLP drift field with base distribution ν = N (0 , I ) and K = 24 Euler steps. Without regularization, Naive Flow collapses to a single mode (1/8 coverage) while its kinetic energy explodes. FLAC maintains bounded energy via dual ascent and discovers all 8 goals (8/8 coverage), demonstrating that least-action regularization prevents mode collapse. 18 Figure 4 Task Domain Visualizations. 
+
+## E Estimation of Target Kinetic Energy 
+
+The heuristic adjustment of the target kinetic energy Etgt in our Adaptive Kinetic Budgeting mechanism draws direct inspiration from the target entropy heuristic used in Soft Actor-Critic (SAC). In SAC, the target entropy is typically set to Htarget = − dim (A) to prevent the policy from collapsing into a deterministic point mass. Similarly, FLAC requires a reference value to regulate the trade-off between control effort and stochasticity. However, since we operate in the energy domain rather than entropy, we derive a geometric heuristic grounded in the physics of optimal transport. Here, we derive a practical rule of thumb for setting Etgt based on the Transport Cost required to traverse the action space. 
+
+E.1 Geometric Derivation 
+
+Consider a standard continuous control setting where the action space is bounded and normalized to 
+
+A = [ −1, 1] d. The generative policy evolves a latent state Xτ from a base distribution X0 ∼ N (0 , I ) (centered at the origin) to a terminal action X1.
+
+Unit Displacement Cost. Suppose the policy needs to generate an action at the boundary of the feasible space (e.g., x = 1 ) starting from the mean of the prior (e.g., x = 0 ). Under the Principle of Least Action, the most energy-efficient trajectory is a constant-velocity path (a geodesic): 
+
+u(τ ) = v, where v = ∆x
+
+∆τ = 1 − 01 = 1 .
+
+The kinetic energy consumed by this specific “unit” trajectory is: 
+
+Eunit =
+
+Z 10
+
+12 ∥u(τ )∥2dτ =
+
+Z 10
+
+12 (1) 2dτ = 0 .5.
+
+This implies that to deterministically shift the probability mass from the center to the boundary of the action space, the system must expend at least 0.5 units of energy per dimension. 
+
+Dimension Scaling. Since the total kinetic energy is additive across independent dimensions (due to the squared norm ∥u∥2 = P u2 
+
+> i
+
+), the total energy required to reach the boundary in all d dimensions is 0.5 × d.
+
+E.2 The Energy Budget Formula 
+
+Based on the derivation above, we formulate the target energy budget as a linear function of the action dimension: 
+
+Etgt = C · dim( A), (46) where C is the Energy Factor representing the average allowable kinetic energy per dimension. 19 Comparison with SAC. In our experiments, we found that setting C ∈ [0 .5, 2.5] yields robust performance across all tasks, and we set C=0.5, eliminating the need for per-task hyperparameter tuning. This offers a geometric counterpart to SAC’s entropy heuristic. 
+
+Robustness via Auto-tuning. Crucially, the specific choice of C is not overly sensitive due to the automatic tuning mechanism of the Lagrange multiplier α. The adaptive α dynamically scales the penalty weight to balance the energy constraint against the reward signal. Consequently, even if C is suboptimal, the algorithm can adjust α to find a stable equilibrium, making FLAC significantly less brittle than methods requiring fixed regularization weights. 
+
+## F More Experimental Results 
+
+F.1 Sensitivity to NFE 
+
+In all experiments, we set the number of function evaluations ( NFE ) to 2. We empirically observed that increasing NFE does help accelerate convergence in the early stages of training. However, it has little impact on the final performance as showed in Figure 5. This suggests that while higher NFE can facilitate faster initial learning, the ultimate effectiveness of the policy is not strongly dependent on this hyperparameter, the ultimate effectiveness of the policy is not strongly dependent on this hyperparameter. We hypothesize that this phenomenon arises because the kinetic-energy regularization biases the learned generation dynamics toward low-energy trajectories, which tend to be shorter and closer to straight-line transports from the prior to the action. This effect is also observed in the toy example (Figure 1), where energy regularization yields straighter and shorter transport paths. 0.0 0.2 0.4 0.6 0.8 1.0 
+
+> Timesteps (1M)
+> 0
+> 200
+> 400
+> 600
+> 800
+> Episodic Reward
+> NFE=2
+> NFE=4
+> NFE=10
+
+(a) h1-run 0.0 0.2 0.4 0.6 0.8 1.0  
+
+> Timesteps (1M)
+> 0
+> 200
+> 400
+> 600
+> 800
+> Episodic Reward
+> NFE=2
+> NFE=4
+> NFE=10
+
+(b) h1-walk 
+
+Figure 5 Sensitivity to NFE. Increasing NFE accelerates early convergence but has little impact on final performance. 
+
+This finding supports that, for FLAC: the use of a small, fixed NFE for efficient training without sacrificing the quality of the final results. 
+
+F.2 Efficiency 
+
+In addition to sample efficiency, we also analyzed the overall computational efficiency of our algorithm in Figure 6. Specifically, we conducted a comparative study against DIME on seven challenging tasks from the DMC-hard benchmark. In these experiments, the horizontal axis represents wall-clock time. Although our implementation is based on PyTorch(with torch.compile for acceleration), thanks to the robustness of our method with respect to the NFE hyperparameter, our approach remains more efficient than DIME (failed to learn effectively at NFE=2), which is implemented in JAX. This demonstrates that our method achieves superior computational efficiency despite the differences in underlying frameworks. 20 0 50 100 150 200 250 300 350 
+
+Wall clock time (min) 
+
+0
+
+200 
+
+400 
+
+600 
+
+800  
+
+> Episodic Reward (avg over 7 DMC tasks)  FLAC(pytorch)
+> DIME(JAX) Figure 6 Computational Efficiency Comparison to DIME
+
+F.3 Comprehensive Results 
+
+We report the complete results on DMC-Hard and HumanoidBench in Fig. 8 and Fig. 7, respectively. On HumanoidBench, FLAC matches or outperforms all baselines on most tasks, while underperforming a strong model-based baseline on a small subset of tasks; on DMC-Hard, FLAC matches or outperforms all baselines across tasks. 21 0.00 0.25 0.50 0.75 1.00 
+
+250 
+
+500 
+
+750 
+
+1000 
+
+> Mean Reward
+
+h1-crawl 
+
+0.00 0.25 0.50 0.75 1.00 
+
+0
+
+150 
+
+300 
+
+h1-hurdle 
+
+0.00 0.25 0.50 0.75 1.00 
+
+160 
+
+240 
+
+320 
+
+400 h1-maze 
+
+0.00 0.25 0.50 0.75 1.00 
+
+0
+
+300 
+
+600 
+
+900 
+
+h1-pole 
+
+0.00 0.25 0.50 0.75 1.00 
+
+0
+
+1500 
+
+3000 
+
+4500 
+
+> Mean Reward
+
+h1-reach 
+
+0.00 0.25 0.50 0.75 1.00 
+
+0
+
+250 
+
+500 
+
+750 
+
+h1-run 
+
+0.00 0.25 0.50 0.75 1.00 
+
+0
+
+250 
+
+500 
+
+750 
+
+h1-sit-hard 
+
+0.00 0.25 0.50 0.75 1.00 
+
+0
+
+300 
+
+600 
+
+900 
+
+h1-sit-simple 
+
+0.00 0.25 0.50 0.75 1.00 
+
+Timesteps (1M) 
+
+0
+
+250 
+
+500 
+
+750 
+
+> Mean Reward
+
+h1-slide 
+
+0.00 0.25 0.50 0.75 1.00 
+
+Timesteps (1M) 
+
+0
+
+150 
+
+300 
+
+450 
+
+h1-stair 
+
+0.00 0.25 0.50 0.75 1.00 
+
+Timesteps (1M) 
+
+0
+
+300 
+
+600 
+
+900 
+
+h1-stand 
+
+0.00 0.25 0.50 0.75 1.00 
+
+Timesteps (1M) 
+
+0
+
+300 
+
+600 
+
+900 
+
+h1-walk 
+
+TD7 
+
+SAC 
+
+TD-MPC2 
+
+sac-flow 
+
+DIME 
+
+FlowRL 
+
+Flac Figure 7 Full Results on Humanoid Bench. 
+
+22 0
+
+300 
+
+600 
+
+900 
+
+> Episodic Reward
+
+dog_walk 
+
+0
+
+200 
+
+400 
+
+600 
+
+dog_run 
+
+0
+
+300 
+
+600 
+
+900 
+
+dog_stand 
+
+0
+
+250 
+
+500 
+
+750 
+
+dog_trot 
+
+0.00 0.25 0.50 0.75 1.00 
+
+Timesteps (1M) 
+
+0
+
+250 
+
+500 
+
+750 
+
+> Episodic Reward
+
+humanoid_walk 
+
+0.00 0.25 0.50 0.75 1.00 
+
+Timesteps (1M) 
+
+0
+
+100 
+
+200 
+
+300 
+
+humanoid_run 
+
+0.00 0.25 0.50 0.75 1.00 
+
+Timesteps (1M) 
+
+0
+
+300 
+
+600 
+
+900 
+
+humanoid_stand 
+
+FLAC(OURS) DIME FLOWRL SAC-FLOW SAC TD-MPC2 TD7 Figure 8 Full Results on DMC-Hard. 
+
+23
