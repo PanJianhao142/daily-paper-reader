@@ -1,5 +1,9 @@
 * [首页](/)
 * Daily Papers
+  * 2026-02-17 <!--dpr-date:20260217-->
+    * 精读区
+    * 速读区
+      * <a class="dpr-sidebar-item-link" href="#/202602/17/2602.14885v1-drift-diffusion-matching-embedding-dynamics-in-latent-manifolds-of-asymmetric-neural-networks"><div class="dpr-sidebar-title">Drift-Diffusion Matching: Embedding dynamics in latent manifolds of asymmetric neural networks</div><div class="dpr-sidebar-tags"><span class="dpr-sidebar-tag dpr-sidebar-tag-score"><span class="dpr-stars" title="评分：6.0/10（3.0/5）" aria-label="3.0 out of 5"><span class="dpr-stars-bg">☆☆☆☆☆</span><span class="dpr-stars-fill" style="width:60%">★★★★★</span></span></span> <span class="dpr-sidebar-tag dpr-sidebar-tag-keyword">MDM</span></div></a>
   * 2026-02-16 <!--dpr-date:20260216-->
     * 精读区
       * <a class="dpr-sidebar-item-link" href="#/202602/16/2602.12679v1-motion-prior-distillation-in-time-reversal-sampling-for-generative-inbetweening"><div class="dpr-sidebar-title">Motion Prior Distillation in Time Reversal Sampling for Generative Inbetweening</div><div class="dpr-sidebar-tags"><span class="dpr-sidebar-tag dpr-sidebar-tag-score"><span class="dpr-stars" title="评分：8.0/10（4.0/5）" aria-label="4.0 out of 5"><span class="dpr-stars-bg">☆☆☆☆☆</span><span class="dpr-stars-fill" style="width:80%">★★★★★</span></span></span> <span class="dpr-sidebar-tag dpr-sidebar-tag-keyword">MDM</span> <span class="dpr-sidebar-tag dpr-sidebar-tag-query">课题</span></div></a>
