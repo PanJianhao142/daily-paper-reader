@@ -1,0 +1,367 @@
+Title: ReMoRa: Multimodal Large Language Model based on Refined Motion Representation for Long-Video Understanding
+
+URL Source: https://arxiv.org/pdf/2602.16412v1
+
+Published Time: Thu, 19 Feb 2026 01:53:25 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# ReMoRa: Multimodal Large Language Model based on Refined Motion Representation for Long-Video Understanding 
+
+# Daichi Yashima 1,3 Shuhei Kurita 2,3 Yusuke Oda 3 Komei Sugiura 11Keio University 2NII 3NII LLMC 
+
+# Abstract 
+
+While multimodal large language models (MLLMs) have shown remarkable success across a wide range of tasks, long-form video understanding remains a significant chal-lenge. In this study, we focus on video understanding by MLLMs. This task is challenging because processing a full stream of RGB frames is computationally intractable and highly redundant, as self-attention have quadratic complex-ity with sequence length. In this paper, we propose ReMoRa, a video MLLM that processes videos by operating directly on their compressed representations. A sparse set of RGB keyframes is retained for appearance, while temporal dy-namics are encoded as a motion representation, removing the need for sequential RGB frames. These motion represen-tations act as a compact proxy for optical flow, capturing temporal dynamics without full frame decoding. To refine the noise and low fidelity of block-based motions, we introduce a module to denoise and generate a fine-grained motion representation. Furthermore, our model compresses these features in a way that scales linearly with sequence length. We demonstrate the effectiveness of ReMoRa through exten-sive experiments across a comprehensive suite of long-video understanding benchmarks. ReMoRa outperformed base-line methods on multiple challenging benchmarks, including LongVideoBench, NExT-QA, and MLVU. 
+
+# 1. Introduction 
+
+Multimodal large language models (MLLMs) have demon-strated remarkable capabilities across a wide range of vision-language tasks [ 1, 8, 21 , 23 , 31 , 41 , 44 , 61 , 72 ]. However, this success has not yet translated to the complex domain of long-form videos, which remains a significant open chal-lenge [ 21 , 37 , 45 , 67 ]. Current MLLMs often struggle when confronted with inputs spanning several minutes or even hours, leading to a degradation in performance. This bot-tleneck severely limits their practical utility in real-world scenarios that demand the comprehension of complex, long-range temporal narratives, such as video summarization [ 43 ], visual scene interpretation for domestic robots [ 6, 62 ], or 
+
+Figure 1. Overview of ReMoRa. Our method utilizes compressed video representations, which naturally separates each video into keyframes and compressed inter-frame redundancies. From these, we extract motions that are lightweight but noisy and coarse. Our model then refines these motions into clean and fine-grained repre-sentations that preserve efficiency while approaching the fidelity of dense optical flow. 
+
+assistive technologies for the visually impaired [40, 51]. The primary obstacle to effective long-video under-standing is the cost and redundancy of processing long RGB frame sequences. Most existing models rely on uniform frame sampling, which entails an inherent trade-off [ 15 , 21 , 30 , 46 , 69 , 70 ]: sparse sampling is computa-tionally feasible but misses brief yet critical events, whereas dense sampling preserves fine-grained dynamics but quickly becomes prohibitive due to the quadratic complexity of self-attention on long sequences. Moreover, frame-based approaches are inefficient, repeatedly encoding redundant visual content (e.g., static backgrounds) across consecu-tive frames. Recent methods attempt to mitigate this by maintaining dense uniform sampling and then compress-ing tokens in time or space [ 30 , 70 ], but pooling- and reduction-based strategies often blur fine-grained detail and subtle motion cues, leading to underperformance on tasks 
+
+> arXiv:2602.16412v1 [cs.CV] 18 Feb 2026
+
+that depend on short-lived but salient events, especially as video length grows [ 15 , 46 ]. These limitations suggest that long-form video MLLMs should first adopt a more com-pact, redundancy-aware video representation before apply-ing heavy sequence modeling. A natural candidate for such a representation is the com-pressed video stream itself. Modern video compression formats (e.g., H.264) factorize a video into a small number of keyframes and many lightweight motion descriptors that describe scene evolution over time. Operating in this space both avoids repeated processing of nearly identical frames and enables much denser temporal coverage for a fixed com-putational budget by using inexpensive motion information instead of fully decoded RGB frames. In this paper, we realize this compressed-domain perspec-tive with a standard video codec while keeping the method independent of any specific format. Standard codecs orga-nize frames into groups of pictures (GOPs), where each GOP consists of an I-frame and several P/B-frames predicted from one or more reference frames. This structure induces a tem-poral hierarchy: I-frames serve as appearance anchors, while P/B-frames capture local motion between anchors. Con-cretely, our model uses I-frames as keyframes and motion vectors from P/B-frames as motion descriptors, a compu-tationally efficient proxy for optical flow [ 5, 24 , 54 ] that preserves appearance from a small set of RGB frames while capturing temporal dynamics through lightweight motion vectors. This efficiency comes with trade-offs, as motion vectors in standard codecs are block-based, sparse, and pre-dictive rather than directly observed. The resulting signals are noisy and temporally inconsistent, undermining temporal alignment and fine-grained reasoning. Crucially, their very low computational cost permits sampling more temporal po-sitions than typical RGB-based schemes. Taken together, these factors motivate transforming coarse, codec-derived motions into fine-grained motion representations, enabling dense temporal coverage and motion reasoning at a fraction of the cost of full optical flow. Motivated by these considerations, we propose ReMoRa, a video MLLM that exploits compressed video represen-tations for long video understanding. As shown in Fig. 1, instead of uniformly sampling frames, we keep a small set of high-information RGB frames for appearance and encode temporal change as motion representations obtained from compressed-domain motion cues, a computationally efficient proxy for optical flow. Subsequently, ReMoRa employs a Refined Motion Representation (RMR) module that denoises and densifies block-level raw motions into fine-grained mo-tion representations aligned with dense optical flow that are suitable for long-horizon reasoning. Furthermore, to effi-ciently capture temporal dependencies, we introduce the Hi-erarchical Motion State Space (HMSS) module that exploits the codec-induced structure to compress motion sequences in linear time, avoiding quadratic self-attention while preserv-ing both local and global temporal context. We validated the effectiveness of our approach on a comprehensive suite of video understanding benchmarks such as VideoMME [ 11 ], LongVideoBench [55], and ActivityNet-QA [63]. Our contributions are summarized as follows: • We present ReMoRa, a video MLLM that directly pro-cesses compressed video streams, leveraging I-frames and motion representations instead of redundant RGB frames for scalable long-form video understanding. • We propose the RMR module to enhance the fidelity of noisy, block-level motion vectors and introduce a HMSS module to perform long-range temporal model-ing in linear time. • ReMoRa outperformed baseline methods on mul-tiple challenging long-form video understanding benchmarks, including LongVideoBench [ 55 ], NExT-QA [56], and MLVU [74]. 
+
+# 2. Related Work 
+
+Recent studies have explored various aspects of video MLLMs, including their architectures, training paradigms, and for effective modeling their unique visual and temporal dynamics [22, 29]. 
+
+Video Multimodal Large Language Models. Recent video MLLMs extend image-based MLLMs such as LLaVA [ 31 ] and MiniGPT-4 [ 76 ] to the temporal domain, yet they face a severe frame budget constraint due to quadratic attention and limited context windows. Early mod-els [ 21 , 37 , 66 ] processed only a handful of uniformly sam-pled RGB frames (e.g., 8 ∼32) to align video content with language, but this approach discards fine-grained tempo-ral cues and fails to scale to minute- or hour-long videos. More advanced models (e.g., [ 7, 39 , 65 ]) introduce sparse or segment-based sampling, yet they still rely on frame-level decoding. To overcome the inefficiency of uniform frame sampling, several work have proposed token-efficient mechanisms. LongVU [ 46 ] dynamically prunes redundant visual tokens to fit long clips within a manageable context. BIMBA [ 15 ]employs state space models (SSMs) [ 12 , 13 ] to model long temporal dependencies linearly in sequence length, com-pressing frame representations into compact temporal states. Despite such efficiency gains, these approaches still process decoded RGB frames and consequently suffer from redun-dant background information and heavy preprocessing costs. 
+
+Compressed Video Understanding. An emerging re-search direction leverages the intrinsic compression struc-tures within video streams to enable efficient visual represen-tation learning [ 2, 4]. Modern codecs such as H.264/AVC Figure 2. Architecture of ReMoRa : The model operates directly in the compressed video representation for long-video understanding. (a) It consists of an image encoder, the Refined Motion Representation (RMR) module, the Hierarchical Motion State Space (HMSS) Module, and a pretrained LLM. Each clip is decomposed into group of pictures (GOPs) with a single I-frame and several P/B frames represented by motion vectors. The image encoder (Enc.) extracts patch embeddings from I-frames, while the RMR module converts coarse motion vectors into dense, high-fidelity representations. (b) The HMSS module fuses the refined motions and appearance features within each GOP and models long-range dependencies across GOPs through a state space model, enabling linear-time temporal reasoning before alignment with the LLM. 
+
+and HEVC [ 50 ] inherently perform keyframe selection and motion compensation through the group of pictures (GOPs) structure, providing a natural appearance–motion decompo-sition. This insight has inspired work in compressed-domain video understanding. CoViAR [ 54 ] first demonstrated that by using I-frames, motion vectors, and residuals, models can achieve competitive action recognition without full de-coding. Follow-up models [ 5, 47 ] refine motion vectors to approximate dense optical flow, improving motion fidelity under high compression. Building upon these findings, recent video MLLMs in-tegrate codec-derived motion cues directly into multimodal reasoning. Video-LaVIT [ 17 ] decomposes videos into ap-pearance tokens from I-frames and motion tokens from mo-tion vectors for video-language alignment. EMA [ 73 ] in-troduces a motion-aware GOP encoder that fuses sparse RGB keyframes with compressed motion cues to achieve efficient temporal reasoning. Our approach follows this codec-aware paradigm but further refines block-level motion vectors through the RMR module, recovering dense optical-flow motion without expensive decoding. Furthermore, we propose the HMSS module that mirrors the GOP hierarchy, enabling linear-time modeling of long-range dependencies across the compressed sequence. 
+
+# 3. Preliminaries 
+
+In modern video compression standards such as H.264/AVC and HEVC [ 50 ], intra-coded frames (I-frames) and predictive/bipredictive-coded frames (P/B-frames) play com-plementary roles in reducing temporal redundancy. I-frames are self-contained and encoded without reference to other frames, serving as reliable anchor points for random access, error recovery, and scene changes. In contrast, P-frames are encoded by predicting their content from previously decoded reference frames using motion estimation and motion com-pensation. Similarly, B-frames are encoded using motion and residual information from both preceding and succeeding ref-erence frames. Instead of storing full pixel data, P/B-frames record motion vectors and residual differences relative to the reference frame, significantly lowering the amount of transmitted data. By alternating I-frames and P/B-frames, encoders achieve an efficient balance between compression ratio and decoding stability, maintaining both visual quality and temporal coherence. Formally, let a video be denoted as V ∈ RT ×H×W ×3
+
+where T , H, and W denote the number of frames, height, and width, respectively. Standard video codecs (e.g., H.264) segment V into K GOPs. Each GOP (k) (k ∈ { 0, . . . , K −
+
+1}) consists of one I-frame, V(k, 0) , and a subsequent set of P/B-frames, {V(k,t )}Tk −1 
+
+> t=1
+
+. The length Tk of GOPs in a raw compressed stream is often variable, depending on scene complexity and encoder settings. To create uniform tensor shapes, we pad all GOPs to a fixed maximum length, denoted Tg . Thus, Tg represents the standardized temporal dimension for all GOPs processed by our model. The encoding of each inter-coded frame V(k,t ) (t > 0)relies on motion compensation. The frame is partitioned into blocks P(k,t )(u, v ) ∈ Rbh×bw ×3, where (u, v ), bh, and 
+
+bw are the indices, height, and width of the block, respec-tively. For each block, the encoder searches a reference frame V(k′,t ′) for the most similar block and stores the dis-placement as a motion vector: 
+
+m(k,t )(u, v ) = P(k′,t ′)(u′, v ′) − P(k,t )(u, v ) (1) The predicted block ˆP(k,t )(u, v ) is formed from the refer-ence block at the displaced location. The codec then encodes only the residual between the true and predicted frames, 
+
+R(k,t ) = V(k,t ) − ˆV(k,t ), together with the motion field 
+
+m(k,t ), which is the collection of all block-level vectors 
+
+m(k,t ) = [ m(k,t )(1 , 1) , . . . , m(k,t )(W/b w, H/b h)] . At de-coding, the P/B-frame is reconstructed in pixel space as: 
+
+˜V(k,t ) = f (V(k′,t ′), m(k,t )) + ˜R(k,t ), (2) where f (·) is the motion compensation function and ˜R(k,t )
+
+is the decoded residual. From a vision perspective, the motion field m(k,t ) can be regarded as a block-level approximation to optical flow. It provides compact, codec-native motion cues that capture temporal dynamics at low computational cost and has proven effective in compressed-domain video understanding [ 17 ,73 ]. However, since it is estimated through block-based matching within the codec pipeline, it is inherently noisy, spatially coarse, and temporally sparse, often spanning long intervals between keyframes. Such limitations can hinder fine-grained motion reasoning and temporal consistency. 
+
+# 4. Method 
+
+We propose ReMoRa, a video MLLM that directly utilizes compressed video representations as inputs to model long-context video while preserving high fidelity motion dynam-ics. Fig. 2 shows the overall architecture of ReMoRa. The model consists of an image encoder [ 64 ], the Refined Mo-tion Representation (RMR) module, the Hierarchical Motion State Space (HMSS) module and a pretrained LLM [61]. First, each clip is decomposed into GOP tuples contain-ing RGB information from I-frames and their subsequent P/B-frames (i.e., motion vectors). Then, an image encoder extracts spatial patch embeddings of the I-frame and the RMR module is used to obtain refined dense motion repre-sentations from the P/B-frames. Finally, the HMSS module, a SSM with linear complexity in sequence length, fuses the refined motion vectors with the I-frame features and outputs a temporally aggregated representation for the subsequent LLM. By structuring its computation around GOP tuples, ReMoRa inherently preserves local temporal coherence and mitigates redundancy, yielding a more effective representa-tion for aligning dynamic video content with textual prompts. 
+
+Compressed Video Representation-aware Input. Our model receives the tokenized instruction sequence xtxt ∈
+
+RV ×L and the video input, which is structured as a list of 
+
+K GOPs: [GOP (0) , GOP (1) , . . . , GOP (K−1) ]. Here, V and 
+
+L are the vocabulary size and the textual sequence length, respectively. We define the input for GOP (k) as a tuple: GOP (k) =
+
+
+
+V(k, 0) , m(k, 1) , . . . , m(k,T g )
+
+. (3) Each tuple GOP (k) begins with one I-frame V(k, 0) , fol-lowed by Tg − 1 P/B-frames, which are represented only by their blockwise motion-vector fields m(k,t ). This representa-tion enables the modeling of temporal dynamics directly in the compressed domain, without reconstructing pixel-level frames. Each I-frame V(k,t ) is independently processed as fol-lows: First, it is divided into Np non-overlapping patches, each with size p × p, where Np = ( H × W )/p 2. The patches are then input to a vision encoder [ 64 ] to obtain the I-frame patch embeddings E(k) 
+
+> I
+
+∈ RNp×ds , where ds is the embedding dimension. 
+
+4.1. Refined Motion Representation Module 
+
+We propose the RMR module, that enhances sparse motions into fine-grained representations, capturing richer dynam-ics while mitigating compression artifacts. Raw motions offer a significant computational advantage over processing fully decoded inter-coded frames, as the inherent sparsity of motion vectors allows us to naturally discard redundant information from static regions by encoding only displace-ments. However, this efficiency comes at the cost of fidelity, since the vectors are inherently coarse and contain com-pression artifacts stemming from their discrete block-based representation and aggressive quantization. The RMR module is pretrained to map coarse, block-level motion vectors to fine-grained, dense motion fields. For pretraining the RMR module, we generate dense optical flow using an off-the-shelf model (Co-Tracker3 [ 19 ]). The module is then pretrained by minimizing the L2 loss between its predicted motion fields and the dense optical flow targets. This pretraining step forces the model to learn the underlying motion structures, effectively touching up the noisy inputs. At finetuning, we use this module as a feature encoder. It processes the raw motion vectors m(k,t ) for each inter-frame and outputs a sequence of motion embeddings E(k,t ) 
+
+> M
+
+∈
+
+RNm×ds , where Nm is the number of motion patches. The final input for the k-th GOP, Z(k), is then formed by concate-nating the I-frame patch embeddings with all corresponding motion embeddings for that GOP: 
+
+Z(k) =
+
+h
+
+E(k) 
+
+> I
+
+; E(k, 1)  
+
+> M
+
+; . . . ; E(k,T g −1) 
+
+> M
+
+i
+
+. (4) This aggregated sequence Z(k) ∈ RLg ×ds serves as the input of the subsequent module, where Lg = Np + ( Tg −
+
+1) Nm.
+
+4.2. Hierarchical Motion State Space Module 
+
+The core challenge in processing compressed video repre-sentation inputs is the extreme sequence length. Each GOP k
+
+produces a long sequence of tokens Z(k). For instance, a video with K GOPs (e.g., K = 128 ) results in a flat se-quence of K × Lg tokens (often > 100 , 000 ), rendering standard attention mechanisms computationally infeasible. To address this, we propose the HMSS module that explicitly factors the temporal reasoning into two stages, mirroring the video’s natural codec structure. 
+
+Codec-aware Selective Scan. The first stage fuses motion and appearance within each GOP. Its goal is to create a single, motion-aware representation h(k) 
+
+> gop
+
+for each GOP k.The complete token sequence Z(k) from Eq. (4) is passed through a bidirectional Mamba block [ 36 ], which efficiently mixes the I-frame appearance embeddings E(k) 
+
+> I
+
+with their corresponding motion vector embeddings E(k,t ) 
+
+> M
+
+. We then isolate the motion-aware I-frame tokens Z(k) 
+
+> I
+
+by taking the first Np tokens from the Mamba block’s output: 
+
+Z(k) 
+
+> I
+
+= SSM local 
+
+
+
+Z(k)
+
+> [1: Np]
+
+, (5) where SSM local (·) and the subscript [1 : Np] denote the bidi-rectional Mamba scan and the selection of the first Np tokens from the output sequence, respectively. These tokens encap-sulate the salient motion dynamics of the entire GOP. See Appendix A for further descriptions on SSMs. 
+
+Bidirectional Token Mixer. The second stage models long-range temporal dependencies across GOPs. We first aggregate the summary vectors from all K GOPs into a sin-gle sequence. This sequence, which is Lg /Np times shorter than the naive flattened sequence, is processed by bidirec-tional Mamba layers, applying the scan method from [ 15 ]. The implicit state of these layers efficiently keeps track of long-horizon dependencies across the entire clip: 
+
+H = SSM global 
+
+
+
+[Z(0)  
+
+> l
+
+; Z(1)  
+
+> l
+
+; . . . ; Z(K−1)  
+
+> l
+
+]
+
+
+
+. (6) The final video features H are projected into the LLM’s embedding space and concatenated with the tokenized in-struction embeddings xtxt . The LLM then generates the output token sequence ˆy = (ˆ y1, ˆy2, . . . , ˆyN ) in an auto-regressive manner: 
+
+ˆyn = arg max  
+
+> ˜y∈V
+
+pθ (˜ y | H, xtxt , ˆy<n ) , (7) where V is the vocabulary, ˆy<n are the previously predicted tokens, and θ are the model parameters. The model is trained using a standard cross-entropy loss on the predicted tokens. Although ReMoRa incorporates several components, it does not incur substantial computational overhead, as detailed in Appendix B. 
+
+# 5. Experiments 
+
+5.1. Experimental Setup 
+
+Training Data. For our model’s training, we aggregated a comprehensive 200K instruction tuning dataset sourced from the LLaVA-Video-178K dataset [ 70 ] encompassing open-ended QA, multiple-choice QA, and captioning tasks. These videos are sourced from a diverse collection of 10 existing datasets such as InternVid-10M [ 53 ], HD-VILA-100M [ 59 ], and VIDAL [75]. We evaluate using two groups of standard benchmarks. For long-video understanding, which targets minute to hour scale temporal reasoning, multimodal grounding, and ro-bustness, we use LongVideoBench [ 55 ], MLVU [ 74 ], Per-ception Test [ 42 ], VideoMME [ 11 ], and NExT-QA [ 56 ]. In addition, we used standard open-ended VideoQA bench-marks: MSVD-QA [ 57 ] and ActivityNet-QA [ 63 ]. For these VideoQA benchmarks, we follow the standard approach [ 37 ], and used GPT-3.5-turbo to evaluate the accuracy and answer quality scores. See Appendix C for further dataset descrip-tions and benchmark statistics. 
+
+Implementation Details. We adopted Qwen2 [ 61 ] and SigLIP ViT-SO [ 64 ] as the LLM and vision encoder back-bone, respectively. LoRA [ 14 ] was applied to the LLM backbone and the vision encoder was kept frozen throughout training for parameter-efficient adaptation. To ensure consistency across datasets and fully exploit the codec-aware design of our framework, we developed a scene-adaptive video preprocessing pipeline. All clips were spatially downsampled to 384 × 384 pixels and tem-porally resampled to 16 fps. Unlike conventional uniform sampling, our approach introduces a scene-adaptive GOP construction based on codec keyframe detection. Specifi-cally, we re-encoded each video using the H.264 codec with 
+
+ffmpeg ’s scene-adaptive detection [ 20 ] to dynamically insert I-frames according to visual discontinuities. This procedure produces a content-aware GOP structure (maximum length of 32 frames), effectively performing implicit keyframe ex-traction aligned with scene transitions rather than temporal intervals. All frames were encoded with 4 × 4 macroblocks, ensuring fine-grained motion vector representation. For fur-ther implementation details, see Appendix D. Method LLM backbone LongVideoBench NExT-QA MLVU VideoMME Perception Test Average 
+
+LLaMA-VID [28] Vicuna-7B – – 33.2 – 44.6 38.9 Video-LLaVA [30] Vicuna-7B – 62.6 47.3 40.4 44.3 48.7 PLLaVA [58] Vicuna-7B 40.2 68.2 47.3 44.3 – 50.0 VideoChat2 [27] Vicuna-7B 36.0 – 54.6 47.9 47.3 46.5 LLaVA-NeXT-Video [69] Qwen1.5-7B 43.5 – – 46.5 48.8 46.3 Video-LLaMA2 [9] Mistral-7B – 51.7 48.5 47.9 51.4 49.9 Kangaroo [33] Llama-3-8B – 62.7 61.0 56.0 – 59.9 Video-LaVIT [17] LaVIT-7B – – – – 47.9 47.9 LongVA [67] Qwen2-7B 41.5 68.3 56.3 54.3 – 55.1 EMA [73] Qwen2-7B 47.0 – 57.2 53.4 – 52.5 Video-XL [35] Qwen2-7B 49.5 – 64.9 55.5 – 56.6 LLaVA-OneVision [21] Qwen2-7B 56.5 79.4 64.7 58.2 57.1 63.2 LongVU [46] Qwen2-7B – – 65.4 60.6 – 63.0 BIMBA [15] Qwen2-7B 59.5 83.2 70.6 63.1 68.1 68.9 Qwen2-VL [52] Qwen2-7B 55.6 – – 63.3 – 59.5 LLaVA-Video [70] Qwen2-7B 58.2 83.2 70.8 63.3 67.9 68.7 Qwen2.5-VL [3] Qwen2.5-7B 59.5 74.6 70.2 65.1 – 67.4 
+
+ReMoRa (Ours) Qwen2-7B 60.8 84.2 72.1 64.4 67.7 69.8   
+
+> Table 1. Quantitative comparison of recent video MLLMs across multiple benchmarks. ReMoRa achieved the best performance on LongVideoBench, NExT-QA, and MLVU, and obtains the highest overall average score of 69.8, while remaining highly competitive on VideoMME and Perception Test. Bold indicates the best performance, and underline indicates the second best in each column.
+
+Baselines. We compare our model with a range of recent video MLLMs. Standard video MLLMs such as LLaVA-OneVision [ 21 ], Qwen2-VL [ 61 ], and LLaVA-Video [ 70 ]process uniformly sampled RGB frames through vision en-coders and pretrained LLMs to perform open-ended video question answering and reasoning. Additionally, we in-clude MLLMs that utilize codec information such as Video-LaVIT [ 17 ] and EMA [ 73 ]. Our proposed ReMoRa follows this codec-aware paradigm by incorporating motion features derived from codec streams to achieve temporally compact yet informative video representations. 
+
+5.2. Results 
+
+5.2.1 Quantitative results 
+
+Table 1 presents a quantitative comparison between ReMoRa and various baseline methods across six video understanding benchmarks. We report performance based on a single evalu-ation for all benchmarks. The results in Table 1 indicate that ReMoRa achieved the highest scores on LongVideoBench, NExT-QA, and MLVU, with scores of 60.8, 84.2, and 72.1, respectively. It outperformed the second-best models in these categories by 1.3, 1.0, and 1.3 points, respectively. Our model also demonstrated competitive performance on the VideoMME and PerceptionTest benchmarks, achieving scores of 64.4 and 67.7, respectively. The VideoMME score represents the second-best result, 0.7 points behind the top score, and the Perception Test score trails the leading results by 0.4 and 0.2 points. Furthermore, our model’s average score of 69.8 also surpasses the highest-scoring baseline models by 0.9 points. This consistent performance across a diverse set of tasks highlights the effectiveness of ReMoRa in long-video understanding. Table 2 shows the results of our evaluation on the open-ended VideoQA benchmarks MSVD-QA and ActivityNet-QA. On the ActivityNet-QA benchmark, ReMoRa obtained the highest Accuracy and Score of 60.5 and 3.7, respectively. This shows significant improvements, with our model outper-forming the next-best model by 8.4 and 0.2 points in Accu-racy and Score, respectively. For the MSVD-QA benchmark, ReMoRa demonstrates highly competitive results, obtaining the second-best Score of 4.0, 0.1 points behind the top score, and a strong Accuracy of 73.1. These findings further under-score the robustness of our model in tasks requiring detailed temporal understanding and reasoning. 
+
+5.2.2 Qualitative Results 
+
+Fig. 3 presents qualitative results from experiments on the NExT-QA dataset; in particular, it compares our model’s results against those of baseline method, LLaVA-Video. In Fig. 3, columns (i) and (ii) show two examples of the video frames, the question and answer options, our model’s correct answer, and the baseline’s incorrect answer, respectively. Fig. 3 (i) shows a successful example in which our model correctly answered the question “what did the man do after he slid down the railing at the end of the video?” by selecting option D, “check his pants.” This demonstrates the model’s ability to capture subtle, sequential human actions. Our Figure 3. Qualitative comparison between ReMoRa and LLaVA-Video on NExT-QA. In both examples, ReMoRa correctly answers questions about fine-grained, temporally contextualized human actions and object motions, while LLaVA-Video fails, highlighting ReMoRa’s superior use of motion cues for fine-grained action understanding. 
+
+Method MSVD-QA ActivityNet-QA Acc. Score Acc. Score 
+
+FrozenBiLM [60] 32.2 – 24.7 –VideoLLaMA [66] 51.6 2.5 12.4 1.1 LLaMA-Adapter [68] 54.9 3.1 34.2 2.7 VideoChat [25] 56.3 2.8 26.5 2.2 Video-ChatGPT [37] 64.9 3.3 35.2 2.7 BT-Adapter [34] 67.5 3.7 45.7 3.2 LLaMA-VID [28] 69.7 3.7 47.4 3.3 Chat-UniVi [16] 65.0 3.6 45.8 3.2 Video-LLaVA [30] 70.7 3.9 45.3 3.3 MovieChat [49] 75.2 3.8 45.7 3.4 Video-LaVIT [17] 73.2 3.9 50.1 3.3 EMA [73] 75.8 4.1 52.1 3.5 
+
+ReMoRa (Ours) 73.1 4.0 60.5 3.7   
+
+> Table 2. Quantitative comparison on open-ended video question-answering benchmarks. ReMoRa attains the best Accuracy and Score on ActivityNet-QA, surpassing the previous best baseline model, and achieves a highly competitive Score on MSVD-QA with strong Accuracy. Bold indicates the best performance, and underline indicate the second best. Acc. denotes the Accuracy.
+
+approach, which utilizes motion vectors, successfully tracks the man’s movement as he lands, stops, and then performs the distinct follow-up action of reaching to check his pants. In contrast, the baseline method incorrectly chose option A, “fell.” This is inaccurate, as the video frames clearly show the man landing securely on his feet and remaining upright. The baseline may have misinterpreted the rapid motion of the slide and the abrupt stop as a “fall,” failing to process the final, stable state of the action. 
+
+# Frames Sampling VideoMME NExT-QA 
+
+(a) 64 CVR 64.3 84.2 
+
+(b) 32 CVR 61.9 82.7 (c) 16 CVR 58.5 81.6 (d) 64 Uniform 62.4 82.8 
+
+> Table 3. Ablation study on sampling and frame selection strategies. Using our Compressed Video Representation (CVR)-aware selec-tion of 64 I-frames (a) achieved the best performance. Reducing the number of I-frames degrades results, especially on VideoMME, indicating the importance of sufficient temporal coverage. Sim-ple uniform sampling (d) leads to lower scores, showing that our method is more effective than uniform sampling for long-video understanding.
+
+Fig. 3 (ii) shows another successful example in which our model, given the question “how did the person play with the dog?” correctly output option B, “bounce the ball.” This task is challenging, as observing the raw RGB frames makes it difficult to distinguish if the object is bouncing or if it is flying (e.g., being thrown horizontally). However, the motion vectors used in our model allowed it to distinguished the specific vertical, repetitive movement pattern of a bouncing ball. On the other hand, the baseline method inappropriately answered with option D, “throw frisbee.” This answer fails to capture the primary activity, as the object’s trajectory is inconsistent with the horizontal, gliding motion of a frisbee. These examples underscore our model’s effective use of motion information to interpret complex actions in videos. See Appendix E for more examples. Model VideoMME NExT-QA 
+
+(a) Full 64.3 84.2 
+
+(f) w/o Align 63.4 82.2 (g) w/o RMR 62.1 82.0 
+
+> Table 4. Ablation study on the Refined Motion Representation (RMR) module. Removing optical-flow–based pretraining (f) or the RMR module (g) consistently degrades performance, showing that the RMR module with optical-flow pretraining is important for robust video understanding when using motion vectors.
+
+5.3. Ablation Studies 
+
+We conducted ablation studies to analyze the contribution of each component in our Model (a), which corresponds to the proposed configuration described in Section 4. Re-sults for each component on VideoMME and NExT-QA are summarized in Tables 3, 4, and 5. 
+
+Frame Selection and Temporal Resolution. Table 3 shows an ablation study on different frame selection and temporal sampling strategies. Our full Model (a) achieves the highest scores of 64.3 and 84.2 on VideoMME and NExT-QA, respectively. Restricting the model to a max-imum of 32 (b) or 16 (c) I-frames leads to a significant drop in performance. Specifically, using the 16-frame limit (c) causes the model to underperform Model (a) by 5.8 and 2.6 points on VideoMME and NExT-QA, respectively, demon-strating the importance of processing a sufficient number of keyframes for comprehensive understanding especially for long videos. We also evaluated a uniform frame sampling strategy (d), which resulted in scores 1.9 and 1.4 points lower than Model (a) on VideoMME and NExT-QA, respectively. These results collectively highlight that our full codec-aware dynamic selection strategy is crucial to the model’s perfor-mance and more effective than processing a limited number of keyframes or using simple uniform sampling. 
+
+Effectiveness of the Refined Motion Representation. We evaluate the contributions of the RMR module and the optical-flow-based pretraining in Table 4. Model (f), di-rectly finetuned without the optical-flow pretraining, under-performs Model (a) by 0.9 and 2.0 points on VideoMME and NExT-QA, respectively, indicating that pretraining pro-vides a useful inductive bias for interpreting motion vectors and aiding the training process. Furthermore, Model (g), which removes the RMR module and passes GOPs directly to the HMSS module, underperforms Model (a) by 2.2 points on both VideoMME and NExT-QA. This indicates that the RMR is crucial for effectively processing and utilizing noisy raw motion vectors. Overall, the proposed Model (a) achieves the best balance between efficiency and temporal expressiveness. 
+
+Model VideoMME NExT-QA 
+
+(a) HMSS (Ours) 64.3 84.2 
+
+(h) Cross-attn 62.5 81.9 (i) Add 61.3 81.5 
+
+> Table 5. Ablation study on the GOP aggregation strategy. Model (a) outperforms variants that rely on simple cross-attention (h) or naive additive fusion (i) on both benchmarks, highlighting the importance of structured temporal modeling for GOP integration.
+
+GOP Aggregation Strategy. We further ablate the design of our GOP aggregation strategy, which integrates features across I- and P/B-frames within each GOP. As shown in Table 5, our Model (a) that uses the HMSS module to ag-gregate the GOPs achieved the highest scores of 64.3 and 84.2 on VideoMME and NExT-QA, respectively. Replacing the module with a simple cross-attention–based fusion (h), where I-frame tokens query P/B-frame tokens and aggre-gate their information into the I-frame sequence, leads to a drop of 1.8 and 2.3 points on VideoMME and NExT-QA, respectively. This indicates that SSMs-based aggregation, which is tailored to modeling continuous temporal dynam-ics, is more effective than cross-attention for integrating motion-dominated GOP features. Similarly, Model (i) that replaces the HMSS module with a naive additive fusion that first pools the motion features obtained from the RMR module and then adds them to the I-frame features. This results in further degradation of performance to 61.3 and 81.5 on VideoMME and NExT-QA, respectively, as it lacks a mechanism to model motion-dependent interactions within each GOP. These results confirm that our HMSS module aggregation design effectively preserves the temporal struc-ture encoded in GOPs, enabling richer motion–appearance integration and superior long-video reasoning. 
+
+# 6. Conclusion 
+
+In this study, the focus is on video understanding with video MLLMs. We propose ReMoRa, a video MLLM that operates directly on compressed video streams, using I-frames and motion representations in place of redundant RGB frames to achieve scalable long-form video understanding. To improve the quality of motion cues, we introduce the Refined Motion Representation module, which enhances the fidelity of noisy, block-level motion vectors, and a Hierarchical Motion State Space module that enables long-range temporal modeling with linear-time complexity. Through extensive experiments, ReMoRa is shown to outperform strong baseline methods on multiple challenging long-form video understanding bench-marks, including LongVideoBench, NExT-QA, and MLVU. We hope that this work promotes further research on compressed-domain, motion-aware video MLLMs and helps bridge the gap between long video understanding. References 
+
+[1] Jean Alayrac, Jeff Donahue, Pauline Luc, et al. Flamingo: A Visual Language Model for Few-shot Learning. In NeurIPS, pages 23716–23736, 2022. 1 [2] Venkatesh Babu, Manoj Tom, and Praveen Wadekar. ASurvey on Compressed Domain Video Analysis Techniques. Multimedia Tools and Applications , 75(2):1043–1078, 2016. 2[3] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, et al. Qwen2.5-VL Technical Report. arXiv preprint arXiv:2502.13923, 2025. 6 [4] Madhushree Basavarajaiah and Priyanka Sharma. Survey of compressed domain video summarization techniques. ACM Comput. Surv., 52(6), 2019. 2 [5] Barak Battash, Haim Barad, Hanlin Tang, and Amit Bleiweiss. Mimic the Raw Domain: Accelerating Action Recognition in the Compressed Domain. In CVPR, 2020. 2, 3 [6] Kevin Black, Noah Brown, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, et al. π0 : A vision-language-action flow model for general robot control. arXiv preprint arXiv:2410.24164, 2024. 1 [7] Yukang Chen, Fuzhao Xue, Dacheng Li, Qinghao Hu, Ligeng Zhu, Xiuyu Li, Yunhao Fang, Haotian Tang, Shang Yang, Zhi-jian Liu, Yihui He, Hongxu Yin, Pavlo Molchanov, Jan Kautz, Linxi Fan, Yuke Zhu, Yao Lu, and Song Han. LongVILA: Scaling Long-Context Visual Language Models for Long Videos. In ICLR, 2025. 2 [8] Zhe Chen, Jiannan Wu, Wenhai Wang, et al. InternVL: Scal-ing up Vision Foundation Models and Aligning for Generic Visual-Linguistic Tasks. In CVPR, pages 24185–24198, 2024. 1[9] Zesen Cheng, Sicong Leng, Hang Zhang, Yifei Xin, Xin Li, Guanzheng Chen, Yongxin Zhu, Wenqi Zhang, Ziyang Luo, Deli Zhao, and Lidong Bing. VideoLLaMA 2: Advanc-ing Spatial-Temporal Modeling and Audio Understanding in Video-LLMs. arXiv preprint arXiv:2406.07476, 2024. 6 [10] Tri Dao and Albert Gu. Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality. In ICML, 2024. 1 [11] Chaoyou Fu, Yuhan Dai, Yongdong Luo, Lei Li, Shuhuai Ren, Renrui Zhang, Zihan Wang, Chenyu Zhou, Yunhang Shen, Mengdan Zhang, et al. Video-MME: The First-Ever Comprehensive Evaluation Benchmark of Multi-modal LLMs in Video Analysis. In CVPR, pages 24108–24118, 2025. 2, 5 [12] Albert Gu and Tri Dao. Mamba: Linear-Time Sequence Modeling with Selective State Spaces. In CoLM, 2024. 2, 1 [13] Albert Gu, Karan Goel, and Christopher Ré. Efficiently Mod-eling Long Sequences with Structured State Spaces. In ICLR, 2022. 2, 1 [14] Edward Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. In ICLR, 2022. 5 [15] Md Mohaiminul Islam, Tushar Nagarajan, Huiyu Wang, Gedas Bertasius, and Lorenzo Torresani. Bimba: Selective-scan compression for long-range video question answering. In CVPR, pages 29096–29107, June 2025. 1, 2, 5, 6 [16] Peng Jin, Ryuichi Takanobu, Wancai Zhang, Xiaochun Cao, and Li Yuan. Chat-UniVi: Unified Visual Representation Empowers Large Language Models with Image and Video Understanding. In CVPR, pages 13700–13710, 2024. 7 [17] Yang Jin, Zhicheng Sun, Kun Xu, Kun Xu, Liwei Chen, Hao Jiang, Quzhe Huang, Chengru Song, Yuliang Liu, Di Zhang, Yang Song, Kun Gai, and Yadong Mu. Video-LaVIT: Unified Video-Language Pre-training with Decoupled Visual-Motional Tokenization. In ICML, 2024. 3, 4, 6, 7 [18] Rudolf Kalman. A New Approach to Linear Filtering and Prediction Problems. Journal of Basic Engineering, 82(1):35– 45, 1960. 1 [19] Nikita Karaev, Yuri Makarov, Jianyuan Wang, Natalia Neverova, Andrea Vedaldi, and Christian Rupprecht. Co-Tracker3: Simpler and Better Point Tracking by Pseudo-Labelling Real Videos. In ICCV, pages 6013–6022, 2025. 4[20] Jeehong Lee, Ilhong Shin, and Hyunwook Park. Adaptive Intra-Frame Assignment and Bit-Rate Estimation for Variable GOP Length in H.264. TCSVT, 16(10):1271–1279, 2006. 5 [21] Bo Li, Yuanhan Zhang, Dong Guo, et al. LLaVA-OneVision: Easy Visual Task Transfer. arXiv preprint arXiv:2408.03326, 2024. 1, 2, 6 [22] Chunyuan Li, Zhe Gan, Zhengyuan Yang, et al. Multimodal Foundation Models: From Specialists to General-Purpose Assistants. Found. Trends. Comput. Graph. Vis., 16(1-2):1– 214, 2024. 2 [23] Junnan Li, Dongxu Li, et al. BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models. In ICML, 2023. 1 [24] Jiapeng Li, Ping Wei, Yongchi Zhang, and Nanning Zheng. A Slow-I-Fast-P Architecture for Compressed Video Action Recognition. In ACM MM, page 2039–2047, 2020. 2 [25] KunChang Li, Yinan He, Yi Wang, Yizhuo Li, Wenhai Wang, Ping Luo, Yali Wang, Limin Wang, and Yu Qiao. VideoChat: Chat-Centric Video Understanding. arXiv preprint arXiv:2305.06355, 2023. 7 [26] Kunchang Li, Xinhao Li, Yi Wang, et al. VideoMamba: State Space Model for Efficient Video Understanding. In ECCV, 2024. 1 [27] Kunchang Li, Yali Wang, Yinan He, Yizhuo Li, Yi Wang, Yi Liu, Zun Wang, Jilan Xu, Guo Chen, Ping Lou, Limin Wang, and Yu Qiao. MVBench: A Comprehensive Multi-modal Video Understanding Benchmark. In CVPR, pages 22195–22206, 2024. 6 [28] Yanwei Li, Chengyao Wang, and Jiaya Jia. LLaMA-VID: An Image is Worth 2 Tokens in Large Language Models. In ECCV, page 323–340, 2024. 6, 7 [29] Zijing Liang, Yanjie Xu, Yifan Hong, et al. A Survey of Multimodel Large Language Models. In CAICE, pages 405– 409, 2024. 2 [30] Bin Lin, Yang Ye, Bin Zhu, et al. Video-LLaVA: Learning United Visual Representation by Alignment Before Projection. In EMNLP, pages 5971–5984, 2024. 1, 6, 7 [31] Haotian Liu, Chunyuan Li, Qingyang Wu, et al. Visual In-struction Tuning. In NeurIPS, pages 34892–34916, 2023. 1, 2[32] Jiaming Liu, Mengzhen Liu, Zhenyu Wang, Pengju An, Xi-aoqi Li, Kaichen Zhou, Senqiao Yang, Renrui Zhang, Yan-dong Guo, and Shanghang Zhang. Robomamba: Efficient Vision-Language-Action Model for Robotic Reasoning and Manipulation. In NeurIPS, pages 40085–40110, 2024. 1 [33] Jiajun Liu, Yibing Wang, Hanghang Ma, Xiaoping Wu, Xi-aoqi Ma, xiaoming Wei, Jianbin Jiao, Enhua Wu, and Jie Hu. Kangaroo: A Powerful Video-Language Model Supporting Long-context Video Input. arXiv preprint arXiv:2408.15542, 2024. 6 [34] Ruyang Liu, Chen Li, Yixiao Ge, Thomas H Li, Ying Shan, and Ge Li. BT-Adapter: Video Conversation is Feasible Without Video Instruction Tuning. In CVPR, pages 13658– 13667, 2024. 7 [35] Xiangrui Liu, Yan Shu, Zheng Liu, et al. Video-XL-Pro: Re-constructive Token Compression for Extremely Long Video Understanding. arXiv preprint arXiv:2503.18478, 2025. 6 [36] Xiao Liu, Chenxu Zhang, and Lei Zhang. Vision Mamba: A Comprehensive Survey and Taxonomy. arXiv preprint arXiv:2405.04404, 2024. 5 [37] Muhammad Maaz, Hanoona Rasheed, Salman Khan, et al. Video-ChatGPT: Towards Detailed Video Understanding via Large Vision and Language Models. In ACL, pages 12585– 12602, 2024. 1, 2, 5, 7 [38] Shunya Nagashima and Komei Sugiura. Deep Space Weather Model: Long-Range Solar Flare Prediction from Multi-Wavelength Images. In ICCV, pages 9396–9405, 2025. 1 [39] Kepan Nan, Rui Xie, Penghao Zhou, Tiehan Fan, Zhen-heng Yang, Zhijie Chen, Xiang Li, Jian Yang, and Ying Tai. OpenVid-1M: A Large-Scale High-Quality Dataset for Text-to-video Generation. In ICLR, 2025. 2 [40] Thong Nguyen, Yi Bin, Junbin Xiao, et al. Video-Language Understanding: A Survey from Model Architecture, Model Training, and Data Perspectives. In ACL, pages 3636–3657, 2024. 1 [41] OpenAI. GPT-4V (ision) System Card. 2023. 1 [42] Viorica Patraucean, Lucas Smaira, Ankush Gupta, Adria Re-casens, Larisa Markeeva, Dylan Banarse, Skanda Koppula, Mateusz Malinowski, Yi Yang, Carl Doersch, et al. Percep-tion Test: A Diagnostic Benchmark for Multimodal Video Models. In NeurIPS Datasets and Benchmarks Track, pages 42748–42761, 2023. 5, 2 [43] Iqra Qasim, Alexander Horsch, and Dilip Prasad. Dense Video Captioning: A Survey of Techniques, Datasets and Evaluation Protocols. ACM Comput. Surv., 57(6), 2025. 1 [44] Machel Reid, Nikolay Savinov, Denis Teplyashin, Dmitry Lepikhin, Timothy Lillicrap, et al. Gemini 1.5: Unlocking Multimodal Understanding Across Millions of Tokens of Con-text. arXiv preprint arXiv:2403.05530, 2024. 1 [45] Weiming Ren, Wentao Ma, Huan Yang, Cong Wei, Ge Zhang, and Wenhu Chen. Vamba: Understanding Hour-long Videos with Hybrid Mamba-Transformers. arXiv preprint arXiv:2503.11579, 2025. 1 [46] Xiaoqian Shen, Yunyang Xiong, Changsheng Zhao, Lemeng Wu, Jun Chen, Chenchen Zhu, Zechun Liu, Fanyi Xiao, Bal-akrishnan Varadarajan, Florian Bordes, Zhuang Liu, Hu Xu, Hyunwoo J. Kim, Bilge Soran, Raghuraman Krishnamoorthi, Mohamed Elhoseiny, and Vikas Chandra. LongVU: Spa-tiotemporal Adaptive Compression for Long Video-Language Understanding. In ICML, 2025. 1, 2, 6 [47] Zheng Shou, Xudong Lin, Yannis Kalantidis, Laura Sevilla-Lara, Marcus Rohrbach, Shih-Fu Chang, and Zhicheng Yan. DMC-Net: Generating Discriminative Motion Cues for Fast Compressed Video Action Recognition. In CVPR, 2019. 3 [48] Jimmy Smith, Andrew Warrington, and Scott Linderman. Simplified State Space Layers for Sequence Modeling. In ICLR, 2023. 1 [49] Enxin Song, Wenhao Chai, Guanhong Wang, Yucheng Zhang, Haoyang Zhou, Feiyang Wu, Haozhe Chi, Xun Guo, Tian Ye, Yanting Zhang, Yan Lu, Jenq-Neng Hwang, and Gaoang Wang. MovieChat: From Dense Token to Sparse Memory for Long Video Understanding. In CVPR, pages 18221–18232, 2024. 7 [50] Gary J. Sullivan, Jens-Rainer Ohm, Woo-Jin Han, and Thomas Wiegand. Overview of the High Efficiency Video Coding (HEVC) Standard. IEEE TCSVT, 22(12):1649–1668, 2012. 3 [51] Yunlong Tang, Jing Bi, Siting Xu, et al. Video Understanding with Large Language Models: A Survey. arXiv preprint arXiv:2312.17432, 2023. 1 [52] Peng Wang, Shuai Bai, Sinan Tan, Shijie Wang, Zhihao Fan, Jinze Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, et al. Qwen2-VL: Enhancing Vision-Language Model’s Perception of the World at Any Resolution. arXiv preprint arXiv:2409.12191, 2024. 6 [53] Yi Wang, Yinan He, Yizhuo Li, Kunchang Li, Jiashuo Yu, Xin Ma, Xinhao Li, Guo Chen, Xinyuan Chen, Yaohui Wang, et al. InternVid: A Large-scale Video-Text Dataset for Multimodal Understanding and Generation. arXiv preprint arXiv:2307.06942, 2023. 5 [54] Chao-Yuan Wu, Manzil Zaheer, Hexiang Hu, R. Manmatha, Alexander J. Smola, and Philipp Krähenbühl. Compressed Video Action Recognition. In CVPR, 2018. 2, 3 [55] Haoning Wu, Dongxu Li, Bei Chen, and Junnan Li. LongVideoBench: A Benchmark for Long-context Inter-leaved Video-Language Understanding. In NeurIPS Datasets and Benchmarks Track, 2024. 2, 5 [56] Junbin Xiao, Xindi Shang, Angela Yao, and Tat-Seng Chua. NExT-QA: Next Phase of Question-Answering to Explaining Temporal Actions. In CVPR, pages 9772–9781, 2021. 2, 5 [57] Dejing Xu, Zhou Zhao, Jun Xiao, Fei Wu, Hanwang Zhang, Xiangnan He, and Yueting Zhuang. Video Question Answer-ing via Gradually Refined Attention over Appearance and Motion. In ACM MM, page 1645–1653, 2017. 5, 2 [58] Lin Xu, Yilin Zhao, Daquan Zhou, Zhijie Lin, See Kiong Ng, and Jiashi Feng. PLLaVA : Parameter-free LLaVA Extension from Images to Videos for Video Dense Captioning. arXiv preprint arXiv:2404.16994, 2024. 6 [59] Hongwei Xue, Tiankai Hang, Yanhong Zeng, Yuchong Sun, Bei Liu, Huan Yang, Jianlong Fu, and Baining Guo. Advanc-ing High-Resolution Video-Language Representation with Large-Scale Video Transcriptions. In CVPR, pages 5036– 5045, 2022. 5 [60] Antoine Yang, Antoine Miech, Josef Sivic, Ivan Laptev, and Cordelia Schmid. Zero-Shot Video Question Answering via Frozen Bidirectional Language Models. In NeurIPS, 2022. 7 [61] An Yang, Baosong Yang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Zhou, et al. Qwen2 Technical Report. arXiv preprint arXiv:2407.10671, 2024. 1, 4, 5, 6 [62] Daichi Yashima, Ryosuke Korekata, and Komei Sugiura. Open-Vocabulary Mobile Manipulation Based on Double Relaxed Contrastive Learning with Dense Labeling. arXiv preprint arXiv:2412.16576, 2024. 1 [63] Zhou Yu, Dejing Xu, Jun Yu, Ting Yu, Zhou Zhao, Yueting Zhuang, and Dacheng Tao. ActivityNet-QA: A Dataset for Understanding Complex Web Videos via Question Answering. In AAAI, pages 9127–9134, 2019. 2, 5 [64] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, et al. Sigmoid Loss for Language Image Pre-Training. In ICCV, pages 11975–11986, 2023. 4, 5 [65] Boqiang Zhang, Kehan Li, Zesen Cheng, et al. VideoL-LaMA 3: Frontier Multimodal Foundation Models for Image and Video Understanding. arXiv preprint arXiv:2501.13106, 2025. 2 [66] Hang Zhang, Xin Li, and Lidong Bing. Video-LLaMA: An Instruction-tuned Audio-Visual Language Model for Video Understanding. arXiv preprint arXiv:2306.02858, 2023. 2, 7 [67] Peiyuan Zhang, Kaichen Zhang, Bo Li, Guangtao Zeng, Jingkang Yang, Yuanhan Zhang, Ziyue Wang, Haoran Tan, Chunyuan Li, and Ziwei Liu. Long Context Transfer from Language to Vision. arXiv preprint arXiv:2406.16852, 2024. 1, 6 [68] Renrui Zhang, Jiaming Han, Chris Liu, Peng Gao, Aojun Zhou, Xiangfei Hu, Shilin Yan, Pan Lu, Hongsheng Li, and Yu Qiao. LLaMA-Adapter: Efficient Fine-tuning of Language Models with Zero-init Attention. arXiv preprint arXiv:2303.16199, 2023. 7 [69] Yuanhan Zhang, Bo Li, haotian Liu, Yong jae Lee, Liangke Gui, Di Fu, Jiashi Feng, Ziwei Liu, and Chunyuan Li. LLaVA-NeXT: A Strong Zero-shot Video Understanding Model, 2024. 1, 6 [70] Yuanhan Zhang, Jinming Wu, Wei Li, Bo Li, Zejun MA, Zi-wei Liu, and Chunyuan Li. LLaVA-Video: Video Instruction Tuning With Synthetic Data. TMLR, 2025. 1, 5, 6 [71] Zheng Zhang and Kil Chong. Comparison between First-Order Hold with Zero-Order Hold in Discretization of Input-Delay Nonlinear Systems. In ICCAS, pages 2892–2896, 2007. 1[72] Han Zhao, Min Zhang, Wei Zhao, et al. Cobra: Extending Mamba to Multi-Modal Large Language Model for Efficient Inference. In AAAI, pages 10421–10429, 2025. 1 [73] Zijia Zhao, Yuqi Huo, Tongtian Yue, Longteng Guo, Haoyu Lu, Bingning Wang, Weipeng Chen, and Jing Liu. Efficient Motion-Aware Video MLLM. In CVPR, pages 24159–24168, 2025. 3, 4, 6, 7 [74] Junjie Zhou, Yan Shu, Bo Zhao, Boya Wu, Zhengyang Liang, Shitao Xiao, Minghao Qin, Xi Yang, Yongping Xiong, Bo Zhang, Tiejun Huang, and Zheng Liu. MLVU: Benchmark-ing Multi-task Long Video Understanding. In CVPR, pages 13691–13701, 2025. 2, 5 [75] Bin Zhu, Bin Lin, Munan Ning, Yang Yan, Jiaxi Cui, HongFa Wang, Yatian Pang, Wenhao Jiang, Junwu Zhang, Zongwei Li, et al. LanguageBind: Extending Video-Language Pretrain-ing to N-modality by Language-based Semantic Alignment. arXiv preprint arXiv:2310.01852, 2023. 5 [76] Deyao Zhu, Jun Chen, Xiaoqian Shen, Xiang Li, and Mo-hamed Elhoseiny. MiniGPT-4: Enhancing vision-language understanding with advanced large language models. In ICLR, 2024. 2 ReMoRa: Multimodal Large Language Model based on Refined Motion Representation for Long-Video Understanding 
+
+# Supplementary Material 
+
+In this supplementary material, we provide additional background on deep state space models, an analysis of the computational efficiency of ReMoRa, dataset statistics, and further implementation details. We also present additional qualitative comparisons and error analysis, along with illus-trative examples of our scene-adaptive video preprocessing and corresponding motion vectors. Video versions of these qualitative examples, together with further visualizations, are available on our project page in the supplementary mate-rials, and we encourage readers to refer to them for a clearer sense of ReMoRa’s behavior. 
+
+# A. Deep State Space Models 
+
+State space models (SSMs) [ 10 , 12 , 13 ] have demonstrated strong capability in modeling long-range temporal dependen-cies while maintaining computational efficiency. SSMs are inspired by control theory [ 18 ], in which a temporal process 
+
+x(t) ∈ R 7 → y(t) ∈ R is represented by a Q-dimensional hidden state h(t) ∈ RQ as follows: 
+
+dh(t)
+
+dt = Ah(t) + Bx(t), (8) 
+
+y(t) = Ch(t) + Dx(t), (9) where A ∈ RQ×Q governs the latent dynamics, and B, C, D 
+
+are projection matrices. By discretizing these continuous dynamics with a timescale parameter ∆ and applying the zero-order hold [71], we obtain: 
+
+hj = ¯Ahj−1 + ¯Bxj , (10) 
+
+yj = Chj + Dxj . (11) Here, ¯A = exp(∆ A) and ¯B = (∆ A)−1(exp(∆ A) − I) ·
+
+∆B. While the recursive update resembles RNNs, its sequen-tial nature hinders parallelization. To address this, S4 [ 13 ]reformulates the system into a convolutional form: 
+
+¯K =  C ¯B + D, C ¯A ¯B + D, . . . , C ¯AL−1 ¯B + D , (12) 
+
+y = ¯K ∗ x, (13) where L denotes sequence length. This formulation enables parallel training via convolution (Eq. (13) ) and efficient in-ference through recurrence (Eq. (10), (11)). Building on this, Mamba [ 12 ] introduces a dynamic selec-tion mechanism where ¯A, ¯B, and ¯C are conditioned on the input x, allowing time-varying transitions that enhance ex-pressive capacity. Consequently, Mamba achieves superior 
+
+Model Samples/s Tokens/s Max memory 
+
+LLaVA-Video [70] 0.53 31.78 23.21 BIMBA [15] 0.39 25.16 10.60 ReMoRa (ours) 0.40 24.45 10.59 
+
+> Table 6. Throughput and peak GPU memory usage for different video MLLMs. ReMoRa achieves comparable samples per second and tokens per second throughput to BIMBA while matching its memory footprint, and it reduces peak memory usage by more than half compared with LLaVA-Video. Note that max memory is in GB.
+
+performance on long-sequence modeling tasks, outperform-ing transformers in several language and temporal domains. Crucially, SSMs scale linearly with sequence length, offer-ing a significant computational advantage over the quadratic complexity of standard transformers for long sequences. Beyond generic sequence benchmarks, deep SSMs (e.g., S4, S5, and Mamba [ 12 , 13 , 48 ]) have been adopted for long-sequence modeling across a wide range of domains, including robotics and video understanding [ 26 , 32 , 38 ]. In these settings, SSMs act as temporal backbones for models that must process very long sequences, often matching or surpassing transformer-based architectures at lower compu-tational cost [ 10 , 12 , 13 ]. However, existing video-focused SSMs [ 26 ] primarily operate on dense RGB frame sequences and have not been adapted to exploit compressed-domain motion cues in multimodal video-language settings as con-sidered in this work. 
+
+# B. Computational Efficiency 
+
+We quantified the computational overhead introduced by ReMoRa in comparison with existing video MLLMs. We report inference throughput in terms of processed video sam-ples per second and generated tokens per second, along with the peak GPU memory usage during decoding. For this analysis, we randomly selected 50 videos from NExT-QA and used the same subset for all models. To ensure fairness, every model was evaluated on the same single-GPU setup (NVIDIA H200 SXM GPU) with identical video resolution, batch size, and maximum output length, and we enabled FP16 whenever the implementation allows it. Table 6 captures the incremental overhead introduced by ReMoRa under these controlled conditions. ReMoRa attains 0.40 samples/s and 24.45 tokens/s with a peak mem-ory footprint of 10.59 GB, closely matching the efficiency of BIMBA, while LLaVA-Video achieves 0.53 samples/s and 31.78 tokens/s at the cost of 23.21 GB of peak mem-ory. These results indicate that the additional components in ReMoRa preserve computational efficiency comparable to existing strong baselines, while remaining significantly more memory-friendly than LLaVA-Video. 
+
+# C. Benchmarks 
+
+LongVideoBench. LongVideoBench [ 55 ] is a long-context video question answering benchmark constructed from 3,763 web videos and 6,678 human-written multiple-choice questions. It considers contexts of up to one hour and includes aligned textual signals such as subtitles, with a design that explicitly targets long-range temporal reasoning rather than short clip understanding. 
+
+MLVU. MLVU [ 74 ] targets comprehensive long-video comprehension, spanning videos from a few minutes to nearly two hours. The videos are drawn from diverse sources, including movies, surveillance footage, egocentric record-ings, and gameplay. The benchmark evaluates multiple tasks, such as open-ended question answering, multiple-choice question answering, and temporal localization, providing a broad view of long-form video understanding. 
+
+NExT-QA. NExT-QA [ 56 ] contains 5,440 videos and ap-proximately 52,000 manually annotated question–answer pairs. It is specifically designed to probe causal, tempo-ral, and intentional reasoning about human activities, using both multiple-choice and open-ended questions to assess higher-level understanding beyond surface description. 
+
+VideoMME. VideoMME [ 11 ] is a large-scale evaluation suite for video multimodal large language models. It com-prises roughly 900 videos totaling about 254 hours, with approximately 2,700 human-authored question–answer pairs. The benchmark covers short, medium, and long videos and supports multiple modalities, including visual frames, sub-titles, and audio, enabling a comprehensive assessment of multimodal reasoning. 
+
+Perception Test. Perception Test [ 42 ] is a diagnostic benchmark that measures core perceptual and reasoning skills such as memory, abstraction, physical reasoning, and semantic understanding. It uses real-world videos with dense human annotation across video, audio, and text, and is de-signed to evaluate generalization capabilities rather than simple pattern matching. 
+
+MSVD-QA. MSVD-QA [ 57 ] is derived from the MSVD captioning dataset by automatically converting captions for Optimizer AdamW Learning rate 2e-5 Batch size 32 
+
+T 64 
+
+H, W 384 , 384 
+
+K 64 
+
+Nm 32 
+
+p 16 
+
+bh, b w 4, 4
+
+fv 16 fps 
+
+> Table 7. Hyperparameters used in our experiments.
+
+each short clip into question–answer pairs. Models are evalu-ated using LLM-as-a-judge, making it a standard benchmark for short video question answering. 
+
+ActivityNet-QA. ActivityNet-QA [ 63 ] consists of around 58,000 human-written question–answer pairs over roughly 5,800 videos. The benchmark focuses on reasoning over complex and temporally extended web videos, requiring models to integrate information across long and diverse ac-tivities. 
+
+# D. Implementation Details. 
+
+Our model comprised approximately 7.6B parameters and required around 2,900 T multiply–add operations. Training was conducted on 16 NVIDIA H200 SXM GPUs (141 GB VRAM), while evaluation was performed on a single H200 GPU. The total training time was approximately 21 hours. Table 7 summarizes the hyperparameters used in our main experiments. 
+
+# E. Additional Qualitative Results 
+
+Fig. 4 presents additional qualitative examples from LongVideoBench. Panels (i) and (ii) each show sampled frames from the video, the question with multiple-choice op-tions, and the predictions of ReMoRa and the baseline model. In example Fig 4 (i), the model must track how the appear-ance of the backpack changes as the woman moves through the scene and descends the hill. ReMoRa correctly reasons about the final state of the scene and selects the option de-scribing the dark blue jacket on the backpack, whereas the baseline prediction is inconsistent with the visual evidence. Example Fig 4 (ii) requires consistent identification of the person doing embroidery across multiple shots with similar backgrounds and distracting context. ReMoRa correctly associates the description in the question with the woman who appears throughout the sequence and selects the option matching her hairstyle and appearance, while the baseline focuses on an incorrect description. Figure 4. Further qualitative comparison between ReMoRa and LLaVA-Video on LongVideoBench. In both examples, ReMoRa correctly answers questions that require integrating spatial details with long-range temporal understanding, such as tracking how the scene and objects change over time and consistently identifying the person involved in the activity, while the baseline model fails.       
+
+> Error mode # instances
+> Spatial comprehension error 22 Temporal comprehension error 21 Motion comprehension error 14 Annotation error 10
+> Total 67
+> Table 8. Categorization of failure modes based on 67 annotated error instances from 50 randomly sampled cases where our model failed and LLaVA-Video succeeded on the NExT-QA benchmark. A single case may belong to multiple error modes.
+
+# F. Error Analysis 
+
+To better understand the limitations of ReMoRa, we con-ducted an error analysis. We defined a failure case as a sam-ple for which our model generated an incorrect answer while the baseline model (LLaVA-Video) generated the correct one. Out of 8,564 evaluation samples, this criterion yielded 270 failures for our model. From these, we randomly sam-pled 50 cases and manually analyzed their underlying causes. Each case could be assigned to multiple error categories, so the total count across all error types exceeds 50, resulting in 67 annotated error instances in total. Table 8 shows the distribution over four major error modes. 
+
+Spatial comprehension errors. This category covers fail-ures related to spatial relationships, object localization, and object presence. Examples include incorrect reasoning about relative positions (for example, which side of the frame an object is on), confusion between nearby objects, and object hallucination where the model mentions or reasons about an object that does not appear in the video. These cases indicate that, although keyframes provide strong appearance anchors, the current model sometimes struggles to maintain precise spatial grounding when combined with sparse motion information. 
+
+Temporal comprehension errors. Temporal errors arise when the model fails to reason over longer time spans or across multiple scenes. Typical failure patterns include con-fusion about the order of events, misidentification of the stage of an activity, or inability to track how a situation evolves over time. For instance, the model may answer a question about a later scene using information from an earlier one, or conflate two visually similar but temporally distinct segments. This suggests that maintaining coherent temporal context across keyframes and codec-derived motion cues remains a central challenge. 
+
+Motion comprehension errors. These errors correspond to failures in understanding local motions and short-term actions. Representative examples include questions about subtle gestures, small object manipulations, or fine-grained action transitions, where our model either misses the rele-vant motion cue or confuses similar actions. Although our model employs the RMR module that transforms block-level codec motion vectors into refined motion features aligned with dense optical flow, these cases indicate that the refined signals are still not sufficiently informative for certain fine-grained dynamics. 
+
+Annotation errors. This category includes samples where the ground-truth supervision itself is unreliable. Typical ex-amples involve incorrect or inconsistent annotations, as well as vague questions that admit multiple plausible answers. In such cases, our model’s prediction is reasonable given the video content but is still counted as an error because it does not match the provided label. Overall, Table 8 shows that temporal and spatial compre-hension errors are more frequent than pure motion compre-hension errors within the subset of cases where our model fails. Despite our model’s stronger overall performance and qualitative behavior, these failure modes indicate that our model still faces challenges, not only in the quality of local motion cues, but also in how temporal and spatial features are aggregated over keyframes. 
+
+# G. Scene-aware Video Preprocessing 
+
+Fig. 5 shows an example of the proposed scene-aware video preprocessing and the corresponding motion vectors ex-tracted from the H.264 codec. Each row shows a sequence of frames, where scene-adaptive I-frames (e.g., Frames 0 and 18) provide appearance keyframes and the intervening P/B-frames are represented by block-wise motion vectors overlaid on the RGB images. The sequence begins with a top-down view of a bowl and then transitions to a frontal view of the person cooking; this scene change is captured by inserting a new I-frame at Frame 9, while frames within the same scene share a stable background and exhibit locally coherent motion patterns. The overlaid motion vectors form coarse but informa-tive motion fields. Large vectors concentrate around the hands, utensils, and ingredients, while the background re-mains mostly static. Although codec motion vectors are block-based and sparse, they approximate the underlying optical flow by indicating the direction and magnitude of local displacements between consecutive frames. The model interprets these vectors as pseudo optical flow and uses them to encode how objects and body parts move over time, while I-frames supply high-quality appearance cues at key times-tamps. The RMR module further refines these codec-derived motion cues by mapping them to dense optical flow targets, yielding smoother and more temporally consistent motion representations. This preprocessing step therefore provides ReMoRa with scene-aware spatio–temporal inputs that cap-ture both scene changes and fine-grained motions at a low computational cost. Figure 5. Example of scene-aware video preprocessing. Frames 0 and 18 are scene-adaptive I-frames used as keyframes, and the remaining frames are P/B-frames with overlaid codec motion vectors.

@@ -1,0 +1,3487 @@
+Title: Training-Free Adaptation of Diffusion Models via Doob's $h$-Transform
+
+URL Source: https://arxiv.org/pdf/2602.16198v1
+
+Published Time: Thu, 19 Feb 2026 01:27:00 GMT
+
+Number of Pages: 36
+
+Markdown Content:
+## Training-Free Adaptation of Diffusion Models via Doob’s h-Transform 
+
+Qijie Zhu †∗ Zeqi Ye ‡∗ Han Liu †§ Zhaoran Wang ‡ Minshuo Chen ‡
+
+Abstract 
+
+Adaptation methods have been a workhorse for unlocking the transformative power of pre-trained diffusion models in diverse applications. Existing approaches often abstract adaptation objectives as a reward function and steer diffusion models to generate high-reward samples. However, these approaches can incur high computational overhead due to additional training, or rely on stringent assumptions on the reward such as differentiability. Moreover, despite their empirical success, theoretical justification and guarantees are seldom established. In this paper, we propose DOIT (Doob-Oriented Inference-time Transformation), a training-free and computationally efficient adaptation method that applies to generic, non-differentiable rewards. The key framework underlying our method is a measure transport formulation that seeks to transport the pre-trained generative distribution to a high-reward target distribution. We leverage Doob’s h-transform to realize this transport, which induces a dynamic correction to the diffusion sampling process and enables efficient simulation-based computation without modifying the pre-trained model. Theoretically, we establish a high probability convergence guarantee to the target high-reward distribution via characterizing the approximation error in the dynamic Doob’s correction. Empirically, on D4RL offline RL benchmarks, our method consistently outperforms state-of-the-art baselines while preserving sampling efficiency. Code: https://github.com/liamyzq/Doob_training_free_adaptation .
+
+1 Introduction 
+
+Diffusion models have recently become a leading class of generative models, achieving state-of-the-art performance across a wide range of applications, including image generation [Song and Ermon, 2019, Song et al., 2020a,b, Ho et al., 2020, Kong et al., 2020, Jeong et al., 2021, Mittal et al., 2021, Huang et al., 2022, Ulhaq and Akhtar, 2022, Avrahami et al., 2022], molecular design [Weiss et al., 2023, Guo et al., 2024], and robotics [Chi et al., 2025, Reuss et al., 2023, Scheikl et al., 2024, Hou et al., 2024, Dasari et al., 2025]. Notably, pre-trained diffusion models already exhibit strong capabilities. They can generate high-fidelity, photorealistic images [Song and Ermon, 2019, Ho et al., 2020, Song et al., 2020a,b, Nichol et al., 2021, Yang et al., 2024b], and in robotics, imitation-trained diffusion policies can produce reasonable action sequences for manipulation [Chi et al., 2025, Ze et al., 2024, Scheikl et al., 2024]. Despite the tremendous success, there is a pressing need to adapt pre-trained models to specific downstream tasks. For example, in robotics, diffusion models can serve as powerful and flexible policy classes. When trained on offline expert demonstrations, they can closely mimic expert behavior by generating action sequences consistent with the demonstrations [Chi et al., 2025], yet still underperform on the downstream task objectives that require action generation beyond imitation [Ren et al., 2024, Ada et al., 2024]. These downstream task objectives can often be summarized as an abstract scalar-valued reward function r(x) on the generated data, where a high reward value is desired. For instance, in Reinforcement Learning (RL) and robotics, the reward r is often tied to task completion (e.g., reaching a target position). Given the reward function, adapting a pre-trained diffusion model amounts to steering its sample generation toward high rewards.    
+
+> ∗Equal contribution.
+> †Department of Statistics and Data Science, Northwestern University. qijiezhu2029@u.northwestern.edu
+> ‡Department of Industrial Engineering and Management Sciences, Northwestern University. zeqiye2029@u.northwestern.edu, zhaoran.wang@u.northwestern.edu, minshuo.chen@northwestern.edu
+> §Department of Computer Science, Northwestern University. hanliu@northwestern.edu
+
+1
+
+> arXiv:2602.16198v1 [cs.LG] 18 Feb 2026
+
+Many methods have been developed to adapt a pre-trained diffusion model toward high rewards. An ideal adaptation algorithm should be computationally lightweight, not data-hungry in terms of additional samples or interactions, and admit meaningful performance guarantees. One line of work focuses on training-based methods, including RL-based fine-tuning [Clark et al., 2023, Black et al., 2023, Fan et al., 2023, Prabhudesai et al., 2023, Uehara et al., 2024a,b, Ren et al., 2024, Hu et al., 2025], guidance-based methods [Dhariwal and Nichol, 2021] and preference-based fine-tuning such as Direct Preference Optimization (DPO) [Wallace et al., 2024, Yang et al., 2024a, Lee et al., 2025]. These methods substantially improve reward-aligned performance, at the cost of additional network training and hyperparameter tuning. A complementary line of work develops training-free methods, which require no additional training, and can still achieve competitive performance. Some approaches assume access to the gradient of the reward [Chung et al., 2022, Bansal et al., 2023, Yu et al., 2023, Ye et al., 2024, Nguyen et al., 2025]. This assumption, however, often fails in practice—for example, the reward function in molecular design often comes from black-box tools or discrete descriptors, which are non-differentiable [Trott and Olson, 2010, Abramson et al., 2024]. To address this, several methods rely only on querying reward values, which include Sequential Monte Carlo (SMC)-based methods [Trippe et al., 2022, Wu et al., 2023, Dou and Song, 2024, Cardoso et al., 2023, Phillips et al., 2024, Kim et al., 2025] and search-based methods [Li et al., 2024, Ma et al., 2025, Li et al., 2025, Zhang et al., 2025a, Jain et al., 2025, Zhang et al., 2025b]. While avoiding additional network training, these methods increase inference-time cost and are prone to sample collapse [Browne et al., 2012, Uehara et al., 2025]. Such limitations motivate the following key questions: 
+
+Can we design an inference-time training-free efficient adaption algorithm for non-differentiable reward? If so, can we prove theoretical guarantees of the algorithm? 
+
+We provide positive answers to these two questions and present an inference-time adaptation algorithm 
+
+DOIT (Doob-Oriented Inference-time Transformation). Specifically, suppose that a pre-trained diffusion model yields a generative distribution Pθ , where θ denotes the pre-trained parameters in the score network. We formulate the adaptation task as sampling from a conditional distribution Pθ (·|E ), where the event E
+
+encapsulates desired conditions, e.g., the reward of generated samples is beyond a threshold r0. We leverage Doob’s h-transform [Rogers and Williams, 2000, Särkkä and Solin, 2019] for the measure transport from Pθ
+
+to Pθ (·|E ). Importantly, Doob’s h-transform introduces an additive correction term to the dynamic process of sample generation in diffusion models, allowing efficient implementation by keeping the pre-trained parameter 
+
+θ frozen. We summarize our methodological and theoretical contributions as follows. 
+
+• Methodologically, we propose simulation-based approximation to the additive correction term in Doob’s 
+
+h-transform. Further, we propose DOIT algorithm (Algorithm 2), which is completely training-free, applies to non-differentiable reward functions, and maintains efficient sampling comparable to pre-trained models. 
+
+• Theoretically, we provide a high-probability convergence guarantee for DOIT . Our analysis characterizes the error stemming from the approximation of the additive correction term in Lemma 5.2, and then we propagate the approximation error to establish an end-to-end total-variation bound between the output distribution of 
+
+DOIT and the reward-induced target distribution in Theorem 5.4. 
+
+• Empirically, we demonstrate that DOIT effectively steers the distribution of generated samples toward high-reward regions in Section 6. On offline RL benchmarks, DOIT consistently outperforms state-of-the-art baselines while maintaining competitive sampling efficiency. 
+
+2 Related Work 
+
+Training-Based Adaptation Methods Reward adaptation is often achieved by updating diffusion model parameters with additional training. One approach casts the denoising process as a Markov decision process and applies RL-based methods to fine-tune pre-trained models for optimizing the reward [Clark et al., 2023, Black et al., 2023, Fan et al., 2023, Prabhudesai et al., 2023, Uehara et al., 2024a,b, Ren et al., 2024, Hu et al., 2025]. Guidance-based methods learn a guidance term dependent on the reward function and distill the guidance into pre-trained model parameters [Ho and Salimans, 2022, Zhang et al., 2023, Yuan et al., 22023, Zhao et al., 2024]. More recently, preference-based methods such as DPO adapt diffusion models using pairwise comparisons [Wallace et al., 2024, Yang et al., 2024a, Lee et al., 2025]. Despite strong empirical gains, these methods typically incur nontrivial training cost and may require additional data, interaction, or careful hyperparameter tuning. 
+
+Training-Free Adaptation Methods Training-free adaptation methods steer a pre-trained diffusion model at inference time. Several methods utilize the gradient of the reward function to guide the denoising sample generation process toward higher reward [Chung and Ye, 2022, Bansal et al., 2023, He et al., 2023, Yu et al., 2023, Ye et al., 2024, Nguyen et al., 2025]. For non-differentiable reward functions, a growing set of approaches relies on inference-time scaling. A representative class is SMC-based methods [Trippe et al., 2022, Wu et al., 2023, Dou and Song, 2024, Kim et al., 2025, Singhal et al., 2025]. They maintain a set of particles, reweight them using reward information, and resample to concentrate on high-reward regions. Another class is search-based adaptation methods [Li et al., 2024, Ma et al., 2025, Li et al., 2025]. Many of them perform local search by generating multiple denoising trajectories at each step and selecting the best one. More recent variants combine tree search with local search methods [Zhang et al., 2025a, Jain et al., 2025, Zhang et al., 2025b]. 
+
+Doob’s h-transform Based Adaptation Methods There are several recent works leveraging Doob’s 
+
+h-transform to steer diffusion models toward a reward-induced target distribution. These works modify the sampling process by a correction term, which is learned by additionally training a neural network [Denker et al., 2024, 2025, Chang et al., 2026]. A training-free method is developed in Nguyen et al. [2025] for text-to-image editing. Yet, it requires a differentiable reward function. Our method is training-free and applies to generic, non-differentiable rewards. Moreover, we establish a theoretical convergence guarantee of our method, which is highly limited with only very recent advances [Guo et al., 2026, Chang et al., 2026]. 
+
+Notation For a vector x, let ∥x∥2 denote its Euclidean norm. Let ∥x∥1 and ∥x∥∞ denote its ℓ1-norm and 
+
+ℓ∞-norm, respectively. For a matrix A, let ∥A∥2 denote its spectral norm. We use O(·) to hide multiplicative constants in upper bounds. Unless otherwise stated, ∇ denotes the gradient with respect to x; when there is no ambiguity, we drop x from the notation. 
+
+3 Diffusion Model and Doob’s h-transform 
+
+We briefly review the continuous-time formulation of diffusion models and their induced discrete-time sampling SDE (Section 3.1), and then introduce Doob’s h-transform (Section 3.2) that will be used throughout the paper. 
+
+3.1 Diffusion Model Basics 
+
+A diffusion model aims to learn and sample from an unknown data distribution Pdata by estimating the score function [Song and Ermon, 2019, Ho et al., 2020, Song et al., 2020a]. It consists of coupled forward and backward processes. The forward process is governed by the SDE: 
+
+dYt = − 12 Ytdt + d Wt t ∈ [0 , T ], Y0 ∼ Pdata , (1) where T is a terminal time, and Wt is a Wiener process. We denote Pt as the marginal distribution of Yt
+
+with density pt. The backward process reverses the evolution in the forward process—referred to as denoising for new sample generation. Formally, the backward process is written as the reverse-time SDE: 
+
+dXt =
+
+[
+
+− 12 Xt − ∇ log pt(Xt)
+
+]
+
+dt + d W t, (2) 3where t ∈ [0 , T ], X T ∼ PT , and the SDE evolves backward in time from T to 0. Here, W t denotes an independent Wiener process, and ∇ log pt is the score function. As a result, we have X0 ∼ Pdata .In practice, the reverse-time SDE (2) is intractable due to the unknown terminal distribution PT and the unknown score function ∇x log pt(x). Following standard practice, we replace PT by N (0 , I ) and ∇ log pt by a trained score network sθ (x, t ). This leads to the following SDE: 
+
+d ˜Xt =
+
+[
+
+− 12 ˜Xt − sθ ( ˜Xt, t )
+
+]
+
+dt + d W t. (3) To simulate process (3) , we discretize the time interval [0 , T ] using a grid 0 = t0 < t 1 < · · · < t L−1 < t L = T, 
+
+where L is the number of discretization steps. Over each interval t ∈ [tl−1, t l], we consider the piecewise SDE: 
+
+d ¯Xt = [− 12 ¯Xt − sθ ( ¯Xtl , t l)] dt + d W t, (4) which admits an analytical solution and allows for efficient sampling. Specifically, the transition distribution from ¯Xtl to ¯Xtl−1 in (4) is 
+
+¯Xtl−1 | ¯Xtl = xtl ∼ N (μtl (xtl , s θ ), σ 2 
+
+> tl
+
+I) , (5) where μtl is a linear function of sθ and σ2 
+
+> tl
+
+is a noise schedule. To enable fast sampling, existing literature modifies μtl and σ2 
+
+> tl
+
+, such as DDIM [Song et al., 2020a] and Euler ancestral sampling [Karras et al., 2022]; see Appendix A for explicit forms. We denote ¯X0 ∼ Pθ as the generated distribution of (4) . Furthermore, we denote ¯Xt ∼ Pθ,t and let pθ,t be its marginal density. 
+
+3.2 Doob’s h-Transform 
+
+Recall that we view adapting a pre-trained diffusion model as steering sample generation toward high rewards. However, simply performing reward maximization can lead to reward hacking, where generated samples suffer from severe drops in fidelity and diversity [Skalse et al., 2022]. To mitigate this, it is critical to model the conditional data distribution rather than pursuing pure reward maximization. Formally, we aim to sample from the conditional generated distribution Pθ (·|E ¯X0 ), where E ¯X0 describes the conditions on samples from the terminal distribution, with P(E ¯X0 ) > 0. A commonly used choice of E ¯X0 is to select high-reward samples as 
+
+E ¯X0 = { ¯X0 : r( ¯X0) ≥ r0},
+
+where r0 is a threshold. Note that Pθ (·|E ¯X0 ) is an approximation to the ideal conditional data distribution 
+
+Pdata (·|E X0 ) with X0 the terminal state of (2), where EX0 is defined analogously by replacing ¯X0 with X0.
+
+Transport Pθ to Pθ (·|E ¯X0 ). Doob’s h-transform [Rogers and Williams, 2000, Särkkä and Solin, 2019] provides a principled probabilistic framework to modify the generated distribution Pθ towards the desired conditional distribution Pθ (·|E ¯X0 ). The key is to define a Doob’s h-function that dynamically modifies (4). 
+
+Definition 3.1 (Doob’s h-function) . The Doob’s h-function for 0 ≤ t ≤ T is defined as 
+
+h(xt, t ) = P(E ¯X0 | ¯Xt = xt),
+
+where P is taken with respect to the randomness in (4) and the randomness in E ¯X0 .By Bayes’ rule, the Doob’s h-function induces a tilted density at time t:
+
+phθ,t (xt) = pθ,t (xt|E ¯X0 ) = h(xt, t )pθ,t (xt)/P(E ¯X0 ). (6) In particular, phθ, 0(x) = pθ, 0
+
+(x|E ¯X0
+
+), thus realizing the modification from Pθ towards the desired conditional distribution Pθ (·|E ¯X0 ).Doob’s h-transform is a powerful tool for adapting the generated distribution to a generic target distribution via the reweighting induced by the h-function. To formalize this capability, we establish the following lemma. 4Lemma 3.2. Let q be the density function of the target distribution such that 
+
+∥q/p θ, 0∥∞ ≤ Cq for a constant Cq < ∞.
+
+Let U ∼ Unif(0 , 1) be independent of ¯X0. Setting h(xt, t ) = P(E ¯X0 | ¯Xt = xt) with 
+
+E ¯X0 = {U ≤ C−1 
+
+> q
+
+q( ¯X0)/p θ, 0( ¯X0)}
+
+leads to phθ, 0(x) = q(x).
+
+The proof of Lemma 3.2 is deferred to Appendix B.1. 
+
+Tilted Sampling Process for Pθ (·|E ¯X0 ). A vital advantage of Doob’s h-transform is that sampling from the tilted distribution in (6) reduces to adding a time-dependent correction term to (4) . Precisely, in order to generate samples from Pθ (·|E ¯X0 ), we simulate the following piecewise SDE that evolves backward in time from T to 0 [Rogers and Williams, 2000, Särkkä and Solin, 2019, Nguyen et al., 2025], 
+
+d ¯Xht = [− 12 ¯Xht − sθ ( ¯Xhtl , t l) − ∇ log h( ¯Xht , t )] dt + d W t, (7) where t ∈ [tl−1, t l]. We refer to { ¯Xht }t∈[0 ,T ] as the tilted sampling process. We denote ¯Xht ∼ P hθ,t as its time-t
+
+marginal distribution, and phθ,t as its marginal density. We use Phθ to denote the corresponding path measure. As can be seen, Doob’s h-transform modifies the original score network sθ by adding a dynamic Doob’s correction term ∇ log h. In practice, we apply a piecewise constant approximation to ∇ log h, replacing 
+
+∇ log h( ¯Xht , t ) by ∇ log h( ¯Xhtl , t l) for t ∈ [tl−1, t l]. Consequently, we simulate the following piecewise SDE: 
+
+d̂Xht =
+
+[
+
+− 12̂ Xht − sθ (̂Xhtl , t l) − ∇ log h(̂Xhtl , t l)
+
+]
+
+dt + d W t, (8) where t ∈ [tl−1, t l].However, as exactly evaluating ∇ log h(x, t l) is intractable, we must construct a reliable approximation to simulate the process {̂ Xht }t∈[0 ,T ].
+
+4 Adaptation Algorithm Based on Doob’s h-Transform 
+
+This section presents the DOIT (Doob-Oriented Inference-time Transformation) algorithm, solving the major challenge of the intractability of exactly computing ∇ log h. We develop a simulation-based approximation to 
+
+∇ log h and summarize our algorithm in Algorithm 1. To derive a practical approximation of ∇ log h, we write ∇ log h = ∇h/h , and then we approximate the numerator ∇h and the denominator h separately. By Definition 3.1, the h-function can be straightforwardly approximated by Monte Carlo (MC) samples. Therefore, we focus on the more intricate term ∇h. The following lemma expresses ∇h as a single expectation that is suitable for approximation. 
+
+Lemma 4.1. Fix a discretization index l ∈ { 1, . . . , L } and any x. Assume sθ (x, t ) is continuously differentiable with respect to x. Then it holds that 
+
+∇h(x, t l) = E
+
+[
+
+h( ¯X0, 0) ∇ ¯Xtl
+
+log ϕθ ( ¯Xtl−1| ¯Xtl )
+
+∣∣∣ ¯Xtl = x
+
+]
+
+,
+
+where ϕθ is the Gaussian density defined in (5) , and the expectation is taken over the conditional distribution of the backward trajectory ( ¯Xtl−1 , . . . , ¯X0)| ¯Xtl = x.The proof of Lemma 4.1 is deferred to Appendix B.2. Lemma 4.1 suggests using a sample average to approximate the expectation and further approximate ∇h.More importantly, since the gradient is only taken over the Gaussian transition density ϕθ , approximating 
+
+∇h does not require differentiability in the reward function. 5Sample Average Approximation to ∇h and h. At time tl, given a state xtl , we simulate M trajectories 
+
+{x(m) 
+
+> tl−1
+
+, . . . , x (m)0 }Mm=1 using the transition kernel in (5). Then ∇h and h are approximated respectively by 
+
+∇̂ h(xtl , t l) = 1
+
+> M
+
+∑Mm=1 h(x(m)0 , 0) ∇xtl log ϕθ (x(m) 
+
+> tl−1
+
+|xtl ),̂
+
+h(xtl , t l) = 1
+
+> M
+
+∑Mm=1 h(x(m)0 , 0) .
+
+We approximate ∇ log h via a plug-in ratio approximation, 
+
+∇ log ̂ h(xtl , t l) = ∇̂ h(xtl , t l)̂
+
+h(xtl , t l) ∨ ηtl
+
+. (9) Here, we introduce a truncation level ηtl > 0 for numerical stability. When h(xtl , t l) is small, its approximation ̂
+
+h will be close to zero. Naïvely using ̂ h causes ∇ log ̂ h to have an exploding magnitude. We remark that such a stability issue is intrinsic to the quality of the pre-trained model, rather than a limitation of our proposed method. A small h(xtl , t l) indicates that in the pre-trained generative distribution, the desired condition is hardly satisfied by generated samples, incurring a significant gap between Pθ and Pθ (·|E ¯X0 ).We remark that our derived approximation of ∇ log h is different from existing approaches [Bansal et al., 2023, Nguyen et al., 2025]. They often pass through the expectation to approximate 
+
+E[h( ¯X0, 0) | ¯Xtl = xtl ] ≈ h(E[ ¯X0| ¯Xtl = xtl ], 0) .
+
+When taking derivatives with respect to xtl , such an approximation inevitably requires the differentiability of 
+
+h(·, 0) —consequently the differentiability of the reward function. In contrast, our approximation unrolls the transition from ¯Xtl to ¯X0 into a series of incremental Gaussian transitions, i.e., ϕθ . This allows us to pass through the differentiation directly to the transition probability instead of requiring differentiability of the reward function. Given ∇ log ̂ h, we simulate samples using (8) , achieving the adaptation from Pθ to Pθ (·|E ¯X0 ). A prototypical algorithm is summarized below. 
+
+Algorithm 1 DOIT : Prototypical version 
+
+Input: Pre-trained score sθ (x, t ); the number of MC samples M ; truncation level {ηtl }Ll=1 . 
+
+> 1:
+
+Sample ̂ XhtL ∼ N (0 , I ). 
+
+> 2:
+
+for l = L, L − 1, . . . , 1 do  
+
+> 3:
+
+Compute ∇ log ̂ h(̂ Xhtl , t l) in (9) using M backward rollouts initiated at ̂ Xhtl by simulating (8).  
+
+> 4:
+
+∇ log ̂p hθ,t l (̂Xhtl ) ← sθ (̂Xhtl , t l) + ∇ log ̂ h(̂Xhtl , t l). 
+
+> 5:
+
+Sample ̂ Xhtl−1 ∼ N (μtl (̂ Xhtl , ∇ log ̂p hθ,t l ), σ 2 
+
+> tl
+
+I). 
+
+> 6:
+
+end for  
+
+> 7:
+
+output ̂ Xh 
+
+> 0
+
+∼̂ P hθ .Here ̂ P hθ denotes the distribution of the generated sample ̂ Xh 
+
+> 0
+
+. Each iteration in Algorithm 1 relies on simulating M independent backward sampling trajectories using (4) , which is computationally expensive. To mitigate the computational overhead, we significantly reduce the simulation cost by predicting clean data directly using the score network, while skipping all intermediate states in sampling trajectories. Algorithm 2 in Section 6.1 summarizes such computational modifications and demonstrates strong performance over state-of-the-art baselines in offline RL benchmarks. 6<latexit sha1_base64="aVkBezrWfsQlXaZK8MrF5dUaTvk=">AAAaA3icfdnLbttGFAZgJb2l6i1pNzW6IWoE6KaBJQR2uouti2+yJduSLMsyjDmjkcSYt5CULZvQsutu22forui2D9I36GN0qCHFozl0DAQZzndE8fIPNSOBZ5lBuLHx75OnH338yaefPfu8+MWXX339zfMX33YDd+pz0eGu5fo9YIGwTEd0QjO0RM/zBbPBEudwU4n9/Fb4gek67fDeE1c2GzvmyOQslF2d2XXUnl8/X994tbH4M2ijlDTWC8lf6/rF9/8Nhi6f2sIJucWC4LK04YVXEfNDk1tiXhxMA+ExfsPG4lI2HWaL4CpaHO3ceCl7hsbI9eU/JzQWvfgVEbOD4N4GWWmzcBLoFnfm2eU0HL25ikzHm4bC4eqNRlPLCF0jPnVjaPqCh9a9bDDum/JYDT5hPuOhvEAr7wL2yjlEM3XoxcFQjOSFXmxFIQPXZ85YzKO99lFjHtXrW/WNGq0a+0I4aVG5sr1RrtAisKbLHZW2dmqVOq3xxTAtqW6Wt8pvaIk39T1ruaNfXm9u7VTnxZc/x38GuNZwcdEDY9HxslgcOOKOu7bNnGE0YDCPBvF1hVHE5vNVBEAKunKsXNchwqGOAqHQcYRwpOMY4VjHCcKJjiZCU8d3CN/peIPwRkcLoaWjjdDW0cHXz9HVRejq6CH0dHyP8L2OPkJfxwAfUaBriDDUcYpwquMtwlsd7xDe6ThDONPxHuG9jg8IHyRqyWZSwc6LvAKSduAKSNBhqICEHIQCEnCAkRKSbhgrIMmGiQKSajAXkBNpeKdeQuIMNwpIlMFSQGIM8uG4EJJhcBSQ+IKrgEQXPAUktvBeAYks+ApIXCFQQJIKoQKSUpgqIAmFWwUknXCngCQTZgpIKuFeAUkkPChYpLGoBXIbxXVbf+UOwh0dKwgrOlYRVnWsIazpWEdY13EX4a6Oewj3dNxHuK/jAcIDHQ8RHurYQNjQ8QjhkY7HCI91bCJs6thC2NLxBOGJjqcIT3U8ww/hM13bCNs6dhB2dOwi7Op4jvBcxx7Cno4XCC907CPs04fwthoQJO+wo4BkHSoKSM6hqoBkHGoKSL6hroBkG3YVkFzDngKSadhXQPIMBwpIluFQAckxNBSQDMORApJfOFZAsgtNBSS30FJAMgsnCkhe4VQBySqcKSAxhbYCElHoKCDxhK4CEk04V0BiCT0FJJJwoYDEEfoKFlFMZ8icWZY59pk3kYuDD8yU+XaSZfkCGlm+g5TklleQkvDyKlKSYF5DSmLM60hJlvkuUhJovoeUpJrvIyXR5gdISb75IVISct5ASpLOj5CSuPNjpCTzvImUBJ+3kJL08xOkZAjwU6RkHHA5DjKWo0H3NvY29Q7aOxkavIuUjA9+jpQMEt5DSkYKv0BKhgvvI+0ns5Z0XWnJdTK4zB+iJWbuuKmk2Qeg0a/VMiTZ7nYzJKe9v58hSefhYYZ0rtDIkM4VjjKkc4XjDEn2Wq0M6XTgJEM6HTjNkE4Hzs4yJc/Zfj/DPvnc7mVIP7cvMiR3vtm0xZhlBQO1vZqA+LbH33PcfOipCczyJslia6DaZHEhwrRg0SRrIiZbSYFqk4WWF5iWmyxFBukWmeIzf7UQdZCpenZMD3nHFE6yAtXOeTdctNwkizHmeWmRapNVGbNhmJYkG3qNnSxsBjZd2jipOdRmZmIzun70UvOoydNZsmqTRdvEzTzeIIs3c7y8raqd8ya4aLlJbgZLzzBukSXfyj2fPnLD5ad/eraT/NOd4PPNqeHLAp6j8m3T/QdU3WS4xe6mQ02blaJRsJs7CqrCWsZNtcmkDAWynZvGBs5aIz9rvfRMevREWqm1qJ2he3mWeyM7K7eq88itai0vdCvnQreWF7qVc6Gb6EJnz7TkiXYmL70RhLIy/lhbfMtqxl+ZP/bVqT+2TSd5SLqe+t+3o6Rff++4m83yy2W/Xi53Ydrmg6AvWAoJiRweOcez6NV3H/q0UPYtdlkV3JKPxiPZ2/SEz0LXlx/GzI/nML5txK35I1UVN96vLJIN//Gi27To9rGamhOqmrjxSI3pDJOTGAZRaT43jJfGvjOMf+iIf15YuTK2nOWPfMbnl+UreRqhmIVBeG8JYxD3RuulebRensf7KF4/Xy/pv4TQRrf8qrT5avPk9frbcvIrybPCD4UfCz8VSoWtwtvCXqFV6BR4wSz8Vvi98Mfar2t/rv219rcqffokec13hZW/tX/+B0S5JgA=</latexit> 
+
+xT
+
+<latexit sha1_base64="Cx6Tp/5k8oCjZRdxmIKpwACBfWs=">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</latexit> 
+
+xtl
+
+<latexit sha1_base64="nvehXGOAk1d47abWP7xqzq7J2zo=">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</latexit> 
+
+xtl→1
+
+<latexit sha1_base64="5D0FCxZSxgAzrDaQ7zBNjtkfkMQ=">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</latexit> 
+
+x(1) 
+
+0 <latexit sha1_base64="DjOqYW9S26dowgfjJZ9WrV3wti4=">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</latexit> 
+
+x(2) 
+
+0
+
+<latexit sha1_base64="rQArZvqj0UMlpwB3u3QMU896zrk=">AAAaI3icfdnLcuJGFAZgzeQ2IbeZZBNXNlRcUzVZZArIlD3Zjc3FN2ywMRhjHFefRoDGuo0kbGyVHiAPknW2yTNkl8omi+zzGGnREjr0keOqqWn1dxC6/C26AVzT8INS6e9Hj997/4MPP3ryceGTTz/7/Iunz77s+c7M43qXO6bj9YH5umnYejcwAlPvu57OLDD1M7iuxn52o3u+4dinwZ2rX1psYhtjg7NAdF09XR8G+jxY7Odi9/SweRmWG5ub26+icH5V+il88cN3USSqSi9Li78ibZSTxrqW/LWvnn3973Dk8Jml2wE3me9flEtucBkyLzC4qUeF4czXXcav2US/EE2bWbp/GS6OIio+Fz2j4tjxxD87KC568StCZvn+nQWi0mLB1Fct7syzi1kwfn0ZGrY7C3Sbyzcaz8xi4BTjS1McGZ7OA/NONBj3DHGsRT5lHuOBuIAr7wLWyjmEc3noheFIH4sbsdgKAwaOx+yJHoXxlY3CRmOzUarTqomn63ZaVKlulSpVWgTmbLmj8uZ2vdqgNZ4+SktqG5XNymta4s4811zu6MdXG5vbtajw/Pv4rwiOOVpcdL+46HheKAxt/ZY7lsXsUThkEIXD+LrCOGRRtIoASEFVjpWrOkI4UlFHqKs4RjhWcYJwouIU4VRFA6Gh4luEb1W8RnitoonQVNFCaKlo4+tnq+ogdFR0EboqvkP4TkUPoaeij4/IVzVAGKg4QzhT8QbhjYq3CG9VnCOcq3iH8E7Fe4T3ApVkM6Fg5UVeAkk7cAkk6DCSQEIOugQScICxFJJumEggyYapBJJqMBaQE2l4K19C4gzXEkiUwZRAYgzi4bgQkmGwJZD4giOBRBdcCSS28E4CiSx4EkhcwZdAkgqBBJJSmEkgCYUbCSSdcCuBJBPmEkgq4U4CSSTcS1iksaAEcgvFdUt95TbCbRWrCKsq1hDWVKwjrKvYQNhQcQfhjoq7CHdV3EO4p+I+wn0VDxAeqNhE2FTxEOGhikcIj1RsIWyp2EbYVvEY4bGKJwhPVOzgh3BH1VOEpyp2EXZV7CHsqXiG8EzFPsK+iucIz1UcIBzQh/CWHBAk77AtgWQdqhJIzqEmgWQc6hJIvqEhgWQbdiSQXMOuBJJp2JNA8gz7EkiW4UACyTE0JZAMw6EEkl84kkCyCy0JJLfQlkAyC8cSSF7hRALJKnQkkJjCqQQSUehKIPGEngQSTTiTQGIJfQkkknAugcQRBhIWUUxnyJyZpjHxmDsVi4P/mSnzrSTL4gU0snwbKcktryIl4eU1pCTBvI6UxJg3kJIs8x2kJNB8FylJNd9DSqLN95GSfPMDpCTkvImUJJ0fIiVx50dISeZ5CykJPm8jJennx0jJEOAnSMk44GIcZCxGg+qn2E+pd9HeydDgPaRkfPAzpGSQ8D5SMlL4OVIyXPgA6SCZtaTrSlOsk8Fh3ggtMXPHTTXNPgCNfr2eIcl2r5chOe29vQxJOg8OMqRzhWaGdK5wmCGdKxxlSLLXbmdIpwPHGdLpwEmGdDrQ6WRKnrODQYYD8rndz5B+bp9nSO58q2XpE5YVDOX2agLi2x5/z3H9f09NYKY7TRZbQ9kmiws9SAsWTbImYqKVFMg2WWi5vmE6yVJkmG6RKT7zVgtRB5mqZ8d0n3dMwTQrkO2cd8NFy02yGGOumxbJNlmVMQtGaUmyodZYycJmaNGljZ2aTW1uJDan60c3NZeaOJ0lyzZZtE2dzOMNsngzJsvbKts5b4KLlpvkZrD0DOMWWfKt3PPZAzdcfPqnZzvNP90pPt+cGr4s4Dkq3jbdv0/VSYZb7E461JRZKRoFO7mjoKaby7jJNpmUoUCe5qaxibPWzM9aPz2TPj2Rdmptah10Lzu5N7K7cqu6D9yq9vJCt3MudHt5ods5F7qFLnT2TEueaB1x6Yt+ICrjj7XFt6xG/JX6Q1+dehPLsJOHpOPK/z0rTPrV94672Ty/XPSr5WIXhmXc6/QFSyEhEcMj53gWveruA48Wir7FLms6N8Wj8VD0tlzdY4HjiQ9j5sVzGM8qxq3ogaqqE+9XFImG93DRTVp081BN3Q5kTdx4oMawR8lJjPywHEXF4vPinj2KfwiJf15YuTKWmOWPPcaji8qlOI34FxI/uDP14jDuDdfLUbheieJ9FK6erpfVX0Joo1d5Wd54uXH8av1NJfmV5In2jfat9kIra5vaG21Xa2tdjWs/a79qv2m/r/2y9sfan2t/ydLHj5LXfKWt/K398x8v3DGT</latexit> 
+
+x(3) 
+
+0
+
+<latexit sha1_base64="KLa7UxcEB5SmfJ+If/S4an3Z2UI=">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</latexit> 
+
+→ log ˆh
+
+<latexit sha1_base64="ncIovOl5CsublJ0fOmzjbEAYlXQ=">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</latexit> 
+
+## ¯X0
+
+<latexit sha1_base64="OeZgrs5QV2T/Ncv3x9Sy2gYi1Xg=">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</latexit> 
+
+## E ¯X0
+
+<latexit sha1_base64="V4Q2jyK7KenTV/4LgV9SCdE48pY=">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</latexit> 
+
+x(1) 
+
+tl→1
+
+<latexit sha1_base64="SmJbN+84seVo8568TzDmoCSP6kY=">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</latexit> 
+
+x(2) 
+
+tl→1
+
+<latexit sha1_base64="qKZsMzT1b1e7rbRRJAnZr1dS/3A=">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</latexit> 
+
+x(3) 
+
+tl→1
+
+<latexit sha1_base64="CV9ETfyO0cN0Qbcn+kiYg8imQfM=">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</latexit> 
+
+DOIT tilted sampling process 
+
+<latexit sha1_base64="6Ejtuh6vszJVHKDq9PPX9w8gij0=">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</latexit> 
+
+MC Simulation via the 
+
+pre-trained di !usion model PωFigure 1: DOIT : At each tl, we simulate M trajectories (here, M = 3 ) starting from xtl to approximate 
+
+∇ log h(xtl , t l) via (9), then utilize it to modify the sampling dynamics. 
+
+5 Convergence Guarantee of DOIT 
+
+In this section, we provide a convergence guarantee of ̂ P hθ generated by DOIT relative to the ideal conditional data distribution Pdata (·|E X0 ). Our analysis proceeds in two steps. We first quantify the approximation error of ∇ log h(xtl , t l). We then propagate this approximation error through the tilted sampling dynamics in (7) to obtain an end-to-end distribution approximation bound. To begin with, we impose the following assumption on the pre-trained generated distribution Pθ and score 
+
+sθ (xtl , t l).
+
+Assumption 5.1. There exist constants ρ ∈ (0 , 1] and G > 0 such that P(E ¯X0 ) ≥ ρ, and for any index 
+
+l ∈ { 1, . . . , L }, it holds that sup x ∥∇ xsθ (x, t l)∥2 ≤ G.The first condition is a non-degeneracy assumption, it requires the target event E ¯X0 to occur with at least probability ρ under Pθ . This lower bound is essential for the stability of the MC approximation in (9) . When 
+
+ρ is extremely small, accurately approximating ∇ log h from a finite number of rollouts is fundamentally difficult, as h(x(m)0 , 0) is not close to zero for only a small fraction of trajectories. The second condition imposes a global Lipschitz-type regularity on the pre-trained score network, which is a key ingredient for establishing concentration of the MC approximation. Such smoothness assumptions are reasonable in practice, since modern training typically incorporates regularization and stabilization techniques that implicitly control the network’s Lipschitz continuity, such as weight decay [Krogh and Hertz, 1991, Loshchilov and Hutter, 2017]. The following lemma establishes a high probability bound on approximating ∇ log h.
+
+Lemma 5.2 (Approximation bound of ∇ log h). Suppose Assumption 5.1 holds. Fix a discretization index 
+
+l ∈ { 1, . . . , L } and δ ∈ (0 , 1) . Then for a sufficiently large number of MC samples M and ηtl = M −1/6, with probability at least 1 − δ, it holds that 
+
+EXtl ∼P hθ,t l
+
+[
+
+||∇ log ̂ h(Xtl , t l) − ∇ log h(Xtl , t l)|| 22
+
+]
+
+= O
+
+(
+
+1
+
+σ2
+
+tl
+
+log Mδ
+
+√log(1 /δ )
+
+M 1/6
+
+)
+
+.
+
+The proof of Lemma 5.2 is deferred to Appendix B.3. Lemma 5.2 gives a high-probability bound on the mean-squared error of the MC approximation for ∇ log h(·, t l).The error decays as the number of MC samples M increases, with a dimension-independent rate O(M −1/6),reflecting the concentration of the MC approximation (9). 7Moreover, the bound depends on σ2 
+
+> tl
+
+, indicating that approximating ∇ log h becomes more challenging when 
+
+σtl is small and tl is near zero. In this regime, the conditional transition Xtl−1 |Xtl is nearly deterministic, meaning the transition density ϕθ (·| Xtl ) approaches a Dirac delta function. This results in an ill-behaved score function and causes the magnitude of ∇ log h(·, t l) to become extremely large. Consequently, even small approximation errors in the numerator are significantly amplified. The remaining factor log (M/δ )√log(1 /δ )
+
+comes from concentration over the MC randomness under a 1 − δ guarantee. We propagate the MC error bound in Lemma 5.2 through the tilted sampling process, which yields an end-to-end convergence guarantee by bounding the discrepancy between the target conditional distribution 
+
+Pdata (·|E X0 ) and the output distribution ̂ P hθ produced by DOIT . We begin by introducing an assumption that quantifies the discretization error incurred by (8). 
+
+Assumption 5.3. For any l ∈ { 1, . . . , L }, and for any t ∈ [tl−1, t l], we assume that the discretization error is uniformly bounded by εdis ≥ 0,
+
+E Phθ
+
+[∥∇ log h( ¯Xhtl , t l) − ∇ log h( ¯Xht , t )∥22
+
+] ≤ εdis .
+
+Under additional regularity conditions (e.g., Lipschitz continuity of ∇ log h in (x, t ) together with mild properties of the event E ¯X0 ), such a bound can be derived explicitly; see Chen et al. [2022] for reference. 
+
+Theorem 5.4. Suppose Assumptions 5.1 and 5.3 hold and choose ηt as in Lemma 5.2. With probability at least 1 − δ, it holds that 
+
+TV 
+
+(
+
+Pdata (·|E X0 ),̂ P hθ
+
+)
+
+≲ 1
+
+ρ TV( Pdata , P θ ) + 
+
+√
+
+κσ log Mδ
+
+√log(1 /δ )
+
+M 1/6 + εdis T , 
+
+where κσ = TL
+
+∑Ll=1 σ−2 
+
+> tl
+
+.The proof of Theorem 5.4 is deferred to Appendix B.4. Theorem 5.4 decomposes the discrepancy into two terms. The first term, 1 
+
+> ρ
+
+TV (Pdata , P θ ), consists of two interpretable factors. The multiplier 1/ρ reflects the intrinsic difficulty of the conditional generation task. When P(E ¯X0 ) is small, the pre-trained model rarely generates the desired outcomes, thereby posing a significant challenge to achieving high rewards. The second factor, TV (Pdata , P θ ), measures the discrepancy between the generated distribution and the ground truth data distribution. This factor corresponds to the explicit convergence rates of diffusion models established in prior literature [Block et al., 2020, Chen et al., 2023, Wibisono et al., 2024]. Notably, Oko et al. [2023] provided minimax rate guarantees. In our analysis, we treat it as an irreducible error inherited from the pre-training phase. The second term bounds the total sampling error, combining the MC approximation error and the discretization error. The term εdis T accounts for the discretization error introduced by the piecewise-constant approximation of ∇ log h in (8) . Moreover, κσ = TL
+
+∑Ll=1 σ−2 
+
+> tl
+
+summarizes the accumulation of noise-scale effects, under the standard DDPM/VP setting [Ho et al., 2020], κσ = O (log( T /t 1)) .Together, the theorem implies that when TV (Pdata , P θ ) → 0, εdis → 0, and M increases, ̂ P hθ converges to 
+
+Pdata (·|E X0 ) with high probability in terms of the total variation distance. 
+
+6 Experiments 
+
+In this section, we first instantiate a practically efficient version of DOIT and detail our specific choice of the 
+
+h-function (Section 6.1). Subsequently, we validate that DOIT effectively adapts the reward distribution of generated samples toward higher value regions (Section 6.2). Finally, we demonstrate the performance of 
+
+DOIT on offline reinforcement learning tasks (Section 6.3). 86.1 Practical Instantiation of DOIT 
+
+Algorithm 2 DOIT : Practical version 
+
+Input: Pre-trained score sθ (x, t ); correction strength γ; number of MC samples M ; time threshold l∗;truncation levels {ηtl }Ll=1 . 
+
+> 1:
+
+Sample xtL from N (0 , I ). 
+
+> 2:
+
+for l = L, L − 1, . . . , 1 do  
+
+> 3:
+
+if 1 < l ≤ l∗ then  
+
+> 4:
+
+Sample {x(m) 
+
+> tl−1
+
+}Mm=1 from N (μtl (xtl , s θ ), σ 2 
+
+> tl
+
+I). 
+
+> 5:
+
+Compute {̂x (m)0 }Mm=1 via (10).  
+
+> 6:
+
+Compute ∇ log ̂ h(xtl , t l) in (9) via {̂x (m)0 }Mm=1 . 
+
+> 7:
+
+∇ log ̂p hθ,t l (xtl ) ← sθ (xtl , t l) + γ ∇ log ̂ h(xtl , t l). 
+
+> 8:
+
+Sample xtl−1 from N (μtl (xtl , ∇ log ̂p hθ,t l ), σ 2 
+
+> tl
+
+I). 
+
+> 9:
+
+else  
+
+> 10:
+
+Sample xtl−1 from N (μtl (xtl , s θ ), σ 2 
+
+> tl
+
+I). 
+
+> 11:
+
+end if  
+
+> 12:
+
+end for  
+
+> 13:
+
+Return x0.In the prototypical version of DOIT (Algorithm 1), approximating ∇ log ̂ h(xtl , t l) at each state xtl necessitates 
+
+M full backward rollouts to obtain the terminal states {x(m)0 }Mm=1 . This process incurs a prohibitive computational cost due to the additional Number of Function Evaluations (NFEs) of the score network sθ .To circumvent this bottleneck, we introduce an efficient surrogate ̂x (m)0 to approximate x(m)0 .At state xtl , we first sample M one-step lookahead states {x(m) 
+
+> tl−1
+
+}Mm=1 from the transition kernel (5) . We then approximate the terminal state x(m)0 using Tweedie’s formula [Efron, 2011], which calculates the posterior mean given a noisy state: 
+
+E[x0 | x(m) 
+
+> tl−1
+
+] = x(m) 
+
+> tl−1
+
++ (1 − e−tl−1 )sθ (x(m) 
+
+> tl−1
+
+, t l−1)
+
+e−tl−1/2 ,
+
+where the coefficients are determined by the forward SDE (1) . Evaluating this expression exactly still requires calling the score network at the new lookahead states. To avoid this, we further reuse the score sθ (xtl , t l)
+
+computed at step tl. Consequently, we define the surrogate ̂x (m)0 as: ̂
+
+x (m)0 = etl−1/2(x(m) 
+
+> tl−1
+
++ (1 − e−tl−1 )sθ (xtl , t l)) . (10) By substituting x(m)0 with ̂x (m)0 , DOIT incurs zero additional NFEs of the score network compared to the vanilla generation process. We empirically validate this approximation in Section 6.2, demonstrating that it achieves performance comparable to full trajectory simulation. Building on this surrogate, we present Algorithm 2—an efficient implementation of DOIT . Notably, to further enhance flexibility and stability, we introduce two hyperparameters: a time threshold l∗ and a correction strength γ, which restrict the application of the Doob correction to specific timesteps and control its magnitude, respectively. 
+
+Choice of h-function. Practical application requires a tailored choice of the h-function. In reinforcement learning and energy-based modeling, the target density is typically defined via exponential tilting of the base distribution [Peters et al., 2010, Haarnoja et al., 2018], taking the form q(x) ∝ pθ, 0(x) exp (r(x)/τ ), where 
+
+τ > 0 is a temperature parameter controlling the sharpness of the reward distribution: smaller τ forces a stronger concentration on high-reward regions. Following this paradigm, we specify the h-function at the 9Pre-trained 
+
+> = 0.3
+> = 3.0
+> = 0.3
+> = 4.0
+> = 0.3
+> = 5.0
+> = 0.3
+> = 6.0
+> = 0.3
+> = 7.0
+> = 0.3
+> = 8.0
+> = 0.4
+> = 3.0
+> = 0.4
+> = 4.0
+> = 0.4
+> = 5.0
+> = 0.4
+> = 6.0
+> = 0.4
+> = 7.0
+> = 0.4
+> = 8.0
+> 6.00
+> 6.25
+> 6.50
+> 6.75
+> 7.00
+> 7.25
+> 7.50
+> 7.75
+> Aesthetic Score
+
+Figure 2: Violin plots of aesthetic scores for the samples generated by Stable Diffusion v1.5 , comparing the vanilla generation result and applying DOIT across different (τ, γ ) settings. The blue bars indicate the minimum and maximum scores, the orange bars represent the first & third quantiles, and the red marker denotes the mean. terminal time t = 0 as 
+
+h(x, 0) ∝ exp ( r(x)/τ ) . (11) This h-function corresponds to a particular choice of E ¯X0 , emphasizing high-reward regions. A detailed derivation is deferred to Appendix C.1. We run Algorithm 2 with the h-function in (11) for all subsequent experiments. 
+
+6.2 DOIT Adapts the Sampling Distribution 
+
+We demonstrate that DOIT adapts the generation process for each sample, effectively tilting the entire reward distribution toward higher-value regions. We conduct experiments by applying DOIT to Stable Diffusion v1.5 [Rombach et al., 2022] to improve rewards of text-to-image generation. We first use the LAION Aesthetic Score [Beaumont et al., 2022] as the reward. We generate K = 32 images and analyze their aesthetic score distributions. To assess performance and robustness, we sweep across the sampling temperature τ and the correction strength γ, comparing the resulting reward distributions against the pre-trained model. The results, summarized in Figure 2, demonstrate that our method successfully transports the pre-trained reward distribution to high-reward counterparts; some of the example images are shown in Figure 3. Notably, we identify a trade-off region: lower temperatures (corresponding to sharper reward landscapes) require lower correction strengths to maintain stability, whereas higher temperatures accommodate stronger correction. Within this regime, DOIT robustly improves aesthetic scores. Experimental details and sensitivity ablation studies on (τ, γ ) are provided in Appendix C.2. Table 1: Comparison of aesthetic score statistics between the surrogate and full trajectory simulation methods. Runtime (seconds) is reported as the generation time per image, excluding reward evaluation time. 
+
+Min Mean Max Runtime Pre-trained 5.737 ± 0.102 6.372 ± 0.031 7.052 ± 0.085 1.260 ± 0.046 Surrogate 5.987 ± 0.180 6.726 ± 0.072 7.501 ± 0.055 1.712 ± 0.036 Simulation 6.006 ± 0.099 6.714 ± 0.055 7.553 ± 0.113 39.584 ± 0.142 
+
+Comparison of Surrogate and Full Simulation. We compare the performance of the pre-trained model against DOIT (with τ = 0 .3, γ = 6 .0) implemented with either the surrogate or full trajectory simulation to approximate the correction term. Table 1 shows that the surrogate method achieves reward improvements comparable to the full simulation baseline. Crucially, the surrogate approach requires significantly lower runtime than the full simulation. 10 Integration with Resampling Based Methods. As discussed in Section 2, a distinct line of research focuses on reweighting and resampling strategies. Intuitively, rather than locally correcting the trajectory as in DOIT , these methods start with multiple candidates and evaluate them at intermediate steps, subsequently reweighting and resampling to favor higher-reward ones. Because these approaches operate on a population level while DOIT improves the per-sample reward, they are orthogonal and complementary. To demonstrate the effect of this integration, we combine DOIT with two representative strategies: the fundamental Best-of-K (BoK) baseline and the state-of-the-art method BFS [Zhang et al., 2025b]. Following the experimental setup in Zhang et al. [2025b], we use ImageReward Xu et al. [2023] as the reward feedback and compare against several recent reweighting-based baselines, including FK-Steering [Singhal et al., 2025], DAS [Kim et al., 2025], TreeG [Guo et al., 2025], and SVDD [Li et al., 2024]. Experimental details are in Appendix C.3. Table 2: Performance comparison on ImageReward. K represents the number of particles. Combining DOIT 
+
+with both BoK and BFS provides a significant boost.                                                             
+
+> KBoK BoK + DOIT (Ours) FK-Steering DAS TreeG SVDD BFS BFS + DOIT (Ours) 40.702 ±0.057 0.875 ±0.017 0.743 ±0.037 0.878 ±0.028 0.860 ±0.033 0.667 ±0.076 0.882 ±0.029 0.950 ±0.016
+> 80.896 ±0.031 1.001 ±0.015 0.926 ±0.042 1.052 ±0.033 1.023 ±0.018 0.775 ±0.087 1.087 ±0.031 1.115 ±0.009
+
+The results are presented in Table 2. We observe that combining DOIT with both BoK and BFS yields significant performance gains. Because DOIT tilts the sampling distribution toward high-reward regions, the candidate pools generated for BoK and BFS contain higher-quality samples, thereby improving the final outcome. 
+
+6.3 Performance Evaluation on Offline RL Benchmarks 
+
+Diffusion policies, utilizing diffusion models as action generators, have recently emerged as a powerful paradigm in robotics [Chi et al., 2025]. However, because they are typically trained on offline datasets, adapting them to inference-time objectives remains a challenge. In this section, we apply DOIT to the offline reinforcement learning setting, adapting diffusion policies toward higher inference-time returns to demonstrate the effectiveness of our method. We follow the setup of Lu et al. [2023], utilizing their pre-trained diffusion policies on the D4RL benchmark [Fu et al., 2020] and employing their Q-functions as reward feedback to guide the generation of action sequences. We evaluate performance on standard D4RL locomotion tasks, and compare DOIT against training-based baselines, including IQL [Kostrikov et al., 2021], Diffuser [Janner et al., 2022], D-QL [Wang et al., 2022], and QGPO [Lu et al., 2023], as well as recent inference-time methods such as TFG [Ye et al., 2024], DAS [Kim et al., 2025], and TTS [Zhang et al., 2025b]. Implementation details are in Appendix C.4. Table 3: Performance comparison of different methods on D4RL locomotion tasks. Training-time methods are marked with ♣ and inference-time methods are marked with ♠. For each task, the best-performing inference-time method has its mean highlighted in bold.                                                                                                                                                                            
+
+> Dataset Environment IQL ( ♣)Diffuser ( ♣)D-QL ( ♣)QGPO ( ♣)TFG ( ♠)DAS ( ♠)TTS ( ♠)DOIT (♠) (Ours)
+> Medium-Expert HalfCheetah 86.7 79.8 96.1 93.5 90 .2±0.293 .3±0.393 .9±0.393 .9±0.5
+> Medium-Expert Hopper 91.5 107.2 110.7 108.0 100 .2±3.5105 .4±5.1104 .4±3.1107 .7±5.6
+> Medium-Expert Walker2d 109.6 108.4 109.7 110.7 108 .1±0.1111 .4±0.1111 .4±0.1113 .2±0.7
+> Medium HalfCheetah 47.4 44.2 50.6 54.1 53 .1±0.153 .4±0.154 .8±0.155 .3±0.3
+> Medium Hopper 66.3 58.5 82.4 98.0 96 .2±0.571 .3±2.799 .5±1.7101 .0±0.3
+> Medium Walker2d 78.3 79.7 85.1 86.0 83 .2±1.483 .9±0.986 .5±0.286 .9±0.3
+> Medium-Replay HalfCheetah 44.2 42.2 47.5 47.6 45 .0±0.342 .2±0.147 .8±0.446 .9±0.3
+> Medium-Replay Hopper 94.7 96.8 100.7 96.9 93 .1±0.196 .7±3.097 .4±4.0101 .8±0.2
+> Medium-Replay Walker2d 73.9 61.2 94.3 84.4 69 .8±4.063 .8±2.079 .3±9.782 .0±8.9
+> Average (Locomotion) 76.9 75.3 86.3 86.6 82.1 80.2 86.1 87.6
+
+The results, summarized in Table 3, demonstrate the effectiveness of our approach. DOIT achieves the best 11 performance on 8 out of 9 tasks among inference-time adaptation methods, attaining an average score of 87.6 .Notably, it surpasses the previous state-of-the-art inference-time method (TTS) and competitive training-based baselines, confirming that our efficient adaptation strategy can unlock superior policy performance without requiring additional training. 
+
+7 Conclusion and Limitations 
+
+In this paper, we introduce DOIT , a training-free inference-time adaptation method for steering pre-trained diffusion models toward high-reward behaviors under generic, potentially non-differentiable reward functions. Our key perspective is to formulate the problem as transporting the pre-trained generative distribution to a high-reward target distribution. We realize the measure transporting it via Doob’s h-transform, which induces an additive, time-dependent correction to the sampling dynamics while keeping the pre-trained score model frozen. We develop a Monte Carlo (MC) approximation of the dynamic Doob correction term and establish an end-to-end high-probability convergence guarantee. Moreover, we demonstrate that DOIT reliably concentrates samples in high-reward regions and achieves strong performance on offline RL benchmarks with competitive sampling efficiency. One potential limitation of our work is the effectiveness of DOIT can be sensitive to the probability of high-reward regions E ¯X0 . Extremely rare high-reward regions can lead to large variance in approximation and reduced efficiency. We hope future work will address this limitation. 
+
+References 
+
+Josh Abramson, Jonas Adler, Jack Dunger, Richard Evans, Tim Green, Alexander Pritzel, Olaf Ronneberger, Lindsay Willmore, Andrew J Ballard, Joshua Bambrick, et al. Accurate structure prediction of biomolecular interactions with alphafold 3. Nature , 630(8016):493–500, 2024. Suzan Ece Ada, Erhan Oztop, and Emre Ugur. Diffusion policies for out-of-distribution generalization in offline reinforcement learning. IEEE Robotics and Automation Letters , 9(4):3116–3123, 2024. Omri Avrahami, Dani Lischinski, and Ohad Fried. Blended diffusion for text-driven editing of natural images. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 18208–18218, 2022. Arpit Bansal, Hong-Min Chu, Avi Schwarzschild, Soumyadip Sengupta, Micah Goldblum, Jonas Geiping, and Tom Goldstein. Universal guidance for diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 843–852, 2023. Romain Beaumont, Christoph Schuhmann, et al. Laion-aesthetics predictor v1 (aesthetic-predictor): A linear estimator on top of clip to predict the aesthetic quality of images. https://github.com/LAION-AI/ aesthetic-predictor , May 2022. GitHub repository. Kevin Black, Michael Janner, Yilun Du, Ilya Kostrikov, and Sergey Levine. Training diffusion models with reinforcement learning. arXiv preprint arXiv:2305.13301 , 2023. Adam Block, Youssef Mroueh, and Alexander Rakhlin. Generative modeling with denoising auto-encoders and langevin sampling. arXiv preprint arXiv:2002.00107 , 2020. Cameron B Browne, Edward Powley, Daniel Whitehouse, Simon M Lucas, Peter I Cowling, Philipp Rohlfsha-gen, Stephen Tavener, Diego Perez, Spyridon Samothrakis, and Simon Colton. A survey of monte carlo tree search methods. IEEE Transactions on Computational Intelligence and AI in games , 4(1):1–43, 2012. Gabriel Cardoso, Yazid Janati El Idrissi, Sylvain Le Corff, and Eric Moulines. Monte carlo guided diffusion for bayesian linear inverse problems. arXiv preprint arXiv:2308.07983 , 2023. 12 Jinyuan Chang, Chenguang Duan, Yuling Jiao, Yi Xu, and Jerry Zhijian Yang. Inference-time alignment for diffusion models via doob’s matching. arXiv preprint arXiv:2601.06514 , 2026. Minshuo Chen, Kaixuan Huang, Tuo Zhao, and Mengdi Wang. Score approximation, estimation and distribution recovery of diffusion models on low-dimensional data. In International Conference on Machine Learning , pages 4672–4712. PMLR, 2023. Sitan Chen, Sinho Chewi, Jerry Li, Yuanzhi Li, Adil Salim, and Anru R Zhang. Sampling is as easy as learning the score: theory for diffusion models with minimal data assumptions. arXiv preprint arXiv:2209.11215 ,2022. Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau, Yilun Du, Benjamin Burchfiel, Russ Tedrake, and Shuran Song. Diffusion policy: Visuomotor policy learning via action diffusion. The International Journal of Robotics Research , 44(10-11):1684–1704, 2025. Hyungjin Chung and Jong Chul Ye. Score-based diffusion models for accelerated mri. Medical image analysis ,80:102479, 2022. Hyungjin Chung, Jeongsol Kim, Michael T Mccann, Marc L Klasky, and Jong Chul Ye. Diffusion posterior sampling for general noisy inverse problems. arXiv preprint arXiv:2209.14687 , 2022. Kevin Clark, Paul Vicol, Kevin Swersky, and David J Fleet. Directly fine-tuning diffusion models on differentiable rewards. arXiv preprint arXiv:2309.17400 , 2023. Sudeep Dasari, Oier Mees, Sebastian Zhao, Mohan Kumar Srirama, and Sergey Levine. The ingredients for robotic diffusion transformers. In 2025 IEEE International Conference on Robotics and Automation (ICRA) , pages 15617–15625. IEEE, 2025. Alexander Denker, Francisco Vargas, Shreyas Padhy, Kieran Didi, Simon Mathis, Riccardo Barbano, Vincent Dutordoir, Emile Mathieu, Urszula Julia Komorowska, and Pietro Lio. Deft: Efficient fine-tuning of diffusion models by learning the generalised h-transform. Advances in Neural Information Processing Systems , 37:19636–19682, 2024. Alexander Denker, Shreyas Padhy, Francisco Vargas, and Johannes Hertrich. Iterative importance fine-tuning of diffusion models. arXiv preprint arXiv:2502.04468 , 2025. Prafulla Dhariwal and Alexander Nichol. Diffusion models beat gans on image synthesis. Advances in neural information processing systems , 34:8780–8794, 2021. Hacene Djellout, Arnaud Guillin, and Liming Wu. Transportation cost-information inequalities and applica-tions to random dynamical systems and diffusions. 2004. Zehao Dou and Yang Song. Diffusion posterior sampling for linear inverse problem solving: A filtering perspective. In The Twelfth International Conference on Learning Representations , 2024. Bradley Efron. Tweedie’s formula and selection bias. Journal of the American Statistical Association , 106 (496):1602–1614, 2011. Ying Fan, Olivia Watkins, Yuqing Du, Hao Liu, Moonkyung Ryu, Craig Boutilier, Pieter Abbeel, Mohammad Ghavamzadeh, Kangwook Lee, and Kimin Lee. Dpok: Reinforcement learning for fine-tuning text-to-image diffusion models. Advances in Neural Information Processing Systems , 36:79858–79885, 2023. Justin Fu, Aviral Kumar, Ofir Nachum, George Tucker, and Sergey Levine. D4rl: Datasets for deep data-driven reinforcement learning. arXiv preprint arXiv:2004.07219 , 2020. Yingqing Guo, Yukang Yang, Hui Yuan, and Mengdi Wang. Training-free guidance beyond differentiability: Scalable path steering with tree search in diffusion and flow models. arXiv preprint arXiv:2502.11420 ,2025. 13 Zhengyi Guo, Wenpin Tang, and Renyuan Xu. Conditional diffusion guidance under hard constraint: A stochastic analysis approach. arXiv preprint arXiv:2602.05533 , 2026. Zhiye Guo, Jian Liu, Yanli Wang, Mengrui Chen, Duolin Wang, Dong Xu, and Jianlin Cheng. Diffusion models in bioinformatics and computational biology. Nature reviews bioengineering , 2(2):136–154, 2024. Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-policy maximum entropy deep reinforcement learning with a stochastic actor. In International conference on machine learning , pages 1861–1870. Pmlr, 2018. Yutong He, Naoki Murata, Chieh-Hsin Lai, Yuhta Takida, Toshimitsu Uesaka, Dongjun Kim, Wei-Hsiang Liao, Yuki Mitsufuji, J Zico Kolter, Ruslan Salakhutdinov, et al. Manifold preserving guided diffusion. 
+
+arXiv preprint arXiv:2311.16424 , 2023. Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 , 2022. Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. Advances in neural information processing systems , 33:6840–6851, 2020. Zhi Hou, Tianyi Zhang, Yuwen Xiong, Hengjun Pu, Chengyang Zhao, Ronglei Tong, Yu Qiao, Jifeng Dai, and Yuntao Chen. Diffusion transformer policy. arXiv preprint arXiv:2410.15959 , 2024. Zijing Hu, Fengda Zhang, Long Chen, Kun Kuang, Jiahui Li, Kaifeng Gao, Jun Xiao, Xin Wang, and Wenwu Zhu. Towards better alignment: Training diffusion models with reinforcement learning against sparse rewards. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 23604–23614, 2025. Rongjie Huang, Zhou Zhao, Huadai Liu, Jinglin Liu, Chenye Cui, and Yi Ren. Prodiff: Progressive fast diffusion model for high-quality text-to-speech. In Proceedings of the 30th ACM International Conference on Multimedia , pages 2595–2605, 2022. Vineet Jain, Kusha Sareen, Mohammad Pedramfar, and Siamak Ravanbakhsh. Diffusion tree sampling: Scalable inference-time alignment of diffusion models. arXiv preprint arXiv:2506.20701 , 2025. Michael Janner, Yilun Du, Joshua B Tenenbaum, and Sergey Levine. Planning with diffusion for flexible behavior synthesis. arXiv preprint arXiv:2205.09991 , 2022. Myeonghun Jeong, Hyeongju Kim, Sung Jun Cheon, Byoung Jin Choi, and Nam Soo Kim. Diff-tts: A denoising diffusion model for text-to-speech. arXiv preprint arXiv:2104.01409 , 2021. Tero Karras, Miika Aittala, Timo Aila, and Samuli Laine. Elucidating the design space of diffusion-based generative models. Advances in neural information processing systems , 35:26565–26577, 2022. Sunwoo Kim, Minkyu Kim, and Dongmin Park. Test-time alignment of diffusion models without reward over-optimization. arXiv preprint arXiv:2501.05803 , 2025. Zhifeng Kong, Wei Ping, Jiaji Huang, Kexin Zhao, and Bryan Catanzaro. Diffwave: A versatile diffusion model for audio synthesis. arXiv preprint arXiv:2009.09761 , 2020. Ilya Kostrikov, Ashvin Nair, and Sergey Levine. Offline reinforcement learning with implicit q-learning. arXiv preprint arXiv:2110.06169 , 2021. Anders Krogh and John Hertz. A simple weight decay can improve generalization. Advances in neural information processing systems , 4, 1991. Kyungmin Lee, Xiahong Li, Qifei Wang, Junfeng He, Junjie Ke, Ming-Hsuan Yang, Irfan Essa, Jinwoo Shin, Feng Yang, and Yinxiao Li. Calibrated multi-preference optimization for aligning diffusion models. In 
+
+Proceedings of the Computer Vision and Pattern Recognition Conference , pages 18465–18475, 2025. 14 Xiner Li, Yulai Zhao, Chenyu Wang, Gabriele Scalia, Gokcen Eraslan, Surag Nair, Tommaso Biancalani, Shuiwang Ji, Aviv Regev, Sergey Levine, et al. Derivative-free guidance in continuous and discrete diffusion models with soft value-based decoding. arXiv preprint arXiv:2408.08252 , 2024. Xiner Li, Masatoshi Uehara, Xingyu Su, Gabriele Scalia, Tommaso Biancalani, Aviv Regev, Sergey Levine, and Shuiwang Ji. Dynamic search for inference-time alignment in diffusion models. arXiv preprint arXiv:2503.02039 , 2025. Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. arXiv preprint arXiv:1711.05101 ,2017. Cheng Lu, Huayu Chen, Jianfei Chen, Hang Su, Chongxuan Li, and Jun Zhu. Contrastive energy prediction for exact energy-guided diffusion sampling in offline reinforcement learning. In International Conference on Machine Learning , pages 22825–22855. PMLR, 2023. Nanye Ma, Shangyuan Tong, Haolin Jia, Hexiang Hu, Yu-Chuan Su, Mingda Zhang, Xuan Yang, Yandong Li, Tommi Jaakkola, Xuhui Jia, et al. Inference-time scaling for diffusion models beyond scaling denoising steps. arXiv preprint arXiv:2501.09732 , 2025. Gautam Mittal, Jesse Engel, Curtis Hawthorne, and Ian Simon. Symbolic music generation with diffusion models. arXiv preprint arXiv:2103.16091 , 2021. Toan Nguyen, Kien Do, Duc Kieu, and Thin Nguyen. h-edit: Effective and flexible diffusion-based editing via doob’s h-transform. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 28490–28501, 2025. Alex Nichol, Prafulla Dhariwal, Aditya Ramesh, Pranav Shyam, Pamela Mishkin, Bob McGrew, Ilya Sutskever, and Mark Chen. Glide: Towards photorealistic image generation and editing with text-guided diffusion models. arXiv preprint arXiv:2112.10741 , 2021. Kazusato Oko, Shunta Akiyama, and Taiji Suzuki. Diffusion models are minimax optimal distribution estimators. In International Conference on Machine Learning , pages 26517–26582. PMLR, 2023. Jan Peters, Katharina Mulling, and Yasemin Altun. Relative entropy policy search. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 24, pages 1607–1612, 2010. Angus Phillips, Hai-Dang Dau, Michael John Hutchinson, Valentin De Bortoli, George Deligiannidis, and Arnaud Doucet. Particle denoising diffusion sampler. arXiv preprint arXiv:2402.06320 , 2024. Mihir Prabhudesai, Anirudh Goyal, Deepak Pathak, and Katerina Fragkiadaki. Aligning text-to-image diffusion models with reward backpropagation. 2023. Allen Z Ren, Justin Lidard, Lars L Ankile, Anthony Simeonov, Pulkit Agrawal, Anirudha Majumdar, Benjamin Burchfiel, Hongkai Dai, and Max Simchowitz. Diffusion policy policy optimization. arXiv preprint arXiv:2409.00588 , 2024. Moritz Reuss, Maximilian Li, Xiaogang Jia, and Rudolf Lioutikov. Goal-conditioned imitation learning using score-based diffusion policies. arXiv preprint arXiv:2304.02532 , 2023. L Chris G Rogers and David Williams. Diffusions, Markov processes, and martingales , volume 2. Cambridge university press, 2000. Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 10684–10695, June 2022. Simo Särkkä and Arno Solin. Applied stochastic differential equations , volume 10. Cambridge University Press, 2019. 15 Paul Maria Scheikl, Nicolas Schreiber, Christoph Haas, Niklas Freymuth, Gerhard Neumann, Rudolf Lioutikov, and Franziska Mathis-Ullrich. Movement primitive diffusion: Learning gentle robotic manipulation of deformable objects. IEEE Robotics and Automation Letters , 9(6):5338–5345, 2024. Raghav Singhal, Zachary Horvitz, Ryan Teehan, Mengye Ren, Zhou Yu, Kathleen McKeown, and Rajesh Ranganath. A general framework for inference-time scaling and steering of diffusion models. arXiv preprint arXiv:2501.06848 , 2025. Joar Skalse, Nikolaus Howe, Dmitrii Krasheninnikov, and David Krueger. Defining and characterizing reward gaming. Advances in Neural Information Processing Systems , 35:9460–9471, 2022. Jiaming Song, Chenlin Meng, and Stefano Ermon. Denoising diffusion implicit models. arXiv preprint arXiv:2010.02502 , 2020a. Yang Song and Stefano Ermon. Generative modeling by estimating gradients of the data distribution. 
+
+Advances in neural information processing systems , 32, 2019. Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equations. arXiv preprint arXiv:2011.13456 ,2020b. Michel Talagrand. Transportation cost for gaussian and other product measures. Geometric & Functional Analysis GAFA , 6(3):587–600, 1996. Brian L Trippe, Jason Yim, Doug Tischer, David Baker, Tamara Broderick, Regina Barzilay, and Tommi Jaakkola. Diffusion probabilistic modeling of protein backbones in 3d for the motif-scaffolding problem. 
+
+arXiv preprint arXiv:2206.04119 , 2022. Oleg Trott and Arthur J Olson. Autodock vina: improving the speed and accuracy of docking with a new scoring function, efficient optimization, and multithreading. Journal of computational chemistry , 31(2): 455–461, 2010. Masatoshi Uehara, Yulai Zhao, Tommaso Biancalani, and Sergey Levine. Understanding reinforcement learning-based fine-tuning of diffusion models: A tutorial and review. arXiv preprint arXiv:2407.13734 ,2024a. Masatoshi Uehara, Yulai Zhao, Kevin Black, Ehsan Hajiramezanali, Gabriele Scalia, Nathaniel Lee Diamant, Alex M Tseng, Tommaso Biancalani, and Sergey Levine. Fine-tuning of continuous-time diffusion models as entropy-regularized control. arXiv preprint arXiv:2402.15194 , 2024b. Masatoshi Uehara, Yulai Zhao, Chenyu Wang, Xiner Li, Aviv Regev, Sergey Levine, and Tommaso Biancalani. Inference-time alignment in diffusion models with reward-guided generation: Tutorial and review. arXiv preprint arXiv:2501.09685 , 2025. Anwaar Ulhaq and Naveed Akhtar. Efficient diffusion models for vision: A survey. arXiv preprint arXiv:2210.09292 , 2022. Bram Wallace, Meihua Dang, Rafael Rafailov, Linqi Zhou, Aaron Lou, Senthil Purushwalkam, Stefano Ermon, Caiming Xiong, Shafiq Joty, and Nikhil Naik. Diffusion model alignment using direct preference optimization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 8228–8238, 2024. Zhendong Wang, Jonathan J Hunt, and Mingyuan Zhou. Diffusion policies as an expressive policy class for offline reinforcement learning. arXiv preprint arXiv:2208.06193 , 2022. Tomer Weiss, Eduardo Mayo Yanes, Sabyasachi Chakraborty, Luca Cosmo, Alex M Bronstein, and Renana Gershoni-Poranne. Guided diffusion for inverse molecular design. Nature Computational Science , 3(10): 873–882, 2023. 16 Andre Wibisono, Yihong Wu, and Kaylee Yingxi Yang. Optimal score estimation via empirical bayes smoothing. In The Thirty Seventh Annual Conference on Learning Theory , pages 4958–4991. PMLR, 2024. Luhuan Wu, Brian Trippe, Christian Naesseth, David Blei, and John P Cunningham. Practical and asymptotically exact conditional sampling in diffusion models. Advances in Neural Information Processing Systems , 36:31372–31403, 2023. Li Xie, Liangyan Li, Jun Chen, Lei Yu, and Zhongshan Zhang. A constrained talagrand transportation inequality with applications to rate-distortion-perception theory. Entropy , 27(4):441, 2025. Jiazheng Xu, Xiao Liu, Yuchen Wu, Yuxuan Tong, Qinkai Li, Ming Ding, Jie Tang, and Yuxiao Dong. Imagereward: learning and evaluating human preferences for text-to-image generation. In Proceedings of the 37th International Conference on Neural Information Processing Systems , pages 15903–15935, 2023. Kai Yang, Jian Tao, Jiafei Lyu, Chunjiang Ge, Jiaxin Chen, Weihan Shen, Xiaolong Zhu, and Xiu Li. Using human feedback to fine-tune diffusion models without any reward model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8941–8951, 2024a. Ling Yang, Zhaochen Yu, Chenlin Meng, Minkai Xu, Stefano Ermon, and Bin Cui. Mastering text-to-image diffusion: Recaptioning, planning, and generating with multimodal llms. In Forty-first International Conference on Machine Learning , 2024b. Haotian Ye, Haowei Lin, Jiaqi Han, Minkai Xu, Sheng Liu, Yitao Liang, Jianzhu Ma, James Y Zou, and Stefano Ermon. Tfg: Unified training-free guidance for diffusion models. Advances in Neural Information Processing Systems , 37:22370–22417, 2024. Jiwen Yu, Yinhuai Wang, Chen Zhao, Bernard Ghanem, and Jian Zhang. Freedom: Training-free energy-guided conditional diffusion model. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 23174–23184, 2023. Hui Yuan, Kaixuan Huang, Chengzhuo Ni, Minshuo Chen, and Mengdi Wang. Reward-directed conditional diffusion: Provable distribution estimation and reward improvement. Advances in Neural Information Processing Systems , 36:60599–60635, 2023. Yanjie Ze, Gu Zhang, Kangning Zhang, Chenyuan Hu, Muhan Wang, and Huazhe Xu. 3d diffusion policy: Generalizable visuomotor policy learning via simple 3d representations. arXiv preprint arXiv:2403.03954 ,2024. Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. Adding conditional control to text-to-image diffusion models. In Proceedings of the IEEE/CVF international conference on computer vision , pages 3836–3847, 2023. Tao Zhang, Jia-Shu Pan, Ruiqi Feng, and Tailin Wu. Vfscale: Intrinsic reasoning through verifier-free test-time scalable diffusion model. arXiv preprint arXiv:2502.01989 , 2025a. Xiangcheng Zhang, Haowei Lin, Haotian Ye, James Zou, Jianzhu Ma, Yitao Liang, and Yilun Du. Inference-time scaling of diffusion models through classical search. arXiv preprint arXiv:2505.23614 , 2025b. Yulai Zhao, Masatoshi Uehara, Gabriele Scalia, Sunyuan Kung, Tommaso Biancalani, Sergey Levine, and Ehsan Hajiramezanali. Adding conditional control to diffusion models with reinforcement learning. arXiv preprint arXiv:2406.12120 , 2024. 17 A Specific Forms of Backward Kernels 
+
+In this section, we provide the explicit forms of the Gaussian transition kernels pθ (xtl−1 |xtl ) defined in Eq. (5) for the sampling algorithms used in our experiments. We utilize the time discretization grid 
+
+0 = t0 < t 1 < · · · < t L = T , where the reverse process moves from tl to tl−1.Throughout this section, we relate the model’s noise prediction ϵθ (xt, t ) to the parameterized score function 
+
+sθ (x, t ) via: 
+
+ϵθ (xt, t ) = −√1 − αt sθ (xt, t ).
+
+A.1 DDIM Sampler 
+
+The generalized Denoising Diffusion Implicit Model (DDIM) [Song et al., 2020a] sampler updates the state based on the noise schedule αt and a stochasticity hyperparameter η ∈ [0 , 1] . When η = 0 , the process is deterministic; when η = 1 , it recovers the original DDPM [Ho et al., 2020] sampling process. Given the noisy sample xtl at time step tl, we first estimate the clean data ̂x 0 using the model prediction 
+
+ϵθ (xtl , t l):̂
+
+x 0(xtl , t l) = xtl − √1 − αtl ϵθ (xtl , t l)
+
+√αtl
+
+.
+
+We define the variance of the transition kernel as: 
+
+σ2 
+
+> tl
+
+(η) = η2
+
+( 1 − αtl−1
+
+1 − αtl
+
+) ( 
+
+1 − αtl
+
+αtl−1
+
+)
+
+.
+
+The update rule for the subsequent sample xtl−1 combines the estimated clean data, the direction pointing to 
+
+xtl , and random noise: 
+
+xtl−1 = √αtl−1̂x 0(xtl , t l) + 
+
+√
+
+1 − αtl−1 − σ2 
+
+> tl
+
+(η) ϵθ (xtl , t l) + σtl (η) Z, 
+
+where Z ∼ N (0 , I ). Substituting ̂x 0 back into the update rule yields the transition mean μθ . The kernel is given by: 
+
+pθ (xtl−1 |xtl ) = N
+
+(
+
+μtl (xtl , s θ ), σ 2 
+
+> tl
+
+(η)I
+
+)
+
+,
+
+where the mean is: 
+
+μtl (xtl , s θ ) = 
+
+√ αtl−1
+
+αtl
+
+xtl +
+
+(√ 
+
+1 − αtl−1 − σ2 
+
+> tl
+
+(η) − √1 − αtl
+
+√ αtl−1
+
+αtl
+
+)
+
+ϵθ (xtl , t l).
+
+A.2 Euler Ancestral SDE 
+
+For the Euler ancestral sampler [Karras et al., 2022], we adopt the EDM noise parameterization. We first convert the noise schedule values αtl and αtl−1 into the EDM noise standard deviations: 
+
+˜σtl =
+
+√
+
+1 − αtl
+
+αtl
+
+, ˜σtl−1 =
+
+√ 1 − αtl−1
+
+αtl−1
+
+.
+
+The ancestral SDE step splits the transition from ˜σtl to ˜σtl−1 into a deterministic “down” step and a stochastic “up” step. The variances for these components are defined as: 
+
+˜σ 2 
+
+> tl,up
+
+= ˜σ2
+
+> tl−1
+
+˜σ2
+
+> tl
+
+(˜σ2 
+
+> tl
+
+− ˜σ2
+
+> tl−1
+
+),
+
+18 ˜σ 2 
+
+> tl,down
+
+= ˜σ2 
+
+> tl−1
+
+− ˜σ 2
+
+> tl,up
+
+.
+
+We define the EDM drift direction dtl directly via the noise prediction: 
+
+dtl = ϵθ (xtl , t l).
+
+A single Euler ancestral SDE step from tl to tl−1 takes the form: 
+
+xtl−1 = xtl + dtl
+
+(˜σtl,down − ˜σtl
+
+) + ˜σtl,up Z, Z ∼ N (0 , I ).
+
+Therefore, the transition kernel matches the Gaussian form in Eq. (5): 
+
+pθ (xtl−1 |xtl ) = N
+
+(
+
+μtl (xtl , s θ ), σ 2 
+
+> tl
+
+I
+
+)
+
+,
+
+with the mean and variance given by: 
+
+μtl (xtl , s θ ) = xtl + ϵθ (xtl , t l) (˜σtl,down − ˜σtl
+
+),σ2 
+
+> tl
+
+= ˜σ 2
+
+> tl,up
+
+.
+
+B Proofs 
+
+B.1 Proof of Lemma 3.2 
+
+Proof. According to the definition of the tilted density at time t in (6), taking t = 0 yields: 
+
+phθ, 0(x) = h(x, 0) pθ, 0(x)
+
+P(E ¯X0 ) . (12) We first compute the term h(x, 0) . By the definition of the h-function and the event E ¯X0 , we have: 
+
+h(x, 0) = P(E ¯X0 | ¯X0 = x)= P
+
+(
+
+U ≤ q( ¯X0)
+
+Cq · pθ, 0( ¯X0)
+
+∣∣∣∣ ¯X0 = x
+
+)
+
+.
+
+Since the uniform random variable U is independent of the generated sample ¯X0, the conditional probability simplifies to: 
+
+h(x, 0) = P
+
+(
+
+U ≤ q(x)
+
+Cq · pθ, 0(x)
+
+)
+
+.
+
+Given that U ∼ Unif (0 , 1) and the assumption ∥q/p θ, 0∥∞ ≤ Cq implies 0 ≤ q(x)  
+
+> Cqpθ, 0(x)
+
+≤ 1, the probability is exactly the value of the threshold, 
+
+h(x, 0) = q(x)
+
+Cq · pθ, 0(x) . (13) Next, we compute the marginal probability of the event P(E ¯X0 ),
+
+P(E ¯X0 ) = 
+
+∫
+
+h(x, 0) pθ, 0(x) = 
+
+∫ q(x)
+
+Cq · pθ, 0(x) pθ, 0(x)d x = 1
+
+Cq
+
+. (14) Finally, substituting (13) and (14) back into (12), we obtain, 
+
+phθ, 0(x) =   
+
+> q(x)
+> Cq·pθ, 0(x)
+
+· pθ, 0(x)1/C q
+
+= q(x).
+
+This completes the proof. 19 B.2 Proof of Lemma 4.1 
+
+Proof. Recalling the definition of the h-function in Definition 3.1, we can write ∇xh(x, t l) as, 
+
+∇xh(x, t l) = ∇xP(E ¯X0 | ¯Xtl = x)= ∇x
+
+∫
+
+P(E ¯X0 | ¯X0 = x0) pθ, 0|tl (x0|x)d x0, (15) where pθ, 0|tl ( ¯X0| ¯Xtl ) represents the transition density of the conditional distribution ¯X0| ¯Xtl . In the backward process, the transition density pθ, 0|tl (x0|xtl ) is induced by (5). It can be represented as: 
+
+pθ, 0|tl (x0|xtl ) = 
+
+∫ l∏
+
+> j=1
+
+ϕθ (xtj−1 |xtj )d xt1 . . . dxtl−1 , (16) where ϕθ is the Gaussian density defined in (5). Plugging (16) into (15), we get, 
+
+∇x
+
+∫
+
+P(E ¯X0 | ¯X0 = x0) pθ, 0|tl (x0|x)d x0
+
+= ∇x
+
+∫
+
+P(E ¯X0 | ¯X0 = x0)
+
+∫ l∏
+
+> j=1
+
+ϕθ (xtj−1 |xtj )d xt1 . . . dxtl−1
+
+ dx0
+
+=
+
+∫ ∫ 
+
+P(E ¯X0 | ¯X0 = x0) ∇xϕθ (xtl−1 |x) pθ, 0|tl−1 (x0|xtl−1 )d xtl−1 dx0
+
+=
+
+∫ ∫ 
+
+h(x0, 0) ∇x log ϕθ (xtl−1 |x) ϕθ (xtl−1 |x)pθ, 0|tl−1 (x0|xtl−1 )d xtl−1 dx0
+
+= E
+
+[
+
+h( ¯X0, 0) ∇ ¯Xtl
+
+log ϕθ ( ¯Xtl−1 | ¯Xtl )
+
+∣∣∣ ¯Xtl = x
+
+]
+
+, (17) where the expectation is taken over conditional distribution of the backward trajectory ( ¯Xtl−1 , . . . , ¯X0)| ¯Xtl = x.The second equality holds due to ∫ h(x0, 0) pθ, 0|tl−1 (x0|xtl−1 )d x0 ≤ 1. Furthermore, the Gaussian transition density ϕθ (·| x) is continuously differentiable with respect to x, and its gradient is dominated by an integrable function due to the exponential decay of the Gaussian tail. Then the interchange of differentiation and integration is justified by the Leibniz integral rule. Equation (17) yields the desired expression, which concludes the proof. 
+
+B.3 Proof of Lemma 5.2 
+
+Proof. In the beginning of the proof, it’s helpful to discuss about the Monte Carlo (MC) randomness in the backward sampler. It actually comes from the Gaussian noises used in each reverse transition. For each trajectory m ∈ { 1, . . . , M }, let {z(m) 
+
+> j
+
+}lj=1 be i.i.d. with z(m) 
+
+> j
+
+∼ N (0 , I d), independent across j and 
+
+m. By the transition kernel in (5) 
+
+¯Xtl−1 | ¯Xtl = xtl ∼ N (μtl (xtl , s θ ), σ 2 
+
+> tl
+
+I) , (18) By the reparameterization trick, we can couple one step as 
+
+x(m) 
+
+> tj−1
+
+= μtj
+
+(
+
+x(m) 
+
+> tj
+
+, s θ
+
+)
+
++ σtj z(m) 
+
+> j
+
+, j = l, l − 1, . . . , 1, x(m) 
+
+> tl
+
+= xtl .
+
+Hence the whole backward path is a deterministic function of (xtl , z (m)1: l ),
+
+(x(m) 
+
+> t0
+
+, . . . , x (m) 
+
+> tl−1
+
+) = Gθ,l 
+
+(
+
+xtl ; z(m)1: l
+
+)
+
+,
+
+20 so two MC estimators ̂ h and ∇̂ h can be written as functions of Gθ,l 
+
+(
+
+xtl ; z(m)1: l
+
+)
+
+, making the MC randomness explicit through {z(m)1: l }Mm=1 (conditional on xtl ). For simplicity, denote by 
+
+zmc = {z(m) 
+
+> j
+
+}m=1 ,...,M ; j=1 ,...,l , z(m)
+
+> j
+> i.i.d.
+
+∼ N (0 , I d),
+
+the Gaussian noises used to generate the M Monte Carlo backward trajectories at time tl (conditional on a given input xtl ). We now begin the proof. To bound the discrepancy between ∇ log ̂ h(xtl , t l) and ∇ log h(xtl , t l), we write 
+
+||∇ log ̂ h(xtl , t l) − ∇ log h(xtl , t l)|| 2 (19) 
+
+≤
+
+∥∥∥∥∥
+
+∇̂ h(xtl , t l) − ∇ h(xtl , t l)̂
+
+h(xtl , t l) ∨ ηtl
+
+∥∥∥∥∥2
+
++
+
+∥∥∥∥∥∥∇h(xtl , t l) hθ (xtl , t l) − (̂ h(xtl , t l) ∨ ηtl )
+
+(̂ 
+
+h(xtl , t l) ∨ ηtl
+
+)
+
+h(xtl , t l)
+
+∥∥∥∥∥∥2
+
+≤
+
+∥∥∥∇̂ h(xtl , t l) − ∇ h(xtl , t l)
+
+∥∥∥2
+
+ηtl
+
++ ||∇ log h(xtl , t l)|| 2
+
+∣∣∣h(xtl , t l) − (̂ h(xtl , t l) ∨ ηtl )
+
+∣∣∣
+
+ηtl
+
+. (20) By (a + b)2 ≤ 2a2 + 2 b2, (20) implies 
+
+EXtl ∼P hθ,t l
+
+[
+
+||∇ log ̂ h(Xtl , t l) − ∇ log h(Xtl , t l)|| 22
+
+]
+
+≤ EXtl ∼P hθ,t l
+
+
+
+2
+
+∥∥∥∇̂ h(Xtl , t l) − ∇ h(Xtl , t l)
+
+∥∥∥22
+
+η2
+
+> tl
+
+︸ ︷︷ ︸
+
+> H1
+
++ EXtl ∼P hθ,t l
+
+2||∇ log h(Xtl , t l)|| 2
+
+∣∣∣h(Xtl , t l) − (̂ h(Xtl , t l) ∨ ηtl )
+
+∣∣∣2
+
+η2
+
+> tl
+
+︸ ︷︷ ︸
+
+> H1,2
+
+. (21) For the second term H1,2, we have 
+
+EXtl ∼P hθ,t l
+
+2||∇ log h(Xtl , t l)|| 2
+
+∣∣∣h(Xtl , t l) − (̂ h(Xtl , t l) ∨ ηtl )
+
+∣∣∣2
+
+η2
+
+> tl
+
+
+
+≤ EXtl ∼P hθ,t l
+
+[
+
+4
+
+∥∥∥∇Xtl log h(Xtl , t l)
+
+∥∥∥22
+
+(( h(Xtl , t l) ∨ ηtl ) − (̂ h(Xtl , t l) ∨ ηtl )) 2
+
+η2
+
+> tl
+
+]
+
++ EXtl ∼P hθ,t l
+
+[
+
+4
+
+∥∥∥∇Xtl log h(Xtl , t l)
+
+∥∥∥22
+
+(h(Xtl , t l) − (h(Xtl , t l) ∨ ηtl )) 2
+
+η2
+
+> tl
+
+]
+
+≤ EXtl ∼P hθ,t l
+
+[
+
+4
+
+∥∥∥∇Xtl log h(Xtl , t l)
+
+∥∥∥22
+
+(h(Xtl , t l) −̂ h(Xtl , t l)) 2
+
+η2
+
+> tl
+
+]︸ ︷︷ ︸
+
+> ¯H2
+
++ EXtl ∼P hθ,t l
+
+[
+
+4
+
+∥∥∥∇Xtl log h(Xtl , t l)
+
+∥∥∥22
+
+(h(Xtl , t l) − (h(Xtl , t l) ∨ ηtl )) 2
+
+η2
+
+> tl
+
+]︸ ︷︷ ︸
+
+> H3
+
+. (22) The second inequality holds because f (x) = x ∨ ηtl = max (x, η tl ) is 1-Lipschitz. We derive an upper bound for ¯H2 using the following lemma. 21 Lemma B.1. Fix a discretization index l ∈ { 1, . . . , L }. The following inequality holds, 
+
+∥∇ xtl log h(xtl , t l)∥2 ≤ ∥∇ xtl μtl (xtl , s θ )∥2
+
+σtl
+
+√
+
+2 log 1
+
+h(xtl , t l) .
+
+The proof of Lemma B.1 is deferred to Appendix B.5. Then we are ready to bound ¯H2
+
+¯H2 =
+
+∫ [
+
+4
+
+∥∥∥∇xtl log h(xtl , t l)
+
+∥∥∥22
+
+(h(xtl , t l) −̂ h(xtl , t l)) 2
+
+η2
+
+> tl
+
+]
+
+phθ,t l (xtl )d xtl .
+
+By (28), Lemma B.1 and Assumption 5.1 we have 
+
+¯H2 ≤
+
+∫ 8 sup xtl
+
+∥∇ xtl μtl (xtl , s θ )∥22
+
+σ2 
+
+> tl
+
+η2
+
+> tl
+
+(h(xtl , t l) −̂ h(xtl , t l)) 2 log 1
+
+h(xtl , t l)
+
+pθ,t l (xtl )h(xtl , t l)
+
+P(E ¯X0 ) dxtl
+
+≤ EXtl ∼Pθ,t l
+
+[
+
+8C2
+
+> G
+
+(h(Xtl , t l) −̂ h(Xtl , t l)) 2
+
+eσ 2 
+
+> tl
+
+η2 
+
+> tl
+
+ρ
+
+]
+
+≤ EXtl ∼Pθ,t l
+
+[
+
+4C2
+
+> G
+
+(h(Xtl , t l) −̂ h(Xtl , t l)) 2
+
+σ2 
+
+> tl
+
+η2 
+
+> tl
+
+ρ
+
+]︸ ︷︷ ︸
+
+> H2
+
+, (23) where we invoke sup xtl
+
+∥∇ xtl μtl (xtl , s θ )∥2 ≤ CG. Note that CG is a constant determined solely by the scheduler and G, which follows from the fact that μtl is a linear combination of xtl and sθ with uniformly bounded coefficients, and sup x ∥∇ xsθ (x, t l)∥2 ≤ G by Assumption 5.1. The second inequality holds due to log 1 
+
+> h(xt,t )
+
+h(xt, t ) ≤ 1 
+
+> e
+
+and h(xt, t ) ∈ (0 , 1] . Then we can conclude 
+
+EXt∼P hθ,t l
+
+[
+
+||∇ log ̂ h(Xtl , t l) − ∇ log h(Xtl , t l)|| 22
+
+]
+
+≤ H 1 + H2 + H3. (24) Next, we bound Ezmc [H1] and Ezmc [H2], and then obtain high-probability bounds for |H 1 − Ezmc H1| and 
+
+|H 2 − Ezmc H2| via concentration over the independent noises zmc . In the end, we bound H3. Combining them together, we can derive a high probability bound for the approximation for ∇ log h in (24). 
+
+Bounding Ezmc [H1] For ∇̂ h(xtl , t l), we define Hi = h(x(i)0 , 0) 1
+
+> σ2
+> tl
+
+∇xtl (μtl (xtl , s θ ))( x(i) 
+
+> tl−1
+
+− μtl (xtl , s θ )) .By definition, we have ∇̂h(xt, t ) = ∑Mi=1 1 
+
+> M
+
+Hi, then by Lemma 4.1, we immediately have 
+
+Ezmc [∇̂h(xtl , t l)] = E(x0,...,x tl−1 )|xtl [∇̂ h(xtl , t l)] = ∇h(xtl , t l).
+
+We want to prove it is a sub-Gaussian random vector for a fixed xtl .Firstly note that x(i) 
+
+> tl−1
+
+∼ N (μtl (xtl , s θ ), σ 2 
+
+> tl
+
+I), then we have 
+
+1
+
+σ2
+
+> tl
+
+∇xtl (μtl (xtl , s θ ))( x(i) 
+
+> tl−1
+
+− μtl (xtl , s θ )) ∼ N (0 , σ −2 
+
+> tl
+
+(∇xtl (μtl (xtl , s θ ))( ∇xtl (μtl (xtl , s θ )) ⊤))) .
+
+Then for ∀v ∈ Rd, || v|| 2 = 1 , we have 
+
+v⊤(σ−2 
+
+> tl
+
+∇xtl (μtl (xtl , s θ ))( x(i) 
+
+> tl−1
+
+− μtl (xtl , s θ )) ∼ N (0 , σ −2 
+
+> tl
+
+|| (∇xtl (μtl (xtl , s θ )) v|| 22),
+
+22 which implies 
+
+P (|v⊤(σ−2 
+
+> tl
+
+∇xtl (μtl (xtl , s θ ))( x(i) 
+
+> tl−1
+
+− μtl (xtl , s θ )) | ≥ t)
+
+≤ 2 exp 
+
+(
+
+− t2
+
+2σ−2 
+
+> tl
+
+|| (∇xtl (μtl (xtl , s θ ))) v|| 22
+
+)
+
+≤ 2 exp 
+
+− t2
+
+2σ−2
+
+> tl
+
+∥∥∥∇xtl (μtl (xtl , s θ )) 
+
+∥∥∥22
+
+ . (25) Notice that |v⊤Hi| ≤ | v⊤(σ−2 
+
+> tl
+
+∇xtl (μtl (xtl , s θ ))( x(i) 
+
+> tl−1
+
+− μtl (xtl , s θ )) |, by (25) 
+
+P (|v⊤Hi| ≥ t) ≤ P (|v⊤(σ−2 
+
+> tl
+
+∇xtl (μtl (xtl , s θ ))( x(i) 
+
+> tl−1
+
+− μtl (xtl , s θ )) | ≥ t)
+
+≤ 2 exp 
+
+− t2
+
+2σ−2
+
+> tl
+
+∥∥∥∇xtl (μtl (xtl , s θ )) 
+
+∥∥∥22
+
+ .
+
+By Lemma B.1, we have 
+
+∣∣v⊤∇h(xtl , t l)∣∣ ≤ ||∇ h(xtl , t l)|| 2
+
+≤ hθ (xtl , t l)||∇ log h(xtl , t l)|| 2
+
+≤ ∥∇ xtl (μtl (xtl , s θ )) ∥2
+
+σtl
+
+√
+
+2( h(xtl , t l)) 2 log 1
+
+h(xtl , t l)
+
+≤ ∥∇ xtl (μtl (xtl , s θ )) ∥2
+
+σtl
+
+. (26) It also directly implies ∥∇ h(xt, t )∥2 ≤ σ−1 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥2 ≤ σ−1 
+
+> tl
+
+CG.Then 
+
+P (|v⊤Hi − v⊤∇h(xtl , t l)| ≥ t)
+
+≤ P (|v⊤Hi| + |v⊤∇h(xtl , t l)| ≥ t)
+
+≤ P
+
+(
+
+|v⊤Hi| ≥ t − σ−1 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥2
+
+)
+
+≤ 2 exp 
+
+−
+
+max 
+
+(
+
+t − σ−1 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥2, 0
+
+)2
+
+2σ−2 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥22
+
+ . (27) We claim (27) can imply 
+
+P (|v⊤Hi − v⊤∇h(xtl , t l)| ≥ t) ≤ 2 exp 
+
+(
+
+− t2
+
+8σ−2 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥22
+
+)
+
+.
+
+To check it, first consider t ≤ 2σ−1 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥2, and we have 
+
+2 exp 
+
+−
+
+max 
+
+(
+
+t − σ−1 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥2, 0
+
+)2
+
+2σ−2 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥22
+
+ ≥ 2e−1/2 ≥ 1,
+
+and 
+
+2 exp 
+
+(
+
+− t2
+
+8σ−2 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥22
+
+)
+
+≥ 2e−1/2 ≥ 1,
+
+23 so these two inequalities both are trivial. When t ≥ 2σ−1 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥2,
+
+2 exp 
+
+(
+
+− t2
+
+8σ−2 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥22
+
+)
+
+≥ 2 exp 
+
+−
+
+max 
+
+(
+
+t − σ−1 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥2, 0
+
+)2
+
+2σ−2 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥22
+
+ ,
+
+because t − σ−1 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥2 ≥ t 
+
+> 2
+
+. Then we can conclude 
+
+P (|v⊤Hi − v⊤∇h(xtl , t l)| ≥ t) ≤ 2 exp 
+
+(
+
+− t2
+
+8σ−2 
+
+> tl
+
+∥∇ xtl (μtl (xtl , s θ )) ∥22
+
+)
+
+.
+
+Then it implies for any k ∈ { 1, ..., d }, let ek = (0 , . . . , 0, 1, 0, . . . , 0) ⊤ ∈ Rd with the 1 in the k-th coordinate, it holds that 
+
+Var (e⊤ 
+
+> k
+
+(∇̂ h(xtl , t l) − ∇ h(xtl , t l)) ) = Var 
+
+(
+
+1
+
+M
+
+> M
+
+∑
+
+> i=1
+
+e⊤ 
+
+> k
+
+(Hi − ∇ h(xtl , t l)) 
+
+)
+
+≤ 1
+
+M Var( e⊤ 
+
+> k
+
+(Hi − ∇ h(xtl , t l))) 
+
+≤ 4∥∇ xtl (μtl (xtl , s θ )) ∥22
+
+σ2 
+
+> tl
+
+M .
+
+This leads to the upper bound of Ezmc [H1]
+
+Ezmc [H1] = 
+
+∫
+
+Ezmc 
+
+
+
+2
+
+∥∥∥∇̂ h(xtl , t l) − ∇ h(xtl , t l)
+
+∥∥∥22
+
+η2
+
+> tl
+
+ phθ,t l (xtl )d xtl
+
+=
+
+∫
+
+Ezmc 
+
+
+
+2 ∑dk=1 
+
+(
+
+e⊤ 
+
+> k
+
+(∇̂h(xtl , t l) − ∇ h(xtl , t l)) 
+
+)2
+
+η2
+
+> tl
+
+ phθ,t l (xtl )d xtl
+
+≤
+
+∫ 8d sup ∥∇ xtl (μtl (xtl , s θ )) ∥22
+
+η2 
+
+> tl
+
+σ2 
+
+> tl
+
+M phθ,t l (xtl )d xtl
+
+≤ 8dC 2
+
+> G
+
+η2 
+
+> tl
+
+σ2 
+
+> tl
+
+M .
+
+The last inequality holds due to Assumption 5.1 and sup xtl
+
+∥∇ xtl μtl (xtl , s θ )∥2 ≤ CG.
+
+Bounding Ezmc [H2] We first prove the concentration bound for ̂ h. Since ̂ h(xtl , t l) ∈ [0 , 1] , apply hoeffding’s inequality for bounded random variables yields, for any ε > 0,
+
+P(|̂h(xtl , t l) − h(xtl , t l)| ≥ ε) ≤ 2 exp ( − 2M ε 2).
+
+It implies 
+
+Ezmc [̂ h(xtl , t l) − h(xtl , t l)] 2 ≤ 14M . (28) Then we are ready to bound Ezmc [H2]
+
+Ezmc [H2] = Ezmc 
+
+[
+
+EXtl ∼Pθ,t l
+
+[
+
+4C2
+
+> G
+
+(h(Xtl , t l) −̂ h(Xtl , t l)) 2
+
+σ2 
+
+> tl
+
+η2 
+
+> tl
+
+ρ
+
+]] 
+
+.
+
+24 By (28), we have 
+
+Ezmc [H2] ≤ C2
+
+> G
+
+M σ 2 
+
+> tl
+
+η2 
+
+> tl
+
+ρ . (29) 
+
+Bounding |H 1 − Ezmc [H1]| We prove a high probability bound for |H 1 − Ezmc [H1]|.
+
+Lemma B.2 (High-probability bound) . For any δ ∈ (0 , 1) , letting 
+
+s = log 2Mδ , R2 = d + 2 √ds + 2 s, 
+
+we have P(Ω cR) ≤ δ/ 2 for the event 
+
+ΩR =
+
+{
+
+max  
+
+> 1≤i≤M
+
+∥z(i) 
+
+> l
+
+∥2 ≤ R
+
+}
+
+.
+
+Moreover, with probability at least 1 − δ,
+
+∣∣Ezmc [H1] − H 1
+
+∣∣ ≤√288 C2
+
+> G
+
+R2
+
+η2 
+
+> tl
+
+σ2
+
+> tl
+
+√ log(4 /δ )
+
+M + 24 dC 2
+
+> G
+
+η2 
+
+> tl
+
+σ2 
+
+> tl
+
+M .
+
+Proof. Using x(i) 
+
+> tl−1
+
+= μtl (xtl , s θ ) + σtl z(i) 
+
+> l
+
+, we have for each iHi = h(x(i)0 , 0) 1
+
+σtl
+
+∇xtl μtl (xtl , s θ ) z(i) 
+
+> l
+
+.
+
+Define ∆( xtl ) = ∇̂h(xtl , t l) − ∇ h(xtl , t l).Let 
+
+F = EXtl ∼P hθ,t l
+
+[∥∆( Xt)∥22
+
+], H1 = 2 η−2 
+
+> tl
+
+F. 
+
+Let z ∼ N (0 , I d). The standard χ2 tail bound yields for any s > 0:
+
+P
+
+(
+
+∥z∥22 ≥ d + 2 √ds + 2 s
+
+)
+
+≤ e−s.
+
+With s = log 2Mδ and R2 = d + 2 √ds + 2 s, a union bound gives 
+
+P(Ω cR) = P
+
+(
+
+max  
+
+> i≤M
+
+∥z(i) 
+
+> l
+
+∥2 > R 
+
+)
+
+≤
+
+> M
+
+∑
+
+> i=1
+
+P(∥z(i) 
+
+> l
+
+∥2 > R ) ≤ M e −s = δ
+
+2 .
+
+On ΩR, since ∥∇ xtl μtl (xtl , s θ )∥2 ≤ CG,
+
+∥Hi∥2 ≤ 1
+
+σtl
+
+∥∇ xtl μtl (xtl , s θ )∥2∥z(i) 
+
+> l
+
+∥2 ≤ CGRσtl
+
+, ∀ i. 
+
+Define B = CGRσtl
+
+, consequently, 
+
+∥∥∥ 1
+
+M
+
+> M
+
+∑
+
+> j=1
+
+Hj
+
+∥∥∥2 ≤ B, ∥∇ h(xtl , t l)∥ ≤ CG
+
+σtl
+
+≤ CG
+
+σtl
+
+R = B, ⇒ ∥∆( xtl )∥2 ≤ 2B, 
+
+all on ΩR.Now on ΩR, replace only the i-th MC randomness block {Z(i) 
+
+> j
+
+}lj=1 by an independent copy, yielding H′ 
+
+> i
+
+, F ′
+
+and 
+
+∆′(xtl ) = ∆( xtl ) + δ(xtl ), δ(xtl ) = 1
+
+M
+
+(H′ 
+
+> i
+
+− Hi
+
+).
+
+25 On ΩR (for both the original and the replaced samples), 
+
+∥δ(xtl )∥2 ≤ 1
+
+M
+
+(∥H′ 
+
+> i
+
+∥2 + ∥Hi∥2
+
+) ≤ 2BM .
+
+Using ∣∣∥a + b∥22 − ∥ a∥22
+
+∣∣ ≤ 2∥a∥2∥b∥2 + ∥b∥22 and ∥∆( xtl )∥ ≤ 2B, we get 
+
+∣∣∥∆′(xtl )∥22 − ∥ ∆( xtl )∥22
+
+∣∣ ≤ 2∥∆( xtl )∥2∥δ(xtl )∥2 + ∥δ(xtl )∥22 ≤ 2(2 B) 2BM +
+
+( 2BM
+
+)2
+
+≤ 12 B2
+
+M .
+
+Taking EXt preserves the bound, so on ΩR,
+
+|F − F (i)| ≤ ci, ci = 12 B2
+
+M .
+
+Conditional on ΩR = ⋂ 
+
+> 1≤i≤M
+
+{∥ z(i) 
+
+> l
+
+∥2 ≤ R}, {{ Z(m) 
+
+> i
+
+}li=1 }Mm=1 are still mutually independent, McDiarmid’s inequality gives for any ε > 0,
+
+P(|F − Ezmc [F |ΩR]| ≥ ε ∣∣ ΩR
+
+) ≤ 2 exp 
+
+(
+
+− 2ε2
+
+∑Mi=1 c2
+
+> i
+
+)
+
+.
+
+Since ∑Mi=1 c2 
+
+> i
+
+= M · (12 B2/M )2 = 144 B4/M , we obtain 
+
+P(|F − Ezmc [F |ΩR]| ≥ ε ∣∣ ΩR
+
+) ≤ 2 exp 
+
+(
+
+− M ε 2
+
+72 B4
+
+)
+
+.
+
+Set δ1 = δ/ 2 and choose 
+
+ε = B2
+
+√ 72 log(2 /δ 1)
+
+M = B2
+
+√ 72 log(4 /δ )
+
+M ,
+
+so that the RHS is at most δ1 = δ/ 2. Multiplying by 2η−2 
+
+> tl
+
+yields, 
+
+P(|H 1 − Ezmc [H1|ΩR]| ≥ 2η−2 
+
+> tl
+
+ε) ≤ P(|H 1 − Ezmc [H1|ΩR]| ≥ 2η−2 
+
+> tl
+
+ε|ΩR) + P(Ω cR)
+
+≤ δ
+
+2 + δ
+
+2= δ, 
+
+where 
+
+2η−2 
+
+> tl
+
+ε =
+
+√288 C2
+
+> G
+
+R2
+
+η2 
+
+> tl
+
+σ2
+
+> tl
+
+√ log(4 /δ )
+
+M .
+
+Since 
+
+∣∣Ezmc [H1|ΩR] − Ezmc [H1]∣∣ ≤ Ezmc [H1] + Ezmc [H1|ΩR] ≤
+
+(
+
+1 + 1
+
+P (Ω R)
+
+)
+
+Ezmc [H1] ≤ 3Ezmc [H1]
+
+On ΩR, by triangle inequality, 
+
+|H 1 − Ezmc [H1]| ≤ |H 1 − Ezmc [H1|ΩR]| + |Ezmc [H1|ΩR] − Ezmc [H1]|.
+
+Since Ezmc [H1] ≤ dC 2   
+
+> G
+> η2
+> tlσ2
+> tlM
+
+, then we can conclude, the following inequality holds with probability at least 1 − δ
+
+∣∣Ezmc [H1] − H 1
+
+∣∣ ≤ ∣∣Ezmc [H1|ΩR] − H 1
+
+∣∣ + ∣∣Ezmc [H1|ΩR] − Ezmc [H1]∣∣
+
+≤√288 C2
+
+> G
+
+R2
+
+η2 
+
+> tl
+
+σ2
+
+> tl
+
+√ log(4 /δ )
+
+M + 24 dC 2
+
+> G
+
+η2 
+
+> tl
+
+σ2 
+
+> tl
+
+M . (30) 26 Bounding |H 2 − Ezmc [H2]| with high probability. Define the constant CH2 = 4C2   
+
+> G
+> σ2
+> tlη2
+> tlρ
+
+, Then 
+
+H2 = CH2 EXtl ∼Pθ,t l
+
+[
+
+(h(Xtl , t l) −̂ h(Xtl , t l)) 2]
+
+.
+
+Lemma B.3 (McDiarmid concentration for H2). For any δ ∈ (0 , 1) , with probability at least 1 − δ over the MC randomness, 
+
+∣∣H2 − Ezmc [H2]∣∣ ≤ CH2
+
+3
+
+√2M
+
+√
+
+log 2
+
+δ = 12 C2
+
+> G
+
+σ2 
+
+> tl
+
+η2 
+
+> tl
+
+ρ
+
+√ log(2 /δ )2M .
+
+Proof. Introduce 
+
+Y (xtl ) = ̂ h(xtl , t l) − h(xtl , t l), ¯F = EXtl ∼Pθ,t l
+
+[Y (Xtl )2],
+
+so that H2 = CH2
+
+¯F .Fix an index i ∈ { 1, . . . , M } and consider replace only the i-th MC randomness block {Z(i) 
+
+> j
+
+}lj=1 by an independent copy, producing ̂ h′(xtl , t l), Y ′(xtl ) and ¯F ′. Define 
+
+∆( xtl ) = ̂ h′(xtl , t l) −̂ h(xtl , t l) = h(( x(i)0 )′, 0) − h(x(i)0 , 0) 
+
+M .
+
+Since h(( x(i)0 )′, 0) , h (x(i)0 , 0) ∈ [0 , 1] , we have for all xtl ,
+
+|∆( xtl )| ≤ 1
+
+M .
+
+Moreover, since ̂ h(xtl , t l) ∈ [0 , 1] and h(xtl , t l) ∈ [0 , 1] , it follows that 
+
+Y (xtl ) = ̂ h(xtl , t l) − h(xtl , t l) ∈ [−1, 1] , ⇒ |Y (xtl )| ≤ 1 for all xtl .
+
+Let Y ′(xtl ) = ̂ h′(xtl , t l) − h(xtl , t l) = Y (xtl ) + ∆( xtl ). Then we have 
+
+Y ′(xtl )2 − Y (xtl )2 = (Y (xtl ) + ∆( xtl ))2 − Y (xtl )2 = 2 Y (xtl )∆( xtl ) + ∆( xtl )2.
+
+Therefore, ∣∣Y ′(xtl )2 − Y (xtl )2∣∣ ≤ 2|Y (xtl )| | ∆( xtl )| + |∆( xtl )|2 ≤ 2 · 1 · 1
+
+M + 1
+
+M 2 ≤ 3
+
+M .
+
+Taking expectation over Xtl ∼ Pθ,t l preserves the bound, hence 
+
+| ¯F ′ − ¯F | =
+
+∣∣∣EXtl ∼Pθ,t l
+
+[Y ′(Xtl )2 − Y (Xtl )2]∣∣∣ ≤ EXtl ∼Pθ,t l
+
+∣∣Y ′(Xtl )2 − Y (Xtl )2∣∣ ≤ 3
+
+M .
+
+Thus ¯F satisfies bounded differences with constants ¯ci = 3 /M for all i. By McDiarmid’s inequality, for any 
+
+ε > 0,
+
+P
+
+(
+
+| ¯F − Ezmc [ ¯F ]| ≥ ε
+
+)
+
+≤ 2 exp 
+
+(
+
+− 2ε2
+
+∑Mi=1 ¯c2
+
+> i
+
+)
+
+.
+
+Since ∑Mi=1 ¯c2 
+
+> i
+
+= M · (3 /M )2 = 9 /M , we obtain 
+
+P
+
+(
+
+| ¯F − Ezmc [ ¯F ]| ≥ ε
+
+)
+
+≤ 2 exp 
+
+(
+
+− 2M
+
+9 ε2
+
+)
+
+.
+
+Because H2 = CH2
+
+¯F ,
+
+P
+
+(
+
+|H 2 − E[H2]| ≥ τ
+
+)
+
+= P
+
+(
+
+| ¯F − E[ ¯F ]| ≥ τ /C H2
+
+)
+
+≤ 2 exp 
+
+(
+
+− 2M
+
+9
+
+( τCH2
+
+)2)
+
+,
+
+which proves the tail bound. Setting the right-hand side equal to δ gives 
+
+|H 2 − E[H2]| ≤ CH2
+
+√ 92M log 2
+
+δ = 12 C2
+
+> G
+
+σ2 
+
+> tl
+
+η2 
+
+> tl
+
+ρ
+
+3
+
+√2M
+
+√
+
+log 2
+
+δ , (31) with probability at least 1 − δ, completing the proof. 27 Bounding H3 Set ηtl ≤ 1/e , by Lemma B.1 and Assumption 5.1, we have 
+
+H3 ≤
+
+∫ 
+
+> h(xtl,t l)≤ηtl
+
+8 sup xtl
+
+∥∇ tl μθ (xtl , s θ )∥2
+
+σ2
+
+> tl
+
+log 1
+
+h(xtl , t l)
+
+pθ,t l (xtl )h(xtl , t l)
+
+P(E ¯X0 ) dxtl
+
+≤
+
+∫ 
+
+> h(xtl,t l)≤ηtl
+
+8C2
+
+> G
+
+σ2
+
+> tl
+
+log 1
+
+ηtl
+
+pθ,t l (xtl )ηtl
+
+P(E ¯X0 ) dxtl
+
+≤ 8C2
+
+> G
+
+ηtl
+
+ρσ 2
+
+> tl
+
+log 1
+
+ηtl
+
+. (32) Putting all together, 
+
+EXtl ∼P hθ,t l
+
+[
+
+||∇ log ̂ h(Xtl , t l) − ∇ log h(Xtl , t l)|| 22
+
+]
+
+≤H 1 + H2 + H3
+
+≤H 3 + Ezmc [H1 + H2] + |H 1 − Ezmc [H1]| + |H 2 − Ezmc [H2]|≤ 8C2
+
+> G
+
+ηtl
+
+ρσ 2
+
+> tl
+
+log 1
+
+ηtl
+
++ 8dC 2
+
+> G
+
+η2 
+
+> tl
+
+σ2 
+
+> tl
+
+M + C2
+
+> G
+
+M σ 2 
+
+> tl
+
+η2 
+
+> tl
+
+ρ + |H 1 − Ezmc [H1]| + |H 2 − Ezmc [H2]|.
+
+By high probability bounds for |H 1 − Ezmc [H1]| and |H 2 − Ezmc [H2]| in (30) and (31) , the following inequality holds with probability at least 1 − 2δ,
+
+EXtl ∼P hθ,t l
+
+[
+
+||∇ log ̂ h(Xtl , t l) − ∇ log h(Xtl , t l)|| 22
+
+]
+
+≲ C2
+
+> G
+
+ηtl
+
+ρσ 2
+
+> tl
+
+log 1
+
+ηtl
+
++ dC 2
+
+> G
+
+η2 
+
+> tl
+
+σ2 
+
+> tl
+
+M + C2
+
+> G
+
+M σ 2 
+
+> tl
+
+η2 
+
+> tl
+
+ρ + C2
+
+> G
+
+σ2 
+
+> tl
+
+η2 
+
+> tl
+
+ρ
+
+√ log(2 /δ )
+
+M
+
++ C2
+
+> G
+
+R2
+
+η2 
+
+> tl
+
+σ2
+
+> tl
+
+√ log(4 /δ )
+
+M
+
+≲ ηtl
+
+σ2
+
+> tl
+
+log 1
+
+ηtl
+
++ 1
+
+η2 
+
+> tl
+
+σ2
+
+> tl
+
+(
+
+1
+
+M +
+
+√ log(2 /δ )
+
+M + log 2Mδ
+
+√ log(4 /δ )
+
+M
+
+)
+
+≲ ηtl
+
+σ2
+
+> tl
+
+log 1
+
+ηtl
+
++ 1
+
+η2 
+
+> tl
+
+σ2
+
+> tl
+
+(
+
+log 2Mδ
+
+√ log(4 /δ )
+
+M
+
+)
+
+.
+
+Here, M is sufficiently large to satisfy M ≥ CM , where CM depends on CG and other relevant constants. Choose ηtl = min ( 1  
+
+> M1/6
+
+, 1
+
+> e
+
+) = M −1/6, then 
+
+EXtl ∼P hθ,t l
+
+[
+
+||∇ log ̂ h(Xtl , t l) − ∇ log h(Xtl , t l)|| 22
+
+]
+
+≲ 1
+
+σ2 
+
+> tl
+
+M 1/6 log M + 1
+
+M 1/6σ2
+
+> tl
+
+(
+
+log 2Mδ
+
+√log(4 /δ )
+
+)
+
+≲ 1
+
+M 1/6σ2
+
+> tl
+
+(
+
+log Mδ
+
+√log(1 /δ )
+
+)
+
+holds with probability at least 1 − 2δ. It also imply 
+
+EXtl ∼P hθ,t l
+
+[
+
+||∇ log ̂ h(Xtl , t l) − ∇ log h(Xtl , t l)|| 22
+
+]
+
+= O
+
+(
+
+1
+
+σ2
+
+> tl
+
+log Mδ
+
+√log(1 /δ )
+
+M 1/6
+
+)
+
+holds with probability at least 1 − δ.28 B.4 Proof of Theorem 5.4 
+
+Proof. Since total variation satisfies the triangle inequality, we have 
+
+TV 
+
+(
+
+Pdata (·|E X0 ),̂ P hθ
+
+)
+
+≤ TV (Pdata (·|E X0 ), P θ (·|E ¯X0 )) + TV 
+
+(
+
+Pθ (·|E ¯X0 ),̂ P hθ
+
+)
+
+.
+
+The term TV (Pdata (·|E X0 ), P θ (·|E ¯X0 )) measures the modeling error between the ideal conditional data distribution and the conditional generated distribution, while TV 
+
+(
+
+Pθ (·|E ¯X0 ),̂ P hθ
+
+)
+
+measures the sampling error between the conditional generated distribution and the output distribution of DOIT .
+
+Bounding TV (Pdata (·|E X0 ), P θ (·|E ¯X0 )) Define hdata as the corresponding h-function defined by EX0 . By definition, EX0 are defined analogously by replacing ¯X0 with X0, then hdata (x, 0) = h(x, 0) .
+
+TV (Pdata (·|E X0 ), P θ (·|E ¯X0 )) = 12
+
+∫
+
+> x
+
+∣∣∣∣
+
+h(x, 0) pθ, 0(x)
+
+P(E ¯X0 ) − pdata (x)hdata (x, 0) 
+
+P(EX0 )
+
+∣∣∣∣ dx
+
+= 12 P(E ¯X0 )P(EX0 )
+
+∫
+
+> x
+
+h(x, 0) ∣∣pθ, 0(x)P(EX0 ) − pdata (x)P(E ¯X0 )∣∣ dx
+
+≤ 12 P(E ¯X0 )
+
+∫
+
+> x
+
+|pθ, 0(x) − pdata (x)| dx
+
++ 12 P(E ¯X0 )P(EX0 )
+
+∫ ∣∣P(E ¯X0 ) − P(EX0 )∣∣ h(x, 0) pdata (x)d x
+
+≲ 1
+
+ρ TV( Pdata , P θ ).
+
+Here pdata (x) is the density of Pdata .
+
+Bounding TV 
+
+(
+
+Pθ (·|E ¯X0 ),̂ P hθ
+
+)
+
+By definition, Pθ (·|E ¯X0 ) is the terminal distribution of (7), 
+
+d ¯Xht = [− 12 ¯Xht − sθ ( ¯Xhtl , t l) − ∇ log h( ¯Xht , t )] dt + d W t, (33) and ¯Xh 
+
+> 0
+
+∼ Pθ (·|E ¯X0 ).Meanwhile ̂ P hθ is the terminal distribution of the following SDE, 
+
+d ¯Xht =
+
+[
+
+− 12 ¯Xht − sθ ( ¯Xhtl , t l) − ∇ log ̂ h( ¯Xhtl , t l)
+
+]
+
+dt + d W t, (34) where ¯Xh 
+
+> 0
+
+∼̂ P hθ .We use Theorem 9 in [Chen et al., 2022] to bound TV 
+
+(
+
+Pθ (·|E ¯X0 ),̂ P hθ
+
+)
+
+. Firstly we check 
+
+> L
+
+∑
+
+> l=1
+
+E Phθ
+
+∫ tl
+
+> tl−1
+
+[
+
+∥∇ log ̂ h( ¯Xhtl , t l) − ∇ log h( ¯Xht , t )∥22
+
+]
+
+dt
+
+≤ 2
+
+> L
+
+∑
+
+> l=1
+
+E Phθ
+
+∫ tl
+
+> tl−1
+
+[∥∇ log h( ¯Xhtl , t l) − ∇ log h( ¯Xht , t )∥22
+
+] dt
+
++ 2 
+
+> L
+
+∑
+
+> l=1
+
+E Phθ
+
+∫ tl
+
+> tl−1
+
+[
+
+∥∇ log h( ¯Xhtl , t l) − ∇ log ̂ h( ¯Xhtl , t l)∥22
+
+]
+
+dt
+
+≲ εdis T + log LM δ
+
+√log( L/δ )
+
+M 1/6
+
+TL
+
+> L
+
+∑
+
+> l=1
+
+σ−2
+
+> tl
+
+29 < ∞
+
+holds with probability at 1 − δL L = 1 − δ by Lemma 5.2 (For each discretization index l ∈ { 1, . . . , L }, the MC approximation bound holds with probability at least 1 − δ/L ). Then using the same argument in Theorem 9 in [Chen et al., 2022], we can conclude 
+
+KL( Pθ (·|E ¯X0 ),̂ P hθ ) ≲ εdis T + log LM δ
+
+√log( L/δ )
+
+M 1/6
+
+TL
+
+> L
+
+∑
+
+> l=1
+
+σ−2
+
+> tl
+
+≲ εdis T + κσ log Mδ
+
+√log(1 /δ )
+
+M 1/6 ,
+
+where TL
+
+∑Ll=1 1/σ 2 
+
+> tl
+
+denotes as κσ . By Pinsker’s Inequality, 
+
+TV( Pθ (·|E ¯X0 ),̂ P hθ ) ≲
+
+√
+
+KL( Pθ (·|E ¯X0 ),̂ P hθ )
+
+≲
+
+√
+
+εdis T + κσ log Mδ
+
+√log(1 /δ )
+
+M 1/6
+
+holds with probability at 1 − δ.Then we can conclude 
+
+TV 
+
+(
+
+Pdata (·|E X0 ),̂ P hθ
+
+)
+
+≤ TV (Pdata (·|E X0 ), P θ (·|E ¯X0 )) + TV 
+
+(
+
+Pθ (·|E ¯X0 ),̂ P hθ
+
+)
+
+≲ 1
+
+ρ TV( Pdata , P θ ) + 
+
+√
+
+εdis T + κσ log Mδ
+
+√log(1 /δ )
+
+M 1/6 .
+
+B.5 Proof of Lemma B.1 
+
+Proof. By definition, h(xtl , t l) = ∫ h(xtl−1 , t l−1)ϕθ (xtl−1 |xtl )d xtl−1 .We define the reweighed distribution Qθ (Xtl−1 |Xtl ) with density qθ (xtl−1 |xtl ) = h(xtl−1 ,t l−1)ϕθ (xtl−1 |xtl )  
+
+> h(xtl,t l)
+
+, then we have 
+
+∇xtl log h(xtl , t l) = 
+
+∫ 1
+
+σ2
+
+> tl
+
+∇xtl (μtl (xtl , s θ ))( xtl−1 − μtl (xtl , s θ )) qθ (xtl−1 |xtl )d xtl−1
+
+= 1
+
+σ2
+
+> tl
+
+∇xtl (μtl (xtl , s θ )) 
+
+[
+
+EXtl−1 ∼Qθ (·| xtl )[Xtl−1 ] − μtl (xtl , s θ )
+
+]
+
+= 1
+
+σ2
+
+> tl
+
+∇xtl (μtl (xtl , s θ )) 
+
+[
+
+EXtl−1 ∼Qθ (·| xtl )[Xtl−1 ] − EXtl−1 ∼Φ( ·| xtl )[Xtl−1 ]
+
+]
+
+, (35) where Φ( ·| xt) is N (μtl (xtl , s θ ), σ 2 
+
+> tl
+
+I).It’s obvious that qθ ≪ ϕθ . By Talagrand’s transportation inequality [Talagrand, 1996, Djellout et al., 2004, Xie et al., 2025], we have 
+
+∥EXtl−1 ∼Qθ (·| xtl )[Xtl−1 ] − EXtl−1 ∼Φ( ·| xtl )[Xtl−1 ]∥22 ≤ W 22 (Qθ (·| xtl ), Φθ (·| xtl )) ≤ 2σ2 
+
+> tl
+
+KL( Qθ (·| xtl ), Φθ (·| xtl )) .
+
+(36) Now we turn to compute the KL divergence between Qθ (·| xtl ) and Φθ (·| xtl )KL( Qθ (·| xtl )|| Φθ (·| xtl )) = 
+
+∫
+
+qθ (xtl−1 |xtl ) log qθ (xtl−1 |xtl )
+
+ϕθ (xtl−1 |xtl ) dxtl−1
+
+30 =
+
+∫
+
+qθ (xtl−1 |xtl ) log h(xtl−1 , t l−1)
+
+h(xtl , t l) dxtl−1
+
+=
+
+∫
+
+qθ (xtl−1 |xtl )(log h(xtl−1 , t l−1) − log h(xtl , t l))d xtl−1
+
+≤ − log h(xtl , t l). (37) By combining (35), (36), (37), we can conclude 
+
+∥∇ xtl log h(xtl , t l)∥2 ≤ ∥∇ xtl (μtl (xtl , s θ )) ∥2
+
+σtl
+
+√
+
+2 log 1
+
+h(xtl , t l) .
+
+C Experimental Details and Additional Results 
+
+C.1 Formal Construction of the Conditioning Event E ¯X0
+
+In Section 6.1, we defined the terminal h-function as h(x, 0) ∝ exp (r(x)/τ ). Here, we rigorously define the event E ¯X0 that induces this function by invoking Lemma 3.2. The target distribution is defined via exponential tilting as q(x) ∝ pθ, 0(x) exp (r(x)/τ ). To satisfy the boundedness condition in Lemma 3.2, we identify the upper bound of the unnormalized density ratio: 
+
+q(x)
+
+pθ, 0(x) ∝ exp 
+
+( r(x)
+
+τ
+
+)
+
+≤ exp 
+
+( rmax 
+
+τ
+
+)
+
+= Cq ,
+
+where rmax ≥ sup x r(x). Following Lemma 3.2, we introduce an auxiliary variable U ∼ Unif (0 , 1) and define the event: 
+
+E ¯X0 =
+
+{
+
+U ≤ exp( r( ¯X0)/τ )
+
+Cq
+
+}
+
+=
+
+{
+
+U ≤ exp 
+
+( r( ¯X0) − rmax 
+
+τ
+
+)} 
+
+.
+
+The resulting h-function is then: 
+
+h(x, 0) = P(E ¯X0 | ¯X0 = x) = exp 
+
+( r(x) − rmax 
+
+τ
+
+)
+
+∝ exp 
+
+( r(x)
+
+τ
+
+)
+
+.
+
+This confirms that our choice of h-function corresponds to a valid conditioning event under the bounded reward assumption. 
+
+C.2 Experiments on Improving Aesthetic Scores 
+
+C.2.1 Experimental Setup 
+
+For the generation process, we utilize L = 20 diffusion steps, employing the Euler ancestral sampler [Karras et al., 2022]. To balance correction effectiveness with computational cost, Doob correction is applied only up to a cutoff timestep l∗ = 10 . The approximation of ∇ log h is performed using M = 32 Monte Carlo samples per step. 
+
+C.2.2 Ablation Study on τ and γ
+
+We conduct an ablation study to analyze the impact of the temperature parameter τ and the strength γ.Tables 4 through 8 detail the statistical summaries of the generated aesthetic scores (minimum, quantiles, mean, and maximum) across various (τ, γ ) configurations. 31 Figure 3: Comparison of dog images generated by Stable Diffusion v1.5 . The upper row displays samples from vanilla generation process, while the bottom row shows samples guided by DOIT using the aesthetic score as the reward. Our analysis reveals a trade-off between optimization intensity and stability. Specifically, the combination of a low temperature (small τ ) and high correction strength (large γ) results in aggressive optimization. However, overly aggressive settings (e.g., τ = 0 .2, γ = 12 ) can destabilize the mechanism, leading to potential collapse. Based on these empirical results, we identify a robust operating regime with τ ∈ [0 .3, 0.4] and γ ∈ [4 .0, 8.0] .It is important to note that these optimal hyperparameters are specific to the current configuration. Altering the base model or sampler (e.g., using DDIM with stochasticity parameter η > 0) or the reward feedback may shift the stability region, necessitating further hyperparameter tuning. Table 4: Minimum aesthetic score.                                                                                                                                                                    
+
+> Doob γ\τ0.2 0.3 0.4 0.5 0.0 5.688 ±0.142 5.688 ±0.142 5.688 ±0.142 5.688 ±0.142 1.0 5.728 ±0.242 5.763 ±0.116 5.733 ±0.128 5.736 ±0.137 2.0 5.646 ±0.417 5.740 ±0.238 5.752 ±0.152 5.741 ±0.140 3.0 5.782 ±0.414 5.856 ±0.227 5.760 ±0.245 5.791 ±0.167 4.0 5.665 ±0.345 5.757 ±0.256 5.804 ±0.218 5.794 ±0.185 5.0 5.004 ±0.316 5.821 ±0.226 5.877 ±0.195 5.836 ±0.263 6.0 4.432 ±0.159 5.921 ±0.137 5.893 ±0.176 5.847 ±0.247 7.0 3.856 ±0.469 5.661 ±0.416 5.870 ±0.170 5.907 ±0.188 8.0 3.717 ±0.239 5.480 ±0.495 5.868 ±0.209 5.840 ±0.134 9.0 3.094 ±0.607 5.392 ±0.177 5.971 ±0.096 5.901 ±0.159 10.0 3.188 ±0.216 4.389 ±0.148 5.837 ±0.052 5.638 ±0.324 11.0 3.296 ±0.238 4.264 ±0.465 5.763 ±0.045 5.967 ±0.073 12.0 2.967 ±0.137 4.157 ±0.239 5.250 ±0.351 5.948 ±0.106
+
+C.3 Experiments on Improving ImageReward with Reweighting and Resampling 
+
+Following Zhang et al. [2025b], we build upon the official codebases of FK-Steering [Singhal et al., 2025] and DAS [Kim et al., 2025] to implement our baselines and sampling routines. We evaluate performance using the standard ImageReward prompt set [Singhal et al., 2025], utilizing L = 100 total sampling steps and candidate set sizes of K ∈ { 4, 8}. The sampler used in this experiment is chosen as DDIM [Song et al., 2020a] with the stochasity parameter η = 1 .0. All results are reported as the mean and standard deviation over 4 independent trials. For baseline configurations, we strictly adhere to the settings reported in Zhang et al. [2025b], which replicate the original authors’ implementations; we do not perform additional tuning for these baselines. Specifically, 32 Table 5: First quartile (Q1) of aesthetic score. 
+
+Doob γ \ τ 0.2 0.3 0.4 0.5 0.0 6.157 ± 0.041 6.157 ± 0.041 6.157 ± 0.041 6.157 ± 0.041 1.0 6.200 ± 0.050 6.199 ± 0.038 6.193 ± 0.038 6.188 ± 0.034 2.0 6.270 ± 0.042 6.216 ± 0.040 6.209 ± 0.031 6.208 ± 0.026 3.0 6.368 ± 0.019 6.282 ± 0.022 6.244 ± 0.032 6.235 ± 0.037 4.0 6.433 ± 0.028 6.323 ± 0.017 6.272 ± 0.024 6.265 ± 0.031 5.0 6.252 ± 0.101 6.393 ± 0.008 6.311 ± 0.011 6.282 ± 0.015 6.0 5.816 ± 0.250 6.452 ± 0.028 6.361 ± 0.024 6.310 ± 0.012 7.0 5.400 ± 0.119 6.453 ± 0.032 6.371 ± 0.012 6.319 ± 0.030 8.0 4.920 ± 0.117 6.422 ± 0.036 6.452 ± 0.043 6.358 ± 0.011 9.0 4.691 ± 0.104 6.210 ± 0.142 6.451 ± 0.029 6.388 ± 0.028 10.0 4.385 ± 0.088 5.790 ± 0.223 6.484 ± 0.032 6.433 ± 0.049 11.0 4.300 ± 0.067 5.477 ± 0.103 6.408 ± 0.040 6.471 ± 0.035 12.0 3.989 ± 0.078 5.275 ± 0.144 6.255 ± 0.038 6.463 ± 0.032 
+
+Table 6: Mean aesthetic score. 
+
+Doob γ \ τ 0.2 0.3 0.4 0.5 0.0 6.357 ± 0.029 6.357 ± 0.029 6.357 ± 0.029 6.357 ± 0.029 1.0 6.452 ± 0.025 6.421 ± 0.025 6.403 ± 0.024 6.396 ± 0.026 2.0 6.525 ± 0.033 6.472 ± 0.023 6.453 ± 0.024 6.434 ± 0.024 3.0 6.600 ± 0.037 6.537 ± 0.028 6.490 ± 0.018 6.470 ± 0.023 4.0 6.645 ± 0.022 6.576 ± 0.033 6.520 ± 0.028 6.498 ± 0.018 5.0 6.476 ± 0.097 6.635 ± 0.036 6.569 ± 0.035 6.527 ± 0.023 6.0 6.098 ± 0.123 6.691 ± 0.041 6.611 ± 0.042 6.559 ± 0.037 7.0 5.736 ± 0.057 6.696 ± 0.077 6.652 ± 0.039 6.584 ± 0.035 8.0 5.351 ± 0.099 6.631 ± 0.057 6.691 ± 0.050 6.625 ± 0.036 9.0 5.042 ± 0.074 6.393 ± 0.089 6.702 ± 0.036 6.643 ± 0.042 10.0 4.823 ± 0.082 6.054 ± 0.079 6.695 ± 0.040 6.671 ± 0.041 11.0 4.698 ± 0.019 5.853 ± 0.062 6.596 ± 0.047 6.707 ± 0.036 12.0 4.440 ± 0.066 5.674 ± 0.067 6.442 ± 0.049 6.701 ± 0.036 
+
+Table 7: Third quartile (Q3) of aesthetic score. 
+
+Doob γ \ τ 0.2 0.3 0.4 0.5 0.0 6.560 ± 0.037 6.560 ± 0.037 6.560 ± 0.037 6.560 ± 0.037 1.0 6.674 ± 0.027 6.635 ± 0.031 6.617 ± 0.030 6.596 ± 0.047 2.0 6.787 ± 0.013 6.676 ± 0.023 6.655 ± 0.048 6.639 ± 0.051 3.0 6.798 ± 0.080 6.736 ± 0.039 6.691 ± 0.031 6.679 ± 0.057 4.0 6.852 ± 0.065 6.846 ± 0.070 6.728 ± 0.041 6.691 ± 0.035 5.0 6.810 ± 0.054 6.857 ± 0.028 6.831 ± 0.054 6.719 ± 0.038 6.0 6.536 ± 0.017 6.951 ± 0.039 6.852 ± 0.062 6.774 ± 0.034 7.0 6.208 ± 0.084 6.897 ± 0.071 6.908 ± 0.013 6.816 ± 0.054 8.0 5.860 ± 0.094 6.866 ± 0.062 6.925 ± 0.083 6.871 ± 0.059 9.0 5.514 ± 0.090 6.655 ± 0.078 6.980 ± 0.100 6.884 ± 0.057 10.0 5.290 ± 0.102 6.432 ± 0.070 6.950 ± 0.046 6.918 ± 0.101 11.0 5.097 ± 0.050 6.286 ± 0.069 6.838 ± 0.086 6.909 ± 0.084 12.0 4.907 ± 0.060 6.172 ± 0.060 6.732 ± 0.064 6.899 ± 0.027 
+
+33 Table 8: Maximum aesthetic score.                                                                                                                                                                    
+
+> Doob γ\τ0.2 0.3 0.4 0.5 0.0 7.028 ±0.091 7.028 ±0.091 7.028 ±0.091 7.028 ±0.091 1.0 7.161 ±0.139 7.125 ±0.148 7.085 ±0.111 7.078 ±0.115 2.0 7.291 ±0.219 7.197 ±0.185 7.164 ±0.161 7.111 ±0.165 3.0 7.363 ±0.192 7.296 ±0.147 7.185 ±0.169 7.183 ±0.179 4.0 7.292 ±0.073 7.338 ±0.187 7.251 ±0.112 7.241 ±0.156 5.0 7.299 ±0.125 7.385 ±0.170 7.323 ±0.133 7.288 ±0.162 6.0 6.966 ±0.122 7.326 ±0.156 7.320 ±0.185 7.331 ±0.210 7.0 6.649 ±0.154 7.407 ±0.222 7.371 ±0.161 7.302 ±0.169 8.0 6.699 ±0.054 7.310 ±0.094 7.498 ±0.301 7.333 ±0.161 9.0 6.446 ±0.065 7.131 ±0.185 7.463 ±0.292 7.299 ±0.153 10.0 6.210 ±0.547 6.936 ±0.093 7.273 ±0.147 7.387 ±0.064 11.0 5.835 ±0.069 6.850 ±0.151 7.336 ±0.081 7.314 ±0.131 12.0 5.516 ±0.075 6.852 ±0.025 7.179 ±0.181 7.317 ±0.175
+
+the BFS resampling schedule is defined by the interval L = [20 , 80] with a frequency of lfreq = 20 . We configure the BFS parameters as ΩBFS = (10 , Increase , Max , SSP ), corresponding to the search temperature, scoring method, buffer update strategy, and resampling algorithm, respectively. Regarding DOIT -specific hyperparameters, we employ M = 32 Monte Carlo samples, a cutoff time l∗ = 20 , a temperature τ = 0 .2, and a correction strength γ = 0 .8. Algorithm 3 details the complete integration of our proposed method with the BFS framework. 
+
+C.4 Offline RL Experiments 
+
+Setup. We adopt the experimental framework of Lu et al. [2023], utilizing their pre-trained diffusion policy and ground-truth Q-functions (as reward oracles). The diffusion model is conditioned on the state s to generate actions a, employing a L = 15 steps DDIM sampler. We evaluate our method on the D4RL locomotion benchmark [Fu et al., 2020], which spans three MuJoCo environments and three dataset compositions. Each environment represents a standard continuous-control task, while the datasets vary in the quality and diversity of the constituent trajectories. 
+
+Environments and Datasets. The specific tasks are defined as follows: 
+
+• HalfCheetah: A planar running task that rewards maximizing forward velocity. 
+
+• Hopper: A one-legged hopping task requiring balance and forward progress. 
+
+• Walker2d: A bipedal walking task rewarding stable forward locomotion. The datasets are categorized by the nature of the policy used for data collection: 
+
+• Medium-Expert: A mixture of expert-level and medium-level policies’ decision data. 
+
+• Medium: Decision data generated by a single medium-level policy. 
+
+• Medium-Replay: Diverse decision data generated by a large set of medium-level policies. 
+
+Hyperparameter Settings. To ensure a fair comparison, we align our evaluation protocol with Zhang et al. [2025b], using their codebase and hyperparameter search strategy for baseline methods. A key metric for fairness is the computational budget, particularly for methods involving test-time search (sampling K
+
+candidates and selecting the best-of-K). 34 Algorithm 3 DOIT + BFS Integration 
+
+Input: Pre-trained diffusion model sθ (x, t ); Doob correction strength γ; Monte Carlo samples M ;Time threshold l∗ ∈ [L]; Number of parallel trajectories K; Resampling interval L; Resampling frequency lfreq ;BFS parameters ΩBFS . 
+
+> 1:
+
+Initialize resampling scores {b(k)prev }Kk=1 . 
+
+> 2:
+
+Sample {x(k) 
+
+> tL
+
+}Kk=1 from N (0 , I ). 
+
+> 3:
+
+for l = L, L − 1, . . . , 1 do  
+
+> 4:
+
+if l ∈ L and (l (mod lfreq ) == 0) then  
+
+> 5:
+
+{x(k) 
+
+> tl
+
+}Kk=1 , {b(k)prev }Kk=1 ← BFS ({x(k) 
+
+> tl
+
+}Kk=1 ; Ω BFS ) 
+
+> 6:
+
+end if  
+
+> 7:
+
+for k = 1 , . . . , K do  
+
+> 8:
+
+if 1 < l ≤ l∗ then  
+
+> 9:
+
+Sample {x(m) 
+
+> tl−1
+
+}Mm=1 from N (μtl (xtl , s θ ), σ 2 
+
+> tl
+
+I). 
+
+> 10:
+
+Compute {̂x (m)0 }Mm=1 via (10).  
+
+> 11:
+
+Compute ∇ log ̂ h(x(k) 
+
+> tl
+
+, t l) in (9) via {̂x (m)0 }Mm=1 . 
+
+> 12:
+
+∇ log ̂p hθ (x(k) 
+
+> tl
+
+) ← sθ (x(k) 
+
+> tl
+
+, t l) + γ ∇ log ̂ h(x(k) 
+
+> tl
+
+, t l). 
+
+> 13:
+
+Sample xtl−1 from N (μ(xtl , ∇ log ̂p hθ ), σ 2 
+
+> tl
+
+I). 
+
+> 14:
+
+else  
+
+> 15:
+
+Sample xtl−1 from N (μ(xtl , s θ ), σ 2 
+
+> tl
+
+I). 
+
+> 16:
+
+end if  
+
+> 17:
+
+end for  
+
+> 18:
+
+end for  
+
+> 19:
+
+Return x0 = arg max k∈{ 1,...,K } r(x(k)0 ).Table 9: Hyperparameter settings for our method across datasets and environments. η denotes the DDIM stochasticity parameter, γ the Doob correction scale, τ the temperature, t⋆ the correction start timestep, and 
+
+K the number of candidate samples selected via best-of-K.
+
+Dataset Environment η γ τ t⋆ K
+
+Medium-Expert HalfCheetah 0.7 0.25 0.5 8 4Medium-Expert Hopper 0.8 0.25 0.7 4 4Medium-Expert Walker2d 0.4 0.5 0.4 10 8Medium HalfCheetah 0.2 0.25 0.5 10 4Medium Hopper 0.6 0.75 0.4 8 8Medium Walker2d 0.3 0.5 0.3 10 4Medium-Replay HalfCheetah 0.4 0.5 0.3 10 8Medium-Replay Hopper 0.2 0.5 0.5 6 4Medium-Replay Walker2d 0.2 0.25 0.7 8 8
+
+The baselines employ various resource-intensive strategies: TFG [Ye et al., 2024] allows up to 8 recurrence steps; SVDD [Li et al., 2024] employs up to K = 16 particles and M = 32 Monte Carlo candidates, selecting the optimal temperature α from the set {0.0, 0.1, . . . , 0.6}; DAS [Kim et al., 2025] uses K = 16 particles; and TTS [Zhang et al., 2025b] uses up to K = 4 particles combined with optimized correction strength and iterative & recurrence steps. To maintain a comparable computational budget, we configure our method with 
+
+M = 32 lookahead samples (for gradient estimation) and generate up to K = 8 final candidates. We note that unlike the baselines, our method does not require iterative recurrence or optimization steps during sampling. We perform a hyperparameter search over the following grids: correction strength γ ∈ { 0.25 , 0.5, 0.75 , 1},temperature τ ∈ { 0.3, 0.4, 0.5, 0.6, 0.7}, and cutoff time l∗ ∈ { 4, 6, 8, 10 }. Additionally, since DOIT and SVDD 35 rely on the variance of the transition kernel (which vanishes in deterministic sampling), we tune the DDIM stochasticity parameter η ∈ { 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8}. For fair comparison we evaluate our method on different seeds used for hyperparameter search. The optimal hyperparameters of DOIT for each task are reported in Table 9. 36
