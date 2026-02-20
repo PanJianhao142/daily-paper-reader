@@ -1,0 +1,741 @@
+Title: Conditional Flow Matching for Continuous Anomaly Detection in Autonomous Driving on a Manifold-Aware Spectral Space
+
+URL Source: https://arxiv.org/pdf/2602.17586v1
+
+Published Time: Fri, 20 Feb 2026 02:03:56 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# Conditional Flow Matching for Continuous Anomaly Detection in Autonomous Driving on a Manifold-Aware Spectral Space 
+
+Antonio Guillen-Perez 
+
+Independent Researcher 
+
+antonio_algaida@hotmail.com 
+
+antonioalgaida.github.io 
+
+Abstract 
+
+Safety validation for Level 4 autonomous vehicles (AVs) is currently bottlenecked by the inability to scale the detection of rare, high-risk “long-tail” scenarios us-ing traditional rule-based heuristics. We present Deep-Flow , an unsupervised framework for safety-critical anomaly detection that utilizes Optimal Transport Conditional Flow Matching (OT-CFM) to characterize the continuous probability density of expert human driving behavior. Unlike standard generative approaches that operate in unstable, high-dimensional coordinate spaces, Deep-Flow constrains the generative process to a low-rank spectral manifold via a Principal Component Analysis (PCA) bottleneck. This ensures kinematic smoothness by design and enables the computation of the exact Jacobian trace for numerically stable, deter-ministic log-likelihood estimation. To resolve multi-modal ambiguity at complex junctions, we utilize an Early Fusion Transformer encoder with lane-aware goal conditioning , featuring a direct skip-connection to the flow head to maintain intent-integrity throughout the network. Furthermore, we introduce a kinematic complexity weighting scheme that prioritizes high-energy maneuvers (quantified via path tortuosity and jerk) during the simulation-free training process. Evaluated on the Waymo Open Motion Dataset (WOMD), our framework achieves an 
+
+AUC-ROC of 0.766 against a heuristic golden set of safety-critical events. More significantly, our analysis reveals a fundamental distinction between kinematic dan-ger and semantic non-compliance . Deep-Flow identifies a critical “predictability gap” by surfacing out-of-distribution behaviors, such as lane-boundary violations and non-normative junction maneuvers, that traditional safety filters overlook. This work provides a mathematically rigorous foundation for defining statistical safety gates , enabling objective, data-driven validation for the safe deployment of autonomous fleets. Code and pre-trained checkpoints are available at https: //github.com/AntonioAlgaida/FlowMatchingTrajectoryAnomaly 
+
+1 Introduction 
+
+The deployment of Level 4 (L4) autonomous vehicles (AVs) hinges on the ability to provide rigorous safety argumentation for complex, high-dimensional operational design domains (ODDs). Traditional validation strategies, largely dependent on aggregate metrics such as miles per disengagement, are increasingly recognized as insufficient for capturing the “long-tail” of safety-critical events. To achieve the reliability required for commercial scale, the industry must transition toward automated, data-driven methods for surfacing “unknown unknowns”, scenarios that are kinematically feasible but semantically or socially out-of-distribution (OOD). Current safety validation pipelines rely heavily on rule-based heuristics, such as longitudinal de-celeration thresholds (e.g., a < −5.0 m/s 2) or Time-to-Collision (TTC) triggers. While effective  
+
+> arXiv:2602.17586v1 [cs.RO] 19 Feb 2026 Expert/Safe Anomalous/Unsafe Goal
+> Observation Space
+> Anomalous/Unsafe Expert/Safe Spectral Manifold Log-Likelihood Score
+> Expert/Safe Anomalous/Unsafe
+
+Figure 1: Overview of the Deep-Flow Framework. (Left) We observe an agent’s trajectory within a goal-conditioned context. While both safe (Blue) and anomalous (Orange) maneuvers may reach the same goal, they represent different densities on the driving manifold. (Center) Trajectories are projected into a low-rank spectral manifold where backward ODE integration ( t = 1 → 0) maps maneuvers to a Gaussian prior. (Right) Deep-Flow identifies safety-critical anomalies by mapping non-normative behaviors to the low-probability tails of the expert distribution, providing a continuous and mathematically rigorous safety score. for identifying obvious kinetic hazards, these methods are fundamentally brittle. They are blind to semantic anomalies , such as lane-boundary violations, illegal maneuvers, or aggressive social interactions that do not involve extreme braking. Furthermore, supervised learning approaches for anomaly detection are limited by the extreme scarcity of labeled incident data. This motivates a shift toward unsupervised generative modeling , where a system learns the continuous probability density function of expert human behavior. Under this paradigm, as illustrated in Fig. 1 , a safety violation is defined as a statistically rare deviation from the learned expert manifold. Existing generative architectures present significant trade-offs for safety validation. Autoregressive (AR) models, such as MotionLM [ 19 ], are prone to exposure bias and temporal drift over long planning horizons (e.g., 8 seconds), which can pollute the resulting likelihood scores with numerical artifacts. Conversely, while Diffusion models generate high-fidelity samples, they rely on stochastic differential equations that make exact log-likelihood estimation computationally prohibitive for large-scale fleet auditing. Variational Autoencoders (VAEs) offer tractable likelihoods but often suffer from posterior collapse , resulting in blurry, unimodal distributions that fail to resolve the complex multi-modality of urban driving. We propose Deep-Flow , a holistic generative framework for anomaly detection based on Optimal Transport Conditional Flow Matching (OT-CFM) [ 21 ]. Deep-Flow addresses the limitations of coordinate-space modeling by operating on a low-rank Spectral Manifold . By projecting trajectories into a whitened PCA coefficient space, we enforce kinematic smoothness by design and enable the stable computation of the exact Jacobian trace for deterministic likelihood estimation. To the best of our knowledge, this is the first framework to combine manifold-aware flow matching with topologically-grounded goal conditioning for AV safety validation. The primary contributions of this work are as follows: • Spectral Manifold Bottleneck: We demonstrate that regressing spectral coefficients rather than raw waypoints acts as a rigorous low-pass filter, ensuring that generated trajectories remain kinematically feasible and numerically stable for likelihood integration. • Lane-Aware Goal Conditioning: We introduce a skip-connection architecture that injects topological lane geometry directly into the flow head, resolving the multi-modal ambiguity inherent in complex junctions and roundabouts. 2• Kinematic Complexity Weighting: We propose a physics-informed importance sampling scheme based on path tortuosity and jerk energy, forcing the model to prioritize the learning of high-energy, safety-relevant maneuvers over routine cruising behavior. • Semantic Anomaly Discovery: We evaluate our framework on the Waymo Open Motion Dataset (WOMD), achieving an AUC-ROC of 0.766 and proving that Deep-Flow identifies a critical “predictability gap” by surfacing semantic violations that rule-based heuristics overlook. 
+
+2 Related Work 
+
+The validation of autonomous systems has evolved from deterministic replay to probabilistic density estimation. Our work situates itself at the intersection of high-fidelity motion forecasting, continuous generative modeling, and unsupervised OOD detection. 
+
+2.1 State-of-the-Art Motion Forecasting 
+
+Modern trajectory prediction has transitioned from anchor-based heuristics to scene-centric trans-former architectures. Early successes such as VectorNet [4] established the efficacy of vectorized scene representations. Recently, the field has been dominated by factorized attention mechanisms. For example, Wayformer [17 ] demonstrated the efficiency of early-fusion strategies, while the Motion Transformer (MTR) [ 20 ] and QCNet [ 24 ] utilized query-centric designs to capture the multi-modal nature of human intent. However, these discriminative models are fundamentally optimized for mode-seeking (Accuracy) rather than density estimation (Safety). As discussed in our previous work on offline policy learning [ 6], purely imitation-based objectives often yield policies that are brittle in closed-loop execution. While Offline RL methods, such as Conservative Q-Learning (CQL), can mitigate this via value-function regularization [ 7], they typically require extensive reward engineering. Deep-Flow addresses this by learning a multi-modal continuous safety manifold directly from expert data, providing a self-supervised density signal without manual reward specification. 
+
+2.2 Generative Modeling: From Diffusion to Flows 
+
+Generative modeling in robotics has seen a rapid paradigm shift. Variational Autoencoders (VAEs) and Generative Adversarial Networks (GANs) effectively pioneered stochastic prediction but suffered from posterior collapse and training instability, respectively. The introduction of Denoising Diffusion Probabilistic Models (DDPMs) [ 9 ] and Latent Diffusion Models [5] resolved these issues, enabling high-fidelity trajectory generation as seen in MotionDiffuser [13 ] and Guided Diffusion for planning [12]. However, Diffusion models rely on Stochastic Differential Equations (SDEs) that require iterative denoising, making the computation of exact log-likelihoods intractable for large-scale fleet auditing. Furthermore, stochastic trajectories in diffusion often lack kinematic smoothness without heavy post-processing. Conditional Flow Matching (CFM) [ 14 , 21 ] and Rectified Flows [ 15 ] have emerged as a superior alternative, defining a deterministic Ordinary Differential Equation (ODE) that maps noise to data in a one-to-one way. By utilizing Optimal Transport (OT) paths, CFM ensures straight-line trajectories in the probability flow, significantly reducing the numerical “stiffness” of the ODE solver. Deep-Flow leverages this property to enable exact likelihood computation via the instantaneous change of variables formula, a capability largely absent in current diffusion-based AV baselines. 
+
+2.3 Autoregressive vs. Holistic Representations 
+
+A prominent industry direction, exemplified by MotionLM [19] and DriveGPT [10], frames driving as a discrete token-sequence modeling task. These Autoregressive (AR) models leverage the scaling laws of Large Language Models (LLMs) to predict discretized waypoints. While AR models scale effectively, they fundamentally suffer from exposure bias . During inference, microscopic errors accumulate temporally, leading to “hallucinated physics” over long horizons 3(e.g., 8s). For safety validation, this temporal drift renders likelihood scores unreliable, as the joint probability of a trajectory tends to vanish as T → ∞ . Deep-Flow avoids this by adopting a Holistic 
+
+representation. By treating the trajectory as a single high-dimensional primitive on a spectral manifold (Sec 3.2), we avoid the product-rule instability of sequence models and ensure global kinematic consistency by design. 
+
+2.4 Unsupervised Anomaly Detection in Driving 
+
+Anomaly detection in AVs is typically divided into rule-based and reconstruction-based methods. Rule-based systems rely on predefined kinematic thresholds (TTC, jerk limits), which fail to capture semantic anomalies such as wrong-way driving. Reconstruction-based methods utilize Autoencoders to detect anomalies via high reconstruction error [ 2 ]. However, these models often suffer from the 
+
+generalization trap , where they successfully reconstruct simple anomalies, thereby failing to flag them. Semantic-front methods, such as the neuro-symbolic Semantic-Drive framework [ 8 ], where we utilize Vision-Language Models (VLMs) to ground open-vocabulary queries (e.g., “erratic jaywalking”). While effective for known categories, these methods are limited by textual descriptiveness. Deep-Flow operates as a pure One-Class Classifier , learning the manifold of expert driving exclusively. By utilizing the Jacobian trace of the flow field, we provide a mathematically rigorous density estimate that serves as a continuous, physics-aware safety gate. 
+
+3 Methodology 
+
+We propose Deep-Flow , an unsupervised generative framework designed for safety-critical anomaly detection in autonomous driving. Deep-Flow models the conditional probability density of expert human behavior as a Continuous Normalizing Flow (CNF). Unlike traditional discriminative ap-proaches that require labeled incident data, Deep-Flow learns the high-dimensional manifold of nominal behavior and identifies anomalies as statistically rare events. The architecture is composed of three interconnected modules: (i) a Goal-Conditioned Early Fusion Encoder for high-fidelity scene understanding; (ii) a Spectral Manifold Bottleneck that enforces kinematic feasibility; and (iii) a Conditional Flow Matching (CFM) head used for exact likelihood estimation. 
+
+3.1 Problem Formulation 
+
+We frame safety validation as an unsupervised OOD detection task. Let x ∈ RD represent an agent’s future trajectory over a fixed planning horizon (where D = T × 2), and let C represent the spatio-temporal scene context, including map topology, multi-agent history, and dynamic traffic light states. Our objective is to estimate the conditional probability density function p(x | C) derived from a large-scale dataset of expert human demonstrations D = {(xi, Ci)}Ni=1 .Following the principles of probabilistic safety validation, we define the anomaly score A as the negative log-likelihood (NLL) of an observed trajectory xobs conditioned on its environment: 
+
+A(xobs , C) = − log pθ (xobs | C) (1) In this formulation, A serves as a continuous, mathematically rigorous proxy for safety risk. High-likelihood regions correspond to maneuvers well-represented in the expert nominal distribution. Conversely, the low-probability “tails” of the distribution identify safety-critical events (such as near-misses, geometric violations, or erratic control) that deviate significantly from learned human norms. 
+
+Holistic vs. Autoregressive Modeling. State-of-the-art motion forecasting often relies on AR formulations [ 19 , 23 , 16 ], which decompose the joint density into a product of step-wise conditionals: 
+
+p(x | C) = QTt=1 p(xt | x<t , C). While effective for sequence prediction, AR approaches are inherently susceptible to exposure bias and temporal drift , where microscopic errors in the early steps of the horizon compound into macroscopic deviations. For safety validation, a drift of even one meter over an 8-second horizon can be the difference between a safe maneuver and a collision, making AR likelihoods noisy for OOD thresholding. Furthermore, 4the cumulative product of 80+ probabilities often leads to vanishing likelihoods and numerical instability. In contrast, Deep-Flow adopts a holistic generative approach via Flow Matching. By treating the entire trajectory as a single primitive on a low-dimensional manifold, we ensure global kinematic consistency and leverage the instantaneous change of variables formula (more information on 3.6). This allows us to compute an exact, numerically stable log-likelihood scalar that integrates the density along a continuous ODE path, providing a reliable signal for detecting complex, long-tail anomalies. 
+
+3.2 The Spectral Manifold Representation 
+
+A significant challenge in high-dimensional trajectory modeling ( x ∈ R160 for an 8-second horizon at 10Hz) is the presence of high-frequency artifacts and kinematically infeasible "jitter." While standard regression models rely on auxiliary loss terms to penalize jerk, we propose to enforce kinematic feasibility by design through a Spectral Manifold Bottleneck .Human driving behavior is intrinsically low-rank, constrained by non-holonomic 1 vehicle dynamics and second-order smoothness requirements. To exploit this structure, we project raw trajectory coordinates into a Spectral Coefficient Space using Principal Component Analysis (PCA). We derive an orthogonal basis B ∈ Rk×160 and a population mean μ from the expert demonstration set. Any observed or generated trajectory x is represented by a latent vector z ∈ Rk:
+
+z = W−1BT (x − μ) (2) where W = diag (σ1, . . . , σ k) is a whitening matrix containing the standard deviations of the principal components. This transformation serves three critical architectural purposes: 1. Implicit Kinematic Regularization: By selecting k = 12 components, we capture > 99% 
+
+of the dataset variance while effectively filtering out high-frequency sensor noise and measurement jitter. The top eigenvectors (“eigen-trajectories”) represent smooth geometric primitives (such as constant-velocity progress or sustained lateral curvature) ensuring that any linear combination remains C2 continuous. A visual representation of what each PC component captures can be seen in Appendix A. 2. Manifold Whitening: Normalizing by W ensures the target data distribution p1 is nearly isotropic ( N (0 , I)). This minimizes the transport cost in our Flow Matching objective by aligning the scale of the data manifold with the Gaussian prior p0, leading to significantly more stable vector field convergence. 3. Computational Tractability: Reducing the dimensionality from 160 to 12 allows for the computation of the exact Jacobian trace during inference (see Sec. 3.6), since the computational cost grows with the latent dimensionality k. With a small k, exact evaluation becomes tractable, avoiding the need for high-variance stochastic trace estimators (e.g., Hutchinson’s) required for high-dimensional flows, providing a precise and deterministic anomaly score. By shifting the generative task from predicting unstable waypoints to regressing stable maneuver coefficients , Deep-Flow focuses its capacity on the semantic intent of the agent rather than the microscopic details of the path. 
+
+3.3 Goal-Conditioned Scene Encoding 
+
+To process the heterogeneous spatio-temporal modalities, specifically dynamic agent histories and static vectorized map elements, we adopt an Early Fusion transformer architecture, as described in [ 17 ]. While hierarchical fusion strategies provide modality-specific processing, Early Fusion enables the model to learn complex cross-modal dependencies (e.g., the influence of a specific stop-line on an agent’s deceleration profile) at the earliest stages of the network, which is critical for high-fidelity density estimation. 
+
+Goal-Lane Conditioning. A primary failure mode in probabilistic trajectory modeling is multi-modal ambiguity at decision points, such as intersections. To resolve this for safety validation, we explicitly 
+
+> 1Nonholonomic systems have constraints on their velocities that cannot be reduced to constraints on position. For example, a car cannot move sideways; its motion is restricted to directions aligned with its heading.
+
+5Agent History ( Ha)    
+
+> [32x11x10]
+> Vector Map ( M)
+> [256x20x7]
+> Goal ( G)
+> [Point + Lane]
+> (x, y, v x, v y, ψ, L, W, types) (x, y, z, type, TL-state)
+> AGENT ENCODER
+> 1D-Temporal MLP
+> MAP ENCODER
+> PointNet
+> GOAL ENCODER
+> MLP
+> Agent tokens
+> [32x256]
+> Map tokens
+> [256x256]
+> Goal token
+> [1x256]
+> Early Fusion Sequence S
+> [289, 256]
+> 4 x Transformer Encoder Layer (8 heads) Ego-Centric Cross Attention
+> Query (Agent 0) Key/Values (Neighbors)
+> Time Embedding PE(t)
+> [64]
+> Noisy Latent (z t)
+> [12]
+> Concat
+> SPATIO TEMPORAL CONTEXT MODALITY-SPECIFIC TOKENIZATION GLOBAL SCENE REASONING
+> 5 x Residual MLP
+> MANIFOLD FLOW HEAD Fused Context [256]
+> vθ(z t,t,C)
+> [12]
+> Intent-Preserving Skip Connection
+> Vector Field in PCA-12 Manifold
+
+Figure 2: Deep-Flow Encoder Architecture. Heterogeneous modalities are tokenized and fused via a Hierarchical Transformer. The Goal signal is injected twice: once in the global context and once as a direct skip-connection to the Flow Head to preserve intent-integrity. condition the probability density on a semantic intent . We extract the lane centerline polyline closest to the agent’s final observed position, denoted as glane ∈ R20 ×2. This topological feature serves as a “guide rail” for the generative flow, narrowing the manifold to behaviors consistent with a specific navigation goal. The encoder architecture (Fig. 2) proceeds through four distinct stages: 1. Modality-Specific Tokenization: We use distinct MLP-based encoders to project raw features into a shared latent space D = 256 . For agents, the temporal history is flattened into a single social token to capture kinematic trends. For map polylines, we utilize a symmetric 
+
+PointNet -style encoder (Linear layer followed by Max-Pooling) to ensure permutation invariance across the points of the polyline, making the representation robust to the direction of lane indexing. 2. Global Context Fusion: The Modality tokens are concatenated with a learned Goal Embed-ding to form a unified sequence S ∈ R(Nagents +Nmap +1) ×D . This sequence is processed by a 4-layer Transformer Encoder using Pre-Norm blocks and GELU activations for improved gradient stability. 3. Ego-Centric Cross-Attention: Rather than using a global average of the scene, we utilize a Cross-Attention mechanism where the Ego-agent token ( Agent 0) acts as the Query to pool relevant features from the global sequence. Unlike full self-attention, which weights all interactions equally, this query-based approach allows the model to perform spatial filtering .It forces the network to ignore distant, irrelevant agents and focus capacity on the specific map topology and neighbors that physically constrain the Ego’s manifold. 4. The Direct Intent Skip-Connection: In deep transformers, conditioning signals (like the Goal) can suffer from signal dilution as they pass through multiple attention layers. To maintain the integrity of the navigation target, the Goal Embedding is bypassed via a direct skip-connection and concatenated to the Transformer output before entering the Flow Head. 6This ensures that the learned vector field vθ is explicitly and strongly anchored to the goal coordinates, preventing mode dispersion and ensuring the flow converges tightly on the intended destination. 
+
+3.4 Optimal Transport Conditional Flow Matching 
+
+We utilize Conditional Flow Matching (CFM) [ 14 , 21 ] to learn a time-dependent vector field 
+
+vθ (z, t, C) that defines a bijective mapping between a simple Gaussian prior p0 = N (0 , I) and the complex distribution of expert spectral coefficients p1. Unlike Diffusion models that rely on stochastic differential equations (SDEs), CFM enables simulation-free training of Continuous Normalizing Flows (CNFs), leading to more stable convergence and highly efficient inference. 
+
+Probability Paths and Optimal Transport. We define a conditional probability path pt(z) that interpolates between noise and data. To ensure the most efficient transport of probability mass, we adopt the Optimal Transport (OT) displacement map. This path corresponds to the W2 (2-Wasserstein 2) geodesic, which defines a linear, constant-velocity trajectory between a noise sample 
+
+z0 and an expert sample z1:
+
+ψt(z) = (1 − (1 − σmin )t)z0 + tz1 (3) where σmin = 10 −4 is a small stability constant that ensures the conditional density remains well-defined at t = 0 .
+
+Vector Field Regression. The corresponding target velocity field ut(z | z1) for this OT path is notably simple and time-independent: ut(z | z1) = z1 − (1 − σmin )z0. The generative model vθ is trained to regress this target velocity conditioned on the scene context C (from Sec 3.3). The training objective is formulated as the expectation over the path: 
+
+LCFM = Et∼U [0 ,1] ,z0∼p0,z1∼p1
+
+h
+
+∥vθ (ψt(z0), t, C) − (z1 − (1 − σmin )z0)∥2i
+
+(4) By minimizing this objective, vθ learns to approximate the score-front of the expert distribution. The 
+
+straight-line trajectories inherent to OT-CFM provide a significant engineering advantage: they are easier for ODE solvers to integrate than the curved paths produced by standard Diffusion or Flow-based methods. This reduced curvature results in a more stable Jacobian 3 during backward integration, which is paramount for the numerical accuracy of our log-likelihood safety metric. 
+
+3.5 Kinematic Complexity and Manifold Grounding 
+
+A persistent failure mode in large-scale trajectory learning is the dominance of nominal, constant-velocity regimes (e.g., highway cruising), which causes the model to underfit the “long-tail” of safety-critical maneuvers. To mitigate this dataset imbalance and ensure high-fidelity learning of rare maneuvers, we propose a Kinematic Complexity Weighting scheme combined with a Hybrid Manifold-Physical loss. 
+
+Importance Sampling via Differential Geometry. We dynamically weight the contribution of each sample i to the gradient based on its geometric and dynamic complexity. Drawing inspiration from 
+
+importance sampling strategies used to handle imbalanced behavioral distributions [ 1, 22 ], we define a complexity weight wi:
+
+wi =
+
+R T 
+
+> 0
+
+∥ ˙xt∥dt 
+
+∥xT − x0∥
+
+!| {z } 
+
+> Tortuosity τ
+
+× exp α
+
+Z T
+
+> 0
+
+∥ ... 
+
+x t∥2dt 
+
+!! | {z } 
+
+> Jerk Energy J
+
+(5) where τ is the ratio of path length to net displacement (identifying non-linear maneuvers like roundabouts or U-turns) and J is the integrated squared jerk (identifying high-energy interactions such as emergency braking or evasive swerving). This weighting forces the vector field vθ to prioritize 
+
+> 2The 2-Wasserstein distance measures the minimum expected squared Euclidean distance required to transport mass from one distribution to another; its geodesics correspond to linear interpolation between samples.
+> 3The Jacobian of the transformation describes how local volumes change under the flow, and its trace determines the change in log-density along the trajectory.
+
+7the nuanced control inputs required for rare maneuvers over the trivial interpolation of straight-line driving. 
+
+Euclidean Grounding. While the CFM objective (Eq. 4) operates in the spectral coefficient space z ∈ Rk, small numerical errors in the latent manifold can translate into significant Average Displacement Error (ADE) in the physical world, particularly at the trajectory horizons. To ensure the learned manifold remains physically grounded , we introduce a secondary reconstruction loss in Euclidean coordinates. We map the predicted latent velocity vθ back to the coordinate space using the fixed PCA basis B
+
+and mean μ (defined in Sec 3.2). The total multi-objective loss is formulated as: 
+
+Ltotal = 1
+
+B
+
+> B
+
+X
+
+> i=1
+
+¯wi
+
+LCFM + λ
+
+vuut 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+∥ˆxi,t − xi,t ∥2
+
+ (6) where ¯wi are batch-normalized weights to prevent gradient explosion, and λ is a balancing coefficient. We specifically utilize the Root Mean Squared Error (RMSE) for the coordinate term to maintain linear units (meters) relative to the quadratic flow loss, preventing either term from dominating the optimization landscape. This hybrid approach ensures that Deep-Flow is not only probabilistically sound in the latent space but also geometrically precise in the real-world ODD. 
+
+3.6 Likelihood Estimation and Inference 
+
+To transform the learned vector field vθ into a safety-critical metric, we perform unsupervised anomaly detection by computing the exact log-likelihood of observed trajectories. Unlike discrete normalizing flows that rely on the determinant of a Jacobian, CNFs allow us to evaluate the probability density by integrating the local expansion and contraction of the manifold along the flow. 
+
+Probability Mass Conservation and the Continuity Equation. The evolution of a probability density p(z, t ) under a vector field v is governed by the continuity equation (or Liouville’s equation in statistical mechanics): 
+
+∂p (z, t )
+
+∂t = −div (p(z, t )v) (7) By applying the log-derivative trick, we obtain the instantaneous change of variables formula ,which defines the rate of change of the log-probability for a particle zt moving along the ODE: 
+
+d log p(zt, t )
+
+dt = −Tr 
+
+ ∂vθ (zt, t, C)
+
+∂zt
+
+
+
+(8) where the Trace of the Jacobian ( Tr (J)) represents the divergence of the flow. Intuitively, the divergence measures how the vector field locally expands or contracts the space as trajectories evolve over time. A positive divergence indicates that nearby trajectories are moving away from each other, meaning that the flow is expanding the volume around that region. As the same probability mass is distributed over a larger volume, the local density decreases, resulting in a lower likelihood for any observation passing through that region. In other words, the model considers such regions less probable under the learned data distribution. In contrast, a negative divergence indicates that trajectories are converging, meaning that the flow is 
+
+contracting the space. This concentrates probability mass into a smaller volume, increasing the local density and therefore the likelihood of trajectories that pass through that region. From a dynamical perspective, regions of contraction correspond to high-density manifolds learned from the data, where typical trajectories tend to lie, while regions of expansion correspond to low-density or uncertain areas that the model has not frequently observed. As a result, trajectories that consistently pass through expanding regions accumulate a lower overall likelihood and are identified as anomalous. 
+
+Exact Trace Computation. A critical advantage of our Spectral Manifold Bottleneck (Sec. 3.2) is the reduction of the latent space to k = 12 dimensions. In high-dimensional flows, computing the divergence term is computationally prohibitive, typically requiring stochastic approximations 8like Hutchinson’s Trace Estimator [ 11 ], which introduces sampling variance into the anomaly score. Because Deep-Flow operates in a low-rank subspace ( k = 12 ), we can compute the exact Jacobian trace efficiently using automatic differentiation: Tr (∇zvθ ) = 
+
+> k
+
+X
+
+> j=1
+
+∂v θ,j 
+
+∂z t,j 
+
+(9) We evaluate the total log-likelihood by solving the ODE backwards from the observation z1 (t = 1 )to the prior noise z0 (t = 0 ): 
+
+log p(z1 | C) = log p0(z0) −
+
+Z 10
+
+Tr (∇zt vθ ) dt (10) We implement this via a fixed-step Runge-Kutta 4 (RK4) [ 18 ] integrator. The resulting log-likelihood is deterministic and numerically stable, providing a high-fidelity signal for the detection of OOD behaviors. Scenarios that land in the tails of the Gaussian prior p0 or traverse regions of high flow divergence are assigned a high anomaly score A = − log p(z1 | C).
+
+4 Experimental Setup 
+
+We evaluate Deep-Flow using the Waymo Open Motion Dataset (WOMD) [ 3] to verify its efficacy in characterizing safety-critical anomalies. Our experimental design prioritizes high-fidelity scene representation and rigorous hardware-aware optimization to ensure scalable training and deterministic inference. 
+
+4.1 Data Curation and Representation 
+
+WOMD provides a diverse corpus of urban and suburban driving logs. From the raw protobuf segments, we extract a training set of 250,000 scenarios and a validation set of 8,856 scenarios, maintaining a consistent sampling frequency of 10Hz. 
+
+Ego-Centric Normalization: To ensure the learned vector field is translation and rotation invariant, all scenarios are transformed into a canonical ego-centric frame at the anchor time t = 10 (1.1s into the log). The ego-vehicle is positioned at (0 , 0) facing the positive x-axis. All coordinates are normalized by a fixed scale factor of 50.0 meters to maintain numerical stability during ODE integration. 
+
+Unified Multi-Modal Representation. The scene context C is represented as a spatio-temporal graph: • Dynamic Agents: We select the 32 nearest neighbors relative to the ego-vehicle. Features include 2D position, velocity, heading, object dimensions, and type of agent (vehicle, bicycle, pedestrian, etc.) • Vectorized Map: We query the 256 nearest map polylines (lane centers, road edges, and crosswalks), each subsampled to 20 vertices. • Signal-to-Geometry Binding: Unlike models that treat traffic lights as global features, we perform spatial binding by appending the one-hot encoded signal state (Red, Yellow, Green) directly to the coordinate features of the lane center polyline it controls. This provides a local, topologically grounded context for regulatory compliance. 
+
+4.2 The “Golden Test Set” for Safety Validation 
+
+A primary challenge in unsupervised anomaly detection is the lack of explicit labels for the “long-tail.” To quantitatively evaluate Deep-Flow, we curate a Golden Test Set of known safety-critical events by mining the validation logs using two high-confidence kinematic heuristics: 1. Extreme Deceleration: Any scenario where the Ego-vehicle or a primary agent exhibits a longitudinal acceleration a < −5.0 m/s 2, signaling emergency braking. 2. Dynamic Instability: Any scenario where the yaw rate exceeds 1.5 rad/s , indicating a sudden swerve or loss of control. 9This heuristically-mined subset serves as the ground-truth positive class for our AUC-ROC evaluation, allowing us to quantify the alignment between the learned probability density and physical hazard metrics. 
+
+4.3 Implementation Details 
+
+Deep-Flow is implemented in PyTorch and trained on a single NVIDIA GeForce RTX 3090 (24GB VRAM), Intel i5-13600K, and 64GB RAM. Network Architecture: The Scene Encoder utilizes a 4-layer Transformer with 8 attention heads and a hidden dimension of 256. The Flow Head is a Residual MLP with 5 blocks and a hidden dimension of 1024. We found that increasing the head width was critical to handle the high-information density of the skip-conditioned goal lane. 
+
+Training Protocol: We train the model for 80 epochs using the AdamW optimizer with a batch size of 256, optimized for 24GB of VRAM. We employ a Cosine Annealing learning rate scheduler starting at 5 × 10 −4 with a weight decay of 10 −2.
+
+Numerical Stability: To prevent gradient explosions common in Flow Matching and Transformers, we apply global gradient clipping at a norm of 1.0. All experiments are conducted in FP32 precision to ensure the accuracy of the Jacobian trace calculations. 
+
+Engineering Optimizations: To maximize GPU utilization and bypass the WSL2 file-system bottleneck, we implemented a Parallel Eager Loader . This system pre-processes and caches the dataset into system RAM (64GB) as a list of lightweight NumPy tuples during initialization. This reduced epoch time from 15 minutes to under 3 minutes, maintaining > 95% GPU utilization throughout the training run. 
+
+Inference: Likelihood estimation is performed using a fixed-step Runge-Kutta 4 (RK4) integrator with 20 steps. We calculate the exact trace of the Jacobian for the 12-dimensional manifold, ensuring a precise and deterministic anomaly score. 
+
+5 Results 
+
+We evaluate Deep-Flow based on its ability to assign physically meaningful likelihoods to complex maneuvers and its performance in identifying safety-critical outliers in an unsupervised manner. 
+
+5.1 Quantitative Performance: Anomaly Detection 
+
+The primary metric for our framework is the alignment between the negative log-likelihood (NLL) and real-world safety risk. We evaluate this using the Area Under the Receiver Operating Characteristic curve (AUC-ROC) against our “Golden Test Set” (see Sec 4). 
+
+Benchmark Results. Deep-Flow achieves an AUC-ROC of 0.766 . Considering that the model is trained entirely on nominal expert data without exposure to collision labels, this score demonstrates a strong correlation between spectral manifold density and kinematic safety. As shown in Tab. 1, Deep-Flow significantly outperforms a random baseline and provides a more continuous, nuanced risk signal than discrete kinematic thresholds. The likelihood distribution (Fig. 4) reveals a revealing mode-suppression phenomenon. Nominal driving behavior exhibits a distinct bimodal structure: a high-certainty mode at LL ≈ 165 (trivial maneuvers) and a high-entropy mode at LL ≈ 55 (complex urban interactions). Crucially, critical safety events are strictly excluded from the high-certainty regime. This identifies a mathematical “Safety Ceiling”: while safe driving can be low-probability, safety-critical events are physically prevented from entering the high-likelihood manifold. This allows for the construction of rigorous “Safety Gates” for autonomous deployment. Crucially, critical safety events are strictly excluded from the high-certainty regime, as indicated by the zero density of the red distribution for LL > 130 . Instead, anomalies are concentrated at LL ≈ 50 ,exhibiting a significant leftward shift relative to the nominal high-entropy mode. This demonstrates that Deep-Flow identifies a “Safety Ceiling”; while safe driving can be complex and low-probability, safety-critical events are mathematically prevented from entering the high-likelihood manifold of expert behavior. This structural separation provides a robust foundation for threshold-based safety monitoring. 10 Table 1: Anomaly Detection Performance on WOMD Validation Set. 
+
+Method Modality AUC-ROC Random Guessing N/A 0.500 Kinematic Heuristic (Hard Brake) Discriminative 0.682 
+
+Deep-Flow (Ours) Generative (Holistic) 0.766 0.0 0.2 0.4 0.6 0.8 1.0 
+
+> False Positive Rate
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> True Positive Rate
+> ROC Curve: Detecting Safety Critical Events
+> Deep-Flow (AUC = 0.766)
+
+Figure 3: ROC Analysis. Deep-Flow provides a more reliable signal for long-tail event detection than discrete heuristics. 0 50 100 150 200 
+
+> Log-Likelihood (Higher = Safer)
+> 0.000
+> 0.005
+> 0.010
+> 0.015
+> 0.020
+> 0.025
+> 0.030
+> Density
+> Likelihood Distribution: Normal vs. Anomaly
+> Normal Driving
+> Critical Events
+
+Figure 4: Likelihood Distribution Analysis. 
+
+The KDE plot illustrates a clear separation be-tween nominal and critical regimes. Nomi-nal driving (Blue) is bimodal, capturing both high-certainty and complex maneuvers. Crit-ical events (Red) are notably absent from the high-likelihood mode, demonstrating that safety-critical anomalies are fundamentally restricted to the low-probability tails of the expert manifold. 
+
+Flow-Coordinate Balance. We observed that the equilibrium between the Flow Matching Loss 
+
+(Lflow ) and the Coordinate RMSE (Lcoord ) is vital. With λ = 0 .1, the model maintains high spectral fidelity (Flow Loss ≈ 0.03 ) while ensuring physical grounding (RMSE ≈ 1.6m). This balance prevents the model from collapsing into a deterministic regression head, preserving the probabilistic “spread” necessary for accurate density estimation. 
+
+5.2 Qualitative Analysis: The Discovery Engine 
+
+The most significant utility of Deep-Flow is its ability to perform Anomaly Discovery , identifying scenarios that are geometrically or socially unusual but do not trigger simple kinematic rules. 
+
+Latent Flow Dynamics. In Fig. 5, we visualize the backward integration process in the P C 1-P C 2
+
+plane. For nominal scenarios (Fig. 5 (a) left), the trajectory follows the streamlines of the vector field, landing in the high-density Gaussian prior. In contrast, anomalous scenarios (Fig. 5 (b) right) exhibit "Flow Resistance," where the driver’s actions contradict the learned manifold. This forces the ODE solver into the low-probability tails ( > 5σ), resulting in a sharp drop in likelihood. 
+
+Discovery of “Hidden” Anomalies. In Fig. 5b, we map these latent dynamics back to the physical world. Visual inspection of high-NLL scenarios that were missed by our heuristic baseline revealed critical behaviors such as: • Geometric Violations: Vehicles performing illegal U-turns or crossing double-yellow lines to reach a goal. • Social Near-Misses: Aggressive cut-ins where the vehicle maintains speed but violates the safety envelope of a neighbor, creating a low-probability interaction on the manifold. Deep-Flow thus acts as a high-precision filter for massive unlabelled datasets, surfacing the most relevant 0.1% of logs for safety triage. 11 6 4 2 0 2 4 6          
+
+> PC1: Speed (Var: 95%)
+> 6
+> 4
+> 2
+> 0
+> 2
+> 4
+> 6
+> PC2: Steering (Var: 4%)
+> A. Normal Scenario (LL: 90.10)
+> High Probability Flow
+> Observation ( t= 1)
+> Backward Flow
+> Latent ( t= 0)
+> Prior 2
+> 6420246
+> PC1: Speed
+> 6
+> 4
+> 2
+> 0
+> 2
+> 4
+> 6
+> B. Anomalous Scenario (LL: 15.95)
+> Out-of-Distribution Flow
+> Observation ( t= 1)
+> Backward Flow
+> Latent ( t= 0)
+> Prior 2
+
+(a) Latent flow dynamics: Nominal integration (Left) vs. Anomalous integration (Right). 60 40 20 0 20 40 60         
+
+> 60
+> 40
+> 20
+> 0
+> 20
+> 40
+> 60
+> Normal Scenario (Physical)
+> ID: 75df20459fd8ce13
+> Actual Path ( xGT )
+> Conditioned Goal
+> 100 75 50 25 025 50 75 100
+> 100
+> 75
+> 50
+> 25
+> 0
+> 25
+> 50
+> 75
+> 100
+> Anomalous Scenario (Physical)
+> ID: 6307508426e85026
+> Actual Path ( xGT )
+> Conditioned Goal
+
+(b) Corresponding physical scenarios: The model’s expected manifold (Cyan) vs. the actual path (Red). 
+
+Figure 5: Latent Flow Dynamics and Physical Grounding. (a) In the spectral latent space, nominal trajectories align with the vector field to reach high-density regions, while anomalies “fight” the flow. (b) Deep-Flow identifies semantic violations: the anomalous scenario shows the actual path (Red) deviating from the learned expert manifold (Cyan), signifying an OOD event. 
+
+5.3 Ablation Studies The Role of Spectral Rank (k=6 vs. k=12). We initially utilized 6 PCA components ( > 95% 
+
+variance). However, we observed "corner-cutting" artifacts in roundabouts and sharp unprotected left turns. Increasing the manifold rank to k = 12 (> 99% variance) provided the necessary geometric vocabulary to represent high-curvature maneuvers accurately, reducing the coordinate RMSE by 15% in complex urban intersections. 
+
+Impact of Goal-Lane Conditioning. Without explicit goal-lane conditioning, the model suffered from modal dispersion at decision points. As shown in our qualitative tests, the unconditioned flow produces a "fan" of possible paths, leading to high aleatoric uncertainty. Injecting the goal-lane via the skip-connection (Sec 3.3) collapses the distribution onto the intended manifold, ensuring that low likelihoods reflect execution risk rather than simple intent ambiguity .
+
+Kinematic Complexity Weighting. We compared models trained with and without our importance sampling scheme (Sec 3.5). Models trained with uniform weighting achieved lower total loss but failed to capture sharp braking profiles. Our complexity weighting forced the model to resolve high-jerk maneuvers, which are critical for characterizing the boundary between safe and unsafe behavior. 12 60 40 20 0 20 40 60 
+
+> 60
+> 40
+> 20
+> 0
+> 20
+> 40
+> 60
+> Discovery: 6307508426e85026
+> Actual Path
+
+(a) LL = 7 .04 60 40 20 0 20 40 60  
+
+> 60
+> 40
+> 20
+> 0
+> 20
+> 40
+> 60
+> Discovery: 66699cf0ec4e0fb7
+> Actual Path
+
+(b) LL = 10 .44 60 40 20 0 20 40 60  
+
+> 60
+> 40
+> 20
+> 0
+> 20
+> 40
+> 60
+> Discovery: ef5da6c66f8230f8
+> Actual Path
+
+(c) LL = 17 .44 60 40 20 0 20 40 60  
+
+> 60
+> 40
+> 20
+> 0
+> 20
+> 40
+> 60
+> Discovery: 91ed234f60c3501f
+> Actual Path
+
+(d) LL = 20 .76 60 40 20 0 20 40 60  
+
+> 60
+> 40
+> 20
+> 0
+> 20
+> 40
+> 60
+> Discovery: 2027293e213bc361
+> Actual Path
+
+(e) LL = 23 .24 
+
+Figure 6: Deep-Flow Discovery Engine: Top-5 Semantic Anomalies. A gallery of scenarios with the lowest log-likelihood scores in the validation set. These events highlight systematic deviations from the learned expert manifold, including sharp lane-line violations, corner-cutting at complex junctions, and OOD maneuvers that do not trigger standard kinematic safety rules. 
+
+6 Discussion and Limitations 
+
+The experimental results of Deep-Flow demonstrate that Continuous Normalizing Flows provide a mathematically rigorous alternative to heuristic safety validation. However, the discrepancies observed between the heuristic “Golden Set” and the model’s likelihood scores reveal a nuanced relationship between statistical probability and physical safety. 
+
+6.1 Semantic Discovery vs. Kinematic Danger 
+
+A pivotal finding of this work is the distinction between Kinematic Anomalies (e.g., high-acceleration events) and Semantic Anomalies (e.g., violations of normative driving geometry). While Deep-Flow identifies a significant portion of the kinematic anomalies in the Golden Set, its most significant utility lies in identifying behaviors that are mechanically safe but legally or socially out-of-distribution 
+
+(OOD). As illustrated in the gallery of outliers in Fig. 6 , scenarios receiving the lowest log-likelihood scores often involve maneuvers where the agent violates the expert manifold by disregarding lane boundaries or cutting corners at junctions. While these maneuvers may not trigger high-deceleration safety rules, they represent a Predictability Gap . In an L4 safety case, human-driven actors who deviate from the expected road topology are inherently higher risk due to their unpredictability. Deep-Flow thus acts as a high-precision Behavioral Auditor , surfacing these semantic violations for safety triage in a way that traditional kinematic heuristics are fundamentally blind to. 
+
+6.2 Manifold Stiffness and Representational Capacity 
+
+The use of a linear Spectral Manifold (k = 12 ) introduces an inherent trade-off between temporal smoothness and geometric fidelity. We observed that in high-curvature environments, such as roundabouts or unprotected sharp turns, the PCA bottleneck acts as a low-pass filter. This occasionally forces the model into a “stiff” path that cuts through non-drivable surfaces, as it lacks the high-frequency geometric vocabulary to resolve extreme topological constraints. This limitation suggests that while the linear manifold ensures C2 continuity and provides a stable Jacobian trace for likelihood estimation, future work should explore non-linear manifold learning. Utilizing Variational Autoencoders (VAEs) or Vector-Quantized (VQ) latents could increase geometric fidelity in complex junctions without sacrificing the numerical stability required for ODE-based inference. 
+
+6.3 Likelihood Stability and Statistical Safety Gates 
+
+The bimodal distribution of nominal likelihoods (Fig. 4) provides a practical framework for con-structing Autonomous Vehicle Safety Gates . By identifying a likelihood threshold ( LL ≈ 130 )above which critical safety events are statistically excluded, Deep-Flow can be used to mathemat-ically bound the “Safety Ceiling” of an ODD. Unlike Autoregressive models, which suffer from vanishing likelihoods over long planning horizons, the ODE-based integration in Deep-Flow remains 13 numerically stable. This allows for a calibrated and reproducible safety metric that can scale across petabytes of unlabeled fleet logs to provide objective evidence for a formal safety case (ISO 21448). 
+
+6.4 Future Work 
+
+Current iterations of Deep-Flow treat agent-agent interactions implicitly through the scene transformer. A promising extension is the integration of a Social Force Field or a Signed Distance Field (SDF) directly into the Flow Matching loss. By explicitly penalizing flow vectors that point toward collisions or off-road excursions, the model could learn a “Social Manifold” that is both geometrically compliant and socially aware, further refining the sensitivity of the anomaly score in dense, multi-agent urban environments. 
+
+7 Conclusion 
+
+In this work, we presented Deep-Flow , a mathematically rigorous framework for unsupervised anomaly detection in autonomous driving. By utilizing Optimal Transport Conditional Flow Matching 
+
+on a low-rank Spectral Manifold , we successfully characterized the continuous probability density function of expert human behavior. Our architecture, featuring lane-aware goal conditioning and a kinematic complexity weighting scheme, demonstrates that safety validation can transcend brittle, rule-based heuristics in favor of a first-principles probabilistic approach. Our evaluation on the Waymo Open Motion Dataset yields an AUC-ROC of 0.766 against criti-cal safety events. More significantly, our analysis of the learned manifold reveals a fundamental distinction between kinematic danger and semantic non-compliance . Deep-Flow demonstrates a unique capability for surfacing “hidden” anomalies, such as subtle lane-boundary violations and unpredictable junction maneuvers, which represent a critical predictability gap in current L4 systems. The observed bimodal structure of nominal likelihoods further suggests a practical methodology for defining statistical safety gates , allowing developers to mathematically bound the safety ceiling of an ODD. Deep-Flow provides a scalable, high-fidelity foundation for automated behavioral auditing and safety argumentation. By enabling the discovery of OOD risks from petabytes of unlabeled fleet logs, this framework represents a significant step toward the objective, data-driven validation required for the safe deployment of Level 4 autonomous vehicles. 
+
+References 
+
+[1] Mayank Bansal, Alex Krizhevsky, and Abhijit Ogale. ChauffeurNet: Learning to Drive by Imitating the Best and Synthesizing the Worst. arXiv , December 2018. [2] Jan-Aike Bolte, Andreas Bar, Daniel Lipinski, and Tim Fingscheidt. Towards corner case detection for autonomous driving. In 2019 IEEE Intelligent Vehicles Symposium (IV) , pages 438–445, 2019. [3] Scott Ettinger, Shuyang Cheng, Benjamin Caine, Chenxi Liu, Hang Zhao, Sabeek Pradhan, Yuning Chai, Ben Sapp, Charles Qi, Yin Zhou, Zoey Yang, Aurélien Chouard, Pei Sun, Jiquan Ngiam, Vijay Vasudevan, Alexander McCauley, Jonathon Shlens, and Dragomir Anguelov. Large scale interactive motion forecasting for autonomous driving : The waymo open motion dataset. In 2021 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 9690–9699, 2021. [4] Jiyang Gao, Chen Sun, Hang Zhao, Yi Shen, Dragomir Anguelov, Congcong Li, and Cordelia Schmid. Vectornet: Encoding hd maps and agent dynamics from vectorized representation. In 2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 11522–11530, 2020. [5] Antonio Guillen-Perez. Efficient Virtuoso: A Latent Diffusion Transformer Model for Goal-Conditioned Trajectory Planning. arXiv , September 2025. [6] Antonio Guillen-Perez. From Imitation to Optimization: A Comparative Study of Offline Learning for Autonomous Driving. arXiv , August 2025. 14 [7] Antonio Guillen-Perez. Mining the Long Tail: A Comparative Study of Data-Centric Criticality Metrics for Robust Offline Reinforcement Learning in Autonomous Motion Planning. arXiv ,August 2025. [8] Antonio Guillen-Perez. Semantic-Drive: Democratizing Long-Tail Data Curation via Open-Vocabulary Grounding and Neuro-Symbolic VLM Consensus. arXiv , December 2025. [9] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising Diffusion Probabilistic Models. June 2020. [10] Xin Huang, Eric M. Wolff, Paul Vernaza, Tung Phan-Minh, Hongge Chen, David S. Hayden, Mark Edmonds, Brian Pierce, Xinxin Chen, Pratik Elias Jacob, Xiaobai Chen, Chingiz Tair-bekov, Pratik Agarwal, Tianshi Gao, Yuning Chai, and Siddhartha Srinivasa. DriveGPT: Scaling Autoregressive Behavior Models for Driving. arXiv , December 2024. [11] M.F. Hutchinson. A stochastic estimator of the trace of the influence matrix for laplacian smoothing splines. Communications in Statistics - Simulation and Computation , 19(2):433–450, 1990. [12] Michael Janner, Yilun Du, Joshua B. Tenenbaum, and Sergey Levine. Planning with diffusion for flexible behavior synthesis. In International Conference on Machine Learning , 2022. [13] Chiyu “Max” Jiang, Andre Cornman, Cheolho Park, Benjamin Sapp, Yin Zhou, and Dragomir Anguelov. Motiondiffuser: Controllable multi-agent motion prediction using diffusion. In 2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 9644–9653, 2023. [14] Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow Matching for Generative Modeling. arXiv , October 2022. [15] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow. arXiv , September 2022. [16] Jiageng Mao, Yuxi Qian, Junjie Ye, Hang Zhao, and Yue Wang. GPT-Driver: Learning to Drive with GPT. arXiv , October 2023. [17] Nigamaa Nayakanti, Rami Al-Rfou, Aurick Zhou, Kratarth Goel, Khaled S. Refaat, and Benjamin Sapp. Wayformer: Motion forecasting via simple & efficient attention networks. 
+
+2023 IEEE International Conference on Robotics and Automation (ICRA) , pages 2980–2987, 2022. [18] William H. Press, Saul A. Teukolsky, William T. Vetterling, and Brian P. Flannery. Numerical Recipes in C: The Art of Scientific Computing . Cambridge University Press, 1992. [19] Ari Seff, Brian Cera, Dian Chen, Mason Ng, Aurick Zhou, Nigamaa Nayakanti, Khaled S. Refaat, Rami Al-Rfou, and Benjamin Sapp. Motionlm: Multi-agent motion forecasting as language modeling. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) ,pages 8545–8556, 2023. [20] Shaoshuai Shi, Li Jiang, Dengxin Dai, and Bernt Schiele. Motion Transformer with Global Intention Localization and Local Movement Refinement. arXiv , September 2022. [21] Alexander Tong, Kilian Fatras, Nikolay Malkin, Guillaume Huguet, Yanlei Zhang, Jarrid Rector-Brooks, Guy Wolf, and Yoshua Bengio. Improving and generalizing flow-based generative models with minibatch optimal transport. arXiv , February 2023. [22] Balakrishnan Varadarajan, Ahmed Hefny, Avikalp Srivastava, Khaled S. Refaat, Nigamaa Nayakanti, Andre Cornman, Kan Chen, Bertrand Douillard, Chi Pang Lam, Dragomir Anguelov, and Benjamin Sapp. Multipath++: Efficient information fusion and trajectory aggregation for behavior prediction. page 7814–7821. IEEE Press, 2022. [23] Zhejun Zhang, Alexander Liniger, Dengxin Dai, Fisher Yu, and Luc Van Gool. TrafficBots: Towards World Models for Autonomous Driving Simulation and Motion Prediction. arXiv ,March 2023. 15 [24] Zikang Zhou, Jianping Wang, Yung–Hui Li, and Yu–Kai Huang. Query-centric trajectory prediction. In 2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 17863–17873, 2023. 16 A Spectral Manifold Interpretability 
+
+The low-rank manifold B utilized by Deep-Flow serves as a physics-informed bottleneck, decompos-ing complex human maneuvers into a hierarchical vocabulary of driving primitives. By performing a traversal of the whitened latent coefficients z (varying one component while holding others at zero or fixed offsets), we visualize the semantic influence of each principal component on the reconstructed physical trajectory (Fig. 7). 40 20 0 20 40 60 80                                                        
+
+> 40
+> 30
+> 20
+> 10
+> 0
+> 10
+> 20
+> 30
+> 40
+> PC1: Longitudinal Progress
+> 010 20 30 40 50
+> 20
+> 15
+> 10
+> 5
+> 0
+> 5
+> 10
+> 15
+> 20
+> PC2: Steady-State Curvature
+> 010 20 30 40 50
+> 20
+> 15
+> 10
+> 5
+> 0
+> 5
+> 10
+> 15
+> 20
+> PC3: Apex/Phase Modulation
+> 010 20 30 40 50
+> 20
+> 15
+> 10
+> 5
+> 0
+> 5
+> 10
+> 15
+> 20
+> PC4: Lateral Transition Primitive
+> 010 20 30 40 50
+> 5
+> 0
+> 5
+> PC5: Curvature Rate Transition
+> 010 20 30 40 50
+> 5
+> 0
+> 5
+> PC6: Second-Order Kinematic Mode
+> 010 20 30 40 50
+> 5
+> 0
+> 5
+> PC7: Spectral Residual Harmonics
+> 010 20 30 40 50
+> 5
+> 0
+> 5
+> PC8: Spectral Residual Harmonics
+> 010 20 30 40 50
+> 5
+> 0
+> 5
+> PC9: High-Freq Correction A
+> 010 20 30 40 50
+> 5
+> 0
+> 5
+> PC10: High-Freq Correction B
+> 010 20 30 40 50
+> 5
+> 0
+> 5
+> PC11: Micro-Jitter A
+> 010 20 30 40 50
+> 5
+> 0
+> 5
+> PC12: Micro-Jitter B
+> Appendix A: Manifold Traversal of the 12 Principal Components
+> Visualizing the influence of whitened coefficients on physical driving maneuvers
+
+Figure 7: Manifold Traversal of the 12 Principal Components. Each panel illustrates the geometric influence of a specific spectral coefficient on the 8-second trajectory. Colors represent standard deviations from the mean expert maneuver. PC1 and PC2 define the vehicle’s reachability set , while PC3 and PC4 modulate lateral/phase transitions. Higher-order components (PC5–PC12) represent residual harmonics required for geometric fine-tuning in non-linear topologies. 
+
+A.1 Hierarchy of Driving Primitives 
+
+As shown in Fig. 7, the learned basis functions exhibit a clear hierarchy based on their explained variance and kinematic role: 
+
+1. Macro-Intent Primitives (PC1–PC2): These components capture over 99.1% of the expert dataset variance. • PC1: Longitudinal Progress Profile. This axis acts as the primary velocity controller. Positive variations correspond to higher target velocities and longer traversal distances, while negative variations characterize braking or low-speed maneuvers. • PC2: Steady-State Curvature. This component maps latent coefficients to the fundamental steering angle. It defines the vehicle’s yaw rate, producing a fan of constant-radius arcs that represent the baseline for lane-following and intersection turns. 
+
+2. Tactical Maneuver Primitives (PC3–PC4): These components introduce time-varying curvature adjustments. • PC3: Apex and Phase Modulation. By holding PC2 at a fixed right-turn offset (-1.5) and varying PC3, we observe a modulation of the turn apex . This component controls the tactical timing of steering inputs, allowing the model to differentiate between early-apex and late-apex maneuvers which are critical for navigating complex urban junctions. 17 • PC4: Lateral Transition Mode. This axis captures the non-linear S-curves required for lane changes and evasive swerving. The resulting paths maintain a final heading parallel to the ego-axis but at a significant lateral offset. 
+
+3. Second-Order Kinematics and Residual Harmonics (PC5–PC12): Starting at PC5, the variance ratio approaches the numerical noise floor. • PC5–PC6: Curvature Rate Transitions. These components model the transition phases (Clothoids) where the curvature changes linearly, ensuring smooth entry into and exit from high-curvature turns. • PC7–PC12: Spectral Residual Harmonics. Visually, these components appear as high-frequency sinusoidal perturbations. While their individual variance is negligible, they provide the representational capacity needed to resolve intricate topological constraints, such as the high-jerk path requirements of roundabouts. 
+
+A.2 Kinematic Regularization and Manifold Stiffness 
+
+The spectral bottleneck acts as a Kinematic Low-Pass Filter . Because the Flow Matching head is trained on whitened coefficients, it naturally prioritizes the low-frequency macro-intents (PC1–PC4) over the high-frequency residuals. This ensures that generated trajectories remain C2 continuous and free from the high-frequency "jitter" typical of coordinate-space regression. However, the near-zero variance of the higher-order components also imposes a mathematical “stiffness” on the manifold, explaining the model’s tendency to favor smooth, chord-like paths over extreme geometric deviations. 
+
+B Exact Trace Computation vs. Stochastic Estimators 
+
+In the Continuous Normalizing Flow (CNF) framework used by Deep-Flow, the evaluation of the log-likelihood log p(z1 | C) requires the integration of the divergence of the vector field vθ :
+
+∆ log p =
+
+Z 10
+
+div (vθ (zt, t, C)) dt =
+
+Z 10
+
+Tr 
+
+ ∂vθ
+
+∂zt
+
+
+
+dt (11) This section justifies our choice of an exact trace computation over the stochastic estimators typically employed in high-dimensional generative modeling. 
+
+B.1 The Variance Problem in Stochastic Estimators 
+
+In standard high-dimensional applications (e.g., x ∈ R160 ), computing the full Jacobian ∇zvθ is computationally expensive ( O(D2)). Consequently, most architectures rely on the Hutchinson’s Trace Estimator [11]: Tr (J) ≈ Eϵ∼p(ϵ)[ϵT Jϵ] (12) where ϵ is a noise vector (e.g., Rademacher or Gaussian). While unbiased, this estimator introduces 
+
+sampling variance into the log-likelihood score. For safety validation and Out-of-Distribution (OOD) detection, this variance is problematic. A safety metric that fluctuates due to internal solver noise cannot provide the deterministic reproducibility required for formal safety cases (ISO 21448). In safety-critical auditing, a marginal anomaly could be misclassified as nominal simply due to an unfortunate draw of ϵ, leading to a lack of calibration in the safety gate. 
+
+B.2 Deterministic Likelihoods via Spectral Bottlenecks 
+
+By utilizing the Spectral Manifold Bottleneck (k = 12 ) described in Sec. 3.2, Deep-Flow circumvents the need for stochastic approximations. The reduction to 12 dimensions makes the computation of the exact Jacobian trace numerically tractable: Tr (∇zvθ ) = 
+
+> k
+
+X
+
+> i=1
+
+∂v θ,i 
+
+∂z t,i 
+
+(13) We compute this sum using k passes of automatic differentiation (or a single vectorized Jacobian call). This provides three significant advantages for AV validation: 18 1. Deterministic Anomaly Scoring: The safety score A for a given scenario is fixed and reproducible, which is essential for regression testing in an industrial AV pipeline. 2. High Fidelity in the Tails: Stochastic estimators often exhibit their highest relative variance in low-density regions. By using an exact trace, Deep-Flow maintains high precision in the tails of the distribution, where anomaly detection is most critical. 3. Superior Convergence: We observed that training with the exact trace leads to smoother log-likelihood surfaces, as the optimizer is not fighting the "chatter" of a stochastic divergence signal. 
+
+B.3 Computational Complexity Comparison 
+
+While Hutchinson’s estimator is O(1) backprop passes per time step, it often requires 10–50 noise samples to reach an acceptable variance level for safety metrics. Our exact approach is O(k) passes. With k = 12 , the computational overhead of the exact trace is comparable to, or even lower than, a converged Hutchinson estimate, while providing the added benefit of zero variance. This makes Deep-Flow an ideal candidate for large-scale, high-fidelity fleet auditing where numerical integrity is paramount. 
+
+C Hyperparameter Sensitivity and Training Dynamics 
+
+The performance of Deep-Flow is sensitive to the balancing of the multi-objective loss function and the resolution of the ODE solver. This section provides an analysis of the hyperparameter selection process and the resulting training stability. 
+
+C.1 Balancing the Hybrid Manifold-Physical Loss 
+
+As detailed in Sec. 3.5, our objective function combines a Flow Matching loss in spectral space (LCFM ) and a Root Mean Squared Error (RMSE) loss in Euclidean space ( Lcoord ). We observed a significant discrepancy in gradient magnitudes between these two terms. With the initial weight λcoord = 1 .0, the coordinate loss dominated the optimization landscape, accounting for over 95% of the total gradient norm. This resulted in the model collapsing toward a deterministic mean-predictor, which diminished the sensitivity of the log-likelihood for anomaly detection. By reducing the coefficient to λcoord = 0 .1, we achieved a balanced Pareto frontier where the model maintains high manifold fidelity (Flow Loss ≈ 0.03 ) while remaining physically grounded (RMSE ≈ 1.6m). 
+
+C.2 Impact of Kinematic Complexity Weighting 
+
+We evaluated the impact of our physics-informed importance sampling scheme (Sec. 3.5). Training with uniform weights resulted in a lower aggregate validation loss but significantly higher error in high-curvature roundabouts and emergency braking scenarios. Our weighting scheme, based on path tortuosity (τ ) and jerk energy (J), forced the optimizer to prioritize these rare, high-energy maneuvers. While this increased the nominal loss on “easy” scenarios (straight-line driving), it led to a 12% improvement in AUC-ROC. This confirms that for safety validation, the model must be incentivized to resolve the nuanced dynamics of the long-tail, even at the cost of aggregate accuracy on the majority class. 
+
+C.3 ODE Integration Steps and Likelihood Stability 
+
+During inference, the log-likelihood is estimated by integrating the Jacobian trace along the backward flow. We analyzed the sensitivity of the anomaly score A to the number of integration steps N in the RK4 solver. As shown in Tab. 2, the log-likelihood score stabilizes significantly as N increases from 5 to 20. Beyond N = 20 , we observed diminishing returns in likelihood precision, with scores shifting by less than 0.2%. We thus selected N = 20 as the optimal trade-off between computational latency and numerical integrity for large-scale dataset auditing. 19 Table 2: Likelihood Stability vs. ODE Integration Steps. 
+
+Integration Steps ( N ) Mean Log-Likelihood Variance in A Latency (ms/sample) 5 42.15 4.21 12 10 53.82 1.15 22 
+
+20 55.41 0.08 41 
+
+50 55.45 0.02 98 
+
+C.4 Manifold Rank and Truncation Artifacts 
+
+The selection of k = 12 principal components was driven by an analysis of the spectral decay of the expert dataset. While k = 6 was sufficient to capture 95% of the variance, it introduced “stiff manifold” artifacts in high-curvature environments. By increasing the rank to k = 12 (> 99% 
+
+variance), we expanded the model’s geometric vocabulary to include higher-order primitives, allowing for a more precise representation of intersection turns without the numerical instability associated with raw coordinate regression. 
+
+D Extended Qualitative Gallery 
+
+To demonstrate the robustness and generalization capability of Deep-Flow, we present an extended gallery of randomly sampled scenarios from the validation set (Fig. 8–10). We filter for dynamic scenarios where the agent displacement exceeds 10 meters to avoid stationary examples. Across diverse topologies, including turns, lane merges, and straightaways, the model consistently generates smooth, kinematically feasible trajectories (Cyan) that tightly cluster around the expert ground truth (Red) and converge to the conditioned goal (Green Star). This visualizes the efficacy of the Goal-Lane Skip Connection in resolving multi-modal ambiguity and the Spectral Manifold in enforcing trajectory smoothness. 20 ID: 9396c02f...  
+
+> ID: 576d0764...
+> ID: 71027a7c...
+> ID: 2e10a26e...
+> ID: 360949c0... ID: d1e11f50...
+> ID: bb991daf...
+> ID: f9609817...
+> ID: 8c4f2a84...
+
+Deep-Flow Generative Robustness: Random Sample of Validation Scenarios Figure 8: Generative Robustness Gallery (1/3). A random selection of validation scenarios. The model (Cyan bundles) demonstrates consistent lane adherence and goal convergence across various driving contexts, verifying that the learned vector field generalizes well beyond the training distribution. 21 ID: c0d2213a... ID: 43c7d9ef... 
+
+> ID: d573b3b5...
+> ID: 484f3534...
+> ID: d28d006d...
+> ID: e11228be...
+> ID: 88b56150...
+> ID: bb74872e...
+> ID: e69798d7...
+
+Deep-Flow Generative Robustness: Random Sample of Validation Scenarios Figure 9: Generative Robustness Gallery (2/3). Additional randomly sampled validation scenarios highlighting stable trajectory generation under diverse road geometries and motion patterns. 22 ID: 1f779115... 
+
+> ID: 6d7cfc52...
+> ID: 9b7ff84d...
+> ID: 7e1b143a...
+> ID: a3c1aa47...
+> ID: af7858c6...
+> ID: 792d65eb...
+> ID: e29b25e9...
+> ID: dc95ad0f...
+
+Deep-Flow Generative Robustness: Random Sample of Validation Scenarios Figure 10: Generative Robustness Gallery (3/3). Further examples illustrating consistent goal convergence and smooth trajectory manifolds across complex dynamic scenes. 23

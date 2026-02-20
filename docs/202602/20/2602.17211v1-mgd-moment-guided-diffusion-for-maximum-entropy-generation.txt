@@ -1,0 +1,4394 @@
+Title: MGD: Moment Guided Diffusion for Maximum Entropy Generation
+
+URL Source: https://arxiv.org/pdf/2602.17211v1
+
+Published Time: Fri, 20 Feb 2026 01:37:06 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# MGD: M OMENT GUIDED DIFFUSION FOR MAXIMUM ENTROPY 
+
+# GENERATION 
+
+A P REPRINT 
+
+Etienne Lempereur 1, Nathana¨ el Cuvelle–Magar 1, Florentin Coeurdoux 2, St´ ephane Mallat 3,4 , and Eric Vanden-Eijnden 5,6 1D´ epartement d’informatique, ENS, Universit´ e PSL, Paris, France 
+
+> 2
+
+Capital Fund Management, Paris, France 
+
+> 3
+
+Coll` ege de France, Paris, France 
+
+> 4
+
+Flatiron Institute, New York, USA 
+
+> 5
+
+Courant Institute of Mathematical Sciences, New York University, New York, USA  
+
+> 6
+
+ML Lab, Capital Fund Management, Paris, France February 20, 2026 
+
+## ABSTRACT 
+
+Generating samples from limited information is a fundamental problem across scientific domains. Classical maximum entropy methods provide principled uncertainty quantification from moment constraints but require sampling via MCMC or Langevin dynamics, which typically exhibit expo-nential slowdown in high dimensions. In contrast, generative models based on diffusion and flow matching efficiently transport noise to data but offer limited theoretical guarantees and can overfit when data is scarce. We introduce Moment Guided Diffusion (MGD), which combines elements of both approaches. Building on the stochastic interpolant framework, MGD samples maximum entropy distributions by solving a stochastic differential equation that guides moments toward pre-scribed values in finite time, thereby avoiding slow mixing in equilibrium-based methods. We for-mally obtain, in the large-volatility limit, convergence of MGD to the maximum entropy distribution and derive a tractable estimator of the resulting entropy computed directly from the dynamics. Ap-plications to financial time series, turbulent flows, and cosmological fields using wavelet scattering moments yield estimates of negentropy for high-dimensional multiscale processes. 
+
+## 1 Introduction 
+
+Generating new realizations of a random variable X ∈ Rd
+
+from limited information arises across scientific domains, from synthesizing physical fields in computational sci-ence to creating scenarios for risk assessment in quantita-tive finance. Many approaches to this problem have been proposed, but two stand out for their success: the clas-sical maximum entropy framework introduced by Jaynes [1] when moment information is available, and the mod-ern generative modelling approach with deep neural net-works [2–8] that operate when raw data samples can be accessed. These approaches take different perspectives on the problem—principled uncertainty quantification versus flexible distribution learning—suggesting potential bene-fits from blending both. The maximum entropy approach provides principled un-certainty quantification when the available information consists of moments E[ϕ(X)] ∈ Rr for a specified mo-ment function (or observable) ϕ : Rd → Rr . Jaynes’ principle selects the unique distribution that maximizes entropy, if it exists. It is the least committal choice con-sistent with available information. It provides principled protection against overfitting: generated samples are di-verse within the constraint set but do not hallucinate corre-lations beyond what ϕ captures. This is particularly valu-able when data is scarce. This maximum entropy distribu-tion has an exponential density pθ∗ (x) = Z−1 
+
+> θ∗
+
+e−θ∗T ϕ(x),where θ∗ are Lagrange multipliers and Zθ∗ is the normali-sation constant. While theoretically elegant and providing rigorous control over uncertainty, this approach is not a generative model per se . Classical maximum entropy es-timation [9–11] requires sampling from intermediate dis-
+
+> arXiv:2602.17211v1 [stat.ML] 19 Feb 2026
+
+MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+tributions to compute log-likelihood gradients, both for estimating the Lagrange multipliers θ∗ and for generat-ing samples from pθ∗ . Unfortunately, samplers based on MCMC or on a Langevin equation suffer from critical slowing down [12, 13]: sampling becomes prohibitively expensive in high dimension for non-convex Gibbs ener-gies θT 
+
+> ∗
+
+ϕ(x).Recent generative modelling approaches emphasize flexi-ble distribution learning when samples (xi)i≤n are avail-able. Modern generative models—notably score-based diffusion [6–8] and flow matching with stochastic inter-polants [3, 4, 14]—learn to sample from an approxima-tion of the underlying distribution by transporting Gaus-sian noise to data samples along carefully designed paths using Ordinary Differential Equations (ODE) or Stochas-tic Differential Equations (SDE), with a drift estimated by quadratic regression with a neural network. This transport avoids the exponential scaling with barrier heights that plagues classical MCMC and Langevin sampling. How-ever, this flexibility comes at a cost: they provide no ex-plicit control over statistical moments and their approxi-mation error remains theoretically uncontrolled, making them prone to overfitting when data is scarce [15]. We introduce a Moment Guided Diffusion (MGD), which blends both paradigms. MGD samples maximum entropy distributions when data samples are available, using a transport that guides moments estimated from these data. To achieve this, MGD relies on two key ingredients. First, it uses a diffusive process Xt whose moments match those of a stochastic interpolant It that continuously transforms Gaussian noise into data: E[ϕ(Xt)] = E[ϕ(It)] for all 
+
+t ∈ [0 , 1] . This diffusion steers the distribution of the pro-cess from noise to data along a homotopic path, achieving non-equilibrium transport in finite time and avoiding the critical slowing down that plagues classical Langevin dy-namics. Second, the SDE includes a tunable volatility σ
+
+that controls convergence to the maximum entropy dis-tribution. As σ increases, under appropriate assumptions we prove that the process converges to the maximum en-tropy among all distributions satisfying the moment con-straints. We conjecture that this convergence occurs at rate O(σ−2), and provide numerical verification. MGD also enables estimation of the entropy of the result-ing distribution. We provide a tractable lower bound on the maximum entropy, computed directly from the MGD dynamics. We conjecture and numerically validate that this lower bound converges at rate O(σ−2). This al-lows us to calculate the negentropy, which measures the non-Gaussianity of a random process as the difference between the entropy of a Gaussian with the same co-variance and the entropy of the process [16, 17]. Prior to this work, numerical computation of this information-theoretic measure was prohibitively expensive for high-dimensional processes characterized by non-convex ener-gies. The MGD SDE is a nonlinear (McKean-Vlasov) equa-tion whose drift depends on moments of its own solution. These moments are estimated empirically using interact-ing particles, and the dynamics is discretized in time. The computational cost scales as O(σ2), with a constant inde-pendent of both the data dimension and the non-convexity of the Gibbs energy. MGD is related to microcanonical sampling algo-rithms [18], which also generate samples in high dimen-sion without estimating Lagrange parameters. However, the two methods differ in important ways. Microcanoni-cal algorithms transport a Gaussian distribution toward a distribution satisfying the moment constraints using a gra-dient descent on the moment mismatch, which requires infinite time. Despite good numerical results in high di-mension [19–21], they are not guaranteed to converge to the maximum entropy distribution, nor can they estimate the maximum entropy value. MGD, by contrast, achieves finite-time transport along a homotopic path and provides a tractable entropy estimator. We apply MGD to high-dimensional multiscale stochas-tic processes, generating financial time-series and phys-ical fields from maximum entropy models conditioned by wavelet scattering moments [18, 21]. MGD pro-duces accurate models of complex non-Gaussian pro-cesses with long-range correlations, including financial time series (S&P 500), turbulent flows [22], and cosmo-logical fields [23]. For these fields, we provide the first estimates of negentropy. The remainder of this paper is organized as follows. Sec-tion 2 reviews classical maximum entropy sampling via MCMC and Langevin dynamics, as well as modern gen-erative models based on diffusion and stochastic inter-polants. Section 3 introduces the MGD transport and its numerical implementation. Section 4 presents the en-tropy estimator, discusses the convergence of MGD as the volatility increases, and states our conjectures on the con-vergence rate. Section 5 provides numerical verification of these conjectures. Section 6 applies MGD to high-dimensional multiscale processes—financial time series, turbulent flows, and cosmological fields—using wavelet scattering moments, and estimates their negentropy. Tech-nical proofs and additional details are provided in Ap-pendix. 
+
+## 2 Background: Classical Maximum Entropy and Modern Generative Modeling 
+
+We review the classical sampling approach of maximum entropy distributions with Langevin dynamics (Section 2.1) and modern generative modeling based on transport via flow matching and stochastic interpolants (Section 2.2). 2MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+Table 1: Comparison of sampling approaches for complex distributions. 
+
+Approach Input Max-ent guarantee Moment control Sampling 
+
+Maximum entropy (classical) Moments m ✓ ✓ Equilibrium (MCMC) Diffusion models Dataset (xi) × × Non-equilibrium Moment Guided Diffusion Dataset (xi) ✓ ✓ Non-equilibrium (guided) 
+
+2.1 Maximum Entropy Estimation via Langevin Dynamics 
+
+Given a moment function ϕ : Rd → Rr with target ex-pectation m ∈ Rr , the maximum entropy principle seeks the probability density function (PDF) p which satisfies the moment constraints 
+
+Ep[ϕ] = 
+
+Z
+
+ϕ(x)p(x) dx = m, (1) while maximizing the differential entropy 
+
+H(p) = −
+
+Z
+
+p(x) log p(x) dx. (2) Since infinitely many densities satisfy the moment con-straints, entropy maximization acts as a concave regular-ization that selects a unique solution. Introducing La-grange multipliers θ ∈ Rr for these constraints, the La-grangian 
+
+L(p, θ ) = H(p) − θ⊤ Ep[ϕ] − m (3) has, if a maximizer exists, a unique maximum at (p∗, θ ∗),where the maximum entropy density p∗ = pθ∗ takes the exponential form: 
+
+pθ (x) = Z−1 
+
+> θ
+
+e−θ⊤ϕ(x), with Zθ =
+
+Z
+
+> Rd
+
+e−θ⊤ϕ(x) dx. 
+
+(4) The optimal parameter θ∗ equivalently maximizes 
+
+L(pθ , θ ) = −θ⊤m−log Zθ . While direct evaluation is in-tractable because it requires computing the normalisation constant Zθ , the gradient can be estimated by sampling from pθ , since 
+
+∇θ L(pθ , θ ) = Epθ
+
+ϕ − m, (5) because ∇θ log Zθ = −Epθ
+
+ϕ.Sampling from pθ is typically performed using MCMC methods [24] based e.g. on Langevin dynamics, i.e. via solution of the SDE 
+
+dX t = −σ2θ⊤∇ϕ(Xt) dt + √2σ dW t, (6) where Wt is a standard Brownian motion, σ is a volatil-ity parameter, and ∇ denotes the gradient with respect to 
+
+x ∈ Rd. Under suitable conditions, the law of Xt con-verges to the distribution with density pθ as t → ∞ and, by ergodicity, Epθ [ϕ] can be estimated by a time aver-age along the trajectory. In practice, the SDE (6) is dis-cretized using an Euler-Maruyama scheme [25, 26], and a Metropolis-Hastings accept-reject step is added to correct for discretization bias—this is the Metropolis Adjusted Langevin Algorithm (MALA) [27]. Unfortunately, Langevin dynamics and MCMC algo-rithms more generally suffer from critical slowing down for non-convex energies, leading to prohibitively long equilibration times. In particular, MALA scales poorly with dimension [28, 29], with sampling time growing ex-ponentially in most cases. This is particularly problematic for parameter estimation, since sampling must be repeated at each iteration of the optimization over θ to update Epθ [ϕ] as θ changes. The computational cost of both parameter estimation and sam-ple generation typically becomes impractical for high-dimensional distributions. When samples (xi)i≤n of p are available, score match-ing [17] offers an alternative approach to the estimation of θ∗. It avoids sampling pθ by minimizing the Fisher divergence I(p, p θ ) = Ep
+
+|∇ log pθ − ∇ log p|2. After integration by parts, the Fisher divergence can be writ-ten, up to a constant, as an expectation over the data: 
+
+I(p, p θ ) = Ep
+
+|∇ log pθ |2 + 2∆ log pθ
+
+ + cst , where ∆
+
+denotes the Laplacian. The resulting score matching pa-rameter ˜θ∗ that minimizes the Fisher divergence is a solu-tion of the linear system [17] 
+
+Ep
+
+∇ϕ · ∇ ϕ⊤˜θ∗ = Ep
+
+∆ϕ. (7) The expectations in this equation can be estimated empir-ically using data samples (xi)i≤n, without sampling in-termediate distributions. It is therefore a much faster al-gorithm but ˜θ∗ = θ∗ only if the data distribution already belongs to the exponential family, i.e., p = pθ∗ . This condition is usually not satisfied. Moreover, if the Gibbs energy of p is non-convex, this estimator has high vari-ance [30], making it unreliable. 
+
+2.2 Flow Matching with Stochastic Interpolants 
+
+Since the seminal work of Ho, Song and collabora-tors [6, 7], complex data generation has been addressed by transporting samples between Gaussian white noise and a target distribution p, through reversal of a stochas-tic noising process. Transport-based generative models have since been developed under various names—flow matching [3], stochastic interpolants [4], and rectified flows [14]. These methods define time-dependent interpo-lations between two distributions and sample from them using flows (ODEs) or diffusions (SDEs). We adopt the stochastic interpolant formulation in what follows. A variance preserving stochastic interpolant It between samples Z from a prior distribution (typically Gaussian noise, Z ∼ N (0 , Id) ) and data X ∼ p is defined by 
+
+It = cos( αt) Z + sin( αt) X, t ∈ [0 , 1] , (8) 3MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+where αt is a C1([0 , 1]) function with boundary condi-tions α0 = 0 and α1 = π 
+
+> 2
+
+(for example αt = π 
+
+> 2
+
+t), so that 
+
+I0 = Z and I1 = X. The key observation made in [4, 5] is that the PDF pt(x) of the interpolant It can be sampled via an SDE whose coefficients are estimable from data. Specifically, let Xt satisfy the SDE 
+
+dX t = bt(Xt) dt + σ2∇ log pt(Xt) dt + √2 σ dW t, (9) where Wt is a Brownian noise and σ ≥ 0 is a tunable volatility with 
+
+bt(x) = E ˙It|It = x, (10) where the dot denoting the time derivative and E · | It =
+
+x the expectation over the law of It conditional on It =
+
+x. Then, if X0 = I0 = Z, Xt and It share the same PDF 
+
+pt for all t ∈ [0 , 1] . By Stein’s formula, the score ∇ log pt
+
+can also be expressed as a conditional expectation: 
+
+∇ log pt(x) = − 1cos( αt) EZ|It = x. (11) Since a conditional expectation is the minimizer of a quadratic loss, bt and ∇ log pt can be learned by minimis-ing this loss, typically by representing them in a rich para-metric class such as a deep neural network. Unlike the Langevin SDE (6), which follows equilibrium dynamics whose law converges to pθ only as t → ∞ , the SDE (9) defines a non-equilibrium transport that reaches the target distribution at time t = 1. Crucially, this transport avoids the critical slowing down that plagues Langevin dynamics. Because the interpolant It mixes data with Gaussian noise, the distribution pt varies smoothly from a simple Gaussian at t = 0 to the target at t = 1 . Par-ticles following the SDE (9) are guided along this smooth path, with the complex structure of the target emerging gradually as t → 1. For example, in multimodal distri-butions, particles are positioned inside the correct modes early (when the landscape is smooth) and remain there as the modes sharpen. We illustrate this in Figure 1. Stochastic interpolants thus provide a fast sampler that ap-proximates the data distribution. In theory, the drift bt re-produces the full density pt of It at each time, and hence the target density p at t = 1 . With sufficient training data, deep neural networks generalize well on complex datasets [15]. It results from an implicit regularization produced by the stochastic gradient descent of the neural network optimization [31, 32], which is not well under-stood. In the low-data regime, however, the learned model may overfit and memorize the training samples. Max-imum entropy models offer a complementary approach: they provide explicit regularization through entropy max-imization, leading to analytic exponential distributions with controlled approximation error. The next section shows that they can also be sampled via stochastic inter-polation. 0.0 0.2 0.4 0.6 0.8 1.0   
+
+> t
+> 2
+> 0
+> 2
+> 4
+> Z(0, 1) X
+
+Figure 1: Illustration of trajectories ( in blue or red) of 
+
+Xt satisfying Equation (9) for an interpolant It defined with αt = πt/ 2 between white noise Z and a bimodal unbalanced Gaussian mixture X, for σ = 1 . We display in gray in the background the density of It. When t goes to 0, the modes progressively disappear. At early times t,particles evolve freely in space, but they become trapped in the modes when the density pt becomes bimodal. Red particles are confined in the upper mode and blues in the lower one. 
+
+## 3 Moment Guided Diffusion 
+
+In this section, we introduce Moment Guided Diffusion (MGD), which guides moments exactly along an interpo-lation path while injecting Langevin noise. We show that this preserves moments at each time; convergence to the maximum entropy distribution as the volatility increases will be discussed in Section 4. Section 3.1 defines the MGD SDE and establishes conditions under which it pre-serves moments. Section 3.2 introduces a discretized al-gorithm and discusses its numerical cost. 
+
+3.1 Moment Guided Diffusion 
+
+A stochastic interpolant SDE (9) produces Xt with the same distribution as It, thereby reproducing all moments. MGD uses the same interpolant It, but imposes only that a finite number of moments is preserved: 
+
+∀t ∈ [0 , 1] : Eϕ(Xt) = Eϕ(It) :=  
+
+> def
+
+mt. (12) The following theorem shows that this weaker constraint is satisfied by an SDE formally similar to the Langevin equation (6), but with a time-dependent drift analogous to (10). 
+
+Theorem 3.1 (Moment Guided Diffusion) . Consider the SDE 
+
+dX t =  η⊤ 
+
+> t
+
+− σ2θ⊤
+
+> t
+
+∇ϕ(Xt) dt + √2 σ dW t, X0 = Z, 
+
+(13) 
+
+where Wt is a Brownian noise and ηt and θt solve 
+
+Gt ηt = ddt mt, (14) 
+
+Gt θt = E∆ϕ(Xt), (15) 
+
+where Gt is the Gram matrix 
+
+Gt = E∇ϕ(Xt) · ∇ ϕ(Xt)⊤. (16) 4MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+If this coupled system admits a solution, then the moment condition Eϕ(Xt) = mt holds for all t ∈ [0 , 1] .
+
+The proof of Theorem 3.1 is given in Appendix A. By applying It¯ o’s lemma, we show that any solution satisfies 
+
+∀t ∈ [0 , 1] : ddt Eϕ(Xt) = ddt mt, (17) which implies E[ϕ(Xt)] = mt since this holds at t = 0 .Note that the existence of a solution needs to be assumed. Since Gt, ηt, and θt depend on the law of Xt, (13) is a nonlinear (McKean-Vlasov) SDE [33, 34] whose well-posedness is non-trivial. In particular, Gt may become singular, causing the drift to blow up. Sufficient condi-tions for existence are established in Appendix F: Theo-rem F.7 proves that for large enough σ, a version of MGD with an additional confining potential admits strong solu-tions Xt that converge to the maximum entropy distribu-tion with moments mt. The proof relies on the assumption that the Poincar´ e constant of a reference measure is finite. If p0 is Gaussian and ϕ(x) = ( x, xx ⊤), then MGD so-lutions exist and are independent of σ. In particular, one may set σ = 0 , reducing the SDE (13) to an ODE. Ap-pendix E shows that under these hypotheses, Xt is Gaus-sian with the same mean and covariance as It, so MGD exactly samples the maximum entropy distribution for all 
+
+σ ≥ 0.
+
+Remark 3.2 (Sampling vs. modelling error) . Through-out this paper, “exact sampling” refers to sampling from the maximum entropy distribution p∗ constrained by 
+
+Ep∗ [ϕ] = E[ϕ(X)] , not from the true data distribution p.The discrepancy DKL (p∥p∗) reflects model misspecifica-tion inherent to the choice of moment function ϕ, and is distinct from the sampling error DKL (pσ 
+
+> 1
+
+∥p∗) that MGD controls (if pσ 
+
+> 1
+
+is the density of X1). For general ϕ, the dynamics at σ = 0 typically does not yield the distribution of X1 to be the maximum entropy distribution with moments E[ϕ(X)] . The volatility σ con-trols convergence to maximum entropy: Brownian noise increases entropy, while the guidance ηt can reduce it. When σ is large, the noise dominates. We conjecture (Sec-tion 4) and verify numerically (Section 5) that pσ 
+
+> 1
+
+→ p∗
+
+as σ → ∞ . It means that MGD eliminates the sampling error while the modelling error remains a choice dictated by ϕ.
+
+Turning now to the structure of the MGD SDE, the drift in (13) has two components: ηt steers the process to ad-just the target moments mt to mt+dt , while σ2θt counter-balances the moment modification induced by the added white noise σ dW t. Note that the MGD SDE (13) is struc-turally similar to the stochastic interpolant SDE (9): it has a transport term proportional to ηt (analogous to bt) and a score-like term proportional to θt (analogous to ∇ log pt). In particular, θt solves an equation of the same form as the score matching equation (7), but with expectations taken over the law of Xt rather than the data distribution p.As with stochastic interpolants (Section 2.2), MGD de-fines a non-equilibrium homotopic transport that reaches the target moments at t = 1 , see Section 4.1 for more discussion. We stress, however, that θ⊤ 
+
+> t
+
+∇ϕ(x) is not the score of the PDF of Xt. Unlike the stochastic interpolant SDE, where the score term is exact, the MGD drift does not reproduce the full distribution of It but only its mo-ments E[ϕ(It)] . This is the key difference between MGD and stochastic interpolants. 
+
+Remark 3.3. Observe that θ1 in (15) coincides with the score matching parameter in (7) computed for X1. If the distribution of X1 converges to p∗ as σ → ∞ , then θ1
+
+converges to θ∗. A finite sample estimator of θ1 is thus a nearly consistent estimator of θ∗ for large σ. However, as noted in Section 2, score matching estimators have high variance for non-convex energies. Crucially, MGD’s sam-pling accuracy depends on the empirical estimation of mt,not on the accuracy of θt (see Section 5.2.) 
+
+3.2 Discretization of MGD 
+
+We solve numerically the MGD nonlinear (McKean-Vlasov) SDE (13) by iteratively updating a finite ensem-ble of interacting particles. To update the particles, we estimate ηt in (14) and θt in (15) with empirical means over these particles. We also avoids computing E[∆ ϕ],which is costly or ill-defined when ϕ is not smooth. This is achieved with a two-step predictor-corrector scheme, which we first describe using exact expectations before discussing finite-particle estimations. Given Xt and some small time step h > 0, let Y be ob-tained via 
+
+Y = Xt + h η Tt ∇ϕ(Xt) + √2σ(Wt+h − Wt) , (18) with ηt the solution to (14). This is the Euler-Maruyama scheme for the MGD SDE (13) with θt = 0 . As such, the update (18) does not preserve the moments, i.e. 
+
+E[ϕ(Y )] ̸ = mt+h. We enforce this moment condition by adding to Y a term similar to the one involving θt in the MGD SDE (13), i.e. setting 
+
+Xt+h = Y − h σ 2 ˆθ⊤∇ϕ(Y ) , (19) and requiring that 
+
+Eϕ(Xt+h) = mt+h. (20) Substituting (19) into (20) gives an equation for ˆθ. Solv-ing this exactly is costly (it is nonlinear in ˆθ) and unneces-sary, since the Euler-Maruyama update is only accurate to weak order 1 in h. Working to the same order of accuracy, we Taylor expand the left-hand side of (20) to obtain 
+
+hσ 2 E∇ϕ(Y ) · ∇ ϕ(Y )⊤ ˆθ = Eϕ(Y ) − mt+h . (21) Since Eϕ(Xt) = mt, the right-hand side equals 
+
+h E∆ϕ(Xt) + o(h), so to leading order (21) reduces to (15) and ˆθ = θt. In the numerical scheme, how-ever, it is more convenient to solve (21) directly since this avoids computing E[∆ ϕ(Xt)] . This is important when ϕ
+
+includes ℓ1 norms or absolute values, for which ∆ϕ is a 5MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+sum of Dirac functions whose expectation is hard to esti-mate unless the number of samples is very large. To turn this into a practical scheme, we need to choose the time step h. Since the drift is proportional to σ2 for large 
+
+σ, so is its Lipschitz constant. We therefore set the num-ber of steps to nσ = aσ 2 + b, where b ensures the limiting ODE ( σ → 0) is accurately solved. The computational cost of MGD thus scales as O(σ2).The scheme is summarized in Algorithm 1. It iteratively evolves a population of nrep particles (xik)1≤i≤nrep (repli-cas), whose empirical measure approximates the distribu-tion of Xk/n σ , using moments mt estimated from training data. A key property is that the moment condition (20) re-mains valid when expectations are replaced by empirical averages over particles, since (21) holds for empirical dis-tributions. As a result, the empirical mean of ϕ over the particles converges to mt+h as the step size h → 0. This exact moment tracking controls the dynamical stability of the algorithm: a divergence of particles would manifest as a moment mismatch (see Remark 3.3). Alternative imple-mentations are discussed Appendix C and some numerical details in Appendix D. 
+
+Algorithm 1 Moment-Guided Diffusion (MGD) 
+
+Input: volatility σ; number of steps nσ = O(σ2); time step h = 1 /n σ ; number of replicas nrep ; moments 
+
+mt = E[ϕ(It)] 
+
+Initialize: xi 
+
+> 0
+
+∼ N (0 , Id) for i = 1 , . . . , n rep 
+
+Predictor 
+
+for k = 0 , . . . , n σ − 1 do 
+
+Compute ˆGk = 1
+
+> nrep
+
+Pnrep  
+
+> i=1
+
+∇ϕ(xik) · ∇ ϕ(xik)⊤
+
+Solve ˆGk ˆηk = ddt mkh for ˆηk
+
+for i = 1 , . . . , n rep do 
+
+Sample ξik ∼ N (0 , Id) 
+
+Set yik = xik + h ˆη⊤ 
+
+> k
+
+∇ϕ(xik) + √2hσ ξ ik
+
+end for 
+
+Corrector (project to preserve moments) 
+
+Compute ˆG′ 
+
+> k
+
+= 1
+
+> nrep
+
+Pnrep  
+
+> i=1
+
+∇ϕ(yik) · ∇ ϕ(yik)⊤
+
+Solve hσ 2 ˆG′ 
+
+> k
+
+ˆθk = 1
+
+> nrep
+
+Pnrep  
+
+> i=1
+
+ϕ(yik) − m(k+1) h for 
+
+ˆθk
+
+for i = 1 , . . . , n rep do 
+
+Set xik+1 = yik + h ˆθ⊤ 
+
+> k
+
+∇ϕ(yik)
+
+end for end for Output: Samples (xinσ )1≤i≤nrep 
+
+## 4 Maximum Entropy: Convergence and Bounds 
+
+Let pσt be the PDF of the solution Xt of the MGD SDE (13) for a volatility σ. Section 4.1 studies the con-vergence of pσ 
+
+> 1
+
+towards the maximum entropy distribution 
+
+p∗. Section 4.2 computes a tractable lower bound of the entropy H(pσ 
+
+> 1
+
+) and conjectures its convergence towards 
+
+H(p∗) when σ increases. 
+
+4.1 Convergence towards the Maximum Entropy Distribution 
+
+A central claim of this paper is that, as σ → ∞ , the distri-bution pσ 
+
+> 1
+
+of the MGD output converges to the maximum entropy distribution p∗. Next, we provide heuristic sup-port for this claim via a formal Taylor expansion, then state it precisely as Conjecture 4.1. The conjecture is ver-ified numerically in Section 5. The time evolution of the PDF pσt of the solution of the MGD SDE (13) is governed by the Fokker-Planck equa-tion: 
+
+∂tpσt = ∇ · (pσt (( −ηt + σ2θt)⊤∇ϕ)) + σ2∆pσt . (22) Formally taking σ → ∞ and keeping only the leading-order terms, the Fokker-Planck equation reduces to 
+
+∇ · (p∗ 
+
+> t
+
+(θ∗
+
+> t
+> ⊤
+
+∇ϕ)) + ∆ p∗ 
+
+> t
+
+= 0 , (23) where p∗ 
+
+> t
+
+and θ∗ 
+
+> t
+
+denote the (formal) limits of pσt and θt
+
+as σ → ∞ . The solution of this limit equation is an expo-nential distribution: 
+
+p∗ 
+
+> t
+
+= ( Z∗ 
+
+> t
+
+)−1e−θ∗
+
+> t
+> ⊤ϕ
+
+, (24) with normalising constant Z∗ 
+
+> t
+
+. This suggests that pσt con-verges to an exponential distribution with moments mt,and hence to the maximum entropy distribution satisfying these constraints. In particular, this gives p∗ 
+
+> 1
+
+= p∗ and 
+
+θ∗ 
+
+> 1
+
+= θ∗. Expanding pσt = p∗ 
+
+> t
+
+(1 + qtσ−2 + o(σ−2)) ,for some qt that does not depend upon σ, Appendix B provides a formal calculation showing that the Kullback-Leibler divergence satisfies DKL (pσ 
+
+> 1
+
+∥p∗) = O(σ−2).This leads to the following conjecture: 
+
+Conjecture 4.1 (Max entropy) . There exists C > 0 such that for all σ > 0
+
+DKL (pσ 
+
+> 1
+
+∥p∗) ≤ C σ −2. (25) A numerical verification is given in Section 5. Since pσ
+
+> 1
+
+and p∗ share the same moments, we have 
+
+DKL (pσ 
+
+> 1
+
+∥p∗) = H(p∗) − H(pσ 
+
+> 1
+
+), (26) so (25) is equivalent to 
+
+H(p∗) − H(pσ 
+
+> 1
+
+) ≤ C σ −2. (27) 
+
+Remark 4.2. In numerical experiments, we choose p0 to be a Gaussian PDF. If ϕ is quadratic ( ϕ(x) = xx ⊤) since 
+
+∇ϕ(x) is linear, dX t in the MGD (22) is the sum of two Gaussian random vectors so Xt remains Gaussian for all 
+
+t with second order moments equal to mt. It results that 
+
+pσt is Gaussian with the same mean and covariance as It,and does not depend on σ. More generally, Theorem E.1 in Appendix E proves that for any sufficiently regular p0,if ϕ(x) = ( x, xx ⊤), then MGD admits strong solutions and 
+
+lim  
+
+> σ→∞
+
+DKL (pσ 
+
+> 1
+
+∥p∗) = 0 .
+
+6MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+Since the numerical cost of MGD is O(σ2) (see Section 3.2), the cost required to reach a given error is propor-tional to the constant C appearing in Conjecture 4.1. This constant depends on the moment function ϕ and the mo-ments mt, and becomes large when ϕ is not expressive enough to capture the homotopic transport of mass at early times t—before the maximum entropy distribution with moments mt becomes multimodal. If x ∈ R, a truncated monomial basis ϕ(x) = ( xk)k≤r
+
+provides this flexibility, as illustrated in Section 5.1. If 
+
+x ∈ Rd, since the number of monomials grows polyno-mially with d, this strategy becomes computationally pro-hibitive for d large. A wavelet scattering spectra ϕ [21] computes O(log 3 d) low-order multiscale moments that are similar to fourth order moments. In Section 6, we show that for real-world high-dimensional datasets from physics and finance, it is sufficient rich to capture this ho-motopic transport with a small C.Modelling the transport of mass does not require ϕ to pro-vide an accurate model the full distribution of It. We show in Section 6.5 that C can be small although the model mis-specification DKL (p∥p∗) is large. 
+
+4.2 Entropy Estimation 
+
+We now compute a tractable lower bound on the en-tropy H(pσ 
+
+> 1
+
+) and conjecture that it converges to H(p∗)
+
+as σ → ∞ .
+
+Proposition 4.3. Assume the MGD SDE (13) admits a unique strong solution for all t ∈ [0 , 1] . Then, 
+
+ddt H(pσt ) = θ⊤
+
+> t
+
+ddt mt
+
++ σ2E|∇ log pσt (Xt) + θ⊤ 
+
+> t
+
+∇ϕ(Xt)|2,
+
+(28) 
+
+and hence ddt H(pσt ) ≥ θ⊤
+
+> t
+
+ddt mt. (29) The proof, given in Appendix A, uses the Fokker-Planck equation (22) to compute the evolution of the differential entropy of pσt . When the moments are constant ( ddt mt =0), the entropy increases along the dynamics. In this case, 
+
+H(pσt ) also increases with σ, as shown by a time-rescaling argument in Proposition A.1. Sections 5 and 6 provide nu-merical verification that ddσ H(pσt ) ≥ 0 more generally. Integrating (29) over [0 , 1] yields a lower bound on the entropy of the sampled distribution pσ 
+
+> 1
+
+:
+
+H(pσ 
+
+> 1
+
+) ≥ Hσ 
+
+> ∗
+
+:=  
+
+> def
+
+H(p0) + 
+
+Z 10
+
+θ⊤
+
+> t
+
+ddt mt dt. (30) This lower bound can be computed directly from the MGD parameters along the dynamics. From (28), the gap between H(pσ 
+
+> 1
+
+) and its lower bound is 
+
+H(pσ 
+
+> 1
+
+)−Hσ 
+
+> ∗
+
+= σ2
+
+Z 10
+
+E|∇ log pσt (Xt)+ θ⊤ 
+
+> t
+
+∇ϕ(Xt)|2 dt. 
+
+(31) This integral is the time-averaged Fisher divergence be-tween pσt and the exponential distribution with energy 
+
+θ⊤ 
+
+> t
+
+ϕ. If Conjecture 4.1 holds, this Fisher divergence van-ishes as σ → ∞ , provided that p0 itself has an exponential form. In particular, this holds when X0 = Z is Gaussian and ϕ includes quadratic terms so that θ⊤ 
+
+> 0
+
+ϕ(x) = |x|2/2
+
+for some θ0. The lower bound Hσ 
+
+> ∗
+
+then converges towards 
+
+H(p∗).
+
+Conjecture 4.4 (Entropy bound) . If Z has density p0 =
+
+Z−10 e−θ⊤ 
+
+> 0ϕ
+
+, then there exists C > 0 such that for all 
+
+σ > 0,
+
+H(p∗) − Hσ 
+
+> ∗
+
+≤ C σ −2. (32) Supporting arguments from the same Fokker–Planck anal-ysis are given in Appendix B, with numerical verification in Section 5. In practice, monitoring the convergence of 
+
+Hσ 
+
+> ∗
+
+provides a diagnostic for the convergence of pσ 
+
+> 1
+
+to p∗.
+
+## 5 Numerical Validation 
+
+Section 5.1 studies the numerical convergence proper-ties of Moment Guided Diffusions towards maximum en-tropy distributions, over distributions of one-dimensional 
+
+x ∈ R. We use a cosine interpolant defined by 
+
+It = cos( 12 πt ) Z + sin( 12 πt ) X
+
+and solve the MGD SDE (13) with the numerical integra-tor specified in Section 3.2. Section 5.2 shows empirically that the numerical complexity of the MGD sampling does not suffer from the non-convexity of the distributions as opposed to an MCMC sampling algorithm. 
+
+5.1 Convergence towards Maximum Entropy Distributions 
+
+The MGD algorithm samples a distribution with density 
+
+pσ 
+
+> 1
+
+. We study its numerical convergence to the maximum entropy distribution p∗(x) = Z−1 
+
+> θ∗
+
+e−θ⊤∗ ϕ(x) and verify Conjectures 4.1 and 4.4 for different choices of data dis-tributions and moment functions ϕ.
+
+5.1.1 Non-log-concave Density 
+
+We consider data X ∼ p distributed according to an un-balanced bimodal density p(x) = Z−1e− 45 (x4−5x2−x/ 2) 
+
+for x ∈ R, and the four-dimensional monomial map 
+
+ϕ(x) = ( x, x 2, x 3, x 4), whose moments are E[ϕ(X)] ≈
+
+(0 .8, 2.4, 2.2, 6.4) . With this choice, the maximum en-tropy density satisfies p∗(x) = p(x). (Note that It for 
+
+t ∈ (0 , 1) is not distributed according to the maximum entropy distribution with moments mt.) The log-density log p∗(x) (dotted line) in Figure 2(a) ex-hibits two modes, reflecting a non-convex Gibbs energy. For small σ, the density pσ 
+
+> 1
+
+concentrates in two separate modes. Although these modes do not have the correct shape (they are too peaked, reflecting the lack of entropy of pσ 
+
+> 1
+
+), their relative weight is correct. As σ increases, the added noise allows particles to spread correctly inside the 7MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+modes, and pσ 
+
+> 1
+
+progressively converges towards p∗, with near-superposition at σ2 = 5 .Figure 2(b) quantifies this convergence via the entropy 
+
+H(pσ 
+
+> 1
+
+) (blue), computed numerically from the distribu-tions above. These values lie below H(p∗) = 0 .67 (red). We observe that ddσ H(pσ 
+
+> 1
+
+) ≥ 0 and that H(pσ 
+
+> 1
+
+) → H(p∗)
+
+as σ2 increases. Figure 2(c) shows DKL (pσ 
+
+> 1
+
+∥p∗) =
+
+H(p∗) − H(pσ 
+
+> 1
+
+) (blue dots), which decays as O(σ−2) on the log-log scale (black dashed line shows σ−2 decay), validating Conjecture 4.1. The lower bound Hσ 
+
+> ∗
+
+on H(pσ 
+
+> 1
+
+), computed from (30), is shown as black dots in Figure 2(b). As expected, it lies below H(pσ 
+
+> 1
+
+) (blue) and also converges to H(p∗). Fig-ure 2(c) shows that H(p∗) − Hσ 
+
+> ∗
+
+(black dots) also decays as O(σ−2), validating Conjecture 4.4. 2 0 2 4 6                    
+
+> 10 3
+> 10 2
+> 10 1
+> 10 02= 0
+> 2= 0.5
+> 2= 1
+> 2= 5
+> 20246
+> 10 3
+> 10 2
+> 10 1
+> 10 02= 0
+> 2= 50
+> 2= 100
+> 2= 500
+
+(a) (d) 10 0 10 1     
+
+> 2
+> 0.2
+> 0.4
+> 0.6
+> H(p*)
+> H(p1)
+> H*
+> 10 110 2
+> 2
+> 0.2
+> 0.4
+> 0.6
+
+(b) (e) 10 0 10 1              
+
+> 2
+> 10 2
+> 10 1
+> 10 0H(p*)H*
+> H(p*)H(p1)
+> 10 110 2
+> 2
+> 10 2
+> 10 1
+> 10 0
+
+(c) (f) Figure 2: Convergence of MGD towards the maximum entropy bimodal distribution p∗(x) =
+
+Z−1e− 45 (x4−5x2−x/ 2) for X ∼ p = p∗. Left column: moment function ϕ(x) = ( x, x 2, x 3, x 4). Right column: 
+
+ϕ(x) = (x2, log p(x)) . (a,d) Log-density log p∗(x)
+
+(dashed) and log pσ 
+
+> 1
+
+(x) for increasing σ (blue to red). (b,e) Maximum entropy H(p∗) (red line), sampled en-tropy H(pσ 
+
+> 1
+
+) (blue dots), and lower bound Hσ 
+
+> ∗
+
+from (30) (black dots) versus σ2. (c,f) Entropy gaps H(p∗)−H(pσ 
+
+> 1
+
+)
+
+(blue) and H(p∗) − Hσ 
+
+> ∗
+
+(black) versus σ2; the dashed line shows σ−2 decay. 
+
+5.1.2 Slower Convergence 
+
+In the previous example, pσ 
+
+> 1
+
+converges towards p∗ with negligible error for σ2 ≥ 2. We now show that the con-vergence constant C in Conjecture 4.1 depends critically on the choice of moment functions ϕ.When p is known, a seemingly natural choice is ϕ(x) = (x2, log p(x)) , since this suffices to represent both the data density p and the initial Gaussian density p0, yield-ing p∗(x) = p(x). For the bimodal density p(x) =
+
+Z−1e− 45 (x4−5x2−x/ 2) with this ϕ, Figures 2(e) and (f) confirm that DKL (pσ 
+
+> 1
+
+∥p∗) and H(p∗) − Hσ 
+
+> ∗
+
+both decay as Cσ −2 for σ2 ≥ 50 , validating Conjectures 4.1 and 4.4. However, the constant C is much larger than in the previ-ous example: small errors require σ2 ≥ 500 , or approxi-mately 10 2 times more integration steps. Figure 2(d) shows the densities pσ 
+
+> 1
+
+for several values of σ.Although pσ 
+
+> 1
+
+is bimodal for σ2 ≤ 1, the relative weights of the two modes are off by one order of magnitude. This oc-curs because ϕ is not expressive enough to displace mass at early times t of the MGD, before pσt becomes multi-modal. For larger values of σ2 (above 10 2), MGD be-comes analogous to a Langevin dynamic, recovering the correct relative weights through random switching of par-ticles between modes. 5 0 5                         
+
+> 10 3
+> 10 2
+> 10 1
+> 10 02= 0.01
+> 2= 0.1
+> 2= 1.0
+> 2= 10.0
+> 1.0
+> 1.5
+> H(p*)
+> H(p1)
+> H*
+> 10 110 010 1
+> 2
+> 10 3
+> 10 1
+> 10 1
+> H(p*)H*
+> H(p*)H(p1)
+
+(a) (b) Figure 3: Convergence of MGD towards the Laplacian maximum entropy distribution p∗(x) = 12 e−| x| for X ∼
+
+p = p∗. (a) Log-density log p∗(x) (dashed) and log pσ 
+
+> 1
+
+(x)
+
+for increasing σ (blue to red). (b, top) Maximum entropy 
+
+H(p∗) (red line), sampled entropy H(pσ 
+
+> 1
+
+) (blue dots), and lower bound Hσ 
+
+> ∗
+
+from (30) (black dots) versus σ2. (b, bot-tom) Entropy gaps H(p∗)−H(pσ 
+
+> 1
+
+) (blue) and H(p∗)−Hσ
+
+> ∗
+
+(black) versus σ2; the dashed line shows σ−2 decay. 
+
+5.1.3 Non-smooth ϕ
+
+The MGD numerical scheme (Section 3.2) avoids com-puting ∆ϕ, which is essential when ϕ includes modulus or 
+
+ℓ1 norms, as in the scattering spectra of Section 6. We ver-ify here that MGD correctly samples maximum entropy distributions defined by non-smooth ϕ, and that Conjec-tures 4.1 and 4.4 hold. We consider data distributed according to the Laplacian density p(x) = 12 e−| x|, which is the maximum entropy 8MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+distribution p = p∗ for ϕ(x) = ( x2, |x|) with E[ϕ(X)] = (2 , 1) . Figure 3(a) shows log pσ 
+
+> 1
+
+(x) for various σ. As σ in-creases, the curves converge to log p∗(x) (dashed), nearly superimposing at σ2 = 10 . For small σ, the density pσ 
+
+> 1
+
+ex-hibits a sharper spike near zero and shorter tails, reflecting insufficient entropy. Convergence is quantified by DKL (pσ 
+
+> 1
+
+∥p∗) = H(p∗) −
+
+H(pσ 
+
+> 1
+
+), which decreases to zero as σ2 increases (Fig-ure 3(b, top)). Figure 3(b, bottom) confirms H(p∗) −
+
+H(pσ 
+
+> 1
+
+) = O(σ−2) for σ2 ≥ 10 −2, validating Conjec-ture 4.1. The lower bound Hσ 
+
+> ∗
+
+from (30) (black dots) also converges to H(p∗) at the same rate, validating Conjec-ture 4.4. Since the Laplacian is log-concave: there is no mass to displace between wells, so even a Langevin dy-namic would converge quickly. 
+
+5.2 Rate of Convergence and Multimodality 
+
+We verify numerically that the computational cost of MGD does not depend on energy barrier heights, unlike MCMC methods. We use truncated monomial moment generating functions ϕ(x) = ( xk)k≤r (for r = 4 )2 0 2 4         
+
+> 10 6
+> 10 5
+> 10 4
+> 10 3
+> 10 2
+> 10 1
+> 10 0= 0.3
+> = 0.7
+> = 1.1
+> = 1.5
+> = 1.9
+> 0.5 1.0 1.5
+> 10 2
+> 10 3
+> 10 4
+> 10 5
+> 10 6
+> nsteps
+> MGD
+> MALA
+
+(a) (b) Figure 4: (a) Log-density log p∗(x) for p∗(x) =
+
+Z−1 
+
+> β
+
+e−β(x4−5x2−x/ 2) with increasing β (blue to red). The two modes are separated by a barrier of height propor-tional to β. (b) Number of discretization steps nsteps re-quired to reach a fixed Kullback–Leibler divergence from 
+
+p∗, for MALA (red) and MGD (green), as a function of β.For MALA, nsteps grows exponentially with β; for MGD, it remains nearly constant. Figure 4(a) shows the log-density of unbalanced bimodal distributions 
+
+p∗(x) = Z−1 
+
+> β
+
+e−β(x4−5x2−x/ 2) ,
+
+with two modes separated by a barrier of height propor-tional to β. For MGD, we consider for simplicity that X
+
+is distributed according to the maximum entropy distribu-tion p = p∗. The computational cost of both MGD and the Metropolis Adjusted Langevin Algorithm (MALA) is proportional to the number nsteps of discretization steps. The cost per step differs between algorithms (typically higher for MGD), but it does not depend on β so we do take it into account. MALA computes samples via discretized Langevin dy-namics initialized from Gaussian white noise, with an accept-reject operation which eliminates the discretiza-tion bias. The step size is tuned to achieve an optimal ac-ceptance rate approximately 0.57 [35]. Although the sam-pled distribution ˜p converges to p∗ as nsteps increases, this convergence depends exponentially on β. Indeed, cross-ing an energy barrier by adding Gaussian noise has prob-ability exponentially small in the barrier height. We measure the minimum number of steps nsteps required to reach a fixed error DKL (˜ p∥p∗) = 10 −3. Figure 4(b) confirms that for MALA (red), nsteps grows exponentially with β, making it computationally prohibitive for non-convex distributions—especially in higher dimensions. For MGD, we know that nsteps = nσ = O(σ2) and 
+
+DKL (pσ 
+
+> 1
+
+∥p∗) = O(σ−2). We choose σ so that the dis-cretized MGD satisfies DKL (˜ pσ 
+
+> 1
+
+∥p∗) = 10 −3. We run this experiment for the moment generating function ϕ(x) = (x, x 2, x 3, x 4). Figure 4(b) shows that for MGD (green), 
+
+nsteps remains approximately constant as β increases. It verifies that the MGD computational cost does not suffer from multimodality. The homotopic transport (Section 4.1) is able to distribute samples into correct modes early, enabling efficient sam-pling. However, this property requires ϕ to be suffi-cient rich to capture the mass transport at early times; for 
+
+ϕ(x) = ( x2, log p(x)) , MGD would revert to MCMC-like behavior. 
+
+## 6 Generation of Multiscale Processes in Finance and Physics 
+
+This section applies the MGD algorithm to sample high-dimensional maximum entropy distributions. Section 6.2 reviews multiscale maximum entropy models based on wavelet scattering moments. We consider financial time series (Section 6.3) as well as two-dimensional turbulent and cosmological fields (Section 6.2). To validate Conjec-tures 4.1 and 4.4, we compute the lower bound of the en-tropy of sampled distributions, and study its convergence as the volatility σ increases. We also estimate negentropy, which quantifies order and non-Gaussianity (Section 6.1). Finally, we show numerically in Section 6.5 that the con-vergence of MGD to the maximum entropy distribution 
+
+p∗ does not depend upon the model error DKL (p∥p∗).
+
+6.1 Negentropy Rate 
+
+The negentropy was introduced in statistical physics by Erwin Schr¨ odinger [16] to measure the distance of sys-tem to equilibrium, and give a measure of order and infor-mation. The negentropy usually can not be measured for high-dimensional systems because estimating the entropy is generally untractable. The negentropy of a random vector X is defined as the difference between the entropy H(p) of the density p of 
+
+X and the entropy H(g) of the gaussian density g hav-ing the same covariance Σ as p. The negentropy rate is 9MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+normalised by the dimension d of X and can be rewrit-ten as the Kullback Leibler divergence between p and the Gaussian g:
+
+∆H(p) = d−1(H(g) − H(p)) = d−1DKL (p∥g) ≥ 0,
+
+(33) where the Gaussian entropy is given by 
+
+H(g) = d
+
+2 log 
+
+
+
+2πe (detΣ) 1/d 
+
+. (34) The negentropy rate converges when d goes to infinity for extensive processes for which the entropy rate d−1H(p)
+
+converges. It is invariant to the action of an invertible lin-ear operator on X and hence does not depend upon the covariance of X, if it is invertible. In that sense it is an intrinsic measure of non-Gaussian properties of X.If p∗ is the maximum entropy distribution conditioned by the moment value Ep(ϕ) then H(p∗) ≥ H(p) and 
+
+H(p∗) − H(p) = DKL (p∥p∗) and, as a result, 
+
+∆H(p) = d−1 H(g) − H(p∗) + DKL (p∥p∗). (35) This implies that d−1 H(g) − H(p∗) is a lower bound of the negentropy ∆H(p) of p, which depends upon the accuracy of the maximum entropy model p∗ defined by 
+
+DKL (p∥p∗). The following sections give an estimate of this negentropy rate with the MGD algorithm, by com-puting the lower bound Hσ 
+
+> ∗
+
+in (30) of H(p∗), and 
+
+∆Hσ 
+
+> ∗
+
+= d−1 H(g) − Hσ
+
+> ∗
+
+. (36) The convergence of Hσ 
+
+> ∗
+
+when σ increases is equivalent to the convergence of ∆Hσ 
+
+> ∗
+
+. In particular, Conjecture 4.4 states that ∆Hσ 
+
+> ∗
+
+should converge at rate O(σ−2).
+
+6.2 Wavelet Scattering Spectra 
+
+The wavelet scattering transform was introduced in [36] for signal classification and modelling. We compute maximum entropy models from wavelet scattering mo-ments [19, 21]. These moments capture dependencies across scales using a complex wavelet transform. Until now, such high-dimensional maximum entropy distribu-tions could only be sampled with a microcanonical gradi-ent descent algorithm [18], which introduces approxima-tion errors. We briefly review complex wavelet transforms in one and two dimensions before defining wavelet scat-tering moments. 
+
+6.2.1 Wavelet Transform 
+
+A wavelet ψ(u) is a function with fast decay in u ∈ Rκ
+
+satisfying R ψ(u) du = 0 . Its Fourier transform is centred at a frequency ξ̸ = 0 with fast decay away from ξ. Here 
+
+κ = 1 for time series and κ = 2 for images. In numerical applications we use a Morlet wavelet 
+
+ψ(u) = 1(2 πσ 2)κ/ 2 e− |u|22σ2
+
+
+
+eiξ ⊤u − c
+
+
+
+,
+
+where c is adjusted so that R ψ(u) du = 0 . As in [19, 21], we set σ = 0 .8, and ξ = 3 /4 if κ = 1 and ξ = (3 /4, 0) if 
+
+κ = 2 . Figure 5(a,b) shows the real and imaginary parts of ψ in one and two dimensions. In one dimension, wavelets are dilated by a scale 2j :
+
+ψλ(u) = 2 −j/ 2ψ(2 −j u).
+
+The Fourier transform of ψλ is centred at frequency λ =2−j ξ. In two dimensions, the wavelet is also rotated by an angle ℓπ/L for 0 ≤ ℓ < L :
+
+ψλ(u) = 2 −jκ/ 2ψ(2 −j Rℓu), (37) with centre frequency λ = 2 −j Rℓξ. We use L = 4 orien-tations in all experiments. The wavelet transform of X is an invertible linear oper-ator which captures variations at all scales 2j and orien-tations ℓπ/L , equivalently filtering into frequency bands of constant octave bandwidth centred at each λ [37]. It is computed via discrete convolutions on the sampling grid of X of size d, with periodic boundary conditions: 
+
+Xλ(u) :=  
+
+> def
+
+X ∗ ψλ(u). (38) The scale 2j satisfies 1 < 2j ≤ d, so there are at most 
+
+log 2 d wavelet frequencies λ in one dimension, and at most L log 2 d in two dimensions. The lowest frequencies are captured by a low-pass filter ψ0 centred at λ = 0 .u  
+
+> Re( (u))
+> Im( (u))
+
+(a) u1
+
+> u2
+> u1
+> u2
+
+(b) Figure 5: (a): One-dimensional Morlet wavelet ψ. The wavelet is a complex function whose real and imaginary parts are respectively in blue and red. (b): real (left) and imaginary (right) parts of a two-dimensional Morlet wavelet. 
+
+6.2.2 Wavelet Scattering Spectra 
+
+The wavelet scattering transform was introduced in [36] for signal classification and modelling. We summarize the 10 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+calculation of empirical wavelet scattering moments used in the numerical experiments of Sections 6.3 and 6.4. The modulus of complex wavelet coefficients |Xλ| mea-sures the amplitude of local signal variations at multiple scales and orientations. The first two empirical scattering moments are empirical means of |Xλ(u)| and |Xλ(u)|2:
+
+ϕ1(X) = 
+
+
+
+d−1 X
+
+> u
+
+|Xλ(u)|
+
+
+
+> λ
+
+,ϕ2(X) = 
+
+
+
+d−1 X
+
+> u
+
+|Xλ(u)|2
+
+> λ
+
+.
+
+(39) These empirical averages converge to expected values as 
+
+d increases, under appropriate ergodicity assumptions. The dimension of ϕ1 and ϕ2 is O(log d). The ratio P 
+
+> u
+
+|Xλ(u)|/ P 
+
+> u
+
+|Xλ(u)|2 decreases when the sparsity of Xλ increases. Interactions across scales are captured by a second wavelet transform of each modulus, |Xλ| ∗ ψλ′ , which measures variations of |Xλ(u)| at lower frequencies 
+
+|λ′| < |λ|. We get O(log 22 d) cross-scale correlations with wavelet coefficients Xλ′
+
+at the frequency λ′
+
+ϕ3(X) = 
+
+
+
+d−1 X
+
+> u
+
+|Xλ| ∗ ψλ′ (u) Xλ′
+
+(u)∗
+
+> λ′,λ
+
+, (40) for all λ, λ ′ with |λ| > |λ′|. The imaginary parts of these moments are sensitive to the transformation X(u) →
+
+X(−u), allowing them to characterize temporal asymme-tries for 1D signals and spatial asymmetries for 2D fields. We also compute O(log 32 d) cross-scale correlations be-tween modulus wavelet coefficients at different frequen-cies λ and λ′′ , filtered by a same wavelet of frequency λ′
+
+ϕ4(X) = 
+
+
+
+d−1 X
+
+> u
+
+|Xλ|∗ ψλ′ (u) |Xλ′′ 
+
+|∗ ψλ′ (u)∗
+
+> λ,λ ′,λ ′′
+
+,
+
+(41) for all |λ| > |λ′| and |λ′′ | > |λ′|. Observe that if we replace |Xλ| by |Xλ|2 then ϕ3(X) and ϕ4(X) are empir-ical moments of order 3 and 4. As explained in [19, 21], using |Xλ| defines lower variance estimators which have similar properties. The full vector of empirical scattering moments 
+
+ϕ(X) =  ϕ1(X), ϕ 2(X), ϕ 3(X), ϕ 4(X), (42) has a dimension r = O(log 32 d). These empirical mo-ments are invariant to translations of X. It results that a maximum entropy distribution conditioned by m = Ep[ϕ]
+
+is necessarily stationary. We shall see that the richness of scattering empirical moments is sufficient to insure a quick convergence of the MGD homotopic transport dis-cussed in Section 4.1. 
+
+6.3 Generation of Multiscale Time Series in Finance 
+
+Financial time series are examples of one-dimensional multiscale sequences with strong non-Gaussian proper-ties, including bursts of activity and time-reversal asym-metry. If P( u) denotes the daily closing price at time u,then X(u) = log P( u) − log P( u − 1) is the correspond-ing log-return. Figure 6(a) displays S&P 500 daily log-returns from January 2000 to February 2024, a series of 
+
+d = 6064 time steps exhibiting strong intermittency and fat tails. Stochastic models of such time series are crucial for risk management, pricing, and hedging of contingent claims. Often, as with the S&P 500, only a single realiza-tion of the process is available. Wavelet moments can be estimated from empirical sums under the assumption that the increments are stationary and ergodic [19], so that ϕ(X) ≈ E[ϕ(X)] . Figure 6(b) shows a sample Xσ 
+
+> 1
+
+generated by MGD with σ2 = 5 .5,using r = 217 empirical wavelet scattering moments (42) computed with the Morlet wavelet of Figure 5(a). The intermittent behavior and bursts are qualitatively repro-duced. In the following, we do not analyze the accuracy of this wavelet scattering model, which is studied in [19], but rather focus on the entropy properties of MGD samples as the volatility σ increases. 10 
+
+> 0
+> 10
+> t
+> 10
+> 0
+> 10
+> S&P Gen
+
+Figure 6: (a) S&P 500 daily log-returns ( d = 6060 ) from January 2000 to February 2024. (b) Sample generated by MGD with σ2 = 5 .5, using r = 217 empirical wavelet scattering moments (42) computed from (a). Intermit-tency is reproduced. Unlike the numerical examples of Section 5, here the true distribution p of X and the maximum entropy distribu-tion p∗ constrained by wavelet scattering moments are unknown. Nor can we compute the entropy H(pσ 
+
+> 1
+
+) di-rectly; only the lower bound Hσ 
+
+> ∗
+
+from (30) is accessible. We therefore test convergence of the sampled density pσ
+
+> 1
+
+through the entropy lower bound Hσ 
+
+> ∗
+
+as σ increases. Figure 7(a) shows that the negentropy estimate ∆Hσ 
+
+> ∗
+
+=
+
+d−1(H(g) − Hσ 
+
+> ∗
+
+) decreases before reaching a plateau for σ2 ≥ 2.5, indicating that Hσ 
+
+> ∗
+
+increases and then stabilizes. At σ2max = 5 .5, the negentropy estimate is 
+
+∆Hσmax  
+
+> ∗
+
+= 0 .05 , small compared to other non-Gaussian processes reported in Table 2. This is expected, as Gaus-sian models are often used as first-order approximations of financial time series. Nevertheless, this negentropy captures non-Gaussian phenomena such as the bursts of activity visible in Figure 6(a). 11 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 0 2 4    
+
+> 2
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> H10 110 0
+> 2
+> 10 2
+> 10 1
+
+(a) (b) Figure 7: (a) Negentropy estimate ∆Hσ 
+
+> ∗
+
+from (36) ver-sus σ2 for S&P 500 log-returns. (b) Convergence of Hσ 
+
+> ∗
+
+,measured by d−1(Hσmax  
+
+> ∗
+
+− Hσ 
+
+> ∗
+
+) with σ2max = 5 .5, versus 
+
+σ2. The plain line shows σ−2 decay. Figure 7(b) shows the convergence rate of d−1(Hσmax  
+
+> ∗
+
+−
+
+Hσ 
+
+> ∗
+
+) as a function of σ2, for sufficiently large σmax . The negentropy estimate ∆Hσ 
+
+> ∗
+
+converges as O(σ−2), consis-tent with Conjecture 4.4. However, since H(p∗) is un-known, we cannot guarantee convergence to H(p∗).0 1 2 3 4 5   
+
+> 2= 0
+> 2= 0.25
+> 2= 5.5
+> Gaussian model
+> S&P data
+
+Figure 8: Histograms of rolling volatility vol( u) com-puted over w = 5 days. Dashed: S&P log-returns X. Red to green: MGD samples Xσ 
+
+> 1
+
+for increasing σ2. Black: Gaussian process with the same covariance. At σ2 = 5 .5,the histogram of Xσ 
+
+> 1
+
+matches the S&P and differs from the Gaussian. If the volatility σ is too small, pσ 
+
+> 1
+
+does not reach the max-imum entropy density p∗. This manifests as excess inter-mittency, measured by the rolling volatility of Xσ 
+
+> 1
+
+. For zero-mean price increments X(u), the rolling volatility is defined as the local standard deviation over time windows of size w:
+
+vol( u) = 
+
+
+
+w−1
+
+> w−1
+
+X
+
+> v=0
+
+|X(u − v)|21/2
+
+.
+
+Figure 8 shows histograms of rolling volatility: the orig-inal S&P increments X (dashed), MGD samples Xσ 
+
+> 1
+
+for various σ (coloured), and a Gaussian process (black) hav-ing the same quadratic moments E[ϕ2(X)] as the S&P. The mismatch between the rolling volatility of the S&P and the Gaussian process confirms that the S&P is non-Gaussian. When σ is too small, the histogram exhibits a sharp peak at low volatility and a heavier tail, indicating stronger bursts of energy interspersed with more regular variations. At σ2 = 5 .5, where the entropy Hσ 
+
+> ∗
+
+has nearly converged to its maximum, the volatility histogram matches that of the S&P increments. This agreement is a partial valida-tion of the model since rolling volatility was not explicitly incorporated into the wavelet scattering model. 
+
+6.4 Generation of Two-Dimensional Physical Fields 
+
+Similar numerical experiments are performed on two-dimensional physical fields. We consider cosmological and turbulent fluid fields, which are non-Gaussian sta-tionary fields with long-range spatial dependencies and coherent geometric structures. Estimating energy mod-els of out-of-equilibrium systems is central to statistical physics [38, 39]. Original samples are shown in the top row of Figure 9. Figure 9(a) shows a cosmic web field, constructed by ex-tracting a 2D slice from a 3D simulation of the large-scale dark matter distribution [22] with a logarithmic transfor-mation [21]. Figure 9(b) shows a turbulent vorticity field from a 2D incompressible Navier–Stokes simulation [40], with periodic boundary conditions. These fields have di-mension d = 128 2 and are modelled with r = 2392 scat-tering moments, estimated on batches of 100 replicas in MGD. 
+
+(a) (b) 
+
+(c) (d) Figure 9: (a) Cosmic web field: 2D slice from a 3D dark matter simulation. (b) Turbulent vorticity field from 2D incompressible Navier–Stokes. Both images are 128 ×128 
+
+pixels. (c,d) MGD samples with wavelet scattering mo-ments at σ2 = 5 .5.The samples in Figures 9(c,d), generated by MGD with 
+
+σ2max = 5 .5, are visually similar to the originals. The quality is comparable to results from the ad-hoc micro-12 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+canonical algorithm of [21], which performs moment matching without controlling entropy. As for financial time series, we test convergence of pσ
+
+> 1
+
+through the lower bound Hσ 
+
+> ∗
+
+of its entropy, via the negen-tropy estimate ∆Hσ 
+
+> ∗
+
+= d−1(H(g) − Hσ 
+
+> ∗
+
+). Figure 10(a) shows that ∆Hσ 
+
+> ∗
+
+decreases and reaches a plateau for σ2 ≥
+
+2.5, similar to the S&P time series. Figure 10(b) displays the convergence of Hσ 
+
+> ∗
+
+by computing d−1(Hσmax  
+
+> ∗
+
+− Hσ 
+
+> ∗
+
+)
+
+for σ2max = 5 .5, for turbulence (red) and cosmic web (blue). The decay is proportional to σ−2, supporting Con-jecture 4.4. At σ2max = 5 .5, the negentropy estimate is ∆Hσmax  
+
+> ∗
+
+=0.34 for turbulence, much larger than ∆Hσmax  
+
+> ∗
+
+= 0 .07 
+
+for the cosmic web. This reflects the stronger geomet-ric regularity of turbulent fields, with filaments wrapping around vortices—structures that are highly non-Gaussian. 0.07        
+
+> 0.08
+> 024
+> 2
+> 0.4
+> 0.6
+> H *10 110 0
+> 2
+> 10 3
+> 10 2
+> 10 1
+> Cosmic web
+> Turbulence
+
+(a) (b) Figure 10: (a) Negentropy estimate ∆Hσ 
+
+> ∗
+
+from (36) ver-sus σ2 for cosmic web (blue) and turbulence (red). (b) Convergence of Hσ 
+
+> ∗
+
+, measured by d−1(Hσmax  
+
+> ∗
+
+−Hσ 
+
+> ∗
+
+) with 
+
+σ2max = 5 .5, versus σ2. Plain lines show σ−2 decay. Table 2: Negentropy estimate ∆Hσ 
+
+> ∗
+
+at σ = σmax .
+
+Dataset Estimated Normalized Negentropy 
+
+Laplacian 0.07 S&P 500 0.05 Cosmic Web 0.07 2D Turbulence 0.34 The effect of an excessively small σ is visible in the histograms of fine-scale wavelet coefficients Re( Xλ 
+
+> 1
+
+) for 
+
+j = 0 , ℓ = 0 , and X1 ∼ pσ 
+
+> 1
+
+, which exhibit a spike at zero (Figure 11). As σ increases, this artifact disappears and the histogram converges toward that of the original data, even though this marginal distribution is not imposed by the moment map ϕ.As with rolling volatility in the one-dimensional setting, increasing σ raises the entropy of the sampled process, which translates into increased entropy of wavelet coef-ficient marginals. This progressively improves the match with the original data, whose entropy lies below that of the maximum entropy distribution. 0.5 0.0 0.5 1.0     
+
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0 2= 0
+> 2= 0.1
+> 2= 5.5
+> Cosmic web
+> data
+
+Figure 11: Histograms of finest-scale wavelet coefficients 
+
+Re( Xλ 
+
+> 1
+
+) for λ = ξ (j = 0 , ℓ = 0 ) of cosmic web samples from the scattering MGD model, with σ2 ∈ { 0, 0.1, 5.5}.Dashed black: original data. All histograms are computed over 500 samples. Larger σ2 yields better tail reproduc-tion; small σ2 produce more regular samples which have too many small wavelet coefficients, as in Figure 2(a). 
+
+6.5 Convergence with Model Error 
+
+The previous experiments consider processes where the maximum entropy model closely approximates the un-known data distribution: p∗ ≈ p. We now consider an example where the model error DKL (p∥p∗) is large, to verify that MGD can still efficiently sample p∗ even when it is a poor approximation of p.
+
+(a) (b) 0 2 4 6 8    
+
+> 2
+> 1.2
+> 1.4
+> 1.6
+> 1.8
+> H *10 110 0
+> 2
+> 10 2
+> 10 1
+> 10 0
+
+(c) (d) Figure 12: MGD with large model error on CelebA faces (64 × 64 ). (a) Original sample. (b) MGD sample with wavelet scattering moments at σ2 = 1 . (c) Negentropy estimate ∆Hσ 
+
+> ∗
+
+from (36) versus σ2. (d) Convergence of 
+
+Hσ 
+
+> ∗
+
+, measured by d−1(Hσmax  
+
+> ∗
+
+− Hσ 
+
+> ∗
+
+) with σ2max = 8 .5;the line shows σ−2 decay. We choose p as a distribution whose samples are centred human faces from the CelebA dataset [41] (Figure 12(a)), 13 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+with a ϕ which computes wavelet scattering moments as before. The resulting maximum entropy model p∗ is therefore stationary whereas the data distribution is highly non-stationary. Figure 12(b) shows a sample generated by the MGD. It is a sample of a stationary process, which therefore mixes structures across the whole image space. It reproduces edges and regular regions but destroys the face structure. As expected it has a large model error. Nonetheless, MGD converges quickly to p∗.Figure 12(c) shows that the negentropy estimate ∆Hσ
+
+> ∗
+
+reaches a plateau for σ2 ≈ 6, and Figure 12(d) con-firms convergence at rate O(σ−2). The volatility required for convergence is comparable to the physics and finance examples, confirming that for scattering spectra, MGD reaches the maximum entropy distribution for the same range of σ, regardless of the model error. 
+
+## 7 Conclusion 
+
+We introduced Moment-Guided Diffusion (MGD), a sam-pler for maximum entropy distributions estimated from data. Its homotopic path avoids the computational bot-tleneck of energy barrier crossing that plagues MCMC methods for non-convex distributions. This represents a paradigm shift in maximum entropy modelling: rather than estimating parameters, MGD directly generates sam-ples from the target distribution. A key by-product is a tractable entropy estimator, which we use to compute the negentropy of complex high-dimensional datasets. We validated MGD on synthetic examples and real-world data, including financial time series, turbulent vorticity fields, and cosmological dark matter distributions. In all cases, the sampled distributions converge to the tar-get maximum entropy distribution as the volatility σ in-creases, with entropy gaps decaying as O(σ−2) across all tested domains. The negentropy estimates reveal the de-gree of non-Gaussianity and structure in these datasets, providing a principled measure of statistical complexity. MGD opens promising avenues in computational physics and biology, where it can replace microcanonical sam-plers [21, 42] or be adapted to molecular dynamics with restraints [43]. More broadly, while our formulation uses an explicit moment map ϕ, the framework naturally ac-commodates neural network parametrizations, suggesting a principled maximum entropy foundation for diffusion-based generative models. Several theoretical questions remain open. Although we provide convergence guarantees under specific condi-tions, a proof of convergence in full generality remains an important challenge. A further question concerns the be-haviour of MGD when the maximum entropy distribution constrained by moments m = E[ϕ(X)] does not exist. Another important issue is to understand how the conver-gence of MGD to the maximum entropy distribution de-pends upon the choice of the moment generating function 
+
+ϕ, which needs to be sufficiently flexible. Computing a moment interpolation path mt directly from m = Ep[ϕ]
+
+and ϕ is also a promising research direction, to apply the MGD to sample maximum entropy distributions, even if we do not have access to samples of p.
+
+## Acknowledgments 
+
+This work was supported by PR[AI]RIE-PSAI-ANR-23-IACL-0008 and the DRUIDS projet ANR-24-EXMA-0002. It was granted access to the HPC resources of IDRIS under the allocations 2025-AD011016159R1 and 2025-A0181016159 made by GENCI. The authors thank Antonin Chodron de Courcel and Louis-Pierre Chaintron for their fruitful discussions on Mckean-Vlasov equations. 
+
+## References 
+
+[1] E. T. Jaynes, “Information theory and statistical me-chanics,” Physical review , vol. 106, no. 4, p. 620, 1957. [2] I. Goodfellow, J. Pouget-Abadie, M. Mirza, B. Xu, D. Warde-Farley, S. Ozair, A. Courville, and Y. Ben-gio, “Generative adversarial networks,” Communi-cations of the ACM , vol. 63, no. 11, pp. 139–144, 2020. [3] Y. Lipman, R. T. Q. Chen, H. Ben-Hamu, M. Nickel, and M. Le, “Flow matching for generative modeling,” 2023. [Online]. Available: https://arxiv.org/abs/2210.02747 [4] M. S. Albergo and E. Vanden-Eijnden, “Build-ing normalizing flows with stochastic inter-polants,” 2022. [Online]. Available: https: //arxiv.org/abs/2209.15571 [5] M. S. Albergo, N. M. Boffi, and E. Vanden-Eijnden, “Stochastic interpolants: A unifying frame-work for flows and diffusions,” arXiv preprint arXiv:2303.08797 , 2023. [6] J. Ho, A. Jain, and P. Abbeel, “Denoising diffu-sion probabilistic models,” Advances in neural infor-mation processing systems , vol. 33, pp. 6840–6851, 2020. [7] Y. Song, J. Sohl-Dickstein, D. P. Kingma, A. Ku-mar, S. Ermon, and B. Poole, “Score-based generative modeling through stochastic differential equations,” in International Conference on Learn-ing Representations , 2021. [Online]. Available: https://openreview.net/forum?id=PxTIG12RRHS [8] C.-H. Lai, Y. Song, D. Kim, Y. Mitsufuji, and S. Er-mon, “The principles of diffusion models,” arXiv preprint arXiv:2510.21890 , 2025. [9] S. Kullback, Information theory and statistics .Courier Corporation, 1997. [10] T. M. Cover, Elements of information theory . John Wiley & Sons, 1999. 14 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+[11] C. M. Bishop, Pattern recognition and machine learning by Christopher M. Bishop . Springer Science+ Business Media, LLC Berlin, Germany:, 2006, vol. 400. [12] J. Zinn-Justin, Quantum field theory and critical phenomena . Oxford university press, 2021, vol. 171. [13] A. D. Sokal, “How to beat critical slowing-down: 1990 update,” Nuclear Physics B-Proceedings Sup-plements , vol. 20, pp. 55–67, 1991. [14] X. Liu, C. Gong, and Q. Liu, “Flow straight and fast: Learning to generate and transfer data with rectified flow,” 2022. [Online]. Available: https://arxiv.org/abs/2209.03003 [15] Z. Kadkhodaie, F. Guth, E. P. Simoncelli, and S. Mallat, “Generalization in diffusion models arises from geometry-adaptive harmonic representations,” in The Twelfth International Conference on Learn-ing Representations , 2024. [Online]. Available: https://openreview.net/forum?id=ANvmVS2Yr0 [16] E. Schr¨ odinger, What is Life? The Physical Aspect of the Living Cell . Cambridge University Press, 1944. [17] A. Hyv¨ arinen and P. Dayan, “Estimation of non-normalized statistical models by score matching.” 
+
+Journal of Machine Learning Research , vol. 6, no. 4, 2005. [18] J. Bruna and S. Mallat, “Multiscale sparse mi-crocanonical models,” Mathematical Statistics and Learning , vol. 1, no. 3, pp. 257–315, 2019. [19] R. Morel, G. Rochette, R. F. Leonarduzzi, J.-P. Bouchaud, and S. Mallat, “Scale dependen-cies and self-similarity through wavelet scattering covariance,” ArXiv , vol. abs/2204.10177, 2022. [Online]. Available: https://api.semanticscholar.org/ CorpusID:248299807 [20] A. Brochard and S. Zhang, “Generalized recti-fier wavelet covariance models for texture syn-thesis,” in International Conference on Learn-ing Representations , 2022. [Online]. Available: https://openreview.net/forum?id=ziRLU3Y2PN [21] S. Cheng, R. Morel, E. Allys, B. M’enard, and S. Mallat, “Scattering spectra models for physics,” 
+
+PNAS Nexus , vol. 3, 2023. [Online]. Avail-able: https://api.semanticscholar.org/CorpusID: 259309140 [22] F. Villaescusa-Navarro, C. Hahn, E. Massara, A. Banerjee, A. M. Delgado, D. K. Ramanah, T. Charnock, E. Giusarma, Y. Li, E. Allys et al. ,“The quijote simulations,” The Astrophysical Jour-nal Supplement Series , vol. 250, no. 1, p. 2, 2020. [23] K. Schneider, J. Ziuber, M. Farge, and A. Azzalini, “Coherent vortex extraction and simulation of 2d isotropic turbulence,” Journal of Turbulence , no. 7, p. N44, 2006. [24] C. P. Robert, G. Casella, and G. Casella, Monte Carlo statistical methods . Springer, 1999, vol. 2. [25] P. E. Kloeden and R. Pearson, “The numerical solution of stochastic differential equations,” The ANZIAM Journal , vol. 20, no. 1, pp. 8–12, 1977. [26] D. J. Higham, “An algorithmic introduction to nu-merical simulation of stochastic differential equa-tions,” SIAM review , vol. 43, no. 3, pp. 525–546, 2001. [27] J. Besag, “Comments on “representations of knowl-edge in complex systems” by u. grenander and mi miller,” J. Roy. Statist. Soc. Ser. B , vol. 56, no. 591-592, p. 4, 1994. [28] S. Chewi, M. A. Erdogdu, M. Li, R. Shen, and M. S. Zhang, “Analysis of langevin monte carlo from poincare to log-sobolev,” Foundations of Com-putational Mathematics , vol. 25, no. 4, pp. 1345– 1395, 2025. [29] R. Li, H. Zha, and M. Tao, “Sqrt(d) di-mension dependence of langevin monte carlo,” in International Conference on Learning Rep-resentations , 2022. [Online]. Available: https: //openreview.net/forum?id=5-2mX9 U5i [30] F. Koehler, A. Heckett, and A. Risteski, “Statisti-cal efficiency of score matching: The view from isoperimetry,” arXiv preprint arXiv:2210.00726 ,2022. [31] T. Bonnaire, R. Urfin, G. Biroli, and M. Mezard, “Why diffusion models don’t memorize: The role of implicit dynamical regularization in training,” in The Thirty-ninth Annual Conference on Neural Informa-tion Processing Systems , 2025. [Online]. Available: https://openreview.net/forum?id=BSZqpqgqM0 [32] A. Favero, A. Sclocchi, and M. Wyart, “Bigger isn’t always memorizing: Early stopping overparameter-ized diffusion models,” 2025. [Online]. Available: https://arxiv.org/abs/2505.16959 [33] H. P. McKean Jr, “A class of markov processes asso-ciated with nonlinear parabolic equations,” Proceed-ings of the National Academy of Sciences , vol. 56, no. 6, pp. 1907–1911, 1966. [34] L.-P. Chaintron and A. Diez, “Propagation of chaos: a review of models, methods and appli-cations. i. models and methods,” arXiv preprint arXiv:2203.00446 , 2022. [35] G. O. Roberts and J. S. Rosenthal, “Optimal scaling of discrete approximations to langevin diffusions,” 
+
+Journal of the Royal Statistical Society: Series B (Statistical Methodology) , vol. 60, no. 1, pp. 255– 268, 1998. [36] S. Mallat, “Group invariant scattering,” Communi-cations on Pure and Applied Mathematics , vol. 65, no. 10, pp. 1331–1398, 2012. [37] ——, A wavelet tour of signal processing . Elsevier, 1999. 15 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+[38] A. Brossollet, E. Lempereur, S. Mallat, and G. Biroli, “Effective energy, interactions and out of equilibrium nature of scalar active matter,” Commu-nications Physics , 2025. [39] N. M. Boffi and E. Vanden-Eijnden, “Deep learning probability flows and entropy production rates in ac-tive matter,” Proceedings of the National Academy of Sciences , vol. 121, no. 25, p. e2318106121, 2024. [40] K. Schneider, J. Ziuber, M. Farge, and A. Az-zalini, “Coherent vortex extraction and simulation of 2d isotropic turbulence,” Journal of Turbu-lence , vol. 7, p. N44, 2006. [Online]. Available: https://doi.org/10.1080/14685240600601061 [41] Z. Liu, P. Luo, X. Wang, and X. Tang, “Deep learn-ing face attributes in the wild,” in Proceedings of In-ternational Conference on Computer Vision (ICCV) ,December 2015. [42] E. Allys, F. Boulanger, F. Levrier, S. Zhang, C. Colling, B. Regaldo-Saint Blancard, P. Hen-nebelle, and S. Mallat, “The RWST, a compre-hensive statistical description of the non-Gaussian structures in the ISM,” Astronomy & Astrophysics -A&A , vol. 629, p. A115, 2019. [Online]. Available: https://cea.hal.science/cea-02290738 [43] B. Roux and J. Weare, “On the statistical equiva-lence of restrained-ensemble simulations with the maximum entropy method,” The Journal of chemi-cal physics , vol. 138, no. 8, 2013. [44] P. D. Welch, “The use of fast fourier transform for the estimation of power spectra: A method based on time averaging over short, modified periodograms,” 
+
+IEEE Transactions on Audio and Electroacoustics ,vol. 15, pp. 70–73, 1967. [Online]. Available: https://api.semanticscholar.org/CorpusID:13900622 
+
+## A Proofs 
+
+In this appendix, we prove Theorem 3.1, Proposition 4.3, and the additional Proposition A.1, which shows that the entropy increases along MGD’s dynamic when the mo-ments are fixed ( dm t/dt = 0 ). For the reader’s conve-nience we state again the results from main text. 
+
+Theorem 3.1 (Moment Guided Diffusion) . Consider the SDE 
+
+dX t =  η⊤ 
+
+> t
+
+− σ2θ⊤
+
+> t
+
+∇ϕ(Xt) dt + √2 σ dW t, X0 = Z, 
+
+(13) 
+
+where Wt is a Brownian noise and ηt and θt solve 
+
+Gt ηt = ddt mt, (14) 
+
+Gt θt = E∆ϕ(Xt), (15) 
+
+where Gt is the Gram matrix 
+
+Gt = E∇ϕ(Xt) · ∇ ϕ(Xt)⊤. (16) 
+
+If this coupled system admits a solution, then the moment condition Eϕ(Xt) = mt holds for all t ∈ [0 , 1] .Proof. By Ito’s lemma 
+
+dϕ (Xt) = ∇ϕ(Xt)dX t + σ2∆ϕ(Xt)dt 
+
+=∇ϕ(Xt) · ∇ ϕ(Xt)⊤(ηt − σ2θt)dt 
+
++ σ2∆ϕ(Xt)dt + √2σ∇ϕ(Xt) · dW t.
+
+Taking the expected value of this equation we obtain that 
+
+ddt E[ϕ(Xt)] = E[∇ϕ(Xt) · ∇ ϕ(Xt)⊤]( ηt − σ2θt)+ σ2E[∆ ϕ(Xt)] .
+
+Since we require that E[ϕ(Xt)] = E[ϕ(It)] = mt for all 
+
+t ∈ [0 , 1] , we must also have 
+
+ddt E[ϕ(Xt)] = ddt mt
+
+Combining these two last equations we deduce that 
+
+Gt(ηt − σ2θt) + σ2E[∆ ϕ(Xt)] = ddt mt ,
+
+where Gt = E[∇ϕ(Xt) · ∇ ϕ(Xt)⊤]. This equation is satisfied since ηt and θt are solutions to (14) and (15), re-spectively. Therefore ddt E[ϕ(Xt)] = ddt mt which implies that 
+
+∀t ∈ [0 , 1] : E[ϕ(Xt)] = mt
+
+since E[ϕ(X0)] = m0.
+
+Proposition 4.3. Assume the MGD SDE (13) admits a unique strong solution for all t ∈ [0 , 1] . Then, 
+
+ddt H(pσt ) = θ⊤
+
+> t
+
+ddt mt
+
++ σ2E|∇ log pσt (Xt) + θ⊤ 
+
+> t
+
+∇ϕ(Xt)|2,
+
+(28) 
+
+and hence ddt H(pσt ) ≥ θ⊤
+
+> t
+
+ddt mt. (29) 
+
+Proof: The PDF pσt of the solution to the MGD SDE (13) for a given σ ≥ 0 obeys the Fokker-Planck Equation 
+
+∂tpσt =∇(( −ηt + σ2θt)⊤∇ϕp σt ) + σ2∆pσt .
+
+We use this equation to derive an evolution equation for the relative entropy H(pσt ). and some integrations by part 
+
+ddt H(pσt ) = −
+
+Z
+
+∂tpσt log pσt dx −
+
+Z
+
+∂tpσt dx 
+
+= −
+
+Z
+
+∇ · (( −ηt + σ2θt)⊤∇ϕp σt ) log pσt dx 
+
+− σ2
+
+Z
+
+∆pt log pσt dx 
+
+=
+
+Z
+
+(−ηt + σ2θt)⊤∇ϕ · ∇ pσt dx 
+
++ σ2
+
+Z
+
+∇ log pσt · ∇ pσt dx 
+
+=
+
+Z 
+
+(ηt − σ2θt)⊤∆ϕ + σ2|∇ log pσt |2
+
+pσt dx , 
+
+16 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+where we used a few integration by parts and the iden-tity pσt ∇ log pσt = ∇pσt . Writing the integral in the last equation as an expectation, we deduce that 
+
+ddt H(pσt ) = ( ηt − σ2θt)⊤E[∆ ϕ(Xt)] + σ2E|∇ log pσt (Xt)|2.
+
+Using Gtθt = E[∆ ϕ(Xt)] from (15), we obtain that 
+
+E|∇ log pσt (Xt)|2 =E|∇ log pσt (Xt) + θ⊤ 
+
+> t
+
+∇ϕ(Xt)|2
+
+− 2E∇ log pσt (Xt) · θ⊤∇ϕ(Xt)
+
+− E|θ⊤ 
+
+> t
+
+∇ϕ(Xt)|2
+
+=E|∇ log pσt (Xt) + θ⊤ 
+
+> t
+
+∇ϕ(Xt)|2
+
++ 2 θ⊤ 
+
+> t
+
+E∆ϕ(Xt)
+
+− θ⊤ 
+
+> t
+
+E∇ϕ(Xt) · ∇ ϕ(Xt)⊤
+
+=E|∇ log pσt (Xt) + θ⊤ 
+
+> t
+
+∇ϕ(Xt)|2
+
++ 2 θ⊤ 
+
+> t
+
+E∆ϕ(Xt) − θ⊤ 
+
+> t
+
+Gtθ
+
+=E|∇ log pσt (Xt) + θ⊤ 
+
+> t
+
+∇ϕ(Xt)|2
+
++ θ⊤ 
+
+> t
+
+E∆ϕ(Xt) .
+
+Combining these last two equation, we deduce that 
+
+ddt H(pσt ) = ηtE[∆ ϕ(Xt)] + σ2E|∇ log pσt (Xt)|2
+
+= η⊤ 
+
+> t
+
+Gtθt + σ2E|∇ log pσt (Xt)|2
+
+≥ η⊤ 
+
+> t
+
+Gtθt .
+
+Finally, since Gtηt = dm t/dt from (14), we arrive at 
+
+ddt H(pσt ) ≥ θ⊤
+
+> t
+
+ddt mt.
+
+This proposition shows that ddt H(pσt ) ≥ 0 if dm t/dt = 0 
+
+(i.e. if the moments are preserved). Our next proposition shows that in that setup the entropy also increases as a function of the volatility σ at any given time t.
+
+Proposition A.1. Let pσt be the PDF of the solution to the MGD SDE (13) . If we assume that dm t/dt = 0 , then at any time t ∈ (0 , 1] , we have 
+
+ddσ H(pσt ) ≥ 0. (43) 
+
+Proof. Since dm t/dt = 0 , Proposition 4.3 implies that, for all σ > 0,
+
+ddt H(pσt ) ≥ 0.
+
+Because ηt = 0 when dm t/dt = 0 by (14), in this setup the Fokker-Planck equation for pσt reduces to 
+
+∂tpσt = σ2∇(θ⊤ 
+
+> t
+
+∇ϕp σt ) + σ2∆pσt .
+
+By rescaling time as τ = tσ 2, we see from this equation that 
+
+pσt = pσ=1  
+
+> τ
+
+.
+
+Therefore 
+
+ddσ H(pσt ) = 2τσddτ H(pσ=1  
+
+> τ
+
+),
+
+and hence ddσ H(pσt ) ≥ 0.
+
+## B Conjectures 
+
+In this appendix, we support Conjectures 4.1 and 4.4 by performing a Taylor expansion of the Fokker-Planck equation (22). This formal derivation provides conver-gence rates for the entropy of the MGD solution and its lower bound towards the entropy of the maximum entropy distribution. Let us write the Fokker-Planck Equation for the MGD SDE (13) as 
+
+σ−2∂tpσt = ∇ · (pσt (( −σ−2ηt + θt)⊤∇ϕ)) + ∆ pσt .
+
+When σ goes to infinity, we expect σ−2∂tpσt and σ−2ηt
+
+to vanish. Assuming that ηt, θt, and pσt admit a limit as σ
+
+goes to infinity, and denoting 
+
+lim  
+
+> σ→∞
+
+pσt = p∗ 
+
+> t
+
+and lim  
+
+> σ→∞
+
+θt = θ∗ 
+
+> t
+
+,
+
+the Fokker-Planck Equation gives 
+
+0 = ∇ · (p∗ 
+
+> t
+
+(θ∗
+
+> t
+> ⊤
+
+∇ϕ)) + ∆ p∗ 
+
+> t
+
+.
+
+The solution to this equation is 
+
+p∗ 
+
+> t
+
+(x) = e−θ∗
+
+> t
+> ⊤ϕ(x)
+
+/Z∗ 
+
+> t
+
+,
+
+for Z∗ 
+
+> t
+
+= R e−θ∗
+
+> t
+> ⊤ϕ(x)
+
+dx . Taking the limit as σ → ∞ in the moments equality, we obtain 
+
+Z
+
+ϕ(x)p∗ 
+
+> t
+
+(x)dx = lim 
+
+> σ→∞
+
+Z
+
+ϕ(x)pσt (x)dx = mt.
+
+This shows that the distribution with density p∗ 
+
+> t
+
+is expo-nential, with moments mt. Therefore, p∗ 
+
+> t
+
+is the unique maximizer of the entropy H(q), under the constraints 
+
+Eq [ϕ] = E[ϕ(It)] , and θ∗ 
+
+> t
+
+are the associated Lagrange multipliers. This also implies that p∗ 
+
+> t=1
+
+= p∗ and θ∗ 
+
+> t=1
+
+=
+
+θ∗.The term led by σ−2 in the Fokker-Planck Equation sug-gests to Taylor expand pσt in σ−2:
+
+pσt (x) = p∗ 
+
+> t
+
+(x) 1 + σ−2qt(x) + o(σ−2).
+
+Injecting this expansion in the entropy of pσt , we obtain 
+
+H(pσt ) − H(p∗ 
+
+> t
+
+) = −σ−2
+
+Z
+
+qt(x)p∗ 
+
+> t
+
+(x)dx + o(σ−2)= o(σ−2)
+
+where we used R qtp∗ 
+
+> t
+
+dx = 0 , which follows from in-tegrating the expansion for pσt above since R pσt dx =R p∗ 
+
+> t
+
+dx = 1 . As a consequence, 
+
+|H(pσt ) − H(p∗ 
+
+> t
+
+)| =o(σ−2) ≤ Cσ −2
+
+17 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+for some C. At t = 1 , since p∗ 
+
+> t=1
+
+= p∗, we recover (25) for Conjecture 4.1. Assuming that we can also perform an asymptotic expan-sion for θt:
+
+θt = θ∗ 
+
+> t
+
++ σ−2 ˜θt + o(σ−2),
+
+we deduce that the lower bound (30) follows 
+
+Z 10
+
+θ⊤
+
+> t
+
+ddt mtdt =
+
+Z 10
+
+θ∗ 
+
+> t
+> ⊤
+
+ddt mtdt 
+
++ σ−2
+
+Z 10
+
+˜θ⊤
+
+> t
+
+ddt mtdt + o(σ−2).
+
+We also deduce that the Fisher divergence vanishes as 
+
+o(σ−2) since 
+
+σ2E|∇ log pσt (Xt) + θ⊤ 
+
+> t
+
+∇ϕ|2
+
+= σ2E|∇ log( pσt /p ∗ 
+
+> t
+
+)( Xt) + ( θt − θ∗ 
+
+> t
+
+)⊤∇ϕ(Xt)|2
+
+= σ2E|σ−2∇qt(Xt) + σ−2 ˜θ⊤ 
+
+> t
+
+∇ϕ(Xt) + o(σ−2)|2
+
+= σ−2E|∇ qt(Xt) + ˜θ⊤ 
+
+> t
+
+∇ϕ(Xt) + o(1) |2
+
+= O(σ−2).
+
+Therefore, if we denote 
+
+Hσ 
+
+> ∗
+
+= H(p0) + 
+
+Z 10
+
+θ⊤
+
+> t
+
+ddt mtdt, 
+
+from (28) we formally deduce that there exists C′ such that 
+
+|Hσ 
+
+> ∗
+
+− H(p∗)| = σ−2C′.
+
+The entropy lower bound Hσ 
+
+> ∗
+
+≤ H(pσ 
+
+> 1
+
+) thus converges towards H(p∗) as O(σ−2) as suggested in (32) of Con-jecture 4.4. 
+
+## C Alternative Numerical Implementations 
+
+Algorithm 1 computes ηt and θt on-the-fly using the cur-rent particle ensemble. This section describes two alterna-tives that may be preferable depending on the application: the first prioritizes speed and scalability, while the sec-ond preserves the interpretation of ηt and θt as intrinsic parameters of the generative model. 
+
+C.1 Precomputed Transport via Interpolant Regression 
+
+The MGD SDE (13) can also be written as 
+
+dX t = λ⊤ 
+
+> t
+
+∇ϕ(Xt)dt + √2σdW t (44) where λt is a Lagrange multiplier used to enforce 
+
+E[ϕ(Xt)] = mt. That is, the decomposition λt =
+
+ηt − σ2θt used in text is not unique. In particular, we can also use λt = ˜ ηt − σ2 ˜θt, with ˜ηt computed using the Gram matrix evaluated on the interpolant It rather than on the particles Xt. This changes the predictor step in Algo-rithm 1, but the corrector step still enforces exact moment preservation. It allows precomputation of ˜ηt before sam-pling. Specifically, instead of solving Gtηt = ddt mt while sam-pling, we can precompute ˜ηt via solution of the regression problem: 
+
+˜ηt = arg min 
+
+> ˆηt
+
+E|ˆη⊤ 
+
+> t
+
+∇ϕ(It) − ˙It|2, (45) where ˙It = ddt It. This can be solved by SGD with-out matrix inversion, using mini-batches of fresh samples 
+
+Z ∼ N (0 , Id) :
+
+˜ηk+1  
+
+> t
+
+= ˜ ηkt − h E∇ϕ(It) ·  (˜ ηkt )⊤∇ϕ(It) − ˙It
+
+ . (46) Variants such as Adam or L-BFGS can also be used. The resulting scheme is summarized in Algorithm 2. Note that this algorithm still requires to solve a linear system to ob-tain ˜θk, but this too could be modified by solving 
+
+1
+
+nrep 
+
+> nrep
+
+X
+
+> i=1
+
+ϕ(yik − hσ 2 ˜θ⊤ 
+
+> k
+
+∇ϕ(yik)) − m(k+1) h = 0 
+
+for ˜θk differently. 
+
+Algorithm 2 MGD with Precomputed Transport 
+
+Input: volatility σ; number of steps nσ ; time step 
+
+h = 1 /n σ ; number of replicas nrep ; moments mt =
+
+E[ϕ(It)] 
+
+Precomputation: On the time grid {tj = jnσ }nσ
+
+> j=0
+
+,solve (45) via SGD to obtain {ηtj }
+
+Initialize: xi 
+
+> 0
+
+∼ N (0 , Id) for i = 1 , . . . , n rep 
+
+for k = 0 , . . . , n σ − 1 do 
+
+Predictor (using precomputed ηtk )
+
+for i = 1 , . . . , n rep do 
+
+Sample ξik ∼ N (0 , Id) 
+
+Set yik = xik + h ˜η⊤ 
+
+> tk
+
+∇ϕ(xik) + √2hσ ξ ik
+
+end for 
+
+Corrector (project to preserve moments) 
+
+Compute ˆG′ 
+
+> k
+
+= 1
+
+> nrep
+
+Pnrep  
+
+> i=1
+
+∇ϕ(yik) · ∇ ϕ(yik)⊤
+
+Solve hσ 2 ˆG′ 
+
+> k
+
+˜θk = 1
+
+> nrep
+
+Pnrep  
+
+> i=1
+
+ϕ(yik) − m(k+1) h for 
+
+˜θk
+
+for i = 1 , . . . , n rep do 
+
+Set xik+1 = yik − hσ 2 ˜θ⊤ 
+
+> k
+
+∇ϕ(yik)
+
+end for end for Output: Samples (xinσ )1≤i≤nrep 
+
+C.2 Offline Learning of Coefficients 
+
+If the coefficients ηt and θt are of intrinsic interest, one can learn them in a preprocessing phase on a time grid, then sample by propagating one particle at a time using these fixed coefficients. This trades computation time for memory and enables fully parallel sampling. The coefficients are built sequentially: use ηt, θt to prop-agate particles to time t + ∆ t, collect statistics to estimate the Gram matrix at this new time, then compute ηt+∆ t,18 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+θt+∆ t. Crucially, the Gram matrix can be estimated by ac-cumulating contributions one particle (or batch) at a time, without storing all positions simultaneously. The proce-dure is summarized in Algorithm 3. 
+
+Algorithm 3 MGD with Offline Coefficient Learning 
+
+Input: volatility σ; number of steps nσ ; time step 
+
+h = 1 /n σ ; number of replicas nrep ; moments mt =
+
+E[ϕ(It)] 
+
+Learning phase: 
+
+Compute ˆG0 = 1
+
+> nrep
+
+Pnrep  
+
+> i=1
+
+∇ϕ(zi) · ∇ ϕ(zi)⊤ with 
+
+zi ∼ ρ0
+
+Solve for ˆη0, ˆθ0
+
+for k = 1 , . . . , n σ do 
+
+Initialize accumulator ˆGk = 0 
+
+for batch b = 1 , . . . , B do 
+
+Propagate nb particles from t = 0 to t = kh using 
+
+{ˆηℓ, ˆθℓ}ℓ<k 
+
+Accumulate: ˆGk ← ˆGk + 1
+
+> nb
+
+Pnb 
+
+> i=1
+
+∇ϕ(xik) ·∇ϕ(xik)⊤
+
+end for 
+
+Normalize ˆGk ← 1 
+
+> B
+
+ˆGk and solve for ˆηk, ˆθk
+
+end for Sampling phase: (can be done one particle at a time) Initialize x0 ∼ N (0 , Id) 
+
+for k = 0 , . . . , n σ − 1 do 
+
+Sample ξk ∼ N (0 , Id) 
+
+Set xk+1 = xk + h(ˆ ηk − σ2 ˆθk)⊤∇ϕ(xk) + √2hσ ξ k
+
+end forOutput: Samples (xinσ )1≤i≤nrep 
+
+## D Experimental details 
+
+This appendix reviews experimental details of the numer-ical experiments performed in Sections 5 and 6. In all ex-periments, the number of steps required by MGD to reach convergence increases with σ, ranging from 10 3 to 10 4.
+
+D.1 Regularisation 
+
+Algorithm 1 requires inverting empirical Gram matrices, which we stabilize through a simple regularization proce-dure. First, we discard any potential ϕk satisfying 
+
+1
+
+m
+
+> m
+
+X
+
+> i=1
+
+∇ϕk(xi) · ∇ ϕk(xi)⊤ = 0 , (47) as these correspond to vanishing Lagrange multipliers in 
+
+p∗ (for the scattering spectra case, symmetries produce exact zeros [21]). We then normalize the remaining po-tentials by their empirical norm, setting the Gram matrix diagonal to unity so that all potentials contribute at com-parable scale. Finally, we add a small regularization δ Id 
+
+with δ = 10 −7 before inversion. 
+
+D.2 Entropy and DKL Estimation 
+
+In Section 5, we estimate entropies and Kullback–Leibler divergences from one-dimensional histograms. We use 
+
+nrep = 10 6 replicas and nσ = 10 4 discretization steps for MGD, except for the right column of Figure 2 where up to nσ = 3 .10 5 discretization steps were used. His-tograms are constructed from nquantiles = 500 quantiles, yielding discrete density estimates from which we com-pute the entropies and divergences. 
+
+D.3 Financial Time Series and Physical Fields 
+
+The S&P time series is preprocessed following [19], Ap-pendix E. Cosmic web fields are 2D slices from 3D dark matter simulations [22] with a logarithmic transforma-tion, as described in [21], Appendix G. Turbulent vortic-ity fields are obtained from 2D incompressible Navier– Stokes simulations [40]. All signals are standardized, and covariance determinants for negentropy estimation are computed via Welch’s method [44]. Figures 7, 10 and 12 show convergence of the negentropy estimator ∆Hσ 
+
+> ∗
+
+for σ2 ∈ { 0.1, 0.25 , 1, 2.5, 4, 5.5}, using 
+
+m = 100 particles. The number of discretization steps is adapted to each dataset and volatility (in order of increas-ing σ2): S&P uses {1000 , 1000 , 1200 , 1200 , 2200 , 2500 },cosmic web {1000 , 1000 , 1000 , 1000 , 2500 , 2700 }, 2D turbulence {1000 , 1000 , 1000 , 1000 , 2000 , 3300 }, and CelebA {1500 , 1500 , 2500 , 4000 , 4000 , 6000 }. For CelebA, we also consider σ2 = 7 and σ2 = 8 .5, respec-tively computed with 6000 and 7000 steps. Convergence is verified by moment matching throughout the dynamics and confirming stability under additional steps. The histograms in Figures 8 and 11 use 500 samples for 
+
+σ2 ∈ {0, 0.1, 5.5}, with 1000 discretization steps for 
+
+σ2 = 0 .
+
+## E The Case of a Quadratic Function ϕ
+
+If ϕ is a quadratic function, ϕ(x) = (xixj )1≤i≤j≤d,where xi is the i-th coordinate of x ∈ Rd, we know that the maximum entropy distribution is a Gaussian distribu-tion with a covariance that matches the one of the data. In this setup, the MGD SDE (13) takes a simple form, and can be solved analytically. We use this example to illustrate the role of the volatility σ. For simplicity we consider the case of centred distributions: the calculations below can be straightforwardly generalized to situations where the base and the target distribution have a non-zero mean, and the function ϕ also include a linear component. Our first result is: 
+
+Theorem E.1. Assume that the base and the target distri-butions have zero mean and positive-definite covariance matrices C0 and C1, respectively, and let 
+
+Ct = cos 2(αt)C0 + sin 2(αt)C1 (48) 
+
+be the covariance of the stochastic interpolant It =cos( αt)Z + sin( αt)X. Then the MGD SDE (13) associ-
+
+19 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+ated with the quadratic function ϕ(x) = ( xixj )1≤i≤j≤d
+
+reads 
+
+dX t =   12 ˙CtC−1 
+
+> t
+
+− σ2C−1
+
+> t
+
+Xtdt + √2σdW t, (49) 
+
+with X0 = Z and where ˙Ct = dC t/dt .
+
+The proof of this theorem is given at the end of this Ap-pendix. Note that it implies that here we have 
+
+η⊤ 
+
+> t
+
+∇ϕ(x) = 12 ˙CtC−1 
+
+> t
+
+,θ⊤ 
+
+> t
+
+∇ϕ(x) = C−1
+
+> t
+
+Since then MGD SDE (49) is linear with additive noise, if Z0 is Gaussian, its solution is also Gaussian, with mean zero and covariance E[XtX⊤ 
+
+> t
+
+] = Ct for any σ ≥ 0; in-deed a direct calculation with Itˆ o formula shows that 
+
+ddt E[XtX⊤ 
+
+> t
+
+] =   12 ˙CtC−1 
+
+> t
+
+− σ2C−1
+
+> t
+
+E[XtX⊤ 
+
+> t
+
+]+ E[XtX⊤ 
+
+> t
+
+]  12 C−1 
+
+> t
+
+˙Ct − σ2C−1
+
+> t
+
+
+
++ 2 σ2Id ,
+
+whose unique solution is E[XtX⊤ 
+
+> t
+
+] = Ct. That is, in this case Xt has the same law as It, and exactly sam-ples the maximum entropy distribution associated with the quadratic ϕ at time t = 1 . Interestingly, this result also holds if the base distribution is non-Gaussian, provided that we let σ → ∞ .
+
+Theorem E.2. Given any base distribution with apositive-definite covariance C0 that commutes with the covariance C1 of the target distribution, the PDF ρσt (x)
+
+of the solution to the MGD SDE (49) satisfies 
+
+lim  
+
+> σ→∞
+
+DKL (pσ 
+
+> 1
+
+∥p∗) = 0 (50) 
+
+where p∗ is the PDF of the maximum entropy distribution associated with the quadratic ϕ, i.e. the Gaussian distri-bution with mean zero and covariance C1 = E[XX ⊤].
+
+Note that we make the assumption that C0C1 = C1C0
+
+so that these two matrices are co-diagonalizable; this fa-cilitates the proof, but the theorem remains valid if this assumption is lifted. 
+
+Proof of Theorem E.1. For the quadratic moment gener-ating function ϕ, ∇ϕ∇ϕ⊤ is a set of quadratic functions, such that 
+
+E(ϕ(Xt)) = E(ϕ(It)) 
+
+⇔ E(∇ϕ(Xt) · ∇ ϕ(Xt)⊤) = E(( ∇ϕ(It) · ∇ ϕ(It)⊤).
+
+In this case, MGD SDE is equal to 
+
+dX t =  η⊤ 
+
+> t
+
+− σ2θ⊤
+
+> t
+
+∇ϕ(Xt) dt + √2 σ dW t,
+
+where 
+
+E∇ϕ(It) · ∇ ϕ(It)⊤ ηt = E ddt It∇ϕ(It)
+
+E∇ϕ(It) · ∇ ϕ(It)⊤ θt = E∆ϕ(It),
+
+because ∆ϕ is constant. Since E∆ϕ(It) =
+
+−E[∇ log qt(It) · ∇ ϕ(It)] , for qt the PDF of It, this sys-tem is the solution to the minimisation problem 
+
+ηt = arg min  
+
+> η
+
+E|η⊤∇ϕ(It) − ddt It|2,θt = arg min  
+
+> θ
+
+E|θ⊤∇ϕ(It) + ∇ log qt(It)|2.
+
+Because ∇ϕ is a set of linear functions, we can set that 
+
+η⊤∇ϕ(It) = ˜ η⊤It and θ⊤∇ϕ(It) = ˜θ⊤It, solve for ˜η
+
+and ˜θ, and prove that the system’s solutions are 
+
+η⊤ 
+
+> t
+
+∇ϕ(x) = 12 ˙CtC−1 
+
+> t
+
+x , θ⊤ 
+
+> t
+
+∇ϕ(It) = C−1 
+
+> t
+
+(x) .
+
+This show that MGD SDE is (49). This SDE is not a McKean Vlasov equation but a classical SDE, whose unique strong solution exists because its drift is continu-ous in time and Lipschitz in space. 
+
+Proof of Theorem E.2. Since the matrices C0 and C1
+
+commute, all the matrices Ct commute. Thus, an inte-grating factor method shows that that the solution to the MGD SDE (49) is 
+
+Xt = exp 
+
+Z t
+
+> 0
+
+( 12 ˙CsC−1 
+
+> s
+
+− σ2C−1 
+
+> s
+
+) ds 
+
+
+
+X0
+
++ √2σ2
+
+Z t
+
+> 0
+
+exp 
+
+Z ts
+
+( 12 ˙CuC−1 
+
+> u
+
+− σ2C−1 
+
+> u
+
+) du 
+
+
+
+dW s
+
+The conditional law of Xt|X0 is gaussian, with mean 
+
+exp 
+
+
+
+− R t 
+
+> 0
+
+( 12 ˙CsC−1 
+
+> s
+
+− σ2C−1 
+
+> s
+
+) ds 
+
+
+
+X0 = μtX0 and co-variance 
+
+Σt = 2 σ2
+
+Z t
+
+> 0
+
+exp 
+
+
+
+2
+
+Z s
+
+> 0
+
+( 12 ˙CuC−1 
+
+> u
+
+− σ2C−1 
+
+> u
+
+) du 
+
+
+
+ds . 
+
+A change of variable gives 
+
+Σt
+
+2 =
+
+Z tσ 2
+
+> 0
+
+exp 
+
+Z s
+
+> 0
+
+(σ−2 ddt log Ct−uσ −2 − 2C−1 
+
+> t−uσ −2
+
+)du 
+
+
+
+ds 
+
+=
+
+Z tσ 2
+
+> 0
+
+(Ct−sσ −2 C−10 )σ−2
+
+exp 
+
+
+
+−2
+
+Z s
+
+> 0
+
+C−1 
+
+> t−uσ −2
+
+du 
+
+
+
+ds. 
+
+Using that Ct is bounded and has strictly positive eigen-values, dominated convergence shows that 
+
+Σt → 
+
+> σ→∞
+
+2
+
+Z ∞
+
+> 0
+
+exp 
+
+
+
+−2
+
+Z s
+
+> 0
+
+C−1 
+
+> t
+
+du 
+
+
+
+ds = Ct.
+
+A similar argument shows that 
+
+μt → 
+
+> σ→∞
+
+0.
+
+We derive pσt , the density of Xt, with the law of total prob-ability 
+
+pσt (x) = ctE
+
+
+
+exp 
+
+
+
+− 12 |Σ−1/2 
+
+> t
+
+(x − μtX0) |2
+
+,
+
+20 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+where ct = (2 π)−d/ 2det(Σ t)−1/2. It is straightforward with dominated convergence, with respect to X0 for a fixed x, to show that, when σ goes to infinity 
+
+pσt (x) → 
+
+> pointwise
+
+p∗ 
+
+> t
+
+(x):=  
+
+> def
+
+(2 π)−d/ 2 det( Ct)−1/2 exp 
+
+
+
+− 12 |C−1/2 
+
+> t
+
+x|2.
+
+The Kullback-Leibler divergence between pσt and p∗ 
+
+> t
+
+is given by 
+
+DKL (pσt ∥p∗ 
+
+> t
+
+) = −
+
+Z
+
+log( pσt (x)/p ∗ 
+
+> t
+
+(x)) pσt (x)dx. 
+
+With a change of variable, 
+
+−
+
+Z
+
+log( p∗ 
+
+> t
+
+(x)) pσt (x)dx + log((2 π)d/ 2det( Ct)1/2)=
+
+Z
+
+|C−1/2 
+
+> t
+
+x|2pσt (x)dx 
+
+=ct
+
+Z
+
+|C−1/2 
+
+> t
+
+x|2e− 12 |Σ−1/2
+
+> t
+
+ x−μtx0
+
+|2
+
+p0(x0)dxdx 0,
+
+=ct
+
+Z
+
+|C−1/2 
+
+> t
+
+(y + x0c′
+
+> t
+
+)|2e− 12 |Σ−1/2 
+
+> ty|2
+
+p0(x0)dydx 0.
+
+By dominated convergence 
+
+Z
+
+|C−1/2 
+
+> t
+
+x|2pσt (x)dx →
+
+> σ→∞
+
+Z
+
+|C−1/2 
+
+> t
+
+y|p∗ 
+
+> t
+
+(y)dy = Id .
+
+and thus 
+
+Z
+
+log( p∗ 
+
+> t
+
+(x)) pσt (x)dx → 
+
+> σ→∞
+
+log((2 π)d/ 2det( Ct)1/2)−Id .
+
+The same dominated convergence argument is used to show that 
+
+Z
+
+log( pσt (x)) pσt (x)dx → 
+
+> σ→∞
+
+log((2 π)d/ 2det( Ct)1/2)−Id ,
+
+proving that DKL (pσt ∥p∗ 
+
+> t
+
+) converges towards 0.
+
+## F Additional Theoretical Results 
+
+This appendix establishes rigorous existence and conver-gence results for the Moment Guided Diffusion (MGD) dynamics. We introduce a regularized version of MGD that includes a confining potential, which provides the an-alytical control needed to prove convergence to maximum entropy distributions. 
+
+F.1 Overview and Main Results 
+
+We state our two main theorems upfront, then provide de-tailed proofs in subsequent sections. 
+
+F.1.1 Setup and Notation 
+
+Throughout this appendix, we work with a regularized 
+
+MGD dynamics that includes a confining potential 12 ϵ|x|2
+
+for some ϵ > 0. This regularization serves two purposes: (i) it ensures solutions remain well-behaved (bounded cross-entropy), and (ii) it provides a reference measure 
+
+pϵ(x) = Z−1 
+
+> ϵ
+
+e− 12 ϵ|x|2
+
+with good functional inequalities. The key objects are: • The cross-entropy (negative KL divergence to reference): 
+
+Hϵ(p) = −
+
+Z
+
+p(x) log p(x)
+
+pϵ(x) dx = −DKL (p∥pϵ)
+
+• The regularized maximum entropy distribution :
+
+pϵ
+
+> ∗
+
+(x) = Z−1 
+
+> ∗
+
+e−θ⊤∗ ϕ(x)− 12 ϵ|x|2
+
+satisfying Epϵ 
+
+> ∗
+
+[ϕ] = E[ϕ(X)] 
+
+• The Gram matrix : Gt = E[∇ϕ(Xt) · ∇ ϕ(Xt)⊤]
+
+Remark F.1 (Role of ϵ). The regularization parameter 
+
+ϵ > 0 is held fixed throughout. The resulting limit pϵ
+
+> ∗
+
+is the maximum entropy distribution with an additional Gaussian confining term. Taking ϵ → 0 would recover the unregularised maximum entropy distribution p∗, but this limit is not analysed here. 
+
+Thorough this appendix, |·| will be the ℓ2 norm of a vector with respect to coordinates ( e.g. |x| = ( P 
+
+> u
+
+|x(u)|2)1/2
+
+and |∆ϕ| = |∆ϕ(x)| = ( P 
+
+> k
+
+|ϕk(x)|2)1/2) while ∥ · ∥ ∞
+
+will be the ℓ∞ norm with respect to domain and coordi-nates ( e.g. ∥θt∥∞ = max 
+
+> 1≤k≤r
+
+|θt,k | for coordinates θt,k and 
+
+∥∇ ϕ∥∞ = max 
+
+> x∈Rd,1≤i≤d, 1≤k≤r
+
+| ∂∂x i ϕk(x)|). When speci-fied, the ℓ∞ can be taken with respect to a restricted do-main (e.g. ∥pt∥K, ∞ = max  
+
+> x∈K
+
+|pt(x)|). Finally, ∥ · ∥ op is the operator norm of a matrix. 
+
+F.1.2 Hypotheses 
+
+We require the following regularity conditions: 
+
+Hypothesis F.2 (Regularity of ϕ). The family of C4 func-tions (ϕk)k is linearly independent and bounded, with bounded derivatives. The functions (∇ϕk)k are linearly independent. For all k, the map x 7 → x · ∇ ϕk(x) is bounded. 
+
+Hypothesis F.3 (Regularity of p0). The initial density p0
+
+is C4, has finite variance, finite entropy, and p0 and its derivatives are bounded. 
+
+For the quantitative convergence result (Theorem F.7), we additionally require: 
+
+Hypothesis F.4 (Existence of p∗ 
+
+> t
+
+). For all t ∈ [0 , 1] ,the density p∗ 
+
+> t
+
+(x) = Z−1
+
+> θ∗
+> t
+
+e−θ∗  
+
+> t
+> ⊤ϕ(x)−12ϵ|x|2
+
+satisfying 
+
+Ep∗ 
+
+> t
+
+[ϕ] = mt exists. 
+
+Hypothesis F.5 (Exponential initial condition) . The ini-tial density p0 equals the exponential distribution p∗
+
+> 0
+
+.
+
+21 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+F.1.3 Main Theorems Theorem F.6 (Convergence with Fixed Moments) . Let ϕ
+
+and p0 satisfy Hypotheses F.2 and F.3. Assume that the interpolant It has constant moments: 
+
+∀t ∈ [0 , 1] , ddt mt = 0 .
+
+Then, for any ϵ > 0, the strong solutions Xt of the regu-larized MGD (52) with PDF pσt exist for all t ∈ [0 , 1] and 
+
+σ ∈ R+.If the density pϵ
+
+> ∗
+
+(x) = Z−1 
+
+> ∗
+
+e−θ⊤∗ ϕ(x)− 12 ϵ|x|2
+
+with 
+
+Epϵ 
+
+> ∗
+
+[ϕ] = E[ϕ(X)] exists, then: 
+
+lim  
+
+> σ→∞
+
+DKL (pσt ∥pϵ
+
+> ∗
+
+) = 0 .
+
+Theorem F.7 (Quantitative Convergence Rate) . Assume 
+
+ϕ satisfies Hypothesis F.2. Given ϵ > 0, assume: 
+
+ϵ−1Epϵ
+
+|∆ϕ − ϵx · ∇ ϕ|21/2∥∇ ϕ∥∞ < 1. (51) 
+
+Assume p0 satisfies Hypothesis F.5 and the interpolant It
+
+satisfies Hypothesis F.4. Then there exist constants σ0, c, c ′ ≥ 0 such that if 
+
+σ ≥ σ0, max  
+
+> t∈[0 ,1]
+
+mt−Epϵ [ϕ] ∞ ≤ c, max 
+
+> t∈[0 ,1]
+
+ddt mt ∞
+
+≤ c′,
+
+then solutions Xt of (52) with PDF pσt exist for all t ∈
+
+[0 , 1] , and there exists C > 0 such that: 
+
+DKL (pσt ∥p∗ 
+
+> t
+
+) ≤ Cσ −2.
+
+Remark F.8 (Condition (51)) . This condition ensures that the map qt 7 → pqt is contractive for large σ. It requires the quantity ∆ϕ − ϵx · ∇ ϕ to be sufficiently small relative to 
+
+ϵ. For smooth, slowly-varying ϕ, this is typically satisfied for moderate ϵ.
+
+F.1.4 Proof Strategy Theorem F.6 (Convergence with fixed moments). The proof proceeds in two stages: 
+
+Stage 1: Existence of solutions (Section F.3.1) 1. Introduce a regularized SDE with parameter δ > 
+
+0 that ensures the Gram matrix Gt + δI is invert-ible. 2. Show that solutions pδt remain bounded in cross-entropy Hϵ (Lemma F.13). 3. Use this bound to establish tightness (Lemma F.14) and uniform bounds on the Gram matrix (Lemma F.15). 4. Apply Kunita’s theory to bound derivatives of pδt
+
+(Lemma F.16). 5. Extract a convergent subsequence via Arzel` a-Ascoli as δ → 0 (Lemma F.17). 6. Verify the limit satisfies the original Fokker-Planck equation (Lemma F.18). 
+
+Stage 2: Convergence to maximum entropy (Sec-tion F.3.2) 1. Show that Hϵ(pt) is a Lyapunov function (non-decreasing in t). 2. Extract a subsequence tn → ∞ along which the Fisher divergence vanishes (Lemma F.19). 3. Conclude DKL convergence to pϵ 
+
+> ∗
+
+using the Poincar´ e inequality (Lemmas F.20–F.21). 
+
+Theorem F.7 (Quantitative rate). This proof estab-lishes the O(σ−2) rate via a contraction argument: 1. Define the Pearson χ2 divergence Et =
+
+χ2(pσt ∥p∗ 
+
+> t
+
+) as the key quantity. 2. Derive a differential inequality for ddt Et
+
+(Lemma F.24). 3. Use the Poincar´ e inequality for p∗ 
+
+> t
+
+to control Et
+
+(Lemma F.22). 4. Bound the perturbation ζt = θ(qt) − η(qt)σ−2 −
+
+θ∗ 
+
+> t
+
+in terms of Et (Lemma F.25). 5. Show that for σ large enough, the map qt 7 → pqt
+
+stabilizes a ball of radius O(σ−2) (Lemma F.27). 6. Conclude existence via a fixed-point argument. 
+
+F.2 Regularized MGD Dynamics F.2.1 Motivation: Wasserstein Gradient Flow 
+
+The Fokker-Planck equation for MGD can be interpreted as a constrained Wasserstein gradient flow. Consider maximizing the entropy q 7 → H(q) subject to the time-dependent moment constraint Eq [ϕ] = mt. With La-grange multipliers λ, this amounts to minimizing at each time t the functional: 
+
+Ft(q, λ ) = −H(q) + λ⊤ Eq (ϕ) − E(ϕ(It)) .
+
+The constrained Wasserstein gradient flow is: 
+
+∂p t
+
+∂t = −∇ · 
+
+
+
+pt∇ δFt
+
+δq (pt, λ t)
+
+
+
+,
+
+where λt is chosen to satisfy Ept (ϕ) = mt. A calculation shows this requires: 
+
+λt = G−1
+
+> t
+
+
+
+Ept [∆ ϕ] − ddt mt
+
+
+
+,
+
+where Gt = Ept [∇ϕ · ∇ ϕ⊤]. Expanding the Wasserstein gradient flow recovers the MGD Fokker-Planck equation for σ = 1 .22 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+F.2.2 The Confined Dynamics 
+
+The existence and uniqueness of solutions to the MGD SDE is not guaranteed a priori. MGD is a McKean-Vlasov equation [33,34] with a drift that is not Lipschitz continu-ous in the density pσt . This can cause the Gram matrix Gt
+
+to become singular, making the drift blow up. To ensure solutions remain regular, we replace the entropy 
+
+H(pσt ) with the cross-entropy relative to a Gaussian ref-erence measure pϵ(x) = Z−1 
+
+> ϵ
+
+e− 12 ϵ|x|2
+
+:
+
+Hϵ(pσt ) = −
+
+Z
+
+pσt (x) log pσt (x)
+
+pϵ(x) dx. 
+
+The maximizer of Hϵ(q) subject to Eq [ϕ] = E[ϕ(X)] is: 
+
+pϵ
+
+> ∗
+
+(x) = Z−1 
+
+> θ
+
+e−θ⊤∗ ϕ(x)− 12 ϵ|x|2
+
+.
+
+A bounded cross-entropy ensures the solution remains regular. The corresponding Wasserstein gradient flow leads to: 
+
+Theorem F.9 (Regularized MGD) . Consider the SDE 
+
+dX t =  (η⊤ 
+
+> t
+
+− σ2θ⊤ 
+
+> t
+
+)∇ϕ(Xt) − ϵX t
+
+ dt + √2 σ dW t,
+
+(52) 
+
+where ηt and θt solve 
+
+Gt ηt = ddt mt, (53) 
+
+Gt θt = E∆ϕ(Xt) − ϵX t∇ϕ(Xt), (54) 
+
+and Gt = E∇ϕ(Xt) · ∇ ϕ(Xt)⊤. If this coupled system admits a solution and E[ϕ(X0)] = m0, then: 
+
+∀t ∈ [0 , 1] , E[ϕ(Xt)] = mt.
+
+The proof follows the same argument as Theorem 3.1 in Appendix A. The term −ϵX t confines solutions, prevent-ing mass from escaping to infinity. The corresponding Fokker-Planck equation is: 
+
+∂tpσt = ∇·  pt(−ηt +σ2θt)⊤∇ϕ+σ2ϵx +σ2∆pσt . (55) 
+
+F.2.3 Cross-Entropy as Lyapunov Function 
+
+When moments are fixed ( ddt mt = 0 ), the cross-entropy is a Lyapunov function: 
+
+Proposition F.10. Assume Xt with density pσt follows the regularized MGD (52) . If dm t/dt = 0 , then: 
+
+ddσ Hϵ(pσt ) ≥ 0.
+
+The proof adapts Proposition 4.3. 
+
+Remark F.11 (Non-constant moments) . When dm t/dt ̸ =0, the Lyapunov function becomes: 
+
+ddt 
+
+
+
+Hϵ(pσt ) −
+
+Z t
+
+> 0
+
+θ⊤
+
+> s
+
+dds ms ds 
+
+
+
+≥ 0.
+
+However, we cannot rule out the possibility that H(pσt ) →−∞ while the integral diverges in a compensating way. 
+
+Remark F.12 (Choice of reference measure) . We use 
+
+pϵ ∝ e− 12 ϵ|x|2
+
+for simplicity, but any reference measure 
+
+∝ e−f (x) works if f grows to infinity and has a Lipschitz gradient. 
+
+F.3 Proof of Theorem F.6: Existence and Convergence 
+
+We prove existence in Section F.3.1 and convergence in Section F.3.2. 
+
+F.3.1 Existence of Solutions 
+
+We introduce a regularized SDE with parameter δ > 0,prove bounds uniform in δ, then extract a convergent sub-sequence as δ → 0.
+
+Step 1: The δ-regularized dynamics. Consider the regularized SDE for δ > 0 and t ∈ R+:
+
+dX δt = −
+
+
+
+θδt
+
+> ⊤
+
+∇ϕ(Xδt ) + ϵX t
+
+
+
+dt + √2 dW t, (56) where 
+
+θδt = ( Gδt + δI )−1E[∆ ϕ(Xδt ) − ϵX δt · ∇ ϕ(Xδt )⊤],
+
+with Gδt = E[∇ϕ(Xδt ) · ∇ ϕ(Xδt )⊤].Using that (Gδt + δI )−1 ≤ δ−1I, along with Hypothesis F.2, we prove that the drift is Lipschitz in both the density of Xδt and space. By standard McKean-Vlasov theory, for any p0 with finite variance, the SDE admits a unique strong solution with density pδt (at least C4 by hypotheses) satisfying: 
+
+∂tpδt (x) = ∇ ·  pδt (θδt
+
+> ⊤
+
+∇ϕ(x) + ϵx ) + ∆ pδt (x). (57) 
+
+Step 2: Cross-entropy bounds. Lemma F.13 (Cross-entropy is bounded) . The relative entropy Hϵ(pδt ) = − R pδt (x) log pδt (x) 
+
+> pϵ(x)
+
+dx satisfies: 
+
+∀(δ, t ) ∈ R∗ 
+
+> +
+
+× R+, 0 ≤ − Hϵ(pδt ) ≤ − Hϵ(p0).
+
+Proof. Since p0 has finite variance and entropy by hy-pothesis F.3, and since the drift of the SDE over Xδt is Lipschitz, pσt admits a finite entropy and finite second or-der moments at each time t. It thus admits a finite cross entropy Hϵ(pδt ) at each time t.Computing as in Proposition A, 
+
+ddt Hϵ(pδt ) = −θδt
+
+> ⊤
+
+E[∆ ϕ(Xδt ) − ϵX δt · ∇ ϕ(Xδt )] + E|∇ log pδt (Xδt ) + ϵX δt |2.
+
+Since Hϵ(pδt ) is finite, pδt is not singularly supported, so 
+
+Gδt is invertible (as the ∇ϕk are linearly independent). Thus, E|∇ log pδt (Xδt ) + ϵX δt |2 ≥ E[∆ ϕ(Xδt ) − ϵX δt ·∇ϕ(Xδt )⊤]Gδt
+
+> −1
+
+E[∆ ϕ(Xδt ) − ϵX δt · ∇ ϕ(Xδt )⊤].
+
+Combining and using that, since Gδt ⪰ 0, we have 
+
+Gδt 
+
+> −1
+
+− (Gδt + δI )−1 ⪰ 0,
+
+ddt Hϵ(pδt ) ≥ 0.
+
+23 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+Step 3: Tightness. Lemma F.14 (Tightness) . The family (pδt )t,δ is tight: 
+
+∀κ > 0, ∃K ⊂ Rd compact , ∀t, 
+
+Z
+
+> K
+
+pδt (x)dx ≥ 1 − κ. 
+
+(58) 
+
+Proof. Apply the variational inequality Eμ[f ] ≤
+
+DKL (μ∥ν) + Eν [ef ] with μ = pδt , ν = pϵ, f (x) = |x|:
+
+E|Xδt | ≤ − Hϵ(pδt ) + (2 πϵ )−d/ 2
+
+Z
+
+e− 12 ϵ|x|2+|x|dx 
+
+≤ − Hϵ(p0) + Cϵ.
+
+By Chebyshev’s inequality, for the euclidean ball BR with radius R Z
+
+> BR
+
+pδt dx ≥ 1 − −Hϵ(p0) + Cϵ
+
+R ,
+
+which exceeds 1 − κ for R large enough. 
+
+Step 4: Gram matrix bounds. Lemma F.15 (Gram matrix invertibility) . Let T > 0 and 
+
+δ0 > 0. There exists α > 0 such that: 
+
+∀t ∈ [0 , T ], ∀δ ∈ (0 , δ 0], Gδt ⪰ αI. (59) 
+
+Consequently, sup (δ,t )∈(0 ,δ 0]×[0 ,T ] ∥θδt ∥∞ < ∞.Proof. The proof is by contradiction, which is equivalent to assume lim inf δ→0 det Gδt = 0 for some t, since Gδt
+
+is bounded (Hypothesis F.2, ∇ϕ is bounded). We extract 
+
+δn → 0 such that det Gδn 
+
+> t
+
+→ 0, and without loss of gen-erality, by tightness (Lemma F.14) and Prokhorov’s the-orem assume that it is a weakly convergent subsequence 
+
+pδn 
+
+> t
+
+⇀ p ∞.Since ∇ϕ is bounded and continuous, 
+
+Gδn 
+
+> t
+
+→ Ep∞
+
+∇ϕ·∇ ϕ⊤ =⇒ det Ep∞
+
+∇ϕ·∇ ϕ⊤ = 0 .
+
+At the same time, by upper semi-continuity of cross-entropy 
+
+Hϵ(p0) ≤ lim  
+
+> n
+
+Hϵ(pδn 
+
+> t
+
+) ≤ Hϵ(p∞) ≤ 0.
+
+Thus p∞ has finite cross-entropy, so it is not singu-larly supported, contradicting the singularity of Ep∞ [∇ϕ ·∇ϕ⊤] (since ∇ϕk are linearly independent). The bound on θδt follows since ∆ϕ and x 7 → x · ∇ ϕ(x)
+
+are bounded. 
+
+Step 5: Density bounds via Kunita’s theory. Lemma F.16 (Bounds on pδt and derivatives) . The follow-ing are finite: 
+
+sup  
+
+> (δ,t )∈(0 ,δ 0]×[0 ,T ]
+
+∥∇ pδt ∥∞ < ∞, (60) 
+
+sup  
+
+> (δ,t )∈(0 ,δ 0]×[0 ,T ]
+
+∥∇ 2
+
+> x
+
+pδt ∥∞ < ∞. (61) 
+
+For any compact K ⊂ Rd:
+
+sup  
+
+> (δ,t )∈R∗
+> +×[0 ,T ]
+
+∥∂tpδt ∥K, ∞ < ∞, (62) 
+
+sup  
+
+> (δ,t )∈(0 ,δ 0]×[0 ,T ]
+
+∥∂t∇pδt ∥K, ∞ < ∞. (63) 
+
+Proof. The density pδt follows the Feynman-Kac formula 
+
+pδt (x) = EΛt(x)p0(Y δt (x)) 
+
+where Λt(x) = exp 
+
+
+
+− R t 
+
+> 0
+
+∇ · bδt−s(Y δs (x)) ds 
+
+
+
+for the Backward process dY δs (x) = −bδt−s(Y δs (x)) ds + √2dB s
+
+with Y0(x) = x and bδt (x) = θδt
+
+> ⊤
+
+∇ϕ(x) + ϵx . Since ∆ϕ
+
+is bounded (hypothesis F.2), the divergence ∇ · bδt (x) is bounded, there exists Cb such that 
+
+sup  
+
+> (δ,t )∈(0 ,δ 0]×[0 ,T ]
+
+∥∇ · bδt ∥∞ ≤ Cb.
+
+Using this inequality in the Feynman-Kac formula, we prove that 
+
+sup  
+
+> (δ,t )∈(0 ,δ 0]×[0 ,T ]
+
+∥pδt ∥∞ ≤ eCbt∥p0∥∞.
+
+Because ∇ · bδt is continuous and bounded with continu-ous and bounded spatial derivatives, we can use Kunita’s theory to compute the derivative of pδt (x) with respect to 
+
+x from Feynman’s Kac formula 
+
+∇pδt (x) = E
+
+
+
+Λt(x)∇xp0(Y δt (x)) Jt,t (x)
+
+
+
+− E
+
+ Z t
+
+> 0
+
+Jt,t −s(x)∆ bδt−s(Y δs (x)) ds Λt(x)p0(Y δt (x)) 
+
+
+
+where Jt,s (x) = ∇Y δs (x). We derive from the SDE that 
+
+dJ t,s (x) = −∇ · bδt−s(Ys(x)) · Jt,s (x)ds. 
+
+Using that ∇ · bδt−s is bounded, we prove with Gr¨ onwall’s lemma, using that Jt, 0(x) = Id , that 
+
+∀0 ≤ s ≤ t ≤ T, ∥Jt,s ∥∞ ≤ esC b
+
+From this inequality, and using Hypothesis F.3, we derive that 
+
+sup  
+
+> (δ,t )∈(0 ,δ 0]×[0 ,T ]
+
+∥∇ pδt ∥∞ ≤ e2T C b (∥∇ p0∥∞ + ∥p0∥∞).
+
+Because ϕ and ∆ have bounded third and fourth order continuous derivatives, we can similarly prove that ∇Jt,s 
+
+is bounded too, and finally that 
+
+sup  
+
+> (δ,t )∈(0 ,δ 0]×[0 ,T ]
+
+∥∇ 2
+
+> x
+
+pδt ∥∞ ≤ C(∥∆xp0∥∞, ∥∇ p0∥∞, ∥p0∥∞)) 
+
+24 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+for some function C < ∞.The Fokker-Planck Equation proves that ∂tpδt is bounded on any compact 
+
+∀K compact ⊂ Rd, ∃CK, sup 
+
+> (δ, t) ∈R∗
+> +×[0 ,T]
+
+∥∂tpδ 
+
+> t
+
+∥K,∞ ≤ CK
+
+sup (δ,t )∈(0 ,δ 0]×[0 ,T ] ∥∂t∇pδt ∥K, ∞ can be bounded with a similar argument. 
+
+Step 6: Extraction of convergent subsequence. Lemma F.17 (Convergent subsequence) . There exist 
+
+δn → 0 and pt (C2 with bounded second moment) such that: 
+
+(pδn 
+
+> t
+
+, ∇pδn 
+
+> t
+
+) pointwise 
+
+−−−−−→ (pt, ∇pt). (64) 
+
+Additionally, Ept [∇ϕ · ∇ ϕ⊤] is invertible and: 
+
+θδn
+
+> t
+> uniformly
+
+−−−−−→ Ept [∇ϕ·∇ ϕ⊤]−1Ept [∆ ϕ−ϵx ·∇ ϕ⊤] :=  
+
+> def
+
+θt.
+
+(65) 
+
+Proof. By Lemma F.16, pδt and ∇pδt are bounded and equicontinuous on [0 , T ] × K for any compact K. Us-ing Arzela-Ascoli, along with a diagonal extraction argu-ment, we can extract a subsequence pδn 
+
+> t
+
+that converges uniformly towards pt over [0 , T ] × K, for any compact 
+
+K, which implies pointwise convergence. Because the family is tight (Lemma F.14), dominated con-vergence shows that pδn 
+
+> t
+
+converges weakly towards pt uni-formly in t ∈ [0 , T ], and thus that pt is a density. Using boundedness from Hypothesis F.2, weak conver-gence implies that 
+
+θδn 
+
+> t
+
+→ Ept
+
+∇ϕ · ∇ ϕ⊤−1Ept
+
+∆ϕ − ϵx · ∇ ϕ⊤ :=  
+
+> def
+
+θt
+
+where Ept
+
+∇ϕ∇ϕ⊤ is invertible because pt has finite cross entropy. 
+
+Step 7: The limit satisfies Fokker-Planck. Lemma F.18 (Limit is a solution) . The limit pt satisfies: 
+
+∂tpt(x) = ∇ ·  pt(θ⊤ 
+
+> t
+
+∇ϕ(x) + ϵx ) + ∆ pt(x), (66) 
+
+with θt = Ept [∇ϕ · ∇ ϕ⊤]−1Ept [∆ ϕ − ϵx · ∇ ϕ⊤].Proof. The density pδt satisfies Duhamel’s formula: 
+
+pδt (x) = ( gt∗p0)( x)+ 
+
+Z t
+
+> 0
+
+
+
+gt−s∗∇  pδs(θδs
+
+> ⊤
+
+∇ϕ+ϵx )
+
+(x)ds, 
+
+where gt(x) = (4 πt )−d/ 2e−| x|2/4t. By dominated con-vergence (using the bounds from Lemma F.16), the same formula holds for pt, where θδs is replaced by θs. Taking the time derivative, we show that pt satisfies the Fokker Planck equation. 
+
+F.3.2 Convergence to Maximum Entropy 
+
+We now prove that pt → pϵ 
+
+> ∗
+
+in DKL as σ → ∞ (equiva-lently, as t → ∞ for fixed σ = 1 , since pσt = p1
+
+> σ2t
+
+). 
+
+Lemma F.19 (Extraction of convergent subsequence) .
+
+There exist tn → ∞ and p∞ (with invertible G(p∞)) such that ptn ⇀ p ∞ weakly and: 
+
+Eptn 
+
+|∇ log ptn + ϵx + θ⊤∞∇ϕ|2 → 0,
+
+where θ∞ = Ep∞ [∇ϕ · ∇ ϕ⊤]−1Ep∞ [∆ ϕ − ϵx · ∇ ϕ⊤].Proof. Since Hϵ(pt) is increasing (Proposition F.10) and bounded above, it converges. Thus there exists tn → ∞ 
+
+with ddt Hϵ(ptn ) → 0, which equals Eptn [|∇ log ptn +
+
+ϵx + θ⊤ 
+
+> tn
+
+∇ϕ|2] → 0.By tightness and Prokhorov, without loss of generality, we say that ptn ⇀ p∞. Upper semi-continuity gives 
+
+Hϵ(p∞) ≥ lim n Hϵ(ptn ), so p∞ has finite cross-entropy and is not singularly supported. Thus Ep∞ [∇ϕ · ∇ ϕ⊤] is invertible. Weak convergence of ptn implies θtn → θ∞. Since the Fisher divergence vanishes along tn and ∇ϕ is bounded (Hypothesis F.2), the same holds with θ∞.
+
+Lemma F.20 (DKL convergence of subsequence) . We have θ∞ = θϵ 
+
+> ∗
+
+and DKL (ptn ∥pϵ
+
+> ∗
+
+) → 0.Proof. Since ϕ is bounded, pθ∞ (x) = Z−1 
+
+> ∞
+
+e−θ⊤∞ϕ(x)− 12 ϵ|x|2
+
+has a bounded log-Sobolev constant c by Holley-Stroock. Thus: 
+
+DKL (ptn ∥pθ∞ ) ≤ c Eptn 
+
+|∇ log ptn +ϵx +θ⊤∞∇ϕ|2 → 0.
+
+The distribution pθ∞ is exponential with moments 
+
+Epθ∞ [ϕ] = E[ϕ(X)] . By uniqueness, θ∞ = θϵ 
+
+> ∗
+
+and 
+
+pθ∞ = pϵ
+
+> ∗
+
+.
+
+Lemma F.21 (Full convergence) . We have 
+
+DKL (pt∥pϵ
+
+> ∗
+
+) → 0 as t → ∞ .Proof. For any weakly convergent sequence pt′ 
+
+> n
+
+⇀ p ′∞
+
+with t′ 
+
+> n
+
+→ ∞ , upper semi-continuity gives −Hϵ(p′∞) ≤−Hϵ(pϵ
+
+> ∗
+
+), so p′∞ = pϵ
+
+> ∗
+
+. By uniqueness of the limit in Prokhorov’s theorem, pt ⇀ p ϵ 
+
+> ∗
+
+and θt → θϵ
+
+> ∗
+
+.In the expression 
+
+DKL (pt∥pϵ
+
+> ∗
+
+) = −Hϵ(pt) + θϵ
+
+> ∗⊤
+
+Z
+
+ptϕ + log Z∗Z−1 
+
+> ϵ
+
+,
+
+each term converges, so DKL (pt∥pϵ
+
+> ∗
+
+) → 0.
+
+F.4 Proof of Theorem F.7: Quantitative Convergence Rate 
+
+We establish the O(σ−2) rate via a contraction argument using Pearson’s χ2 divergence. 25 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+F.4.1 SDE 
+
+Let t 7 → qt be a continuous path of densities with finite second moments. Consider the Fokker-Planck equation: 
+
+∂tpqt = σ2∆pqt +σ2∇·  pqt (θ(qt)−η(qt)σ−2)⊤∇ϕ+ϵx ,
+
+(67) where we defined 
+
+θ(qt) = Eqt
+
+∇ϕ · ∇ ϕ⊤−1Eqt [∆ ϕ − ϵx · ∇ ϕ⊤],η(qt) = Eqt
+
+∇ϕ · ∇ ϕ⊤−1 ddt mt. (68) We will show qt 7 → pqt stabilizes a ball of radius O(σ−2)
+
+around p∗ 
+
+> t
+
+in Pearson divergence. 
+
+F.4.2 Control Quantities 
+
+We define the fluctuation and Pearson divergence 
+
+ft = pt
+
+p∗
+
+> t
+
+− 1, Et =
+
+Z
+
+f 2 
+
+> t
+
+(x)p∗ 
+
+> t
+
+(x)dx = χ2(pqt ∥p∗ 
+
+> t
+
+),
+
+the parameters mismatch 
+
+ζt = θ(qt) − η(qt)σ−2 − θ∗ 
+
+> t
+
+,
+
+and constants 
+
+C∆ = max  
+
+> t∈[0 ,1]
+
+Ep∗
+
+> t
+
+|∆ϕ − ϵx · ∇ ϕ|21/2,C∇ = Ep∗
+
+> t
+
+|∇ ϕ|21/2.
+
+F.4.3 Poincar´ e Inequality Lemma F.22 (Poincar´ e inequality for p∗ 
+
+> t
+
+). Let Dt =R ∥∇ ft∥2p∗ 
+
+> t
+
+dx . Under Hypothesis F.2: 
+
+Et ≤ 1
+
+λ∗
+
+Dt, (69) 
+
+where log λ∗ ≥ log ϵ − max 
+
+> t∈[0 ,1]
+
+∥θ∗ 
+
+> t
+
+∥∞∥ϕ∥∞.Proof. By Holley-Stroock perturbation: pϵ has Poincar´ econstant ϵ, and ∥p∗ 
+
+> t
+
+− pϵ∥∞ = ∥θ∗ 
+
+> t⊤
+
+ϕ∥∞ ≤
+
+max 
+
+> t∈[0 ,1]
+
+∥θ∗ 
+
+> t
+
+∥∞∥ϕ∥∞.
+
+F.4.4 Evolution of the Fluctuation Lemma F.23 (Fluctuation dynamics) . The fluctuation ft
+
+satisfies: 
+
+∂tft = σ2Ltft + σ2∇ ·  (1 + ft)ζ⊤ 
+
+> t
+
+∇ϕ
+
+− σ2(1 + ft)( ζ⊤ 
+
+> t
+
+∇ϕ)( θ∗
+
+> t
+> ⊤
+
+∇ϕ + ϵx )+ (1 + ft) ddt θ∗
+
+> t
+> ⊤
+
+(ϕ − mt),
+
+where Ltft = ∆ ft − (θ∗ 
+
+> t⊤
+
+∇ϕ + ϵx ) · ∇ ft.Proof. This is proven by a direct calculation using pqt =(1 + ft)p∗ 
+
+> t
+
+and the Fokker-Planck equation (67). 
+
+F.4.5 Energy Dissipation Lemma F.24 (Pearson divergence bound) . The Pearson divergence satisfies: 
+
+ddt Et ≤ − σ2λ∗
+
+ 1 − r max 
+
+> t∈[0 ,1]
+
+∥θ∗ 
+
+> t
+
+∥∞∥∇ ϕ∥∞
+
+Et
+
++ σ2r∥∇ ϕ∥∞|ζt|2(1 + Et)+ 4 r max 
+
+> t∈[0 ,1]
+
+ddt θ∗ 
+
+> t∞
+
+∥ϕ∥∞(E1/2 
+
+> t
+
++ 54 Et).
+
+(70) 
+
+Proof. We compute 
+
+ddt Et = 2 
+
+Z
+
+ft ∂tft p∗ 
+
+> t
+
++
+
+Z
+
+f 2 
+
+> t
+
+∂tp∗ 
+
+> t
+
+.
+
+Using that ∂tp∗ 
+
+> t
+
+= ddt θ∗ 
+
+> t⊤
+
+(ϕ−mt) p∗ 
+
+> t
+
+The second term can be bounded by 2r∥ϕ∥∞max t∥ ddt θ∗ 
+
+> t
+
+∥∞Et using Cauchy-Schwarz. We compute the first term on the right hand side by integrating the fluctuation evolution from Lemma F.23 multiplied by ftp∗ 
+
+> t
+
+. We derive that 
+
+2σ2
+
+Z
+
+ft (Ltft) p∗ 
+
+> t
+
+= − 2σ2Dt.
+
+We compute the drift terms involving ζt. It amounts to estimate 
+
+I :=  
+
+> def
+
+2σ2
+
+Z
+
+ft
+
+
+
+∇ (1 + ft)ζ⊤ 
+
+> t
+
+∇ϕ
+
+− (1 + ft)( ζ⊤ 
+
+> t
+
+∇ϕ)( θ∗
+
+> t
+> ⊤
+
+∇ϕ + ϵx )
+
+
+
+p∗ 
+
+> t
+
+.
+
+By integration by parts, we derive that 
+
+I = −2σ2
+
+Z
+
+(1 + ft)( ζ⊤ 
+
+> t
+
+∇ϕ) · ∇ ft p∗ 
+
+> t
+
+.
+
+By Cauchy–Schwarz, then using R (1 + ft)2p∗ 
+
+> t
+
+= 1 + Et
+
+and finally by Young’s inequality, 
+
+∥I∥ ≤ σ2 ∥∇ ϕ∥2
+
+> ∞
+
+∥ζt∥2(1 + Et) + Dt
+
+.
+
+The remaining term in 2 R ft ∂tft p∗ 
+
+> t
+
+satisfies 
+
+2
+
+Z
+
+ft(1 + ft) ddt θ∗
+
+> t
+> ⊤
+
+(ϕ − mt) p∗
+
+> t
+
+≤ 4r∥ ddt θ∗ 
+
+> t
+
+∥∞∥ϕ∥∞(E1/2 
+
+> t
+
++ Et)
+
+Combining all terms, and using the Poincar´ e inequality (69) to bound −Dt, yields (70). 26 MGD: Moment Guided Diffusion for Maximum Entropy Generation A P REPRINT 
+
+F.4.6 Bounding ζt
+
+Lemma F.25 (Control of ζt). Assume max t χ2(qt, p ∗ 
+
+> t
+
+) ≤
+
+E∗. Let γt be the smallest eigenvalue of G(qt). Then: 
+
+γt ≥ γ∗ − r−1C∇E1/2 
+
+> ∗
+
+, (71) 
+
+and 
+
+∥ζt∥2 
+
+> ∞
+
+≤(γ∗ − r−1C∇E1/2 
+
+> ∗
+
+)−1C∗E1/2
+
+> ∗
+
++ σ−2 max 
+
+> t∈[0 ,1]
+
+ddt mt ∞
+
+, (72) 
+
+where C∗ = C∆ + C∇ max 
+
+> t∈[0 ,1]
+
+∥θ∗ 
+
+> t
+
+∥∞.Proof. By Cauchy Schwarz, for any integrable g,
+
+(Eqt − Ep∗ 
+
+> t
+
+)[ g] ≤ E1/2
+
+> ∗
+
+Z
+
+g2p∗ 
+
+> t
+
+,
+
+which leads to, for the operator norm, 
+
+∥Eqt [∇ϕ · ∇ ϕ⊤] − Ep∗ 
+
+> t
+
+[∇ϕ · ∇ ϕ⊤]∥op ≤ r−1C∇E1/2 
+
+> ∗
+
+,
+
+and thus to 
+
+γt ≥ γ∗ − r−1C∇E1/2 
+
+> ∗
+
+.
+
+Using the constraint equation (68) 
+
+Eqt [∇ϕ · ∇ ϕ⊤]ηt =
+
+− (Eqt [∇ϕ · ∇ ϕ⊤] − Ep∗ 
+
+> t
+
+[∇ϕ · ∇ ϕ⊤]) θ∗
+
+> t
+
+− σ−2 ddt mt.
+
+Combining this with the Cauchy Schwarz inequality de-rived above, we conclude that 
+
+|ζt| ≤ γ−1
+
+> t
+
+
+
+E1/2 
+
+> ∗
+
+C∆ + C∇ max 
+
+> t∈[0 ,1]
+
+∥θ∗ 
+
+> t
+
+∥∞E1/2
+
+> ∗
+
++ max 
+
+> t∈[0 ,1]
+
+ddt mt ∞
+
+σ−2
+
+.
+
+F.4.7 Bounding Lagrange Multipliers Lemma F.26 (Multiplier bounds) . As mt → Epϵ (ϕ) and  
+
+> ddt
+
+mt → 0:
+
+θ∗ 
+
+> t
+
+= O( max 
+
+> t∈[0 ,1]
+
+∥mt − Epϵ (ϕ)∥∞) ,ddt θ∗ 
+
+> t
+
+= O
+
+
+
+max 
+
+> t∈[0 ,1]
+
+ddt mt ∞
+
+
+
+.
+
+(73) 
+
+Proof. We control Epϵ (ϕ)−Ep∗ 
+
+> t
+
+(ϕ) with mean value theo-rem using that it is the gradient of L(θ) = −θ⊤Epϵ (ϕ) −
+
+log Zϵθ at θ∗ 
+
+> t
+
+. L(θ) has Hessian −I(θ) = −Cov pθ (ϕ),which is continuous and invertible ( ϕ is continuous and bounded, and ∇ϕ is linearly independent, see Hypothesis F.2) and is minimised by the multiplier θ = 0 . Using the mean value theorem over each coordinate k of the hessian, we prove that both 
+
+∥Epϵ (ϕ) − Ep∗ 
+
+> t
+
+(ϕ)∥∞ = O ∥I(0) ∥op ∥θ∗ 
+
+> t
+
+− 0∥∞
+
+,
+
+∥θ∗ 
+
+> t
+
+− 0∥∞ = O ∥I−1(0) ∥op ∥Epϵ (ϕ) − Ep∗ 
+
+> t
+
+(ϕ)∥∞
+
+,
+
+from which we deduce that 
+
+θ∗ 
+
+> t
+
+= O( max 
+
+> t∈[0 ,1]
+
+∥Epϵ (ϕ) − mt∥∞).
+
+We bound the derivative ddt θ∗ 
+
+> t
+
+by considering 
+
+∂t∇θ L(θ∗ 
+
+> t
+
+) = − ddt θ∗
+
+> t
+> ⊤
+
+I(θ∗ 
+
+> t
+
+) = − ddt mt
+
+=⇒ ddt θ∗ 
+
+> t
+
+= I−1(θ∗ 
+
+> t
+
+) ddt mt.
+
+Thus, when ddt mt → 0 and mt → Epϵ (ϕ), ddt θ∗ 
+
+> t
+
+=
+
+O( max 
+
+> t∈[0 ,1]
+
+∥ ddt mt∥∞).
+
+F.4.8 Contraction Lemma F.27 (Ball stabilization) . Assume max t χ2(qt, p ∗ 
+
+> t
+
+) ≤
+
+ξσ −2 for some ξ > 0. If max 
+
+> t∈[0 ,1]
+
+∥mt − Epϵ (ϕ)∥∞ and 
+
+max 
+
+> t∈[0 ,1]
+
+∥ ddt mt∥∞ are small enough, there exists σ0 such that for σ ≥ σ0:
+
+Et ≤ ξσ −2. (74) 
+
+Proof. Combine Lemmas F.24 and F.25 with E∗ = ξσ −2.The resulting differential inequality for Et is a cubic poly-nomial in E1/2 
+
+> t
+
+. For σ large, its smallest positive root 
+
+R∗ ∼ ξσ −2 C∗∥∇ ϕ∥∞ 
+
+> A∗
+
+where A∗ = λ∗(1 − (5 ∥ϕ∥∞ +
+
+∥∇ ϕ∥∞) max t ∥θ∗ 
+
+> t
+
+∥∞) (it can be proven by Taylor ex-panding, with respect to σ−2, the Cardano Formula for the roots). By Lemmas F.22 and F.26, lim mt→Epϵ (ϕ) A∗ = ϵ and 
+
+lim mt→Epϵ (ϕ) C∗ = rEpϵ [|∆ϕ − ϵx · ∇ ϕ|2]1/2∥∇ ϕ∥∞.Condition (51) ensures C∗∥∇ ϕ∥∞/A ∗ < 1 in this limit, so R∗ ≤ ξσ −2 for σ large. Since the polynomial is positive on [0 , R ∗] and E0 = 0 , we have Et ≤ R∗ ≤
+
+ξσ −2.
+
+F.4.9 Conclusion 
+
+By Lemma F.27, the ball of radius ξσ −2 in Pearson di-vergence is stabilized by qt 7 → pqt . By standard McKean-Vlasov theory, a fixed point pσt exists in this ball, satis-fying the moment constraints. Since max t χ2(pσt , p ∗ 
+
+> t
+
+) ≤
+
+ξσ −2, we have χ2(pσt , p ∗ 
+
+> t
+
+) = O(σ−2).The theorem follows from DKL (pσt ∥p∗ 
+
+> t
+
+) ≤ χ2(pσt ∥p∗ 
+
+> t
+
+).27

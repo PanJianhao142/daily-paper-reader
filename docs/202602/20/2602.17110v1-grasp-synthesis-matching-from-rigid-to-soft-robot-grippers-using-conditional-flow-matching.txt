@@ -1,0 +1,248 @@
+Title: Grasp Synthesis Matching From Rigid To Soft Robot Grippers Using Conditional Flow Matching
+
+URL Source: https://arxiv.org/pdf/2602.17110v1
+
+Published Time: Fri, 20 Feb 2026 01:31:32 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# Grasp Synthesis Matching From Rigid To Soft Robot Grippers Using Conditional Flow Matching 
+
+Tanisha Parulekar 1,2, Ge Shi 1∗, Josh Pinskier 1, David Howard 1, Jen Jen Chung 2
+
+Abstract — A representation gap exists between grasp syn-thesis for rigid and soft grippers. Anygrasp [1] and many other grasp synthesis methods are designed for rigid parallel grippers, and adapting them to soft grippers often fails to capture their unique compliant behaviors, resulting in data-intensive and inaccurate models. To bridge this gap, this paper proposes a novel framework to map grasp poses from a rigid gripper model to a soft Fin-ray gripper. We utilize Conditional Flow Matching (CFM), a generative model, to learn this complex transformation. Our methodology includes a data collection pipeline to generate paired rigid-soft grasp poses. A U-Net autoencoder conditions the CFM model on the object’s geometry from a depth image, allowing it to learn a continuous mapping from an initial Anygrasp pose to a stable Fin-ray gripper pose. We validate our approach on a 7-DOF robot, demonstrating that our CFM-generated poses achieve a higher overall success rate for seen and unseen objects ( 34% 
+
+and 46% respectively) compared to the baseline rigid poses (6% and 25% respectively) when executed by the soft gripper. The model shows significant improvements, particularly for cylindrical ( 50% and 100% success for seen and unseen objects) and spherical objects ( 25% and 31% success for seen and unseen objects), and successfully generalizes to unseen objects. This work presents CFM as a data-efficient and effective method for transferring grasp strategies, offering a scalable methodology for other soft robotic systems. 
+
+I. I NTRODUCTION 
+
+Vision-guided object grasping for unstructured environ-ments is a well-developed field, with state-of-the-art mod-els enabling robust robotic manipulation [1], [2]. However, these models are predominantly designed for rigid paral-lel grippers. This focus creates a significant challenge for the field of soft robotics, where grippers leverage their inherent compliance to achieve exceptional flexibility and adaptability [3], [4]. Soft grippers excel at tasks that are difficult for their rigid counterparts, such as handling fragile objects [5], facilitating safe human-robot interactions [6]–[8], and dynamically grasping poorly localized targets [9], [10]. The primary obstacle to integrating these two fields is a fundamental mismatch in both grasp representation and control strategy. Rigid grasping methods rely on precise joint limit control and often fail to account for properties unique to soft grasping, such as time-based metrics and object deformation [1], [11]. In contrast, soft grasping leverages the gripper’s adaptability, often without requiring accurate finger modeling [12]. This discrepancy means there is no consensus on how to generalize strategies from rigid to soft grippers, preventing the direct deployment of existing models. This challenge is particularly evident for specific designs like the Fin-ray gripper. While its unique deformation abil-ities allow it to conform easily to various object shapes, Depth        
+
+> Camera
+> Objects
+> Fin -ray
+> Gripper
+> Conditional
+> Flow Matching
+> AnyGrasp
+> pose
+> Generated pose
+> for Fin -ray gripper
+> Successfully Fin -
+> ray gripper
+> grasping
+> 𝑣 θ𝒢 tc,𝑡 𝑐 ,𝑐
+> Fig. 1. The CFM flow model will generate a successful grasp pose for a Finray gripper, given an AnyGrasp pose that is generated on an object.
+
+its complex, non-linear behavior is difficult to model accu-rately and is simulation-intensive [13]–[16]. This modeling difficulty leads to a lack of accuracy when adapting grasp synthesis to real-world objects [16], highlighting the need for a more efficient, less resource-intensive method to learn its grasping behaviors. To address this research gap, we deploy Conditional Flow Matching (CFM), a class of efficient and effective generative models for mapping data between different distributions [17], [18]. Compared to other generative models, CFM can achieve similar performance with less training data. Their application in robotics includes learning complex behaviors or waypoint planning [19], [20]. Rigid grasping techniques rely on large dataset collection and capturing multiple views of grasping objects, which requires significant effort, training time and resource consumption. This paper, therefore, investigates the use of CFM as a less resource-intensive alternative. We propose a framework from data collection to mapping an Anygrasp rigid-gripper grasping pose to a successful grasp pose for a soft Fin-ray gripper, as illustrated in Fig. 1. The main contribution of this work is the development of the CFM model to transfer grasp poses, originally syn-thesized for rigid grippers, to a soft Fin-ray gripper. To accomplish this, we establish a data collection pipeline to generate the required paired grasp data and subsequently implement and analyze the effectiveness of the CFM as a grasp synthesis technique for the soft gripper. II. R ELATED WORK 
+
+A. Grasp Synthesis 
+
+Grasp synthesis is the process of generating grasp hy-potheses and contact models for either fixture (maintaining equilibrium against disturbances) or dexterous manipulation (moving an object in a specific way) [11]. A state-of-the-art 
+
+> arXiv:2602.17110v1 [cs.RO] 19 Feb 2026
+
+model for rigid grippers is Anygrasp, which utilizes scene reconstruction and additional geometric labels to improve grasp stability and association over time [1]. It remains un-confirmed whether the assumptions underlying rigid parallel grippers are generalizable to soft robot grippers, as passively actuated systems may not exhibit the same behaviors or ben-efit from the same ideal orientations. For example, Anygrasp and other methods for parallel grippers assume antipodal grasping points are ideal and abstract key parameters such as the width and depth of the gripper. While other efforts have been made to transfer grasps across grippers with varying numbers of fingers, different widths and finger depths, or even different actuation methods (e.g., parallel jaw vs. vacuum) [21], [22], these approaches rely on individual joint control. They introduce fixed relation-ships between parameters like finger depth and grasp width— a paradigm that is incompatible with most soft grippers. Soft grasping methods still heavily rely on rigid grasp synthesis. Early research demonstrated that sufficient accuracy could be achieved by adapting learning-based methods from rigid grippers, using a simplified open-close control sequence to leverage the gripper’s compliance [12]. However, such sim-plified control schemes can disregard the unique behaviors of soft grippers, which are critical for selecting a successful grasp. This reliance on rigid-body techniques persists in more recent work. For instance, some approaches account for the hand closure of a soft hand but still use rigid grasp generators like DexNet2.0 [13], while others use datasets designed for rigid grippers, like the Cornell dataset, to generate commands for a soft hand [14]. This continued reliance on rigid grasp synthesis has created a representation gap, failing to capture the unique behaviors and capabilities of soft grippers. 
+
+B. Flow Models 
+
+Generative models offer a novel perspective to bridge the gap between rigid and soft gripper grasp synthesis. We leverage generative models, which learn a probabilistic mapping between two data distributions. One prominent approach, Normalizing Flows (NFs) and their conditional variants (CNFs), can learn complex, invertible transforma-tions by parameterizing them as continuous-time Ordinary Differential Equations (ODEs) [23]. Despite their flexibility in density estimation, CNFs have historically been hindered by difficulties in training and scaling [23], [24]. An alter-native, diffusion models, represents the current state-of-the-art in many generative tasks but often requires numerous network passes to generate a high-quality sample, leading to long inference times [25], [26]. Addressing these limitations, Conditional Flow Matching (CFM) has recently emerged as a highly efficient training method for such generative models [18]. By directly learning the transformation between two domains—in our case, from rigid gripper grasps to soft gripper grasps—CFM provides an accurate mapping with significant computational efficiency. Flow-based methods have recently been applied to various robotics challenges, including motion planning, affordance-based control, and multi-support manipulation [19], [27]– [29]. This combination of accuracy and efficiency makes CFM particularly suitable for learning the complex condi-tional transformations required in soft robotics. III. M ETHODOLOGY 
+
+We represent the state of a grasp pose as G = {R, t, w },where R ∈ R4×1 represents the gripper orientation, and 
+
+t ∈ R3×1 represents the position of the center of the gripper, and w is the gripper opening width. This representation covers all the degrees of freedom for a parallel gripper and is also referred to as the 7-DOF grasp configuration. The gripper opening width is assumed to be a constant of the max opening width, therefore it is not included in the grasp configration. In this paper, we use the notation P to represent the partial-view point cloud from a depth camera associated with a depth image D, and E to represent the environment including the robot and objects. Hence a robot grasping scene is defined as S = {E , P, D, G} .The approach, leveraging CFM, is introduced to achieve the grasp synthesis mapping. As shown in Fig. 2(a), the core of the CFM is to model the transformation from an Anygrasp rigid gripper grasping pose GAnygrasp to the soft gripper grasping pose GCFM as the solution to a conditional Ordinary Differential Equation (ODE). The transformation is governed by a parameterized vector field conditioned on the condition input c:
+
+dG(tc)
+
+dt c
+
+= vθ (G(tc), t c, c), G(0) = GAnygrasp , G(1) = GCFM ,
+
+(1) where tc ∈ [0 , 1] is a progression parameter in the ODE  
+
+> dG(tc)
+> dt c
+
+= vθ (G(tc), t c, c), and vθ is a time-dependent vector field parameterized by an MLP with trainable parameters (θ). The trajectory from GAnygrasp to GCFM is obtained by integrating (1) over tc from 0 to 1 [30]. The vector field vθ is learned by a fully-connected, feed-forward MLP, whose architecture is detailed in Fig. 2(b). The input to this network consists of the interpolated grasp pose G(tc), the progression parameter tc, and the condition vector c. For network processing, the grasp pose G is represented as a 7-dimensional vector, where the orientation R is converted to a 4D quaternion and concatenated with the 3D position vector t. The MLP architecture consists of four hidden layers (sizes 128, 256, 256, 128) with SiLU activations, batch normalization, and a final ReLU activation. Under a grasping scene S = {E , P, D, G} , the grasp pose GAnygrasp is generated according to the partial-view point cloud P extracted from depth image D. To allow the mapping to adapt to different objects and scenes, the condition vector c encodes the scene’s geometry. As shown in Fig. 2(c), the U-Net autoencoder [31] was used to generate an encoding for c. The network takes the raw depth image from the current scene as input and processes it through a U-net structure to compress the visual information into a 128-dimensional latent vector at the bottle-neck. This latent vector, which captures the essential geometry of the object, then serves as the condition c ∈ R128 ×1 for the CFM model. The autoencoder was pre-trained on a dataset of 865 depth 𝒢 0 = {𝑹 , 𝒕 , 𝜔 }
+
+𝑣 θ 𝒢 tc , 𝑡 𝑐 , 𝑐 
+
+Flow path 
+
+Generated grasping pose 
+
+𝒢 1 = {𝑹 , 𝒕 , 𝜔 }
+
+Anygrasp  Anygrasp  CFM 
+
+Generated 
+
+Grasping pose from Anygrasp 
+
+Linear  SiLU  BatchNorm1d 
+
+𝟏𝟐𝟖  𝟐𝟓𝟔  𝟐𝟓𝟔  𝟏𝟐𝟖 𝑐 ∈ ℝ128 ×1
+
+𝒢 𝟎 ∈ ℝ7×1
+
+𝑡 𝑐 
+
+𝒗 𝜽 𝒢 𝑡 𝑐 ∈ ℝ7×1
+
+U-Net 
+
+Autoencoder 
+
+Depth Image 
+
+AnyGrasp Pose 
+
+𝒢 0 = {𝑹 , 𝒕 , 𝜔 }
+
+(a) 
+
+(b) 
+
+Raw depth 
+
+image  input 
+
+Reconstructed 
+
+depth image 
+
+𝟏𝟐𝟖  𝟔𝟒  𝟑𝟐  𝟏𝟔  𝟏𝟐𝟖  𝟏𝟔  𝟑𝟐  𝟔𝟒  𝟏𝟐𝟖 
+
+Conv Block MaxPool  ConvTranspose 
+
+Concatenate 
+
+Latent vector  En/Decoder 
+
+(c) Fig. 2. An overview of the Conditional Flow Matching (CFM) framework for grasp synthesis mapping. (a) The core concept of the CFM model that learns a continuous transformation (a “flow path”) from an initial rigid gripper pose generated by Anygrasp ( GAnygrasp ) to a target soft gripper pose ( GCFM ). This transformation is guided by a learned, conditional velocity field vθ . (b) This shows the architecture of the feed-forward MLP that parameterizes the velocity field vθ . It takes the current grasp pose G(tc), the progression parameter tc, and the scene condition vector c as input to predict the direction of the flow. (c) This depicts the U-Net Autoencoder used to generate the condition vector c at the bottle-neck. It processes a raw depth image, compressing it into a latent vector that captures the object’s geometry. 
+
+images of various objects to effectively learn this compressed representation. Fig. 2(b) shows the structure of the CFM. Given adataset pair of the grasp scenes for Anygrasp SAnygrasp =
+
+{E , P, D, GAnygrasp } and a demonstrated successful Fin-ray gripper grasp SSof t = {E , P, D, GCFM }, the goal of CFM is to learn a velocity field that aligns with the transition from the Anygrasp grasp pose GAnygrasp to a target soft grasp pose GCFM . The pair of grasp scenes will be generated for an object E, in the context of a point cloud P . A depth image D with conditions as cAnygrasp = csof t will be associated with the scene context, and will link the Anygrasp pose and demonstrated Fin-ray gripper grasp pose. Both grasp poses will be for the same robot arm with the Fin-ray gripper attached. Given the data (GAnygrasp , GCFM ) under the same conditions c, an interpolated state Gtc at a random progression time tc ∼ U (0 , 1) is defined as: 
+
+Gtc = (1 − tc)GAnygrasp + tcGCFM . (2) The target velocity field, representing the ideal direction of transformation, is: 
+
+utc = GCFM − G Anygrasp . (3) Meanwhile the training loss is formulated as the mean squared error between the predicted and target velocity fields: 
+
+L(θ) = Etc,GAnygrasp ,GCFM ,c[∥vθ (G(tc), t c, c) − utc ∥2]. (4) By defining the loss function, the model tends to learn a smooth, conditional mapping from GAnygrasp to GCFM . After training, given a scene SAnygrasp = {G Anygrasp , c}, the target grasping synthesis GCFM is predicted by solving: 
+
+GCFM = GAnygrasp +
+
+Z 10
+
+vθ (G(tc), t c, c). (5) This integral is numerically approximated using the ODE solver (e.g., Dormand-Prince method) [18]. The CFM frame-work learns the velocity field vθ using a fully-connected, feed-forward MLP. The input to the network is the current state vector G(tc) ∈ RN of the observation data, the flow-time parameter tc, and the condition vector c ∈ R128 ×1. Our system was run on a laptop with 11th Gen Intel i9-11950H CPU and an RTX 2000 Ada GPU. Training dataset  
+
+> ✓
+> х
+> Tape
+> ✓
+> х
+> Remote Box
+> ✓
+> х
+> Can
+> ✓
+> х
+> Apple
+> O1
+> ✓
+> х
+> Orange
+> O1
+> ✓
+> х
+> Lime
+> O1
+> ✓
+> х
+> Mango
+> O1
+> х
+> х
+> 𝒢 𝐴𝑛𝑦𝑔𝑟𝑎𝑠𝑝  𝒢 𝑠𝑜𝑓𝑡
+> Point
+> cloud  𝒫
+> 𝒢 𝐴𝑛𝑦𝑔𝑟𝑎𝑠𝑝 𝒢 𝑠𝑜𝑓𝑡
+> Strawberry
+> ✓
+> х
+> Sausage
+> ✓
+> х
+> Cube
+> ✓
+> х
+> Case
+> ✓
+> ✓
+> Apple
+> O2
+> ✓
+> х
+> Orange
+> O2
+> ✓
+> х
+> Lime O2
+> х
+> х
+> 𝒢 𝐴𝑛𝑦𝑔𝑟𝑎𝑠𝑝  𝒢 𝑠𝑜𝑓𝑡
+> Point
+> cloud  𝒫
+
+Unseen dataset  
+
+> Pre -grasp Approach ing
+> Object grasping
+> Home Position
+
+Point cloud 𝒫      
+
+> Post -grasp lift
+> (a) (b) Fig. 3. The experimental setup and dataset used for learning the grasp pose transformation. (a) This shows the data validation pipeline for validating the CFM model, which involves moving the robot from a home position to a pre-grasp pose derived from GAnygrasp or GCFM , executing the grasp on the object, and lifting it. (b) This section displays examples from the training and unseen datasets for a variety of objects. Each entry includes the grasp execution, the corresponding point cloud ( P), the initial rigid gripper pose from AnyGrasp ( GAnygrasp , shown in magenta), and the manually adjusted, successful soft gripper pose ( GCFM , shown in green).
+
+IV. E XPERIMENTS 
+
+A. Paired Data Collection 
+
+A custom experimental platform was built for paired grasping dataset collection and validation, as shown in Fig. 3(a). The setup consisted of a 7-DOF Franka Emika Panda manipulator with an end-effector-mounted Intel Re-alSense D415 depth camera and a Fin-ray gripper for the grasping task. The data was generated using a pick-and-place pipeline. For each trial, the depth camera captured a partial-view depth image ( D) from a top-down perspective. Anygrasp was run to generate the associated scene point cloud ( P) and synthesise a sequence of 20 ranked grasping poses ( GAnygrasp ) suitable for a rigid gripper. During data collection, the robot first moved to a pre-grasp pose, at a 15 cm offset along the approach vector of a selected Anygrasp pose. This procedure ensured the end-effector maintained the same orientation and approach direction as the original predicted grasp. From this pre-grasp pose, the grasp was manually adjusted to find a successful pose, GCFM ,for the Fin-ray gripper. Each collected data pair consists of the initial Anygrasp pose GAnygrasp and the corresponding successful, manually-adjusted Fin-ray gripper pose GCFM , conditioned on the same depth image D. The GAnygrasp poses form the initial data distribution, while the successful GCFM poses form the target distribution for our CFM model. To ensure a robust dataset, both higher- and lower-ranking Anygrasp poses were selected for inclusion. By collecting these pairs, the CFM model learns to map a given Anygrasp pose to an effective Fin-ray grasp. For each training object shown in Fig. 3(b), we collected 15 data pairs, with the adjusted grasps demonstrating top-down approaches at varying depths ( 1 cm 
+
+to 7 cm , in 1 cm increments). 
+
+B. Validation 
+
+To validate the CFM model, the pick-and-place pipeline was employed across a total of 15 scenes involving 12 distinct objects, which included the training dataset and unseen objects. The unseen objects also included an apple, orange, and lime placed in upside-down orientations. During validation, the Panda manipulator equipped with a pair of Fin-ray grippers executed the original GAnygrasp poses and the CFM-generated GCFM poses. To better demonstrate the improvement offered by the CFM model, middle-ranking 
+
+GAnygrasp poses were intentionally selected for the base-line comparison. In each experimental trial, the manipulator approached the pre-grasp pose for a given GAnygrasp or 
+
+GCFM , closed the gripper, and lifted the object. A grasp was considered successful if the object could be held stable for 5 seconds after being lifted and placed back on the platform. V. R ESULTS 
+
+A. Training and Validation Results 
+
+The CFM model was trained for 2000 epochs on 254 paired grasp poses from 8 different objects, using an 80/20 training and validation split. The associated U-Net autoen-coder was trained for 5000 epochs on a dataset of 865 depth images. The total training time was approximately 1 minute for the CFM model and 35 minutes for the autoencoder. The Spherical Flat Cylindrical Rectangular All  
+
+> Object Type
+> 030 40 60 80
+> Success Rate (%)
+> 𝒢𝐴𝑛𝑦𝑔𝑟𝑎𝑠𝑝 𝒢𝑠𝑜𝑓𝑡
+> Spherical: Flat: Cylindrical: Rectangular: Fig. 4. Benchmarking results comparing the grasp success rates of the CFM-generated soft gripper poses ( Gsof t ) against the original AnyGrasp poses ( GAnygrasp ).
+
+trained model demonstrated a strong ability to replicate the manually adjusted poses, with minimal differences observed between the demonstrated and the predicted Fin-ray gripper poses. To quantitatively evaluate its effectiveness, the CFM model’s grasp synthesis ( GCFM ) was benchmarked against the baseline Anygrasp synthesis ( GAnygrasp ) on both seen and unseen objects. The results, summarized in Fig. 4, shows that the CFM model achieved a higher overall success rate of approximately 38% compared to Anygrasp’s 15%. For seen and unseen objects, the CFM model achieved higher success than Anygrasp for seen (34% and 6% respectively) and unseen objects (46% and 25% respectively). Performance also varied by object geometry. For cylindrical objects, the CFM model showed the most significant improvement, achieving a success rate of 50% and 100% respectively for the seen and unseen objects, which were better than Anygrasp (0% and 75% respectively). The CFM model also outperformed the baseline on rectangular objects, achieving 50% for both seen and unseen objects compared to Anygrasp (25% and 0% respectively). For spherical objects, the model yielded success rates of approximately 25% and 31% for seen and unseen objects respectively, whereas the baseline Anygrasp method failed completely. Flat objects were the only category in unseen objects where the baseline Anygrasp model performed significantly better, achieving a success rate of 100% for both seen and unseen objects, while the CFM model’s success rate was 25% and 50% respectively. VI. D ISCUSSION 
+
+Overall, the CFM model successfully synthesized grasps across different objects for the Fin-ray gripper. The exper-imental results suggest that the CFM model is capable of learning a mapping that compensates for the morpholog-ical and compliance differences between a rigid parallel gripper and a soft Fin-ray gripper. The model’s primary adaptations—increasing grasp depth, correcting tilted ori-entations, and re-centering grasps on planar surfaces—are consistent with the known operational principles of soft grippers, which favor distributed forces and envelopment over precise, high-pressure contacts. During the data collection stage, the primary adaptation was the adjustment of grasp depth as well as suboptimal ori-entations. Grasps synthesized by Anygrasp are often shallow and the contact points are in the middle of the object to ensure the stable grasp for a rigid pinch gripper. This often requires the gripper to be highly precise, with high-pressure point contacts. In contrast, a deeper grasp is needed for an object to allow the adaptation of the Fin-ray gripper actuation during grasping. This strategic shift allows the longer fingers of the Fin-ray gripper to maximize the surface contact and leverage their enveloping capability, which is crucial for stability with soft grippers. Furthermore, the model learned to enhance stability by correcting suboptimal orientations proposed by the baseline. Anygrasp often produced tilted grasps or targeted the corners of cubic objects—strategies viable for rigid grippers that can cage an object. For a soft gripper, such approaches can lead to uneven force application and result in slips. The CFM model consistently re-adjusts these poses to more stable, top-down, and centered orientations, suggesting it developed a preference for balanced force distribution, a key principle in successful grasping. It is worth noting that the baseline Anygrasp model per-formed better on flat objects. This limitation may be caused by bias during the data collection. The manually adjusted grasps predominantly featured top-down approaches, which are effective for many shapes but less optimal for flat objects where a pinching grasp from the side can be more stable. The learned top-down strategy was more effective than Anygrasp for the remote as it increased the grasp depth. However, for the glasses case a pinching grasp from the side may have been a more effective strategy. This indicates that while the model learns from the provided data efficiently, its performance is necessarily constrained by the scope of the demonstrated strategies. The success of the model can also be partially attributed to the inclusion of high- and low-ranking poses from Anygrasp. The diversity allowed the model to learn a robust correc-tive mapping rather than a simple one-to-one transfer. This likely contributed to its ability to transform poses considered suboptimal for a rigid gripper into successful grasps for the soft gripper. This suggests that the model is not merely memorizing good grasps but is learning a conditional policy for what constitutes a stable grasp given the Fin-ray gripper’s physical properties. The model’s ability to successfully generalize to unseen objects underscores a key advantage of the CFM framework: its generative feature. Unlike a simple regression model that might overfit to the specific geometries in the training set, the CFM learns a continuous, conditional vector field that represents the principles of transformation. The U-Net autoencoder is critical for this process. By mapping the geometries of unseen objects to a familiar region within its latent space, it provides a consistent conditioning vector c
+
+that allows the learned flow to be applied effectively, even to objects the model has never seen before. Therefore, the success on unseen objects indicates that the model has not merely memorized the training pairs but has captured the underlying conditional policy for transforming a rigid grasp into a viable soft grasp. This demonstrates the potential of flow-based models to create robust, generalizable solutions for robotic manipulation tasks that can adapt to novelty in the environment. VII. C ONCLUSION 
+
+In summary, this work demonstrates that CFM is a ben-eficial and data-efficient method for adapting Anygrasp-synthesized rigid grasps for use with soft Fin-ray grippers, presenting a mapping methodology that could be extended to other soft grippers. Benchmarking experiments, however, revealed areas for improvement, as common failure modes included grasps that were off-center, positioned on the side of the object, too shallow, or excessively tilted, sometimes resulted in slips. This suggests that future work could focus on integrating grasp centering methods or improving object geometry perception to enhance the model’s robustness. REFERENCES [1] H.-S. Fang, C. Wang, H. Fang, M. Gou, J. Liu, H. Yan, W. Liu, Y. Xie, and C. Lu, “Anygrasp: Robust and efficient grasp perception in spatial and temporal domains,” IEEE Transactions on Robotics (T-RO) , 2023. [2] X. Liu, Y. Wang, J. Huang, M. Feng, H. Zhang, J. Luo, C. Wu, and Z. Miao, “Cfpgrasp: Coarse-to-fine prediction network for 6-dof robotic grasping with improved grasp representation,” IEEE Robotics and Automation Letters , pp. 1–8, 2025. [3] D. Rus and M. T. Tolley, “Design, fabrication and control of soft robots,” Nature , vol. 521, no. 7553, pp. 467–475, 2015. [4] J. Pinskier and D. Howard, “From bioinspiration to computer gen-eration: Developments in autonomous soft robot design,” Advanced Intelligent Systems , vol. 4, no. 1, p. 2100086, 2022. [5] T. Joseph, S. Baldwin, L. Guan, J. Brett, and D. Howard, “The jamming donut: a free-space gripper based on granular jamming,” in 
+
+IEEE International Conference on Soft Robotics (RoboSoft) . IEEE, 2023, pp. 1–6. [6] J. Shi, G. Shi, Y. Wu, and H. A. Wurdemann, “A multi-cavity touch interface for a flexible soft laparoscopy device: Design and evaluation,” 
+
+IEEE Transactions on Medical Robotics and Bionics , 2024. [7] J. Pinskier, P. Kumar, M. Langelaar, and D. Howard, “Automated design of pneumatic soft grippers through design-dependent multi-material topology optimization,” in 2023 IEEE International Confer-ence on Soft Robotics (RoboSoft) . IEEE, 2023, pp. 1–7. [8] X. Wang, L. Horrigan, J. Pinskier, G. Shi, V. Viswanathan, L. Liow, T. Bandyopadhyay, J. J. Chung, and D. Howard, “Dexgrip: Multi-modal soft gripper with dexterous grasping and in-hand manipulation capacity,” in 2025 IEEE 8th International Conference on Soft Robotics (RoboSoft) . IEEE, 2025, pp. 1–6. [9] G. Shi, J. Shi, A. Shariati, K. Motaghedolhagh, S. Homer-Vanniasinkam, and H. A. Wurdemann, “Design and characterization of multi-cavity, fluidic haptic feedback system for mechano-tactile feedback,” IEEE Transactions on Haptics , vol. 18, no. 1, pp. 6–19, 2024. [10] B. G. Greenland, J. Pinskier, X. Wang, D. Nguyen, G. Shi, T. Bandy-opadhyay, J. J. Chung, and D. Howard, “Sograb: A visual method for soft grasping benchmarking and evaluation,” in 2025 IEEE 8th International Conference on Soft Robotics (RoboSoft) . IEEE, 2025, pp. 1–6. [11] R. Newbury, M. Gu, L. Chumbley, A. Mousavian, C. Eppner, J. Leit-ner, J. Bohg, A. Morales, T. Asfour, D. Kragic et al. , “Deep learning approaches to grasp synthesis: A review,” IEEE Transactions on Robotics , vol. 39, no. 5, pp. 3994–4015, 2023. [12] C. Choi, W. Schwarting, J. DelPreto, and D. Rus, “Learning object grasping for soft robot hands,” IEEE Robotics and Automation Letters ,vol. 3, no. 3, pp. 2370–2377, 2018. [13] M. Pozzi, S. Marullo, G. Salvietti, J. Bimbo, M. Malvezzi, and D. Prattichizzo, “Hand closure model for planning top grasps with soft robotic hands,” The International Journal of Robotics Research ,vol. 39, no. 14, pp. 1706–1723, 2020. [14] V. Vatsal and N. George, “Augmenting vision-based grasp plans for soft robotic grippers using reinforcement learning,” in 2022 IEEE 18th International Conference on Automation Science and Engineering (CASE) . IEEE, 2022, pp. 1904–1909. [15] X. Shan and L. Birglen, “Modeling and analysis of soft robotic fingers using the fin ray effect,” The International journal of robotics research ,vol. 39, no. 14, pp. 1686–1705, 2020. [16] D. De Barrie, M. Pandya, H. Pandya, M. Hanheide, and K. Elgeneidy, “A deep learning method for vision based force prediction of a soft fin ray gripper using simulation data,” Frontiers in Robotics and AI ,vol. 8, p. 631371, 2021. [17] P. Esser, S. Kulal, A. Blattmann, R. Entezari, J. Mller, H. Saini, Y. Levi, D. Lorenz, A. Sauer, F. Boesel, D. Podell, T. Dockhorn, Z. English, K. Lacey, A. Goodwin, Y. Marek, and R. Rombach, “Scaling rectified flow transformers for high-resolution image synthesis,” 2024. [Online]. Available: https://arxiv.org/abs/2403.03206 [18] A. Tong, N. Malkin, G. Huguet, Y. Zhang, J. Rector-Brooks, K. Fatras, G. Wolf, and Y. Bengio, “Conditional flow matching: Simulation-free dynamic optimal transport,” arXiv preprint arXiv:2302.00482 , vol. 2, no. 3, 2023. [19] F. Zhang and M. Gienger, “Affordance-based robot manipulation with flow matching,” arXiv preprint arXiv:2409.01083 , 2024. [20] C. Chi, Z. Xu, S. Feng, E. Cousineau, Y. Du, B. Burchfiel, R. Tedrake, and S. Song, “Diffusion policy: Visuomotor policy learning via action diffusion,” 2024. [Online]. Available: https://arxiv.org/abs/2303.04137 [21] A. Sarmiento, A. Simeonov, and P. Agrawal, “Gripper-aware graspnet: End-effector shape context for cross-gripper generalization,” IROS ,2023. [22] M. Gilles, Y. Chen, E. Z. Zeng, Y. Wu, K. Furmans, A. Wong, and R. Rayyes, “Metagraspnetv2: All-in-one dataset enabling fast and reliable robotic bin picking via object relationship reasoning and dexterous grasping,” IEEE Transactions on Automation Science and Engineering , vol. 21, no. 3, pp. 2302–2320, 2023. [23] A. Tong, K. Fatras, N. Malkin, G. Huguet, Y. Zhang, J. Rector-Brooks, G. Wolf, and Y. Bengio, “Improving and generalizing flow-based generative models with minibatch optimal transport,” arXiv preprint arXiv:2302.00482 , 2023. [24] D. Onken, S. W. Fung, X. Li, and L. Ruthotto, “Ot-flow: Fast and accurate continuous normalizing flows via optimal transport,” in 
+
+Proceedings of the AAAI Conference on Artificial Intelligence , vol. 35, no. 10, 2021, pp. 9223–9232. [25] Y. Lipman, R. T. Chen, H. Ben-Hamu, M. Nickel, and M. Le, “Flow matching for generative modeling,” arXiv preprint arXiv:2210.02747 ,2022. [26] Q. Liu, “Rectified flow: A marginal preserving approach to optimal transport,” arXiv preprint arXiv:2209.14577 , 2022. [27] Q. Rouxel, A. Ferrari, S. Ivaldi, and J.-B. Mouret, “Flow matching imitation learning for multi-support manipulation,” in 2024 IEEE-RAS 23rd International Conference on Humanoid Robots (Humanoids) .IEEE, 2024, pp. 528–535. [28] K. Nguyen, A. T. Le, T. Pham, M. Huber, J. Peters, and M. N. Vu, “Flowmp: Learning motion fields for robot planning with conditional flow matching,” arXiv preprint arXiv:2503.06135 , 2025. [29] S. Ye and M. C. Gombolay, “Efficient trajectory forecasting and gener-ation with conditional flow matching,” in 2024 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2024, pp. 2816–2823. [30] D. Rezende and S. Mohamed, “Variational inference with normalizing flows,” in International conference on machine learning . PMLR, 2015, pp. 1530–1538. [31] O. Ronneberger, P. Fischer, and T. Brox, “U-net: Convolutional networks for biomedical image segmentation,” CoRR , vol. abs/1505.04597, 2015. [Online]. Available: http://arxiv.org/abs/1505. 04597

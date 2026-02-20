@@ -1,0 +1,582 @@
+Title: Synergizing Transport-Based Generative Models and Latent Geometry for Stochastic Closure Modeling
+
+URL Source: https://arxiv.org/pdf/2602.17089v1
+
+Published Time: Fri, 20 Feb 2026 01:30:14 GMT
+
+Number of Pages: 33
+
+Markdown Content:
+# Synergizing Transport-Based Generative Models and Latent Geometry for Stochastic Closure Modeling 
+
+Xinghao Dong, Huchen Yang, Jin-Long Wu ∗
+
+> Department of Mechanical Engineering, University of Wisconsin–Madison, Madison, WI 53706
+
+Abstract 
+
+Diffusion models recently developed for generative AI tasks can produce high-quality sam-ples while still maintaining diversity among samples to promote mode coverage, providing a promising path for learning stochastic closure models. Compared to other types of generative AI models, such as GANs and VAEs, the sampling speed is known as a key disadvantage of diffusion models. By systematically comparing transport-based generative models on a nu-merical example of 2D Kolmogorov flows, we show that flow matching in a lower-dimensional latent space is suited for fast sampling of stochastic closure models, enabling single-step sam-pling that is up to two orders of magnitude faster than iterative diffusion-based approaches. To control the latent space distortion and thus ensure the physical fidelity of the sampled clo-sure term, we compare the implicit regularization offered by a joint training scheme against two explicit regularizers: metric-preserving (MP) and geometry-aware (GA) constraints. Be-sides offering a faster sampling speed, both explicitly and implicitly regularized latent spaces inherit the key topological information from the lower-dimensional manifold of the original complex dynamical system, which enables the learning of stochastic closure models without demanding a huge amount of training data. 
+
+Keywords: Turbulence closure, Deep generative model, Latent space, Stochastic model, Non-local model 
+
+## 1. Introduction 
+
+Complex dynamical systems, such as turbulent flows [1] or solid mechanics [2] in engineering applications and physical processes in the Earth system [3], are often featured by interactions across vast and continuous scales of space and time. The computational cost of fully resolving every scale in a Direct Numerical Simulation (DNS) is often prohibitive [4] for real-world science and engineering problems, and practical numerical simulations need to rely on closure models to approximate the impact of unresolved, small-scale dynamics on the numerically resolved coarse-grained variables. Most existing methods, e.g., RANS or LES closures for modeling turbulence, rely on a deterministic assumption, which only approximately holds if   
+
+> ∗Corresponding author
+> Email address: jinlong.wu@wisc.edu (Jin-Long Wu)
+> arXiv:2602.17089v1 [cs.LG] 19 Feb 2026
+
+the unresolved scales achieve equilibrium in a time scale much faster than the one that those resolved scales evolve with. However, such a separation between resolved and unresolved scales may not exist for certain problems where the unresolved scales are far from equilibrium, motivating recent studies of going beyond the deterministic closures and exploring stochastic modeling approaches [5]. Stochastic modeling has been explored for complex dynamical systems such as turbulence, for several decades [6, 7], leading to the development of stochastic models for some complex features of turbulent flows, e.g., intermittency [8] and back scattering [9]. Starting around the millennium, a substantial amount of research about stochastic models was explored for geophysical flows [10–12], with an excellent review of stochastic modeling for weather and climate presented by [13]. In the meantime, stochastic modeling techniques such as random matrices were also explored in solid mechanics [14] to account for the model uncer-tainties. More recently, mesoscale stochastic approaches were explored in the modeling of many complex systems, such as metallic foams [15] and cellular interactions [16]. From a broader perspective, stochasticity naturally shows up in reduced-order modeling techniques such as Mori-Zwanzig formalism, which demonstrates that when fast-evolving variables are integrated out of a system, their influence on the slow variables manifests as both a modified deterministic force and essential memory (non-Markovian) and stochastic noise terms [17, 18]. In practice, stochastic parameterizations have been shown to sharpen mean predictions, re-store physical multi-modal variability, and reproduce the heavy-tailed statistics of extreme events across a wide range of applications [13, 19–24]. However, developing and calibrating stochastic closures present their own significant challenges [25–28], which often pose a more complicated model structure than classical deterministic closures and thus underscore the need for both a larger amount of data and a more sophisticated calibration procedure. This need can be addressed by the growing field of scientific machine learning (SciML), which seeks to augment or replace traditional scientific modeling pipelines with machine learning techniques [29–32]. Broadly, SciML efforts in dynamical systems modeling follow two main thrusts. The first thrust aims to create data-driven surrogates that approximate the system’s evolution from data, effectively replacing traditional physics-based models, e.g., via system identification [33–36] or operator learning [37–39]. The second thrust [40–46], as the focus of this work, uses machine-learning-based models not to replace the traditional physics-based solver but to augment it. This is the goal of data-driven closure modeling, which retains the well-established physical solver for the resolved scales and uses a learned model for the contributions from unresolved ones. It is worth noting that many research works (e.g., [40, 41]) in the second thrust adopted a deterministic form of the machine-learning-based models, while the recent advances in generative AI techniques opened up the possibilities of systematically constructing and calibrating data-driven stochastic closure models [44]. Among the recent developments of generative AI techniques, three key paradigms, all united under a general transport-based framework, have emerged as compelling solutions: 
+
+• Score-based Diffusion Models transform data into a simple prior distribution (typ-ically Gaussian noise) through a fixed forward SDE and then learn to reverse this process with a learned score function. This approach has been successfully applied to 2stochastic closure modeling [44] and excels at capturing rich, non-Gaussian posteriors, but their highly curved transport paths necessitate slow, iterative sampling with hun-dreds of solver steps to maintain fidelity [47–49]. The extension to conditional diffusion models has been explored by various computational mechanics problems [44, 50–54]. 
+
+• Flow Matching replaces the stochastic noising path with a simpler, often linear, in-terpolation between noise and data. It then learns a deterministic ODE velocity field to transport samples along these straight paths. This formulation dramatically simplifies the transport, enabling high-quality generation in a single step and admitting exact likelihood computation, though potentially at the cost of reduced intrinsic randomness [55–58]. 
+
+• Stochastic Interpolants provide a unifying perspective, defining a transport process that explicitly interpolates between two distributions while allowing for the injection of time-dependent noise. This framework retains the efficient, straight paths of FM while restoring the stochastic expressiveness and flexibility of diffusion models [59–61]. These compelling solutions of generative AI techniques, originally developed for standard ma-chine learning tasks such as image/video generation, motivate a central question of this work: for stochastic closure modeling, where rapid and repeated sampling is essential, which of these paradigms best navigates the critical trade-off between sampling speed, sample quality, and uncertainty representation? In addition, since the iterative cost of any transport-based sam-pler scales with the dimensionality of the space to perform sampling, a complementary strat-egy for addressing their computational bottlenecks involves shifting expensive operations to lower-dimensional latent spaces. Latent space generative models [62–65] offer a promising en-hancement through a two-stage pipeline: autoencoders compress high-dimensional data into compact representations, then generative processes operate within this reduced space. For online closure modeling, where a new sample is required at each time step of a physics-based simulation, this can accelerate the total simulation time by orders of magnitude [54]. The success of sampling in a latent space, however, is entirely contingent on the quality and structure of the learned latent representation. A standard autoencoder, trained solely to minimize reconstruction error, has no incentive to preserve the geometric or statistical structure of the original data manifold, which can potentially force the generative model to learn much more complicated (or even ill-posed) dynamics in the latent space, leading to unsatisfactory training and inaccurate sampling performances. To overcome this challenge, the latent space must be explicitly structured. One approach is implicit regularization via end-to-end joint training, which forces the autoencoder to learn a representation aligned with the generative task, outperforming conventional two-phase methods [54]. However, this offers no direct control over the resulting geometry. A more principled strategy, which has gained traction in the broader machine learning community, is to employ explicit regularizers during autoencoder training. These methods enforce desired inductive biases, such as spatial equivariance [66], multiscale consistency via wavelet-based penalties [67], or geometric alignment through contrastive losses [68, 69]. In this work, we study two types of regularizer: geometry-aware (GA) regularization and metric-preserving (MP) constraints. These techniques craft a latent space that mirrors the geometric and 3topological features of the original data, directly improving the efficiency and accuracy of generative models for stochastic closure applications. To summarize, this paper makes the following key contributions: 
+
+• We perform the first systematic comparison of diffusion, flow matching, and stochas-tic interpolant paradigms for stochastic closures. We show that flow-based methods achieve superior sampling speed via straighter transport paths, enabling order-of-magnitude reductions in the number of integration steps with minimal error increase. 
+
+• We demonstrate that naive, reconstruction-only autoencoders introduce significant ge-ometric distortions that scatter conditional distributions. We show that both implicit (joint training) and our proposed explicit (MP, GA) regularization strategies mitigate these issues, yielding structured latent spaces with quantifiable reductions in distortion and improved sample fidelity. 
+
+• We show that the resulting regularized latent generators integrate seamlessly into physics-based solvers, delivering efficient uncertainty quantification that reproduces full-system statistics while accelerating overall simulation time. 
+
+## 2. Methodology 
+
+We consider spatiotemporal dynamical systems, such as those describing turbulent flows and weather patterns, governed by the full-order equations: 
+
+∂v
+
+∂t = M(v), (1) where v ∈ V denotes the state encompassing all scales and M is the nonlinear dynamical operator. The vast range of scales often renders full resolution computationally intractable, necessitating reduced-order formulations that evolve only the resolved state, V = P(v):
+
+∂V
+
+∂t = M(V) + C(V). (2) Here, P is a projection operator (e.g., a low-pass filter or encoder mapping) and M is the projected dynamical operator. The closure operator, C, is necessary because the projection 
+
+P does not commute with the nonlinear dynamics M. This non-commutation means that the evolution of the resolved state V depends on interactions with the unresolved scales. The closure term, U = C(V), models the net effect of these missing physical interactions—such as energy backscatter and turbulent dissipation—and is essential for restoring fidelity to the reduced system. Traditional approaches that parameterize U with simple deterministic or stochastic func-tions often fail to capture its complex, non-Gaussian, and history-dependent nature. A more powerful, data-driven approach is to treat the closure term as a random object and learn 4its full conditional distribution, p(U|V), from high-fidelity data. To achieve a rich, stochas-tic formulation, we can conceptualize the closure term U itself as a stochastic field whose dynamics evolve according to: ∂U
+
+∂t = H(U; V) + ξ, (3) where H encompasses the operators governing the evolution of U conditioned on the resolved state V, and ξ represents a stochastic forcing term. Rather than explicitly learning the com-plex Stochastic Partial Differential Equation (SPDE) in Eq. (3), we adopt a transport-based generative modeling approach to directly characterize the stationary conditional distribution 
+
+p(U|V) that results from these dynamics. This approach was first pioneered using latent-space score-based diffusion models, which demonstrated its viability for this task [44, 54]. However, these foundational studies also highlighted the need for faster sampling paradigms to be practical in online simulations and for more robust latent space representations to ensure physical fidelity. To address these challenges, we develop a comprehensive framework in this section. We begin in Section 2.1 by systematically comparing three transport-based generative paradigms—diffusion models, flow matching, and stochastic interpolants—to identify the optimal balance of speed and accuracy. Then, in Section 2.2, we introduce and evaluate several strategies for crafting geometrically structured latent spaces to enhance the physical consistency of the generated closures. 
+
+2.1. Transport-based Latent Generative Models for Stochastic Closures 
+
+While score-based diffusion models, flow matching, and stochastic interpolants all operate by learning a map from a simple prior distribution to a complex target distribution, they differ fundamentally in their transport mechanisms. These differences in how they move probability mass result in distinct sampling procedures, computational demands, and training objectives. The paradigms span a spectrum from stochastic to deterministic transport and from highly curved to linear sampling paths. 
+
+2.1.1. Score-based Diffusion Models 
+
+Score-based diffusion models are a class of generative models that produce samples by re-versing a predefined noise-injection process. The framework consists of two parts: a fixed forward process that gradually perturbs data into noise via a Stochastic Differential Equa-tion (SDE), and a learned reverse process that transforms noise back into data by solving a corresponding reverse-time SDE. The forward process maps a data sample x0 ∼ pdata (x) to a noise vector over a continuous time interval τ ∈ [0 , T] . A common choice is the Variance-Exploding (VE) SDE [48]: 
+
+dx = στ dW, (4) where σ > 1 is a hyperparameter and W is a standard Wiener process. This forward process is a special case of the Ornstein–Uhlenbeck process and defines a Markov chain with an analytical transition kernel: 
+
+p(xτ | x0) = N (xτ | μ(x0, τ ), Σ(τ )) , (5) 5where 
+
+μ(x0, τ ) = x0, Σ(τ ) = 12 log σ
+
+ σ2τ − 1 I. (6) As τ → T, the distribution p(xτ ) approaches an isotropic Gaussian independent of the original data, from which we can easily sample: 
+
+p(xT) = 
+
+Z
+
+p(x0)p(xT | x0)d x0 ≈ N 
+
+
+
+0, 12 log σ
+
+ σ2T − 1 I
+
+
+
+. (7) A known result from stochastic calculus states that this forward process has a corresponding reverse-time SDE, which allows us to reverse the noising process to generate data [70]: 
+
+dx = −σ2τ ∇xτ log p(xτ )d τ + στ dW, (8) where dW is a Wiener process running backward in time. Critically, solving this SDE requires the score function, ∇xτ log p(xτ ), of the marginal noisy data distribution p(xτ ),which is intractable. The central task is therefore to learn a neural network, sθ(τ, xτ ), to approximate this score. This is achieved via denoising score matching, where the network is trained to predict the score of the analytically known conditional distribution p(xτ |x0). The training objective minimizes the weighted squared error between the network’s output and the conditional score: 
+
+min  
+
+> θ
+
+Eτ, x0,xτ
+
+λ(τ ) ∥sθ(τ, xτ ) − ∇ xτ log p(xτ |x0)∥22
+
+ , (9) where λ(τ ) is a positive weighting function that balances the loss across different noise levels to improve training stability. For many diffusion setups, this simplifies to setting the weighting equal to the variance of the added noise, i.e. λ(τ ) = Σ(τ ). The conditional score is simply −(xτ − x0)/Σ( τ ). This objective is tractable as it relies only on samples from the forward process and has been shown to be equivalent to matching the true marginal score [71, 72]. Once trained, sθ is used as a plug-in estimator for the true score in Eq. (8). New samples are generated by starting with xT drawn from the Gaussian prior and numerically integrating the SDE backward in time, for instance with an Euler-Maruyama solver. This iterative sampling procedure is powerful but computationally expensive, often requiring hundreds of steps to maintain fidelity due to the curved nature of the diffusion paths. For conditional modeling of p(x|y), the framework is extended by modifying the score net-work to accept the condition y as an additional input. During each training step, a data pair 
+
+(x0, y) is sampled, and the forward noising process is applied only to x0. The score network 
+
+sθ(τ, xτ , y) then uses both the noisy data and the clean condition to predict the score, with the training objective remaining analogous to the unconditional case, except that initial samples are drawn from the joint distribution p(x, y). In addition, the forward diffusion process acts exclusively on the target variable x, meaning the perturbing kernel p(xτ |x0) is conditionally independent of any input condition y. Thus, the training loss becomes: 
+
+θ∗ = arg min 
+
+> θ
+
+Eτ, (x0,y),xτ
+
+λ(τ ) ∥sθ(τ, xτ , y) − ∇ xτ log p(xτ |x0)∥2 , (10) where expectations are taken over τ ∼ U [0 , T ], (x0, y) ∼ p(x, y), and xτ ∼ p(xτ | x0).62.1.2. Flow Matching 
+
+Flow Matching (FM) is a paradigm for training continuous-time generative models that avoids the complexities of SDEs by learning a deterministic velocity field vθ. This learned field defines an Ordinary Differential Equation (ODE) that transports samples from a simple prior distribution to the target data distribution. The core idea is to define a probability path pτ (x) that transitions from a prior p0(x) ≈N (0, I) at τ = 0 to the data distribution p1(x) = pdata (x) at τ = 1 . This path is generated by a true, underlying marginal velocity field v(τ, x). Ideally, one would train the neural network vθ by directly minimizing the discrepancy between it and this true field: 
+
+LFM (θ) = Eτ ∼U [0 ,1] , xτ ∼pτ (x) ∥vθ(τ, xτ ) − v(τ, xτ )∥22 . (11) However, this objective is intractable because both the marginal probability path pτ (x) and its velocity field v(τ, x) are unknown. Conditional Flow Matching (CFM) resolves this issue with a key insight: instead of working with intractable marginal paths, we can define a simple, tractable conditional path and velocity field, and train the model to match those instead [56, 58]. Specifically, we define a path conditioned on a sample from the prior, x0 ∼ p0(x), and a sample from the data, 
+
+x1 ∼ pdata (x). A common and effective choice is a linear interpolation path: 
+
+p(xτ | x0, x1) = δ (xτ − [(1 − τ )x0 + τ x1]) , (12) which has a simple, constant conditional velocity: 
+
+v(τ, xτ | x0, x1) = x1 − x0. (13) The central theorem of CFM shows that a loss defined on these simple conditional quantities has the same expected gradient as the intractable marginal loss. This leads to a practical and efficient training objective: 
+
+min  
+
+> θ
+
+Eτ, x0,x1 ∥vθ(τ, (1 − τ )x0 + τ x1) − (x1 − x0)∥22 . (14) This objective is a simple regression problem that does not require simulating an ODE during training. Once the velocity field vθ is trained, new samples are generated by solving the initial value problem for the generation ODE, starting from a random sample x0 ∼ p0(x):
+
+dx
+
+dτ = vθ(τ, x), for τ ∈ [0 , 1] . (15) This ODE can be solved with standard numerical integrators, such as the Euler method. Because the training encourages nearly straight transport paths, FM models are highly effi-cient at inference, often requiring only 10–100 steps for high-quality generation—a significant speed-up over typical diffusion models. For conditional modeling of p(x|y), the velocity network is simply modified to accept the condition y as an additional input, vθ(τ, xτ , y). The training objective in Eq. (14) is adapted by sampling from the joint data distribution (x1, y) ∼ p(x, y).72.1.3. Stochastic Interpolants 
+
+Stochastic Interpolants (SI) offer a unifying and highly flexible paradigm for generative modeling that generalizes both diffusion models and flow matching [59]. The core idea is to explicitly define a stochastic path, or interpolant, that connects any arbitrary source distribution p0(x0) to the target data distribution p1(x1), and then learn the drift of the SDE that generates this path. Formally, the interpolant path between a pair of samples (x0, x1) is defined as: 
+
+xτ = ατ x0 + βτ x1 + στ Wτ , τ ∈ [0 , 1] , (16) where Wτ is a standard Wiener process and the coefficients (ατ , β τ , σ τ ) satisfy the boundary conditions xτ =0 = x0 and xτ =1 = x1. The SI framework provides a simple and efficient training objective based on this path. We first define a path velocity rτ , which includes a drift term that arises from the time-varying noise schedule: 
+
+rτ = ˙ ατ x0 + ˙βτ x1 + ˙ στ Wτ , (17) where the dot denotes a time derivative. The neural network bθ(τ, xτ ), which approximates the drift of the forward SDE, is trained via a simple regression objective to predict this path velocity: 
+
+min  
+
+> θ
+
+Eτ, x0,x1,Wτ ∥bθ(τ, xτ ) − rτ ∥22 . (18) A common choice that encourages straight mean paths is the linear interpolant , where 
+
+ατ = 1 − τ and βτ = τ . In this case, the deterministic part of the path velocity simplifies to the constant vector x1 −x0. The full path velocity, however, retains its stochastic component, which depends on the chosen noise schedule. For example, with a simple noise schedule of 
+
+στ = 1 − τ , we have ˙στ = −1, and the full path velocity becomes: 
+
+rτ = x1 − x0 − Wτ . (19) This objective mirrors Conditional Flow Matching but crucially incorporates the stochastic drift term, allowing for tunable noise injection. Once trained, new samples are generated by numerically integrating the learned forward SDE, starting with a sample from the prior: 
+
+dxτ = bθ(τ, xτ )d τ + στ dWτ , x0 ∼ p0(x), (20) For conditional modeling of p(x|y), the drift network is modified to bθ(τ, xτ , y) and trained on samples from the joint distribution p(x1, y).A key advantage of the SI framework is its flexibility in choosing the source distribution p0.While diffusion and standard FM typically use a fixed Gaussian prior, SI can directly interpo-late between two arbitrary distributions. This is particularly powerful for closure modeling. Instead of starting from random noise, we can set the source distribution to be the condi-tional variable itself, p0(x0) = p(zω), and the target to be the closure, p1(x1) = p(zH |zω).The model then learns the direct, physically meaningful transport from the resolved state to the unresolved correction term. 82.2. Crafting Structured Latent Spaces for Generative Closures 
+
+Deploying transport-based generative models for stochastic closures is computationally chal-lenging due to the high dimensionality of the discretized physical fields. The iterative sam-pling process can be prohibitively expensive when performed in the full state space. To mitigate this cost, we employ a latent space approach, using a convolutional autoencoder to learn a low-dimensional representation of the data. Given a physical field U (with the conditioning field V treated analogously), the encoder EU
+
+maps it to a compact latent vector: 
+
+zU = EU(U), where U ∈ RdU and zU ∈ RlU with lU ≪ dU. (21) The decoder DU then reconstructs an approximation of the original field from this latent vector, ˆU = DU(zU). In a conventional two-phase pipeline, the autoencoder parameters are optimized by solely minimizing the mean squared reconstruction error: 
+
+LU 
+
+> Recon
+
+= EU∼p(U)∥U − D U(EU(U)) ∥22. (22) However, a latent space optimized only for reconstruction quality can be arbitrarily distorted, as the loss in Eq. (22) is agnostic to the manifold’s geometric structure. This can scatter conditional distributions and complicate the transport paths for a subsequent generative model, degrading its performance. To overcome this limitation and craft a latent space that is well-suited for the generative task, we systematically compare two distinct strategies: 
+
+• End-to-end joint training , where the autoencoder and generative model are opti-mized simultaneously, providing an implicit regularization on the latent space. 
+
+• Two-phase training with explicit regularization , where the autoencoder is first pre-trained with an objective function that directly enforces specific geometric proper-ties on the latent space. These approaches aim to create more structured and informative latent spaces that simplify the generative task while maintaining high-fidelity reconstructions. The detailed model structures and training details of autoencoders can be found in Appendix C. 
+
+2.2.1. Implicit Regularization via Joint Training 
+
+An alternative to the two-phase pipeline is to train the autoencoder and the generative model simultaneously. This end-to-end joint training serves as a powerful implicit regularizer. By receiving gradients from both the reconstruction and generative objectives, the autoencoder is forced to learn a latent space that is not only faithful to the original data but is also struc-tured in a way that simplifies the generative transport task, often outperforming sequential training pipelines [73, 74]. The training is guided by a multi-objective loss function, which is a weighted sum of three distinct terms: 
+
+Ljoint = LRecon + λGen LGen + λKL LKL . (23) Each component addresses a different requirement of the learning process: 9• The Reconstruction Loss ( LRecon ) ensures that the autoencoder produces high-fidelity representations. It is a weighted mean squared error that often prioritizes the accuracy of the more complex or crucial field, which in this case is the closure term U:
+
+LRecon = E(U,V)
+
+λU∥U − D U(EU(U)) ∥22 + λV∥V − D V(EV(V)) ∥22
+
+ , (24) where the expectation is over the data distribution, and typically λU > λ V.
+
+• The Generative Loss ( LGen ) is the transport objective that trains the generative model. This corresponds to the score-matching, flow-matching, or drift-regression losses defined in Section 2.1. 
+
+• The KL Regularization ( LKL ) prevents latent collapse, a failure mode where the encoder maps all inputs to a small, uninformative region of the latent space [75]. This term encourages the aggregated distribution of encoded samples, q(zU), to match a simple prior, typically a standard Gaussian p(zU) = N (0, I), thereby ensuring the latent space remains expressive: 
+
+LKL = KL 
+
+
+
+q(zU) ∥ p(zU)
+
+
+
+. (25) The hyperparameters λGen and λKL balance these competing objectives, and their tuning is critical for achieving a model that excels at both reconstruction and conditional generation. 
+
+2.2.2. Explicit Regularization via a Two-Phase Strategy 
+
+The second strategy for crafting a well-structured latent space is to employ explicit regular-ization within a stable, two-phase training pipeline. The core idea is to first pre-train the autoencoder with an objective function that directly enforces desired geometric properties on the latent space, before the generative model is trained. We introduce and evaluate two such regularizers: 
+
+• Metric-Preserving (MP) Regularization: This approach aims to make the en-coder a local isometry . It seeks to preserve the direct Euclidean distance between pairs of points, ensuring that the local "neighborhood" structure of the physical space is accurately mapped to the latent space. This is akin to "unrolling" the data manifold into a flat latent representation without locally stretching or tearing it. 
+
+• Geometry-Aware (GA) Regularization: This approach aims to preserve the more global, intrinsic manifold geometry . Instead of using the straight-line Euclidean dis-tance, it uses a pre-computed manifold distance (approximating the geodesic distance) between points. This captures the true "on-manifold" path length, preserving the larger-scale topological features of the data. Both strategies are implemented by augmenting the standard reconstruction loss from Eq. (22) with a structural loss term: 
+
+LAE = LU 
+
+> Recon
+
++ λStruc LU
+
+> Struc
+
+, (26) 10 where λStruc is a hyperparameter that balances reconstruction fidelity with geometric preser-vation. The structural loss, LStruc , penalizes the discrepancy between distances in the phys-ical and latent spaces, with a focus on local neighborhoods: 
+
+LStruc = EUi,Uj ∼p(U)
+
+w(Ui, Uj ) ( ∥E U(Ui) − E U(Uj )∥2 − d(Ui, Uj )) 2 , (27) where the weight w(Ui, Uj ) = e−γd (Ui,Uj ) emphasizes local pairs. This general form is spe-cialized by defining the distance metric d(·, ·) as either the Euclidean norm ( ∥·∥ 2) for MP reg-ularization or the pre-computed manifold distance for GA regularization. This pre-training phase, applied to the autoencoders for both the closure and conditioning fields, produces latent representations that retain the intrinsic structure of the data, thereby simplifying the subsequent generative modeling task. 
+
+## 3. Numerical Results 
+
+3.1. Numerical Setup 
+
+We evaluate our generative closure framework on a two-dimensional stochastic Kolmogorov flow. The system is governed by the incompressible Navier-Stokes equations in vorticity form on a periodic domain Ω = (0 , L )2 over the time interval (0 , T phy ]:
+
+∂ω (x, t )
+
+∂t = −u(x, t ) · ∇ ω(x, t ) + f (x) + ν∇2ω(x, t ) + βξ (x, t ),
+
+∇ · u(x, t ) = 0 ,ω(x, 0) = ω0(x).
+
+(28) Here, ω is the vorticity, u is the divergence-free velocity field, and ν = 10 −3 is the vis-cosity. The system is initialized with a random vorticity field ω0 drawn from a statisti-cally stationary Gaussian distribution and is driven by a deterministic, large-scale forcing 
+
+f (x) = 0 .1(sin(2 π(x+y))+cos(2 π(x+y))) . A high-frequency stochastic term ξ, representing white-in-time noise with amplitude β = 5 × 10 −5, is included to mimic unresolved physical fluctuations. Our data-driven closure task is to learn a model for the unresolved subgrid-scale dynamics. We define the closure term, H, as the combination of the nonlinear advection and the stochastic forcing, both of which are considered unknown to the coarse-grained model: 
+
+H(x, t ) = −u(x, t ) · ∇ ω(x, t ) + βξ (x, t ). (29) The goal is to learn a generative model for the conditional distribution p(H|ω).To generate the training dataset, we perform 100 independent high-fidelity simulations of Eq. (28) on a fine 256 ×256 grid using a pseudo-spectral method with a Crank-Nicolson time-stepping scheme ( ∆t = 10 −3). To ensure the data represents a statistically stationary state, we discard the initial 30 seconds of each simulation. The remaining solutions are spatially downsampled to a coarse 64 × 64 grid and temporally subsampled at 0.01-second intervals. This process yields a final dataset of 20,000 pairs, consisting of the resolved vorticity fields 
+
+ω (the conditional input) and the corresponding subgrid closure terms H (the prediction target). This dataset is then split into 18,000 pairs for training and 2,000 for testing. 11 3.2. Experimental Design and Comparative Framework 
+
+In the following sections, we present a systematic comparison to evaluate the performance of different transport-based generative closures. Our experimental framework is designed as a matrix of comparisons between three core generative paradigms and five distinct data representation and training strategies. The three generative paradigms under investigation are: (i) Score-based Diffusion Models (DM): An SDE-based stochastic approach that reverses a fixed noising process. (ii) Flow Matching (FM): A deterministic ODE-based approach that learns a velocity field along straight interpolation paths. (iii) Stochastic Interpolants (SI): A flexible hybrid framework. We evaluate this paradigm using two distinct source distributions: a standard Gaussian prior and an empirical prior derived from the conditioning variable itself. Each of these paradigms is applied across the following five data representation and training strategies: (i) Physical Space: A baseline model operating directly on the full-resolution 64 × 64 
+
+fields. (ii) Latent Space (No Regularization): A two-phase model using a standard, reconstruction-only autoencoder on 16 × 16 latent fields. (iii) Latent Space (Joint Training): An end-to-end trained model with implicit regu-larization on the 16 × 16 latent fields. (iv) Latent Space (Metric-Preserving): A two-phase model with explicit MP regular-ization applied during autoencoder pre-training. (v) Latent Space (Geometry-Aware): A two-phase model with explicit GA regular-ization applied during autoencoder pre-training. The performance of each combination is evaluated based on quantitative error metrics, the preservation of physical statistics (e.g., energy spectra), and computational cost. 
+
+3.3. Performance in Physical Space: A Baseline for Comparison 
+
+This section establishes a performance baseline for the three transport-based generative paradigms. All models are trained and evaluated directly on the full-resolution 64 × 64 
+
+physical-space data. We denote these models with a "P-" prefix (e.g., P-DM, P-FM, P-SI) to distinguish them from the latent-space variants analyzed in subsequent sections. To assess both the predictive accuracy and the uncertainty representation of each paradigm, we perform an ensemble-based analysis. For a given conditional input ω, we draw an ensem-ble of Ns = 1000 closure samples { ˜Hi}Ns 
+
+> i=1
+
+from the learned conditional distribution pθ(H|ω).The accuracy of the model is evaluated using the ensemble mean, ¯H = 1
+
+> Ns
+
+PNs 
+
+> i=1
+
+˜Hi, which 12 represents the model’s deterministic best guess. The model’s predicted uncertainty is char-acterized by the pointwise standard deviation of the ensemble, which is compared against the ground-truth variability. We quantify the error of the ensemble-mean prediction against the ground truth H using two metrics: the Mean Squared Error (MSE) and the Relative Error (RE), defined as: 
+
+DMSE = 1
+
+Np
+
+∥ ¯H − H∥2 
+
+> F
+
+, (30) and 
+
+DRE = ∥ ¯H − H∥F
+
+∥H∥F
+
+, (31) where ∥ · ∥ F is the Frobenius norm and Np is the total number of grid points in the field.    
+
+> Figure 1: Qualitative comparison of stochastic closure samples from physical-space models. This figure assesses the performance of conditional generation. Each column corresponds to a different model: the ground truth, P-DM, P-FM, and P-SI with two different priors. Each row displays an independent, random sample of the closure term H, all generated for the same input vorticity field ω.
+
+We first evaluate the qualitative performance of the physical-space models. As shown in Figure 1, all three paradigms (DM, FM, and SI) generate high-fidelity, diverse samples of the closure term H. The generated samples are structurally consistent with the ground truth, demonstrating that the models have learned a meaningful conditional distribution. For a quantitative analysis, Table 1 reports several key metrics. The ensemble-mean errors (Dens RE ), which measure how well each model captures the deterministic component of the closure, are comparable across all methods, ranging from 8.6% to 9.0%. This confirms that all paradigms are highly effective at this task, with the P-SI models showing a marginal 13 Table 1: Quantitative comparison of physical-space generative models. All metrics are averaged over the test set. Per-sample errors measure the average error of individual stochastic draws, while ensemble-mean errors measure the accuracy of the averaged prediction. Field Std. is the spatially-averaged standard deviation of the generated ensemble, indicating the magnitude of modeled uncertainty. Values in gray denote ± two standard deviation over the test set instances. 
+
+Models Mean of per-sample errors Error of ensemble mean Field Std. 
+
+Dsample MSE Dsample RE Dens MSE Dens RE 
+
+P-DM 8.231e-04 ± 1.185e-04 1.157e-01 ± 8.451e-03 4.696e-04 8.725e-02 1.885e-02 ± 2.702e-03 
+
+P-FM 9.340e-04 ± 1.165e-04 1.231e-01 ± 7.484e-03 5.051e-04 9.028e-02 2.074e-02 ± 3.390e-03 
+
+P-SI (Gaussian) 8.831e-04 ± 1.184e-04 1.199e-01 ± 7.951e-03 4.541e-04 8.595e-02 2.076e-02 ± 3.162e-03 
+
+P-SI (Empirical) 8.732e-04 ± 1.266e-04 1.192e-01 ± 8.591e-03 4.566e-04 8.610e-02 2.050e-02 ± 2.501e-03 
+
+advantage. As expected, these errors are consistently lower than the average per-sample errors due to the variance-reduction effect of averaging. Crucially, the table also allows us to evaluate how well the models represent the prescribed stochasticity via the spatially-averaged standard deviation (Field Std.). For our problem setup, this quantity has an analytical reference value of 0.02 (see Appendix B). All models reproduce this target with high fidelity; the P-FM and P-SI models match the ground-truth variance almost exactly, while the P-DM slightly underestimates it, though all are within a 10% relative error. Accurately capturing the uncertainty level is critical for preserving the system’s physical statistics in forward simulations. These combined results establish that all physical-space generative paradigms perform well, accurately capturing both the mean behavior and the uncertainty level of the closure. 
+
+3.4. The Role of Transport Geometry in Sampling Efficiency 
+
+While the previous section established that all generative paradigms achieve comparable accuracy with a sufficient number of sampling steps, their computational efficiency varies dramatically. As shown in Table 2, reducing the number of integration steps causes the accuracy of the P-DM model to degrade sharply, with a catastrophic failure at a single step. In contrast, the linear-interpolation-based P-FM and P-SI models remain remarkably stable, with P-FM showing almost no loss in accuracy even in the single-step regime. 
+
+Table 2: Sampling accuracy vs. number of integration steps. Linear-interpolation–based methods (P-FM, P-SI) remain stable with far fewer steps, while the P-DM model degrades sharply under coarse discretization. 
+
+Sample steps P-DM P-FM P-SI 
+
+Gaussian priors Empirical priors 
+
+DMSE DRE DMSE DRE DMSE DRE DMSE DRE 
+
+100 7.945e-04 1.197e-01 7.228e-04 1.112e-01 8.776e-04 1.254e-01 8.576e-04 1.244e-01 50 7.431e-03 3.158e-01 8.025e-04 1.197e-01 8.736e-04 1.250e-01 8.641e-04 1.249e-01 10 3.130e-02 7.563e-01 8.796e-04 1.200e-01 8.971e-04 1.269e-01 9.390e-04 1.298e-01 1 8.262e+02 2.851e+02 9.846e-04 1.334e-01 3.434e-03 2.502e-01 2.845e-03 2.265e-01 
+
+This difference in robustness is a direct consequence of the underlying transport path ge-ometry. To quantify this, we define a straightness metric S ∈ [0 , 1] that measures the ratio 14 of the direct Euclidean distance between a trajectory’s start and end points to the total integrated path length (a value of S = 1 indicates a perfectly straight line). Table 3 confirms the link between path geometry and sampler stability. P-FM follows almost perfectly linear paths ( S ≈ 0.999 ), explaining its tolerance to large step sizes. In contrast, P-DM traces highly curved paths ( S < 0.3), which require fine discretization to integrate accurately. P-SI occupies a middle ground, consistent with its moderate stability. The S = 1 values for all models at a single step are a geometric artifact, as a one-step path is trivially straight but not necessarily accurate. Thus, high S must be interpreted in conjunction with accuracy metrics to assess practical efficiency.                                                       
+
+> Table 3: Trajectory straightness ( S) for different sampling methods. Higher values ( →1) indicate straighter paths. P-FM’s near-perfect straightness explains its robustness to coarse time discretization.
+> Sample steps P-DM P-FM P-SI
+> Gaussian priors Empirical priors 100 1.278e-01 ±2.467e-03 9.995e-01 ±1.881e-04 1.929e-01 ±3.938e-03 1.857e-01 ±1.357e-02
+> 50 1.717e-01 ±3.293e-03 9.995e-01 ±1.718e-04 2.602e-01 ±5.120e-03 2.508e-01 ±1.770e-02
+> 10 2.553e-01 ±4.854e-03 9.997e-01 ±1.153e-04 4.524e-01 ±8.342e-03 4.373e-01 ±2.716e-02
+> 11.000e+00 ±0.000e+00 1.000e+00 ±0.000e+00 1.000e+00 ±0.000e+00 1.000e+00 ±0.000e+00
+
+Figure 2 visualizes these distinct dynamics and provides crucial insights into sampler design. The standard P-DM sampler with uniform steps (Row 1) fails to converge in a 10-step budget, as its highly curved path cannot be integrated accurately with coarse steps. However, the performance of diffusion models can be dramatically improved with a more tailored strategy. Row 2 shows an adaptive P-DM sampler that successfully converges in the same 10-step budget. This is achieved by: 1. Reducing Initial Variance: Since we are targeting a narrow conditional distribution, the reverse SDE can be initialized from a state of lower noise (i.e., starting at τ < T), significantly shortening the required path length. 2. Adaptive Time-Stepping: An adaptive schedule uses larger steps in the high-noise regime where the path is smoother and smaller steps near the data manifold ( τ → 0)where curvature and stiffness increase, thus optimizing the discretization. In contrast, the inherently straighter paths of P-FM (Row 3) and P-SI (Rows 4-5) allow them to converge smoothly even with simple uniform time-stepping, reinforcing the conclusion that path geometry is a primary determinant of sampling efficiency. 
+
+3.5. Impact of Latent Space Geometry on Generative Performance 
+
+Latent generative models offer significant computational advantages, but their success is critically dependent on the quality of the latent space. In this section, we systematically evaluate how different autoencoder (AE) training strategies impact the geometry of the latent space and the performance of the downstream generative closure model. We compare four families of strategies: two-phase training without regularization (NoReg), end-to-end joint training (Joint), and two-phase training with explicit metric-preserving (MP) or geometry-aware (GA) regularization. 15 Figure 2: Visualization of 10-step sampling trajectories. Each row shows intermediate states of the generated field for a different sampling strategy, with time τ evolving according to the model’s process. The comparison between the standard P-DM (Row 1) and an adaptive P-DM with reduced initial variance (Row 2) highlights how sampler design can overcome path curvature. The smooth evolution of P-FM (Row 3) and P-SI (Rows 4-5) visually confirms their straighter transport paths. 
+
+3.5.1. The Failure of Reconstruction-Only Latent Spaces 
+
+We first establish that a latent space optimized solely for reconstruction is unsuitable for generative modeling. As shown in Table 5, the NoReg strategy results in catastrophic failure, with a latent-space relative error ( DRE ) of approximately 30%, which translates to a decoded physical-space error of 33%—far worse than any of the physical-space baseline models. The reason for this failure is revealed by the latent space geometry, visualized in Figure 4 and quantified in Table 6. The NoReg autoencoder produces a highly distorted latent space, evidenced by its scattered t-SNE embeddings, large Procrustes Disparity (PD), and a nearly 16 threefold increase in the conditional coefficient of variation (CV) compared to the physical space. Crucially, this geometric failure occurs despite the NoReg model achieving the lowest reconstruction error of all tested strategies (Table 4). This establishes our central thesis: faithful reconstruction is a necessary but insufficient condition for effective latent generative modeling; the geometry of the latent space is paramount. 
+
+3.5.2. The Efficacy of Implicit and Explicit Regularization 
+
+Structuring the latent space, either implicitly or explicitly, dramatically improves perfor-mance. Joint training provides a powerful implicit regularization, forcing the AE to co-adapt with the generative model. This alignment yields a massive improvement over the NoReg baseline, reducing the latent-space error by over 4x and achieving a final physical-space ac-curacy comparable to the physical-space models (Table 5). This performance gain is directly linked to an improved latent geometry with lower distortion metrics shown in Table 6. However, explicit geometric regularization during a two-phase pipeline proves to be the most effective and stable strategy. The results in Table 5 are unequivocal: the MP and GA regularized models achieve the lowest latent-space generation errors of all methods. The MP-regularized models are the top performers, yielding the lowest latent-space error (∼2.9%) and a final physical-space error ( ∼8.3%) that matches or even slightly surpasses the physical-space baselines. The superiority of the explicitly regularized models is corroborated by the training loss curves in Figure 3, which use a normalized Flow Matching (FM) loss for direct comparison. The smooth, low-loss trajectories of the MP and GA models indicate that a well-structured latent space makes the generative objective fundamentally easier to optimize. In contrast, the Joint model’s loss curve, while better than NoReg, exhibits a pronounced spike attributed to the non-stationarity of the co-adapting AE. Of the two explicit regularizers, MP consistently outperforms GA in generative tasks. The advantage of MP arises from its direct alignment with the mechanics of the transport-based samplers. Operations such as discretized SDE/ODE integration, interpolation, and gradi-ent evaluation are performed in Euclidean coordinates; preserving local Euclidean distances (MP) is therefore more beneficial than preserving geodesic distances (GA). Furthermore, MP is more computationally efficient, as it requires only pairwise Euclidean distances rather than more expensive geodesic estimates. In summary, for latent generative closures, explic-itly regularizing the AE geometry with metric-preserving constraints is the most effective, stable, and efficient strategy. 
+
+3.6. A Posteriori Validation via Numerical Simulation 
+
+To assess the a posteriori performance of the generative closure framework, we embed the trained models within a numerical solver for the 2-D Navier-Stokes equations (Eq. (28)). The simulations are initialized at t0 = 30 using a ground-truth vorticity field, ω(x, t 0), and are integrated forward to t = 50 with a time step of ∆t = 10 −3. The solver employs the same pseudo-spectral and Crank-Nicolson methods used to generate the training data. The system is evolved with a viscosity of ν = 10 −3 and is subject to the deterministic forcing 17 Table 4: Autoencoder reconstruction errors. Each block reports mean-squared ( DMSE ) and relative ( DRE )errors. Note that the Recon only baseline has the lowest reconstruction error, yet the worst generative performance (see Table 5). 
+
+Autoencoders Vorticity ω Convection HDMSE DRE DMSE DRE 
+
+Recon only - 5.280e-07 7.382e-04 7.168e-06 1.124e-02 Joint-trained w/ DM 5.772e-06 2.484e-03 4.019e-05 2.439e-02 w/ FM 4.638e-06 2.215e-03 6.265e-06 1.039e-02 w/ SI (Gaussian) 5.041e-05 7.231e-03 3.180e-05 2.219e-02 w/ SI (Empirical) 5.133e-06 2.334e-03 4.419e-06 8.650e-03 Regularized MP 5.571e-05 7.666e-03 2.415e-05 1.844e-02 GA 3.920e-05 6.461e-03 2.592e-05 1.921e-02 
+
+Table 5: Generative performance across different latent space strategies. Physical-space models (P-) are baselines. Latent-space models (L-) show that NoReg fails, Joint improves significantly, and explicit regularization (MP, GA) performs best. Bold values highlight the best performance within each category (latent and physical errors for MP). 
+
+Model Latent space Physical space generation generation 
+
+Catagory Paradigms DMSE DRE DMSE DRE 
+
+Physical space models P-DM - - 4.696e-04 8.725e-02 P-FM - - 4.911e-04 8.904e-02 P-SI (Gaussian) - - 4.612e-04 8.662e-02 P-SI (Empirical) - - 4.994e-04 9.032e-02 Latent space models Two-phase w/o regs L-DM 9.524e-02 3.154e-01 6.220e-03 3.290e-01 L-FM 9.501e-02 3.045e-01 6.679e-03 3.302e-01 L-SI (Gaussian) 1.098e-01 3.171e-01 7.030e-03 3.379e-01 L-SI (Empirical) 9.637e-02 2.995e-01 6.716e-03 3.313e-01 Joint-trained L-DM 3.677e-05 7.630e-02 4.877e-04 8.932e-02 L-FM 3.525e-03 7.394e-02 4.862e-04 8.928e-02 L-SI (Gaussian) 2.812e-03 7.290e-02 5.131e-04 9.151e-02 L-SI (Empirical) 3.129e-03 8.274e-01 6.715e-04 9.219e-01 Two-phase w/ MP L-DM 6.379e-03 2.936e-02 4.224e-04 8.279e-02 
+
+L-FM 6.365e-03 2.932e-02 4.243e-04 8.299e-02 
+
+L-SI (Gaussian) 6.592e-03 2.982e-02 4.400e-04 8.456e-02 
+
+L-SI (Empirical) 6.297e-03 2.852e-02 4.302e-04 8.322e-02 
+
+Two-phase w/ GA L-CDM 2.275e-02 3.801e-02 6.006e-04 9.986e-02 L-FM 1.851e-02 3.439e-02 5.642e-04 9.673e-02 L-SI (Gaussian) 1.869e-02 3.457e-02 5.614e-04 9.660e-02 L-SI (Empirical) 2.223e-02 3.772e-02 5.560e-04 9.526e-02 
+
+term f (x) = 0 .1(sin(2 π(x + y)) + cos(2 π(x + y))) . For computational efficiency, the closure term is updated every five physical time steps. We evaluate two strategies for deploying the stochastic closure: 
+
+(1) Stochastic Trajectory Simulation. To characterize the uncertainty propagation of the closure, we perform a Monte Carlo analysis. For each of Ne = 1000 independent 18 Figure 3: Normalized Flow Matching (FM) training loss (log-scale). The explicitly regularized models (MP, GA) achieve the lowest and smoothest loss trajectories, indicating that a well-structured latent space simplifies the generative learning task. The Joint model exhibits a non-stationary spike, while the NoReg model converges to a much higher loss. 
+
+Figure 4: t-SNE visualizations of latent space structure. Each column represents a different training strategy. The unregularized latent space (Column 2) is visibly distorted compared to the physical space ground truth (Column 1). Joint training (Columns 3-6) and explicit regularization (Columns 7-8) produce far more coherent structures. 
+
+simulations, a single closure term ˜H(x, t ) is sampled from the conditional distribution p(H |
+
+ω) at each evaluation step. The resulting ensemble of trajectories allows for the computation of statistics, such as the mean and standard deviation of prediction errors. 
+
+(2) Conditional Mean Simulation. To obtain a deterministic prediction that minimizes variance, we approximate the conditional expectation of the closure term. At each evaluation step, we draw a large ensemble of Ne = 1000 samples, { ˜Hi}Ne 
+
+> i=1
+
+∼ p(H | ω), and compute 19 Table 6: Quantitative assessment of latent space distortion using Procrustes disparity (PD) and mean of absolute CV. PD measures geometric dissimilarity between t-SNE embeddings after optimal alignment—lower values indicate better preservation of data structure. Mean of absolute CV quantifies the relative spread of conditional distributions p(H | ω)—lower values indicate more compact conditionals. Bold values indicate best performance per metric.                                                      
+
+> Distributions Metrics Spaces
+> Physical Two-phase Joint Joint Joint Joint Two-phase Two-phase Space w/o Reg w/ DM w/ FM w/ SI (Gaussian) w/ SI (Empirical) w/ MP w/ GA
+> p(ω)PD –5.370e-01 9.855e-03 1.215e-02 1.434e-02 1.371e-02 1.561e-02 6.710e-02
+> p(H)PD –1.637e-01 2.130e-02 2.835e-02 4.302e-02 9.609e-02 3.772e-03 3.938e-02
+> p(H, ω )PD –2.567e-01 1.003e-01 8.162e-02 7.826e-02 1.016e-01 1.024e-01 9.534e-03
+> p(H|ω)Mean of absolute CV 2.571e-01 7.562e-01 1.245e-01 2.378e-01 2.365e-01 1.9092e-01 5.147e-02 1.074e-01
+
+their mean, ¯H = 1
+
+> Ne
+
+PNe 
+
+> i=1
+
+˜Hi. This mean value is then used as the closure term for a single simulation trajectory. Results summarized in Table 7 and Figure 5 confirm the critical role of the closure term. The uncorrected simulation exhibits rapid error accumulation, with the relative error ( DRE )reaching 84.2% by t = 50 . In contrast, all generative closure models successfully mitigate this error growth, maintaining a final error below 13%. The qualitative impact of this correction is visualized in Figure 6, where the vorticity field from the corrected simulation remains structurally coherent and aligned with the high-fidelity reference, unlike the uncorrected field which diverges significantly in both pattern and magnitude. Notably, the models featuring structurally regularized latent spaces achieve superior per-formance, corroborating our a priori analysis of their geometric fidelity. The latent Flow Matching model with metric preservation is the top performer, yielding a final ensemble-mean error of only 4.01%. This constitutes a nearly twofold improvement over the physical-space diffusion model. These results provide strong evidence that explicit geometric regularization of the latent space translates directly to more accurate and stable performance in oper-ational simulations. Across all models, employing an ensemble-mean closure consistently reduces the prediction error by 20-30% compared to single-sample stochastic trajectories, effectively trading computational cost for reduced variance. Beyond accurately predicting the mean flow evolution, a key strength of our stochastic approach is its ability to capture the system’s intrinsic variability. Figure 7 compares the spatial distribution of the standard deviation across an ensemble of stochastic simulations against the ground truth variability. The L-FM model not only predicts the mean state accurately but also reproduces the complex spatial patterns and magnitudes of the system’s uncertainty. This demonstrates that the learned conditional distribution p(H | ω) is not merely a source of random noise but a physically meaningful representation of the subgrid-scale dynamics. The physical consistency of the closures is further validated by examining the vorticity energy spectra, shown in Figure 8. All closure-equipped models accurately reproduce the energy distribution of the high-fidelity simulation up to the training resolution limit (wavenumbers 
+
+k ≈ 10 2). Crucially, the spectra retain the characteristic k−3 power-law decay, indicating that the generative closures correctly preserve the forward enstrophy cascade physics inherent to 2-D turbulence. 20 Finally, an analysis of computational efficiency highlights the practical advantages of latent-space modeling. As detailed in Table 7, generating large ensembles is approximately seven times faster with latent-space models than with their physical-space counterparts due to the reduced dimensionality. Furthermore, the L-FM model, with its one-step generation capability, is twice as fast as the iterative L-DM model while delivering higher accuracy, establishing it as the most effective and efficient model for practical deployment. 
+
+Table 7: A posteriori simulation performance over a 20-second integration. The relative error ( DRE ) is reported for both single-trajectory (Per-sample) and ensemble-mean strategies. Per-sample results include the mean and a two-standard-deviation band calculated over 1000 independent trajectories. Computational cost is the wall-clock time per trajectory (Per-sample) or for the full 1000-sample evaluation (Ensemble). All latent models employ MP regularization. 
+
+Model Strategy Cost (s) Vorticity field error at time t=30 t=35 t=40 t=45 t=50 
+
+No correction – 2.12 0 4.06e-01 6.17e-01 6.88e-01 8.42e-01 P-DM Per-sample 180.11 0 3.67e-02 5.92e-02 1.11e-01 1.32e-01          
+
+> ±0±7.59e-03 ±9.74e-03 ±1.04e-02 ±9.02e-03
+
+Ensemble 8662.76 0 1.66e-02 4.13e-02 5.02e-02 7.55e-02 L-DM with MP Per-sample 140.66 0 1.96e-02 3.95e-02 4.17e-02 6.72e-02          
+
+> ±0±1.11e-03 ±1.20e-03 ±1.93e-03 ±2.68e-03
+
+Ensemble 1252.49 0 1.57e-02 3.52e-02 4.77e-02 5.65e-02 L-FM with MP Per-sample 72.32s 0 1.56e-02 3.29e-02 3.75e-02 4.24e-02          
+
+> ±0±5.19e-04 ±1.80e-03 ±1.80e-03 ±1.93e-03
+
+Ensemble 835.83 0 1.06e-02 2.89e-02 3.13e-02 4.01e-02 
+
+Figure 5: Temporal evolution of relative simulation error ( DRE ). Comparison of stochastic trajectories (dotted lines, representing the mean over 1000 runs) and ensemble-mean predictions (dashed/solid lines) for various closure models. All generative closures significantly outperform the uncorrected baseline (not shown, error reaches 0.84), with the L-FM model achieving the lowest error. 
+
+21 Figure 6: Qualitative comparison of vorticity field evolution. Snapshots from t = 30 to t = 50 for the high-fidelity ground truth, three generative closure models, and the uncorrected simulation. The closure-corrected simulations successfully capture the fine-scale flow structures, whereas the uncorrected simulation diverges and develops spurious features. 
+
+## 4. Conclusion 
+
+In this work, we developed a framework for explicitly regularizing latent diffusion models to build fast and accurate stochastic closures for complex dynamical systems, with the aim of significantly improving the sampling speed when using diffusion models to build stochastic 22 Figure 7: Spatial distribution of simulation uncertainty. The pixel-wise standard deviation is computed across an ensemble of 1000 stochastic simulations. The top row shows the ground truth variability, while the bottom row shows the variability captured by the L-FM closure model. The close agreement in both structure and magnitude demonstrates the model’s ability to reproduce the physical uncertainty of the system.    
+
+> Figure 8: Vorticity energy spectra at different time instances. Spectra from simulations using various ensemble-mean closures are compared against the ground truth. All closure-equipped models correctly reproduce the energy distribution and maintain the characteristic k−3slope of the enstrophy cascade, confirming their physical consistency.
+
+closures of complex dynamical systems. We also systematically compare the performance of explicitly and implicitly regularized latent spaces for several transport-based generative models (diffusion, flow matching, and stochastic interpolants) and find that flow matching is the best-performing sampler due to its straight transport paths, which permit single-step generation. This efficiency is fully realized when paired with a latent space trained with metric-preserving (MP) regularization, while the other implicit regularization (via geometry-aware constraint) or explicit regularization (via joint learning) achieves similar performances for the regularized latent space. The regularized latent space inherits key topological infor-mation from the lower-dimensional manifold of the original complex dynamical system and 23 thus enables the use of diffusion models in stochastic closure modeling of high-dimensional complex dynamical systems without demanding a huge amount of training data. When de-ployed in a posteriori simulations of 2D Kolmogorov flow, our framework achieved ten-times faster ensemble simulations, while reducing prediction error by a factor of O(10) . We also demonstrated that our framework can provide efficient uncertainty quantification and cor-rectly capture the spatial patterns of the system’s intrinsic variability. This work highlights the significant benefits of co-designing machine learning architectures with the underlying geometry of the physical problem, which provides a promising pathway toward extending diffusion-model-based stochastic closures to 3D turbulent flows in science and engineering applications. 
+
+## Acknowledgments 
+
+X.D., H.Y., and J.W. are supported by the University of Wisconsin-Madison, Office of the Vice Chancellor for Research and Graduate Education with funding from the Wisconsin Alumni Research Foundation. X.D. and J.W. are also funded by the Office of Naval Research N00014-24-1-2391. 
+
+## References 
+
+[1] S. B. Pope, Turbulent flows, Measurement Science and Technology 12 (2001) 2020–2021. [2] T. J. Hughes, G. R. Feijóo, L. Mazzei, J.-B. Quincy, The variational multiscale method—a paradigm for computational mechanics, Computer methods in applied me-chanics and engineering 166 (1998) 3–24. [3] T. Schneider, S. Lan, A. Stuart, J. Teixeira, Earth system modeling 2.0: A blueprint for models that learn from observations and targeted high-resolution simulations, Geo-physical Research Letters 44 (2017) 12–396. [4] P. Moin, J. Kim, Tackling turbulence with supercomputers, Scientific American 276 (1997) 62–68. [5] T. Palmer, P. Williams, P. Williams, Stochastic physics and climate modelling, Cam-bridge University Press, 2010. [6] R. H. Kraichnan, Dispersion of particle pairs in homogeneous turbulence, The Physics of Fluids 9 (1966) 1937–1943. [7] A. Monin, A. I’Aglom, Statistical fluid mechanics: Mechanics of turbulence, Statistical fluid mechanics: Mechanics of turbulence (1971). [8] R. H. Kraichnan, Models of intermittency in hydrodynamic turbulence, Physical Review Letters 65 (1990) 575. [9] P. J. Mason, D. J. Thomson, Stochastic backscatter in large-eddy simulations of bound-ary layers, Journal of Fluid Mechanics 242 (1992) 51–78. 24 [10] A. J. Majda, I. Timofeyev, E. Vanden Eijnden, Models for stochastic climate prediction, Proceedings of the National Academy of Sciences 96 (1999) 14687–14691. [11] A. J. Majda, I. Timofeyev, E. Vanden Eijnden, A mathematical framework for stochastic climate models, Communications on Pure and Applied Mathematics: A Journal Issued by the Courant Institute of Mathematical Sciences 54 (2001) 891–974. [12] A. J. Majda, I. Timofeyev, E. Vanden-Eijnden, Systematic strategies for stochastic mode reduction in climate, Journal of the Atmospheric Sciences 60 (2003) 1705–1722. [13] T. Palmer, Stochastic weather and climate models, Nature Reviews Physics 1 (2019) 463–471. [14] C. Soize, Random matrix theory for modeling uncertainties in computational mechanics, Computer methods in applied mechanics and engineering 194 (2005) 1333–1366. [15] M. N. Seif, J. Puppo, M. Zlatinov, D. Schaffarzick, A. Martin, M. J. Beck, Stochastic mesoscale mechanical modeling of metallic foams, Mathematics and Mechanics of Solids 30 (2025) 792–805. [16] K. T. DiNapoli, D. N. Robinson, P. A. Iglesias, A mesoscale mechanical model of cellular interactions, Biophysical journal 120 (2021) 4905–4917. [17] R. Zwanzig, Memory effects in irreversible thermodynamics, Physical Review 124 (1961) 983. [18] H. Mori, Transport, collective motion, and Brownian motion, Progress of Theoretical Physics 33 (1965) 423–455. [19] C. L. Franzke, T. J. O’Kane, J. Berner, P. D. Williams, V. Lucarini, Stochastic climate theory and modeling, Wiley Interdisciplinary Reviews: Climate Change 6 (2015) 63–78. [20] R. Zwanzig, Nonequilibrium Statistical Mechanics, Oxford University Press, 2001. [21] R. Ajayamohan, B. Khouider, A. J. Majda, Realistic initiation and dynamics of the Madden-Julian oscillation in a coarse resolution aquaplanet GCM, Geophysical Research Letters 40 (2013) 6252–6257. [22] J.-L. Wu, K. Kashinath, A. Albert, D. Chirila, H. Xiao, et al., Enforcing statistical constraints in generative adversarial networks for modeling chaotic dynamical systems, Journal of Computational Physics 406 (2020) 109209. [23] N. Chen, Stochastic Methods for Modeling and Predicting Complex Dynamical Systems, Springer, 2023. [24] H. Xiao, J.-L. Wu, J.-X. Wang, R. Sun, C. J. Roy, Quantifying and reducing model-form uncertainties in Reynolds-averaged Navier–Stokes simulations: A data-driven, physics-informed Bayesian approach, Journal of Computational Physics 324 (2016) 115–136. 25 [25] D. Kondrashov, M. D. Chekroun, M. Ghil, Data-driven non-Markovian closure models, Physica D: Nonlinear Phenomena 297 (2015) 33–55. [26] A. Gupta, P. F. Lermusiaux, Generalized neural closure models with interpretability, Scientific Reports 13 (2023) 10634. [27] M. Feng, L. Tian, Y.-C. Lai, C. Zhou, Validity of Markovian modeling for transient memory-dependent epidemic dynamics, Communications Physics 7 (2024) 86. [28] M. A. Bhouri, P. Gentine, History-based, Bayesian, closure for stochastic parameteri-zation: Application to Lorenz’96, arXiv preprint arXiv:2210.14488 (2022). [29] N. Baker, F. Alexander, T. Bremer, A. Hagberg, Y. Kevrekidis, H. Najm, M. Parashar, A. Patra, J. Sethian, S. Wild, et al., Workshop report on basic research needs for sci-entific machine learning: Core technologies for artificial intelligence, Technical Report, USDOE Office of Science (SC), Washington, DC (United States), 2019. [30] K. J. Bergen, P. A. Johnson, M. V. de Hoop, G. C. Beroza, Machine learning for data-driven discovery in solid earth geoscience, Science 363 (2019) eaau0323. [31] H. Wang, T. Fu, Y. Du, W. Gao, K. Huang, Z. Liu, P. Chandak, S. Liu, P. Van Katwyk, A. Deac, et al., Scientific discovery in the age of artificial intelligence, Nature 620 (2023) 47–60. [32] G. Carleo, I. Cirac, K. Cranmer, L. Daudet, M. Schuld, N. Tishby, L. Vogt-Maranto, L. Zdeborová, Machine learning and the physical sciences, Reviews of Modern Physics 91 (2019) 045002. [33] S. L. Brunton, J. L. Proctor, J. N. Kutz, Discovering governing equations from data by sparse identification of nonlinear dynamical systems, Proceedings of the National Academy of Sciences 113 (2016) 3932–3937. [34] K. Champion, B. Lusch, J. N. Kutz, S. L. Brunton, Data-driven discovery of coordinates and governing equations, Proceedings of the National Academy of Sciences 116 (2019) 22445–22451. [35] C. Chen, N. Chen, J.-L. Wu, CEBoosting: Online sparse identification of dynamical sys-tems with regime switching by causation entropy boosting, Chaos: An Interdisciplinary Journal of Nonlinear Science 33 (2023). [36] M. L. Gao, J. P. Williams, J. N. Kutz, Sparse identification of nonlinear dynam-ics and Koopman operators with shallow recurrent decoder networks, arXiv preprint arXiv:2501.13329 (2025). [37] L. Lu, P. Jin, G. E. Karniadakis, Deeponet: Learning nonlinear operators for identifying differential equations based on the universal approximation theorem of operators, arXiv preprint arXiv:1910.03193 (2019). 26 [38] Z. Li, N. Kovachki, K. Azizzadenesheli, B. Liu, K. Bhattacharya, A. Stuart, A. Anand-kumar, Fourier neural operator for parametric partial differential equations, arXiv preprint arXiv:2010.08895 (2020). [39] C. Chen, Z. Wang, N. Chen, J.-L. Wu, Modeling partially observed nonlinear dynamical systems and efficient data assimilation via discrete-time conditional Gaussian Koopman network, Computer Methods in Applied Mechanics and Engineering 445 (2025) 118189. [40] J.-X. Wang, J.-L. Wu, H. Xiao, Physics-informed machine learning approach for recon-structing Reynolds stress modeling discrepancies based on DNS data, Physical Review Fluids 2 (2017) 034603. [41] J.-L. Wu, H. Xiao, E. Paterson, Physics-informed machine learning approach for aug-menting turbulence models: A comprehensive framework, Physical Review Fluids 3 (2018) 074602. [42] K. Kashinath, M. Mustafa, A. Albert, J. Wu, C. Jiang, S. Esmaeilzadeh, K. Aziz-zadenesheli, R. Wang, A. Chattopadhyay, A. Singh, et al., Physics-informed machine learning: Case studies for weather and climate modelling, Philosophical Transactions of the Royal Society A 379 (2021) 20200093. [43] J.-L. Wu, M. E. Levine, T. Schneider, A. Stuart, Learning about structural errors in models of complex dynamical systems, Journal of Computational Physics 513 (2024) 113157. [44] X. Dong, C. Chen, J.-L. Wu, Data-driven stochastic closure modeling via conditional diffusion model and neural operator, Journal of Computational Physics (2025) 114005. [45] H. Yang, X. Dong, J.-L. Wu, Bayesian experimental design for model discrepancy calibration: An auto-differentiable ensemble Kalman inversion approach, arXiv preprint arXiv:2504.20319 (2025). [46] H. Yang, C. Chen, J.-L. Wu, Active learning of model discrepancy with Bayesian experimental design, arXiv preprint arXiv:2502.05372 (2025). [47] J. Ho, A. Jain, P. Abbeel, Denoising diffusion probabilistic models, Advances in Neural Information Processing Systems 33 (2020) 6840–6851. [48] Y. Song, J. Sohl-Dickstein, D. P. Kingma, A. Kumar, S. Ermon, B. Poole, Score-based generative modeling through stochastic differential equations, arXiv preprint arXiv:2011.13456 (2020). [49] Y. Song, S. Ermon, Generative modeling by estimating gradients of the data distribu-tion, Advances in Neural Information Processing Systems 32 (2019). [50] H. Gao, X. Han, X. Fan, L. Sun, L.-P. Liu, L. Duan, J.-X. Wang, Bayesian conditional diffusion models for versatile spatiotemporal turbulence generation, Computer Methods in Applied Mechanics and Engineering 427 (2024) 117023. 27 [51] P. Du, M. H. Parikh, X. Fan, X.-Y. Liu, J.-X. Wang, Conditional neural field latent diffusion model for generating spatiotemporal turbulence, Nature Communications 15 (2024) 10416. [52] A. Dasgupta, H. Ramaswamy, J. Murgoitio-Esandi, K. Y. Foo, R. Li, Q. Zhou, B. F. Kennedy, A. A. Oberai, Conditional score-based diffusion models for solving inverse elasticity problems, Computer Methods in Applied Mechanics and Engineering 433 (2025) 117425. [53] C. Jacobsen, Y. Zhuang, K. Duraisamy, CoCoGen: Physically consistent and condi-tioned score-based generative models for forward and inverse problems, SIAM Journal on Scientific Computing 47 (2025) C399–C425. [54] X. Dong, H. Yang, J.-L. Wu, Stochastic and non-local closure modeling for non-linear dynamical systems via latent score-based generative models, arXiv preprint arXiv:2506.20771 (2025). [55] G. Papamakarios, E. Nalisnick, D. J. Rezende, S. Mohamed, B. Lakshminarayanan, Normalizing flows for probabilistic modeling and inference, Journal of Machine Learning Research 22 (2021) 1–64. [56] Y. Lipman, R. T. Chen, H. Ben-Hamu, M. Nickel, M. Le, Flow matching for generative modeling, arXiv preprint arXiv:2210.02747 (2022). [57] X. Liu, C. Gong, Q. Liu, Flow straight and fast: Learning to generate and transfer data with rectified flow, arXiv preprint arXiv:2209.03003 (2022). [58] A. Tong, N. Malkin, G. Huguet, Y. Zhang, J. Rector-Brooks, K. Fatras, G. Wolf, Y. Bengio, Conditional flow matching: Simulation-free dynamic optimal transport, arXiv preprint arXiv:2302.00482 2 (2023). [59] M. S. Albergo, N. M. Boffi, E. Vanden-Eijnden, Stochastic interpolants: A unifying framework for flows and diffusions, arXiv preprint arXiv:2303.08797 (2023). [60] Y. Chen, M. Goldstein, M. Hua, M. S. Albergo, N. M. Boffi, E. Vanden-Eijnden, Prob-abilistic forecasting with stochastic interpolants and Föllmer processes, arXiv preprint arXiv:2403.13724 (2024). [61] M. S. Albergo, E. Vanden-Eijnden, Building normalizing flows with stochastic inter-polants, arXiv preprint arXiv:2209.15571 (2022). [62] R. Rombach, A. Blattmann, D. Lorenz, P. Esser, B. Ommer, High-resolution image synthesis with latent diffusion models, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2022, pp. 10684–10695. [63] A. Vahdat, K. Kreis, J. Kautz, Score-based generative modeling in latent space, Ad-vances in Neural Information Processing Systems 34 (2021) 11287–11302. 28 [64] Z. Luo, F. K. Gustafsson, Z. Zhao, J. Sjölund, T. B. Schön, Refusion: Enabling large-size realistic image restoration with latent-space diffusion models, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2023, pp. 1680–1691. [65] Q. Dao, H. Phung, B. Nguyen, A. Tran, Flow matching in latent space, arXiv preprint arXiv:2307.08698 (2023). [66] T. Kouzelis, I. Kakogeorgiou, S. Gidaris, N. Komodakis, EQ-VAE: Equivariance reg-ularized latent space for improved generative image modeling, 2025. URL: https: //arxiv.org/abs/2502.09509 . arXiv:2502.09509 .[67] L. Sigillo, S. He, D. Comminiello, Latent wavelet diffusion: Enabling 4K image synthesis for free, 2025. URL: https://arxiv.org/abs/2506.00433 . arXiv:2506.00433 .[68] Y. Zhou, Z. Xiao, S. Yang, X. Pan, Alias-free latent diffusion models: Improving fractional shift equivariance of diffusion latent space, in: Proceedings of the Computer Vision and Pattern Recognition Conference, 2025, pp. 34–44. [69] X. Sun, D. Liao, K. MacDonald, Y. Zhang, G. Huguet, G. Wolf, I. Adelstein, T. G. J. Rudner, S. Krishnaswamy, Geometry-aware autoencoders for metric learning and generative modeling on data manifolds, in: ICML 2024 Workshop on Geometry-grounded Representation Learning and Generative Modeling, 2024, p. –. URL: https: //openreview.net/forum?id=EYQZjMcn4l .[70] B. D. Anderson, Reverse-time diffusion equation models, Stochastic Processes and their Applications 12 (1982) 313–326. [71] P. Vincent, A connection between score matching and denoising autoencoders, Neural Computation 23 (2011) 1661–1674. [72] Y. Song, S. Garg, J. Shi, S. Ermon, Sliced score matching: A scalable approach to density and score estimation, in: Uncertainty in Artificial Intelligence, PMLR, 2020, pp. 574–584. [73] J. Tompson, A. Jain, Y. LeCun, C. Bregler, Joint training of a convolutional network and a graphical model for human pose estimation, Advances in Neural Information Processing Systems 27 (2014). [74] T. Han, E. Nijkamp, L. Zhou, B. Pang, S.-C. Zhu, Y. N. Wu, Joint training of varia-tional auto-encoder and latent energy-based model, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2020, pp. 7978–7987. [75] J. Lucas, G. Tucker, R. B. Grosse, M. Norouzi, Don’t blame the elbo! A linear VAE perspective on posterior collapse, Advances in Neural Information Processing Systems 32 (2019). 29 Appendix A. Numerical Solver for the 2D Navier-Stokes Equations 
+
+The training and evaluation data are generated by solving the 2D incompressible Navier-Stokes system (Eq. (28)) using a standard numerical scheme that combines a pseudo-spectral method for spatial discretization with a Crank-Nicolson scheme for time integration. 
+
+Appendix A.1. Pseudo-Spectral Method 
+
+The pseudo-spectral method is employed for its high accuracy in representing spatially pe-riodic fields. The method leverages the efficiency of the Fast Fourier Transform (FFT) by performing linear operations in the Fourier domain and nonlinear operations in the physical domain. The simulation is initialized with a vorticity field ω(x, t 0) sampled from a statistically sta-tionary Gaussian random field. Given the Fourier coefficients of the vorticity, ˆω(k, t ) = 
+
+F{ ω(x, t )}, all linear operations are computed efficiently. The streamfunction ˆψ is found by solving the Poisson equation in the Fourier domain: 
+
+ˆψ(k, t ) = ˆω(k, t )
+
+|k|2 , (A.1) where |k|2 = k2 
+
+> x
+
++ k2 
+
+> y
+
+is the squared wavenumber. The velocity field coefficients ˆu = (ˆ u, ˆv)
+
+are then derived from the streamfunction: 
+
+ˆu(k, t ) = ik y ˆψ(k, t ), ˆv(k, t ) = −ik x ˆψ(k, t ). (A.2) To compute the nonlinear advection term, N (ω) = −u · ∇ ω, the velocity u and vorticity gradient ∇ω are transformed back to the physical domain, the point-wise product is taken, and the result is transformed back to the Fourier domain. This "pseudo-spectral" approach avoids the expensive convolution operation that a fully spectral method would require. 
+
+Appendix A.2. Crank-Nicolson Time Integration 
+
+The vorticity equation is advanced in time using a second-order accurate Implicit-Explicit (IMEX) scheme. The stiff linear viscous term is treated implicitly using the Crank-Nicolson method for unconditional stability, while the nonlinear advection and forcing terms are treated explicitly with a forward Euler step. The update rule in the Fourier domain from time tn to tn+1 is: 
+
+ˆωn+1 − ˆωn
+
+∆t = 12
+
+ −ν|k|2 ˆωn+1 − ν|k|2 ˆωn
+
+ + F{− un · ∇ ωn + f + βξ n}(k). (A.3) Rearranging for ˆωn+1 yields the explicit update formula: 
+
+ˆωn+1 (k) = (1 − ∆t 
+
+> 2
+
+ν|k|2)ˆ ωn(k) + ∆ t
+
+ ˆNn(k) + ˆf (k) + β ˆξn(k)
+
+
+
+1 + ∆t 
+
+> 2
+
+ν|k|2 . (A.4) Recalling from Section 3 that the closure term is defined as H = −u · ∇ ω + βξ = N (ω) + βξ ,we can rewrite the update rule in terms of the closure: 
+
+ˆωn+1 (k) = (1 − ∆t 
+
+> 2
+
+ν|k|2)ˆ ωn(k) + ∆ t
+
+ ˆHn(k) + ˆf (k)
+
+
+
+1 + ∆t 
+
+> 2
+
+ν|k|2 . (A.5) 30 In forward simulations using a learned stochastic closure, the exact closure term ˆHn is re-placed by a sample ˆ˜Hn drawn from the generative model at each time step. 
+
+## Appendix B. Stochastic Forcing via a Q-Wiener Process 
+
+The stochastic component ξ in the governing equations (Eq. (28)) is modeled as spatially correlated, white-in-time noise. This is formally the time derivative of a Q-Wiener process 
+
+W (x, t ) on a periodic domain Ω = [ L1, L 2]2. The covariance operator Q is defined in the Fourier basis φk(x) = exp( i(λk1 x1 + λk2 x2)) , where it is diagonal with eigenvalues qk that prescribe the spatial correlation structure: 
+
+Qφ k = qk φk, with qk = exp  −α(λ2 
+
+> k1
+
++ λ2 
+
+> k2
+
+) . (B.1) The parameter α controls the correlation length of the noise. For numerical implementation on a uniform N1 × N2 grid with time step ∆t, a discrete-time realization of the noise field is synthesized from i.i.d. complex Gaussian variables Z n 
+
+> k
+
+. To increase the variance, we aggregate κ independent copies. Because ξ is white in time, the variance of its discrete-time realization scales with 1/∆t. The spatially-averaged pointwise variance of the field is given by: 
+
+Var  ξn = κL1L2 ∆t
+
+X
+
+> k∈K h
+
+qk. (B.2) The stochastic component of the closure term H is given by βξ . We calculate its theoretical standard deviation using the parameters from our numerical setup: 
+
+• Amplitude: β = 5 × 10 −5
+
+• Domain size: L1 = L2 = 1 
+
+• Grid size: N1 = N2 = 64 
+
+• Time step: ∆t = 10 −3
+
+• Correlation decay: α = 5 × 10 −3
+
+• Variance inflation factor: κ = 10 
+
+First, we numerically compute the sum of the eigenvalues over the discrete grid, which yields P 
+
+> k∈K h
+
+qk ≈ 16 .0. The standard deviation of the unscaled noise ξn is then: 
+
+Std  ξn =
+
+s κL1L2 ∆t
+
+X
+
+> k∈K h
+
+qk
+
+=
+
+r 10 1 · 1 · 10 −3 × 16 .0 = √16 .0 × 10 4 = 400 .
+
+31 Finally, the standard deviation of the stochastic component of the closure is found by scaling this value by the amplitude β:
+
+Std  βξ n = β · Std  ξn
+
+≈ (5 × 10 −5) × 400 = 2 × 10 −2 = 0 .02 .
+
+## Appendix C. Model Architectures and Training Details 
+
+Our generative framework consists of two core components: a convolutional autoencoder for dimensionality reduction and a conditional generative model that operates in the latent space. 
+
+Appendix C.1. Model Architectures 
+
+The framework is designed to learn a conditional distribution p(U |V ), where U and V are high-dimensional fields. 
+
+• Convolutional Autoencoder: To create an efficient, low-dimensional representa-tion, we use a deep convolutional autoencoder. It maps a high-resolution input field (e.g., 64 × 64 ) to a lower-resolution latent vector (e.g., 16 × 16 ). The encoder and decoder are symmetric, constructed from a series of residual blocks (containing Group-Norm, SiLU activations, and 3 ×3 convolutions). The encoder uses strided convolutions for downsampling, while the decoder uses transposed convolutions for upsampling. A lightweight self-attention module with four heads is placed at the bottleneck to capture non-local spatial dependencies. We use two identical, independently trained autoen-coders: one for the target field U and one for the conditional field V .
+
+• Conditional Generative Model: The generative model learns a time-dependent vector field Fθ(τ, z Uτ , z V ) that defines the transport from a simple prior distribution to the target data distribution in the latent space. Its architecture is based on a Fourier Neural Operator (FNO) and features a two-branch design to process the inputs separately before merging them. 1. Target Branch: The intermidiate time-dependent latent state zUτ is processed. First, the transport time τ ∈ [0 , 1] is encoded into a vector using sinusoidal Gaus-sian Fourier features and a small MLP. This time embedding is then concatenated with zUτ and a set of normalized spatial coordinates (x, y ).2. Conditional Branch: The conditional latent zV is concatenated with the same spatial coordinates. Each branch consists of four Fourier layers, which apply convolutions in both the spatial and frequency domains, interleaved with GELU activations. The outputs of the two branches are then concatenated channel-wise and fused using a final 1 ×1 convolutional network to produce the vector field estimate (e.g., score function in diffusion models, velocity field in flow matching and stochastic interpolants). 32 Appendix C.2. Training Protocol 
+
+Our training data is sourced from 100 high-fidelity simulations of the 2D Navier-Stokes equations, from which we extract 20,000 paired snapshots of the resolved vorticity ω and the closure term H over a 20-second interval. This dataset is split into training (18,000), validation (1,000), and test (1,000) sets. We investigate two primary training strategies: 
+
+• Two-Phase Training: This is a sequential approach where the autoencoders and generative model are trained separately. 1. Phase 1: Autoencoder Training. The autoencoders are trained on the 18,000 full-resolution snapshots. For the conventional two-phase model, the training objective is solely the mean squared reconstruction error (MSE). For the struc-turally regularized models, this MSE loss is augmented with either the Metric-Preserving (MP) or Geometry-Aware (GA) loss term. We use the Adam optimizer (lr = 10 −3), a batch size of 200, a ‘ReduceLROnPlateau‘ scheduler, and early stopping to find the optimal weights. 2. Phase 2: Latent Model Training. After freezing the optimal autoencoder weights, we encode the entire training set to get 18,000 latent pairs (zω, z H ). The FNO-based generative model is then trained on these pairs for 1000 epochs using Adam (lr = 10 −3) with a step-decay schedule and a batch size of 200. 
+
+• End-to-End Joint Training: In this strategy, the autoencoders and the generative model are optimized simultaneously. The total loss is a weighted sum of the autoen-coder reconstruction losses, the generative model’s transport loss, and a KL-divergence term on zH to regularize the latent space. Based on a grid search, we set the loss weights to λH = 10 , λω = 0 .1, λtransport = 0 .1, and λKL = 0 .01 . The optimizer and scheduler settings are identical to those used in the AE training phase. 33
