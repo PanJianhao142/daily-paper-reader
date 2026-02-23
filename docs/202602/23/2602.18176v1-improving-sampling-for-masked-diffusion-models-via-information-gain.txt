@@ -1,0 +1,826 @@
+Title: Improving Sampling for Masked Diffusion Models via Information Gain
+
+URL Source: https://arxiv.org/pdf/2602.18176v1
+
+Published Time: Mon, 23 Feb 2026 01:40:57 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Improving Sampling for Masked Diffusion Models via Information Gain 
+
+Kaisen Yang 1 Jayden Teoh 2 Kaicheng Yang 3 Yitong Zhang 4 Alex Lamb 5
+
+# Abstract 
+
+Masked Diffusion Models (MDMs) offer greater flexibility in decoding order than autoregressive models but require careful planning to achieve high-quality generation. Existing samplers typ-ically adopt greedy heuristics, prioritizing posi-tions with the highest local certainty to decode at each step. Through failure case analysis, we identify a fundamental limitation of this approach: it neglects the downstream impact of current de-coding choices on subsequent steps and fails to minimize cumulative uncertainty. In particular, these methods do not fully exploit the non-causal nature of MDMs, which enables evaluating how a decoding decision reshapes token probabili-ties/uncertainty across all remaining masked po-sitions. To bridge this gap, we propose the Info-Gain Sampler , a principled decoding framework that balances immediate uncertainty with infor-mation gain over future masked tokens. Exten-sive evaluations across diverse architectures and tasks (reasoning, coding, creative writing, and im-age generation) demonstrate that Info-Gain Sam-pler consistently outperforms existing samplers for MDMs. For instance, it achieves a 3.6% im-provement in average accuracy on reasoning tasks and a 63.1% win-rate in creative writing. No-tably, on reasoning tasks it reduces cumulative uncertainty from 78.4 to 48.6, outperforming the best baseline by a large margin. The code will be available at https://github.com/yks23/ Information-Gain-Sampler .
+
+# 1. Introduction 
+
+Masked Diffusion Models (MDMs) have emerged as a pow-erful alternative to the dominant autoregressive paradigm for discrete sequence generation (Austin et al., 2021a; Lou et al., 
+
+> 1
+
+Department of Computer Science and Technology, Tsinghua University. yks23@mails.tsinghua.edu 2Singapore Management University, 3Shanghaijiaotong University 4Beihang University 
+
+> 5
+
+College of AI, Tsinghua University. Correspondence to: Alex Lamb <alex6200@gmail.com >.
+
+Preprint. February 23, 2026. 
+
+2024; Nie et al., 2025). By leveraging bidirectional attention, MDMs break free from strict left-to-right generation, grant-ing unprecedented flexibility in decoding paths (Rombach et al., 2022). This flexibility unlocks superior performance in tasks requiring bidirectional attention, such as code infill-ing, biological sequence design, and long-horizon planning tasks (Ye et al., 2025; Gong et al., 2025; Ye et al., 2024). However, this potential remains largely untapped due to a training–inference mismatch. While MDMs are trained un-der random masking patterns, inference entails a multi-step, order-sensitive decoding process. Navigating the large space of possible decoding orders therefore requires a sampler that carefully selects which tokens to reveal next. Consequently, generation quality is heavily dependent on the effectiveness of the sampler (Kim et al., 2025a). Existing samplers predominantly rely on local certainty heuristics such as confidence to greedily select the next decoding target (Chang et al., 2022; Ye et al., 2025; Huang et al., 2025; Kim et al., 2025a). In Section 3.1, we ar-gue and demonstrate that such samplers are often nonro-bust due to the myopia of local heuristics: they ignore the long-term impact of current decoding decisions on future uncertainty. Consequently, they frequently prioritize to-kens that appear syntactically confident but are semantically suboptimal, leading to error propagation and compromised generation quality. In contrast to autoregressive models (ARMs), where the causal nature makes evaluating the downstream effect of a token choice computationally prohibitive, the bidirectional nature of MDMs offers a distinct advantage: it enables us to assess how a token decoding decision influences the uncer-tainty across all remaining masked positions immediately. Leveraging these insights, we propose the Information Gain (Info-Gain) Sampler , a decoding framework that departs from greedy certainty-based sampling. Instead of merely refining the certainty scoring function, the Info-Gain Sampler additionally evaluates decoding actions by how much they reduce the uncertainty in remaining masked to-kens. By balancing immediate certainty with information gain , our method prioritizes globally informative decisions and yields more robust decoding trajectories. Our contribu-tions are threefold: 1         
+
+> arXiv:2602.18176v1 [cs.CL] 20 Feb 2026 Improving Sampling for Masked Diffusion Models via Information Gain
+> (a) The dilemma of greedy certainty-based sampling. (b) Evolution of cumulative uncertainty.
+> Figure 1. Motivation: Analysis of decoding strategies on the one-way multiplication experiment. (a) Illustrates the contrast between the suboptimal path chosen by the greedy certainty-based sampler and the optimal path, motivating the introduction of the Info-Gain Sampler. (b) Shows the evolution of cumulative uncertainty throughout the decoding process. While the greedy sampler prioritizes decoding cfirst (73.2%) due to its immediate high confidence, it leads to failure because of the task’s one-way nature. In contrast, the Info-Gain Sampler optimizes global uncertainty by resolving high-entropy factors aor bfirst (84.0%), ensuring a successful decoding trajectory.
+
+(1) We empirically identify the fundamental limitations of existing greedy certainty-based samplers in MDMs through failure case analyses. (2) We introduce the Info-Gain Sampler, which balances immediate costs with future information gain via a simple yet effective objective. We also propose computationally efficient implementations of Info-Gain Sampler. (3) We extensively evaluate Info-Gain Sampler against other sampler baselines across diverse pretrained MDMs and benchmarks. The results show that Info-Gain consistently outperforms these baselines across math, coding, planning, writing, and image generation tasks. 
+
+# 2. Preliminary 
+
+2.1. Masked Diffusion Models (MDMs) 
+
+We consider discrete data over a vocabulary of size V with sequence length L. Let {1, . . . , V} denote the vocabu-lary, and let 0 represent the special mask token. A state is denoted as zt ∈ { 0, 1, . . . , V} L for discrete time steps 
+
+t = 0 , 1, . . . , T , where zℓt is the token at position ℓ. The data distribution pdata is defined over fully unmasked sequences in {1, . . . , m }L, corresponding to z0.
+
+Forward process. The forward process gradually corrupts a clean data point z0 ∼ pdata by independently masking each coordinate over T steps. At each step, tokens are progressively replaced by the mask token 0 according to a fixed schedule, such that at time T , the state is fully masked, i.e., zT = (0 , . . . , 0) .
+
+Reverse process and training. To generate samples, we learn to reverse this forward process. A denoising network 
+
+pℓθ (·| zt) predicts, for each masked position ℓ, the distribution of the original token zℓ
+
+> 0
+
+. The model is trained by minimizing the evidence lower bound, which reduces to a weighted cross-entropy loss over masked positions. As revealed in (Kim et al., 2025a), this loss weights all possible infilling problems equally, meaning the optimal pθ learns to predict any masked token given any context. 
+
+Sampling. Sampling starts from the fully masked state 
+
+zT = (0 , . . . , 0) . At each step t (going backwards from T to 
+
+1), given current state zt, the model computes distributions 
+
+{pℓθ (·| zt)}ℓ∈M t for all masked positions Mt := {ℓ | zℓt =0} in a single forward pass. A sampler π determines how to use these distributions to produce the next state xt−1. Unlike autoregressive models where the sampler decides the next token at a fixed position, a sampler for MDMs decides which masked positions to fill and what tokens to assign. Specifically, it selects a subset 
+
+At ⊆ M t to unmask and, for each ℓ ∈ At, assigns a token 
+
+ˆxℓ ∼ pℓθ (·| zt) (optionally with temperature scaling or top-
+
+k filtering). This yields an action at := {(ℓ, ˆxℓ) | ℓ ∈
+
+At}. Applying at to zt produces xt−1 = APPLY (zt, a t),where each selected position is filled and all others remain unchanged. This process repeats until reaching z0, yielding a fully generated sequence z0 ∈ { 1, . . . , m }L.
+
+Certainty-based samplers. A widely used family of sam-plers follows a two-stage procedure at each step. First, token sampling : for each masked position ℓ ∈ M t, draw a candi-date token ˆxℓ ∼ pℓθ (·| zt). Second, position selection : select which positions to actually unmask using a certainty score 
+
+ϕ(ℓ, z t) that measures the model’s confidence at position 
+
+ℓ. Common choices for ϕ include the top-1 probability of the predictive distribution (confidence), the negative en-tropy of the predictive distribution, or the margin between the top-2 probabilities (Chang et al., 2022; Ye et al., 2025; Kim et al., 2025a). A formal description of mainstream certainty-based samplers is provided in Appendix A. Given 2Improving Sampling for Masked Diffusion Models via Information Gain 
+
+a time-dependent budget Kt (the number of positions to unmask at step t, determined by a predefined scheduling function), the sampler selects the subset A∗ 
+
+> t
+
+that maximizes total certainty: 
+
+A∗ 
+
+> t
+
+= argmax 
+
+> At⊆M t,|At|=Kt
+
+X
+
+> ℓ∈At
+
+ϕ(ℓ, z t). (1) The final action is then a∗ 
+
+> t
+
+= {(ℓ, ˆxℓ) | ℓ ∈ A∗ 
+
+> t
+
+}. This ”most certain first” strategy fills positions where the model is most confident, leaving harder decisions for later steps when more context is available. 
+
+# 3. Method 
+
+3.1. Motivation 
+
+Existing certainty-based sampling methods typically employ a greedy strategy. These methods aim to minimize error ac-cumulation by prioritizing the most certain positions. While this approach effectively reduces immediate uncertainty and enhances short-term reliability, it essentially performs a greedy optimization of the cumulative uncertainty. This leads us to a fundamental question: 
+
+Question 1: Is greedy optimization closed to minimize cumulative uncertainty across steps? To quantify the uncertainty throughout a generation pro-cess τ = zT → zT −1 → . . . → z0 , we first introduce 
+
+Cumulative Entropy ˜H over τ as a key metric, defined as: 
+
+˜H(τ ) := 
+
+> 1
+
+X
+
+> t=T
+
+C(at | zt), (2) where C(at | zt) = P 
+
+> ℓ∈At
+
+H(ℓ)(zt) represents the sum of marginal entropy for the tokens selected at step t, given by the model’s output distribution. This metric quantifies the total uncertainty accumulated throughout the decoding trajectory. To explore this question, we present two case studies that illustrate the limitations of greedy samplers. 
+
+Case Study 1: One-way Multiplication. The model is tasked with generating an equation a × b = c, where a and 
+
+b are decimal factors and c is a binary product. This task is inherently one-way: computing a product from factors is straightforward, while factoring is not only computationally difficult but also particularly challenging for MDMs to gen-erate, especially when the product is represented in binary format. Two decoding paths emerge: (i) Product-first , and (ii) Factor-first .A greedy sampler mistakenly favors path (i) because the binary digits of c exhibit lower per-token uncertainty (re-quiring a choice only from {0, 1}) than the decimal digits of a and b (which have 10 possible values). As shown in Figure 1, by minimizing immediate uncertainty, the greedy strategy commits to a product without fixing the factors, leading to incorrect equations and high residual uncertainty. Conversely, an optimal strategy would resolve the higher-uncertainty factors a and b first; once fixed, c can be deter-mined with nearly zero uncertainty. Empirically, the greedy certainty-based sampler (represented by Entropy (Ye et al., 2025)) prioritizes path (i) with 73.2% probability, leading to significantly higher cumulative uncertainty. 
+
+Case Study 2 : Binary Judgment. In this experiment, the model is tasked with judging the truth of an arithmetic state-ment using the template: “[reasoning-masks] The answer is (Yes/No): [answer-mask]”. The answer token typically ex-hibits lower local uncertainty as it is constrained to a binary choice (Yes/No), whereas the reasoning steps involve much higher uncertainty. Consequently, greedy samplers tend to decode the answer token prematurely, making a commit-ment before the underlying reasoning is resolved. This leads to incorrect judgments and leaves high residual uncertainty in the reasoning positions. To analyze this, we compare greedy certainty-based sam-plers against an auto-regressive (AR) baseline, which natu-rally resolves high-uncertainty reasoning before the binary answer. As shown in Table 1, the AR baseline achieves supe-rior accuracy and lower cumulative uncertainty, highlighting that greedy MDM samplers fail by prematurely committing to low-uncertainty answer tokens before the reasoning is established.                
+
+> Table 1. Quantitative results for Case Study 2.
+> Metric Entropy Confidence Margin AR
+> ˜H↓32.75 31.68 35.60 25.19
+> Acc. (%) ↑67 73 66 90
+
+Observation 1: Existing greedy certainty-based sam-plers often fail to find near-optimal decoding paths. 
+
+As illustrated in Figure 1, an optimal decoding action should be evaluated not only by its own prediction certainty but also by the information gain it provides for the remainder of the generation process. To address the limitations of existing samplers, it is essential to account for this information gain when making current decisions. As shown in Figure 1, our proposed Info-Gain Sampler effectively addresses this one-way challenge by prioritizing the decoding of factors with an 84% probability. In standard ARMs, assessing information gain typically re-quires computationally expensive techniques, such as Monte Carlo Tree Search, to simulate future trajectories. This is primarily due to the next-token bottleneck: since ARMs 3Improving Sampling for Masked Diffusion Models via Information Gain 
+
+only provide the probability of the immediate next token, multi-step look-ahead becomes prohibitively slow. 
+
+Question 2: Can Masked Diffusion Models efficiently assess information gain of a decoding action? Unlike ARMs, MDMs don’t have the next-token bottle-neck. MDMs leverage bidirectional attention, allowing the model to simultaneously evaluate the impact of any decod-ing action on the uncertainty of the entire sequence. This architectural advantage enables the model to “see” how fill-ing a mask affects the uncertainty of all remaining masks in a single forward pass. 
+
+Observation 2: MDMs’ bidirectional architecture en-ables efficient information gain estimation in one for-ward pass, bypassing expensive iterative computations. 
+
+3.2. Information Gain Sampler 
+
+The insights from Observation 1 and Observation 2 sug-gest that greedy optimization alone is insufficient for mini-mizing cumulative uncertainty across the entire sequence. We introduce the Information Gain (Info-Gain) Sampler 
+
+which leverages the bidirectional nature of MDMs to bal-ance the immediate uncertainty cost of a decoding decision against its expected information gain over the remaining masked positions. 3.2.1. O BJECTIVE OF INFO -G AIN SAMPLER 
+
+We first define state uncertainty as the average marginal entropy over the masked positions in state zt:
+
+H(zt) = 1
+
+|M t|
+
+X
+
+> ℓ∈M t
+
+H(ℓ)(zt) (3) The state uncertainty quantifies the information remaining to be resolved by the model and can be computed efficiently via a single forward pass. The information gain of action at is defined as the re-duction in state uncertainty (equivalently, the decrease in marginal entropy over the remaining masked positions) it induces: IG (at; zt) := H(zt) − H (zt−1) (4) where zt−1 = Apply (zt, a t) denotes the state obtained after executing action at from state zt.The total impact of a decoding action at is thus decomposed into two components: 
+
+(1) Immediate Cost: the uncertainty of the tokens being de-coded in the current step, measured by the sum of marginal entropy over the chosen positions C(at | zt).          
+
+> Figure 2. The Info-Gain Sampler workflow. Starting from state
+> zT0, the sampler iteratively: (1) samples candidate actions, (2) evaluates JIG =Immediate Cost −Information Gain in parallel to select the optimal successor state z∗
+> t−1, and (3) executes the state transition until reaching the final sequence z0.
+
+(2) Information Gain: the reduction in the uncertainty over the remaining mask positions, quantified by the information gain IG (at; zt).To balance these two components, we define the Info-Gain Sampler objective as: 
+
+JIG (at | zt) = IG (at; zt)
+
+| {z }
+
+> Information Gain
+
+− C(at | zt)
+
+| {z }
+
+> Immediate Cost
+
+, (5) We provide further theoretical analysis in Appendix C. 3.2.2. I MPLEMENTATION OF INFO -G AIN SAMPLER 
+
+Action Sampler. Following previous work (Peng et al., 2025; Yang et al., 2025), we explore the large action space by generating a candidate set C of size N through a two-stage sampling process: (1) Token Sampling : drawing tokens 
+
+vℓ from pθ with token temperature τtoken , and (2) Position Sampling : selecting positions ℓ ∈ M t using a softmax over certainty scores ϕ(ℓ, z t) with position temperature τpos .Each candidate action at = {(ℓ, v ℓ)} is formed by pairing these samples, providing a diverse and high-quality set for evaluation. The size of at is determined by a step scheduling function. At each decoding step, Info-Gain Sampler follows a three-step cycle to determine and execute the most informative action (Figure 2): 
+
+(1) Sampling: We sample a candidate set C =
+
+{a(1)  
+
+> t
+
+, . . . , a (N ) 
+
+> t
+
+} of diverse actions using the Action Sam-pler . This step explores the combinatorially large action space by proposing multiple potential actions. 
+
+(2) Evaluation: We compute the objective J(at | zt) for all candidates at in the set C. Crucially, as noted in the previous section, this evaluation is highly efficient as it requires only a single batched forward pass to estimate the 4Improving Sampling for Masked Diffusion Models via Information Gain 
+
+future information gain for all candidates simultaneously. 
+
+(3) Transition: The optimal action is selected as a∗ 
+
+> t
+
+=arg max a∈C JIG (a | zt). We then execute this action to transition to the next state z∗
+
+> t−1
+
+, repeating the cycle until all masked positions are filled and a complete sequence is generated. 3.2.3. E FFICIENT IMPLEMENTATION OF INFO -G AIN 
+
+SAMPLER 
+
+To ensure efficiency, candidate evaluations are performed in parallel within a single batched forward pass. We further optimize the sampler by restricting the information-gain computation to the current active block B (Arriola et al., 2025), which enables effective KV caching. Additionally, we implement a high-confidence bypass: if the maximum token probability exceeds a threshold γ, the corresponding positions are directly fixed into the action set. If the number of such high-confidence positions exceeds the predefined size of the action set for the current step, only the top-k posi-tions with the highest confidence are selected for decoding. This hybrid approach, inspired by Wu et al. (2025b), signifi-cantly reduces inference latency while preserving planning quality. Because Info-Gain effectively reduces uncertainty during decoding, the high-confidence bypass is triggered more frequently, making the mechanism exceptionally effi-cient. 3.2.4. W HY IS INFO -G AIN EFFECTIVE 
+
+State uncertainty serves as an effective indicator for de-termining whether the current decoding state lies close to the training data manifold . When the decoded content is logically coherent and fluently expressed, the state resides near the data manifold, resulting in a concentrated predictive probability distribution and low uncertainty. Conversely, if the model lacks sufficient training on certain text forms, once decoding enters such inadequately covered regions during inference, it exhibits characteristics of a dispersed probability distribution and high uncertainty. Since the train-ing data distribution represents logically sound and seman-tically coherent text forms, high uncertainty suggests that the current state may have deviated from the data manifold, indicating potential logical errors or peculiar expressions. Existing greedy certainty-based samplers share a funda-mental limitation: they cannot recognize the data manifold deviation signals reflected by state uncertainty. These meth-ods select the most certain action at each step, but locally certain actions do not necessarily correspond to actions that keep subsequent states on the data manifold. Local confi-dence cannot effectively determine whether an action will lead to future deviations. In contrast, the Info-Gain Sam-pler actively perceives and utilizes state uncertainty through its information-gain term. When a candidate action would cause the state to deviate from the data manifold, the result-ing state exhibits increased uncertainty, which negatively impacts the information-gain term and prevents such actions from being prioritized. This mechanism of identifying and maintaining the data manifold through state uncertainty per-ception enables the Info-Gain Sampler to preserve logical coherence and fluent expression throughout the decoding path, even under high sampling temperatures. 
+
+# 4. Experiments 
+
+4.1. Experimental Setup Benchmarks. We evaluate the effectiveness of the Info-Gain Sampler on diverse settings: (1) Fully-Attention MDM Reasoning: Math (GSM8K, MATH-500; 0-shot) (Cobbe et al., 2021; Hendrycks et al., 2021), Code (HumanEval, MBPP; 0-shot) (Chen et al., 2021; Austin et al., 2021b), and Planning (4 ×4 Sudoku; 5-shot (Qin et al., 2025), Countdown; 3-shot with 3 numbers (Ye et al., 2025)), re-porting average Pass@1 accuracy over 5 runs; (2) Semi-Autoregressive MDM Reasoning: evaluated on the same Math and Code benchmarks in a zero-shot setting, report-ing average Pass@1 accuracy over 5 runs; (3) Multimodal Text-to-Image Generation: evaluated on ImageNet-512 and GenEval (Ghosh et al., 2023), with IS (Salimans et al., 2016), FID (Heusel et al., 2017), and sFID (Radford et al., 2018; Salimans et al., 2016) reported for ImageNet-512, and attribute-wise scores for GenEval; (4) Creative Writing: evaluated on AlpacaEval (Li et al., 2023), using an LLM-as-a-judge to compute the length-controlled win rate (Dubois et al., 2024) against baselines following past works (Nguyen et al., 2024). 
+
+Models. For reasoning tasks, we use Dream-7B-Instruct (Ye et al., 2025) as the fully-attention representative, and SDAR-8B-Chat (Cheng et al., 2025) and TraDo-8B-Instruct (Wang et al., 2025) for block diffusion settings using KV-cache following (Wu et al., 2025b). For image generation, we employ the MMaDa (Yang et al., 2025) model. For Creative Writing, We employ the SDAR-8B-Chat model. 
+
+Baselines. We compare Info-Gain Sampler against several sampling baselines, including : Uniform (Nie et al., 2025), en-tropy (Ye et al., 2025), confidence (Chang et al., 2022), 
+
+margin (Kim et al., 2025a), KLASS (Kim et al., 2025b) and 
+
+PC-Sampler (Huang et al., 2025). Detailed descriptions of these baselines are provided in Appendix A. For Math and code tasks, we adopted a block diffusion approach, as previous studies (Arriola et al., 2025; Wu et al., 2025b) have shown that this can significantly improve performance. For planning-centric tasks, we remove positional decoding con-straints by setting the block size equal to the total generation length, allowing for global optimization across the entire sequence. 5Improving Sampling for Masked Diffusion Models via Information Gain 
+
+Table 2. Performance on the full-attention MDM ( Dream-7B ). Results are reported with decoding rates K ∈ { 1, 2}, where reasoning tasks(GSM8K, MATH500, HumanEval, MBPP) use a block size of 16 and planning tasks (Sudoku, Countdown) are decoded globally. We report the accuracy for each task, along with the average accuracy (Avg.) and cumulative entropy ( ˜H) per generation. 
+
+K Sampler GSM8K MATH500 HumanEval MBPP Sudoku Countdown Avg. ˜H ↓
+
+2
+
+Uniform 18.7 14.3 14.3 18.6 52.8 7.6 21.1 389.2 Entropy 55.8 27.0 26.2 23.2 76.0 23.2 38.6 247.8 Confidence 61.9 29.4 26.8 25.2 81.6 36.2 43.5 249.2 Margin 65.5 28.8 28.8 23.6 74.4 28.9 41.7 287.5 KLASS 67.3 30.4 31.9 30.1 82.1 35.4 46.2 239.3 PC-Sampler 72.8 32.3 36.4 34.4 80.2 42.4 49.8 158.3 
+
+Info-Gain 77.7 34.2 42.9 39.4 82.2 44.1 53.4 104.3 
+
+1
+
+Uniform 30.4 15.8 16.7 30.8 60.4 8.8 27.2 199.3 Entropy 75.7 47.0 46.4 45.0 78.8 33.6 54.4 95.6 Confidence 78.8 46.6 49.4 39.8 81.5 39.2 55.9 99.5 Margin 77.5 46.5 41.5 40.4 80.3 35.2 53.6 107.3 KLASS 78.2 47.2 34.2 40.6 79.9 34.3 52.4 99.6 PC-Sampler 81.5 46.8 54.4 46.2 83.6 41.8 59.1 78.4 
+
+Info-Gain 83.3 51.3 59.2 48.4 84.4 45.2 62.0 48.6 
+
+Table 3. Performance on semi-autoregressive MDMs ( SDAR-8B-Chat and TraDo-8B-Instruct ). Results are reported under block-wise of 16 with token temperature τtoken = 0 .7. We report the accuracy for each task, along with the average accuracy (Avg.) and cumulative entropy ( ˜H) per generation. The Info-Gain Sampler consistently achieves the strongest performance across all settings.                                                                                                                                         
+
+> SDAR-8B-Chat TraDo-8B-Instruct KSampler GSM8K MATH500 HumanEval MBPP Avg. ˜H↓GSM8K MATH500 HumanEval MBPP Avg. ˜H↓
+> 2Entropy 42.2 24.4 26.2 20.6 28.4 238.6 31.9 17.0 20.7 21.8 22.8 419.5 Confidence 47.2 36.6 24.4 20.2 32.1 204.1 36.5 39.2 19.5 22.0 29.3 334.1 Margin 45.2 22.4 19.5 19.8 26.7 230.9 33.2 17.0 18.9 21.8 22.7 398.0 KLASS 50.4 32.3 30.7 26.6 35.0 210.3 50.4 32.3 30.7 26.6 35.0 334.3
+> Info-Gain 82.7 54.6 46.3 39.4 55.8 74.1 83.9 40.9 58.8 37.4 55.3 98.0
+> 1Entropy 48.2 35.4 30.2 25.6 34.9 120.4 36.9 22.0 25.7 26.8 27.8 171.4 Confidence 52.2 40.6 28.4 26.2 36.9 117.4 41.5 44.2 24.5 27.0 34.3 163.5 Margin 50.2 32.4 24.5 24.8 33.0 138.2 38.2 22.0 23.9 26.8 27.7 208.0 KLASS 55.4 38.3 34.7 31.6 40.0 105.3 55.4 37.3 35.7 31.6 40.0 180.3
+> Info-Gain 85.7 59.6 51.3 44.4 60.3 41.0 88.9 45.9 63.8 42.4 60.3 52.1
+
+Table 4. Text-to-Image results on GenEval and ImageNet-512 with token temperature τtoken = 0 .4. The Info-Gain Sampler demonstrates superior alignment and fidelity, significantly outperforming all baselines across multimodal generation metrics. 
+
+Method GenEval ImageNet-512 
+
+single obj. ↑ two obj. ↑ count ↑ colors ↑ pos ↑ attr ↑ Avg ↑ IS ↑ FID ↓ sFID ↓
+
+Uniform 94.1 66.7 38.4 78.2 19.0 28.8 54.2 49.3 46.8 123.9 Entropy 94.3 67.3 46.0 79.9 17.8 26.8 55.3 52.4 44.8 93.4 Confidence 93.8 69.7 46.3 81.9 16.0 27.0 56.0 53.3 43.3 92.0 Margin 94.0 68.7 47.3 80.1 19.0 29.0 56.3 51.9 45.2 95.3 
+
+Info-Gain 97.5 68.7 47.5 79.8 25.0 32.0 58.2 63.0 38.1 83.7 
+
+Hyperparameters. For reasoning tasks, we employ a po-sition temperature τpos = 0 .1 and N = 8 candidates for the Info-Gain Sampler, with the acceleration threshold γ
+
+set to 0.8. We evaluate the performance under both K = 1 
+
+and K = 2 tokens per step settings. For text-to-image ex-periments, we set τpos = 0 .4 and N = 8 with a 50-step cosine scheduler. Detailed settings for all benchmarks and baseline-specific parameters are provided in Appendix B. 
+
+4.2. Results and Analysis Reasoning on Full-Attention MDMs. As shown in Table 2, Info-Gain Sampler consistently outperforms all baselines on Dream-7B-Instruct with only a marginal increase in gen-eration time (+ 24%) and GPU memory usage (+ 20%) via effective acceleration techniques introduced in Section 3.2.3. Detailed computational overhead analysis is provided in the 6Improving Sampling for Masked Diffusion Models via Information Gain  
+
+> Table 5. Win-Rate of Info-Gain Sampler Against Baselines (%)
+
+Temperature K Win-Rate vs. Baseline (%) 
+
+Confidence Entropy Margin 0.5 1 65.8 59.1 63.6 2 68.9 70.4 64.7 1.0 1 57.7 60.1 55.2 2 61.1 65.7 57.5 1.5 1 53.0 60.3 54.6 2 70.1 80.3 66.8 
+
+Appendix. Specifically, Info-Gain Sampler achieves a sub-stantial improvement in average accuracy, outperforming the best-performing baselines by 3.6% when K = 2 and 2.9% when K = 1 . Experimental results also show that Info-Gain Sampler achieves a significantly lower cumula-tive entropy ˜H, which is only 47.8% ( K = 2 ) and 50.8% (K = 1 ) of the best-performing baseline, confirming its ability to find more globally optimized trajectories. 
+
+Reasoning on Semi-AR MDMs. Results for Semi-AR models (Table 3) further validate the robustness of Info-Gain Sampler. Notably, while introducing a non-zero token temperature ( τtoken = 0 .7) degrades the performance of baselines, Info-Gain Sampler maintains a substantial lead, outperforming the best baseline by over 20.3% and 20.8% in average accuracy under K = 1 settings for SDAR-8B-Chat and TraDo-8B-Instruct, respectively. The consistent reduction in ˜H (e.g., from 210.3 to 74.1 for SDAR-8B-Chat at K = 2 ) across different architectures underscores the universal effectiveness of our information-gain-based objective. 
+
+Text-to-Image Generation. In multimodal settings (Ta-ble 4), Info-Gain Sampler excels in both alignment and fidelity. It achieves the highest average GenEval score (58.2 vs. 56.3 for Margin) and significantly improves ”positional” (25.0 vs. 19.0) and ”attribute” (32.0 vs. 29.0) sub-scores. Furthermore, on ImageNet-512, Info-Gain Sampler sub-stantially improves FID (from 43.3 to 38.1) and IS (from 53.3 to 63.0), demonstrating its broad generalizability on multimodal generation tasks. 
+
+Creative Writing. For creative writing (Table 5), the Info-Gain Sampler consistently outperforms all baselines across various token temperatures τtoken . At a high temperature of 
+
+τtoken = 1 .5, where increased stochasticity often degrades coherence, our sampler achieves a peak win-rate of 80.3% 
+
+against the Entropy baseline. By prioritizing informative actions through its lookahead mechanism, the Info-Gain Sampler exhibits superior robustness to temperature scaling in MDMs, effectively balancing creativity and coherence. Across all settings and baselines, it maintains an average win-rate of 63.1% , demonstrating that introducing infor-mation gain enhances both creative diversity and textual coherence under temperature variations.      
+
+> (a) Cumulative entropy trajectories
+> (b) Accuracy vs. Cumulative Entropy
+> Figure 3. Analysis of Cumulative Entropy. (a) Cumulative entropy trajectories for the Entropy baseline and Info-Gain Sampler on a synthetic set of 100 simple arithmetic problems that can be answered within a short window. We use global decoding with a fixed length of 64 tokens. (b) Correlation between average accuracy and average cumulative entropy across various sampling configurations.
+
+4.3. Ablation Study Optimization of Cumulative Uncertainty. As shown in Table 2, the Info-Gain Sampler significantly outperforms baselines in optimizing cumulative uncertainty. By tracking cumulative entropy during decoding on mathematical rea-soning tasks (Fig. 3), we observe that: (1) The Info-Gain heuristic balances immediate cost with future gains, yield-ing non-linear entropy growth that stabilizes earlier than the greedy Entropy baseline. (2) Cumulative entropy shows a strong negative correlation with accuracy (Pearson’s 
+
+r = −0.70 ), validating it as a reliable proxy for decoding quality. 7Improving Sampling for Masked Diffusion Models via Information Gain           
+
+> Figure 4. Impact of different beam sizes on the MATH-500 dataset. Specifically: Beam Size = 1 is a special case equivalent to the Info-Gain Sampler; Beam Size = Expansion Budget is equivalent to the Best-of-N(BoN) baseline; and Intermediate Values represent a look-ahead beam search algorithm using Info-Gain as the pruning heuristic.
+> Figure 5. Temperature Sensitivity. Cumulative trajectory uncer-tainty under varying position and token temperatures on the 100 simple arithmetic problems, evaluated using global decoding with a fixed length of 64 tokens.
+
+Comparison of Info-Gain Variants. We compare the Info-Gain Sampler (B = 1 ), Info-Gain Beam Search (B > 1), and Best-of-N (BoN) under a fixed computational budget (Figure 4). For beam search variants, we adopt the following configuration: the beam width is set to B, and the scoring function is defined as the sum of cumulative entropy and state uncertainty. The decoding process terminates when all hypotheses in the beam have been fully decoded. (1) The 
+
+Info-Gain Sampler ( B = 1 ) performs near the Pareto fron-tier, achieving near-optimal results while remaining highly parallelizable and avoiding complex KV-cache management. (2) Both Info-Gain variants significantly outperform BoN ,proving that global planning via information gain is superior to simply increasing independent samples. (3) Increasing 
+
+Beam Size under given expansion budget yields marginal uncertainty reduction but incurs higher memory overhead (Appendix F.1). 
+
+Compatibility with Temperature Sampling. We investi-gate the impact of position and token temperature settings on cumulative uncertainty. For the baselines, the position temperature mechanism is implemented by applying a soft-max with temperature to the heuristic scores followed by categorical sampling, where a position temperature of zero corresponds to the original greedy sampling. As shown in Figure 5, the Info-Gain Sampler maintains stable, low trajec-tory uncertainty across various temperature scales without sensitive tuning. Importantly, low cumulative entropy re-flects more optimized decoding rather than mode collapse, as evidenced by the preserved diversity and competitive win rates in creative writing (Table 5). In contrast, other base-lines are highly sensitive to temperature changes, leading to decoding instability. 
+
+# 5. Limitation and Future Work 
+
+While the Info-Gain Sampler demonstrates significant im-provements in generation quality across multiple domains, there are several avenues for further refinement. 
+
+More Efficient Implementation. Although the Info-Gain Sampler leverages parallel evaluation and acceleration tech-niques to minimize latency, the search process still incurs higher computational cost than greedy decoding. Future work could explore more efficient lookahead mechanisms, adaptive branching, and hardware-level optimizations to further enhance inference throughput. 
+
+Refinement of Action Sampler. Our action sampler cur-rently leverages local uncertainty as a heuristic for can-didate generation. Although this approach is robust and yields high-quality plans, future research could investigate more sophisticated sampling strategies that go beyond local heuristics. Such advancements would likely enhance both the diversity and quality of the candidate set. 
+
+# 6. Related Work 
+
+Masked Diffusion Models. Discrete diffusion models pro-vide a non-autoregressive alternative for sequence genera-tion, grounded in theoretical frameworks for discrete and masked data (Austin et al., 2021a; Lou et al., 2024; Rom-bach et al., 2022). Unlike ARMs, which often require train-ing interventions for long-horizon planning (Hu et al., 2025; 8Improving Sampling for Masked Diffusion Models via Information Gain        
+
+> Table 6. Unified view of MDM samplers. Selection Criteria denotes the objective function optimized at each decoding step. Temperature Sensitivity indicates robustness of performance to temperature-based stochastic sampling, while Greedy Location Selection marks whether the sampler selects positions based solely on immediate certainty without considering future information gain.
+
+Sampler Selection Criteria Temperature Sensitivity Greedy Selection 
+
+Uniform (Austin et al., 2021a) − High ✓
+
+Confidence (Chang et al., 2022) P 
+
+> ℓ∈At
+
+max pθ (xℓ | zt) High ✓
+
+Entropy (BenHamu et al., 2025) − P 
+
+> ℓ∈At
+
+H(ℓ)(zt) High ✓
+
+Margin (Kim et al., 2025a) P 
+
+> ℓ∈At
+
+(ptop1 − ptop2 ) High ✓
+
+KLASS † (Kim et al., 2025b) P 
+
+> ℓ∈At
+
+(max pθ (xℓ | zt) + 1DKL <ϵ ) High ✓
+
+PC-Sampler (Huang et al., 2025) P 
+
+> ℓ∈At
+
+(wℓ · C (ℓ) 
+
+> t
+
+) Moderate ✓
+
+Info-Gain (Ours) IG (at; zt) − P 
+
+> ℓ∈At
+
+H(ℓ)(zt) Low ×
+
+> †
+
+We adapt KLASS to ensure its decoding procedure adheres to the specified schedule. Teoh et al., 2025), bidirectionality in MDMs naturally en-ables global reasoning (Ye et al., 2024). MDM research has diverged into training large models from scratch, like LLaDA (Nie et al., 2025), and adapting pre-trained au-toregressive models, such as Dream, DiffuLLaMA, and DIMPLE (Ye et al., 2025; Gong et al., 2025; Yu et al., 2025). To enhance long-sequence modeling, hybrid semi-autoregressive (Semi-AR) architectures like Block Diffu-sion (Arriola et al., 2025), Diffusion Forcing (Chen et al., 2024), and absorbing diffusion variants (Zheng et al., 2025) enable KV-caching for better efficiency. Recent optimiza-tions like Fast-dLLM/v2 (Wu et al., 2025b;a) and models such as SDAR (Cheng et al., 2025), TraDo (Wang et al., 2025), and WeDLM (Liu et al., 2025) have further advanced complex reasoning and long-text generation. 
+
+Samplers. Due to the causal factorization, sampling strate-gies for ARMs typically rely on assessing and regulating local uncertainty in next-token prediction to improve gener-ation quality and diversity. A broad class of samplers has been proposed, including deterministic decoding strategies such as beam search (Wu et al., 2016; Freitag & Al-Onaizan, 2017) and stochastic decoding strategies (Holtzman et al., 2019; Fan et al., 2018; Nguyen et al., 2024). In contrast to ARMs, Masked Diffusion Models (MDMs) introduce a fundamentally different sampling problem: beyond decid-ing what token to decode, samplers must also decide where 
+
+(i.e., which position) to decode within the non-causal se-quence. This expanded decision space amplifies the impact of early decoding choices and renders local uncertainty cri-teria insufficient. Still, existing MDM samplers typically rely on greedy, certainty-based heuristics to select decod-ing positions, using metrics such as entropy and margin scores (Nie et al., 2025; Ye et al., 2025; Chang et al., 2022). Some approaches further incorporate calibration or stability refinements to improve robustness (BenHamu et al., 2025; Kim et al., 2025b; Huang et al., 2025). Nevertheless, these approaches share a common limitation: decoding decisions are made myopically based on greedy metrics. They do not account for the downstream impact of each decoding decision on global uncertainty or information gain across the remaining masked tokens. We provide a comparison between existing samplers for MDMs in Table 6. 
+
+# 7. Conclusion 
+
+We propose the Info-Gain Sampler , a training-free decod-ing framework for Masked Diffusion Models that exploits bidirectional attention to incorporate information gain in action selection, balancing immediate certainty with fu-ture uncertainty reduction and mitigating the myopia of uncertainty-based samplers. Across reasoning, code genera-tion, planning, and image generation tasks, Info-Gain Sam-pler consistently improves performance, achieving a 3.6% average accuracy gain on 6 reasoning benchmarks under full attention MDM, a 63.1% average win-rate in creative writ-ing, and a 1.9% improvement on GenEval, outperforming prior SOTA baselines and raising the performance ceiling of MDM generation. It remains compatible with both full-attention and semi-autoregressive architectures, reducing 
+
+cumulative uncertainty and offers a principled bridge from local heuristics to global planning for non-autoregressive generation. 
+
+# References 
+
+Arriola, M., Gokaslan, A., Chiu, J. T., Yang, Z., Qi, Z., Han, J., Sahoo, S. S., and Kuleshov, V. Block diffusion: Inter-polating between autoregressive and diffusion language models. In ICLR , 2025. Austin, J., Johnson, D. D., Ho, J., Tarlow, D., and van den Berg, R. Structured denoising diffusion models in discrete state-spaces. In NeurIPS , 2021a. Austin, J., Odena, A., Nye, M., Bosma, M., Michalewski, H., Dohan, D., Jiang, E., Cai, C., Terry, M., Le, Q., et al. 9Improving Sampling for Masked Diffusion Models via Information Gain 
+
+Program synthesis with large language models. arXiv preprint arXiv:2108.07732 , 2021b. BenHamu, H., Gat, I., Severo, D., Nolte, N., and Kar-rer, B. Accelerated sampling from masked diffusion models via entropy bounded unmasking. arXiv preprint arXiv:2505.24857 , 2025. Chang, H., Zhang, H., Barber, J., Maschinot, A., Lezama, J., Jiang, L., Yang, M.-H., Murphy, K., Freeman, W. T., Rubinstein, M., et al. Maskgit: Masked generative image transformer. In CVPR , 2022. Chen, B., Mons ´o, D. M., Du, Y., Simchowitz, M., Tedrake, R., and Sitzmann, V. Diffusion forcing: Next-token pre-diction meets full-sequence diffusion. In NeurIPS , 2024. Chen, M., Tworek, J., Jun, H., Yuan, Q., Pinto, H. P. D. O., Kaplan, J., Edwards, H., Burda, Y., Joseph, N., Brockman, G., et al. Evaluating large language models trained on code. arXiv preprint arXiv:2107.03374 , 2021. Cheng, S., Bian, Y., Liu, D., Zhang, L., Yao, Q., Tian, Z., Wang, W., Guo, Q., Chen, K., Qi, B., et al. Sdar: A syn-ergistic diffusion-autoregression paradigm for scalable sequence generation. arXiv preprint arXiv:2510.06303 ,2025. Cobbe, K., Kosaraju, V., Bavarian, M., Chen, M., Jun, H., Kaiser, L., Plappert, M., Tworek, J., Hilton, J., Nakano, R., Hesse, C., and Schulman, J. Training verifiers to solve math word problems. arXiv preprint arXiv:2110.14168 ,2021. Dubois, Y., Galambosi, B., Liang, P., and Hashimoto, T. B. Length-controlled alpacaeval: A simple way to debias automatic evaluators. arXiv preprint arXiv:2404.04475 ,2024. Fan, A., Lewis, M., and Dauphin, Y. Hierarchical neural story generation, 2018. URL https://arxiv.org/ abs/1805.04833 .Freitag, M. and Al-Onaizan, Y. Beam search strate-gies for neural machine translation. arXiv preprint arXiv:1702.01806 , 2017. Ghosh, D., Hajishirzi, H., and Schmidt, L. Geneval: An object-focused framework for evaluating text-to-image alignment. Advances in Neural Information Processing Systems , 36:52132–52152, 2023. Gong, S., Agarwal, S., Zhang, Y., Ye, J., Zheng, L., Li, M., An, C., Zhao, P., Bi, W., Han, J., et al. Scaling diffu-sion language models via adaptation from autoregressive models. In ICLR , 2025. Hendrycks, D., Burns, C., Kadavath, S., Arora, A., Basart, S., Tang, E., Song, D., and Steinhardt, J. Measuring math-ematical problem solving with the math dataset. NeurIPS ,2021. Heusel, M., Ransauer, H., Unterhiner, T., Nessler, B., and Hochreiter, S. Gans trained by a two time-scale update rule converge to a local nash equilibrium. In NeurIPS ,2017. Holtzman, A., Buys, J., Du, L., Forbes, M., and Choi, Y. The curious case of neural text degeneration. arXiv preprint arXiv:1904.09751 , 2019. Hu, E. S., Ahn, K., Liu, Q., Xu, H., Tomar, M., Langford, A., Teoh, J., Xu, B., Yan, D., Jayaraman, D., Lamb, A., and Langford, J. The belief state transformer, 2025. URL 
+
+https://arxiv.org/abs/2410.23506 .Huang, P., Liu, S., Liu, Z., Yan, Y., Wang, S., Chen, Z., and Xiao, T. Pc-sampler: Position-aware calibration of decoding bias in masked diffusion models. arXiv preprint arXiv:2508.13021 , 2025. Kim, J., Shah, K., Kontonis, V., Kakade, S., and Chen, S. Train for the worst, plan for the best: Understand-ing token ordering in masked diffusions. arXiv preprint arXiv:2502.06768 , 2025a. Kim, S. H., Hong, S., Jung, H., Park, Y., and Yun, S.-Y. Klass: Kl-guided fast inference in masked diffusion models. In NeurIPS , 2025b. Li, X., Zhang, T., Dubois, Y., Taori, R., Gulrajani, I., Guestrin, C., Liang, P., and Hashimoto, T. B. Alpacae-val: An automatic evaluator of instruction-following models. https://github.com/tatsu-lab/ alpaca_eval , 5 2023. Liu, A., He, M., Zeng, S., Zhang, S., Zhang, L., Wu, C., Jia, W., Liu, Y., Zhou, X., and Zhou, J. Wedlm: Reconciling diffusion language models with standard causal atten-tion for fast inference. arXiv preprint arXiv:2512.22737 ,2025. Lou, A., Meng, C., and Ermon, S. Discrete diffusion mod-eling by estimating the ratios of the data distribution. In 
+
+ICML , 2024. Nguyen, M. N., Baker, A., Neo, C., Roush, A., Kirsch, A., and Shwartz-Ziv, R. Turning up the heat: Min-p sampling for creative and coherent llm outputs. arXiv preprint arXiv:2407.01082 , 2024. Nie, S., Zhu, F., You, Z., Zhang, X., Ou, J., Hu, J. H., Zhou, J., Lin, Y., Wen, J.-R., and Li, C. Large language diffusion models. In NeurIPS , 2025. 10 Improving Sampling for Masked Diffusion Models via Information Gain 
+
+OpenAI. Introducing gpt-4.1 in the api, 2025. URL https: //openai.com/index/gpt-4-1/ .Peng, F. Z., Zhang, S., Tong, A., and contributors. Open-dllm: Open diffusion large language models. https:// github.com/pengzhangzhi/Open-dLLM , 2025. Model available at https://huggingface.co/ fredzzp/open-dcoder-0.5B .Qin, T., Alvarez-Melis, D., Jelassi, S., and Malach, E. To backtrack or not to backtrack: When sequential search limits model reasoning. arXiv preprint arXiv:2504.07052 ,2025. Radford, A., Narasimhan, K., Salimans, T., Sutskever, I., et al. Improving language understanding by generative pre-training. 2018. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., and Ommer, B. High-resolution image synthesis with latent diffusion models. In CVPR , 2022. Salimans, T., Goodfellow, I., Zaremba, W., Cheung, V., Radford, A., and Chen, X. Improved techniques for training gans. In NeurIPS , 2016. Teoh, J., Tomar, M., Ahn, K., Hu, E. S., Sharma, P., Islam, R., Lamb, A., and Langford, J. Next-latent prediction transformers learn compact world models, 2025. URL 
+
+https://arxiv.org/abs/2511.05963 .Wang, Y., Yang, L., Li, B., Tian, Y., Shen, K., and Wang, M. Revolutionizing reinforcement learning framework for diffusion large language models, 2025. URL https: //arxiv.org/abs/2509.06949 .Wu, C., Zhang, H., Xue, S., Diao, S., Fu, Y., Liu, Z., Molchanov, P., Luo, P., Han, S., and Xie, E. Fast-dllm v2: Efficient block-diffusion llm. arXiv preprint arXiv:2509.26328 , 2025a. Wu, C., Zhang, H., Xue, S., Liu, Z., Diao, S., Zhu, L., Luo, P., Han, S., and Xie, E. Fast-dllm: Training-free acceler-ation of diffusion llm by enabling kv cache and parallel decoding. arXiv preprint arXiv:2505.22618 , 2025b. Wu, Y., Schuster, M., Chen, Z., Le, Q. V., Norouzi, M., Macherey, W., Krikun, M., Cao, Y., Gao, Q., Macherey, K., et al. Google’s neural machine translation system: Bridging the gap between human and machine translation. 
+
+arXiv preprint arXiv:1609.08144 , 2016. Yang, L., Tian, Y., Li, B., Zhang, X., Shen, K., Tong, Y., and Wang, M. Mmada: Multimodal large diffusion language models. arXiv preprint arXiv:2505.15809 , 2025. Ye, J., Gao, J., Gong, S., Zheng, L., Jiang, X., Li, Z., and Kong, L. Beyond autoregression: Discrete diffu-sion for complex reasoning and planning. arXiv preprint arXiv:2410.14157 , 2024. Ye, J., Xie, Z., Zheng, L., Gao, J., Wu, Z., Jiang, X., Li, Z., and Kong, L. Dream 7b: Diffusion large language models. arXiv preprint arXiv:2508.15487 , 2025. Yu, R. et al. Dimple: Discrete diffusion multimodal large language model with parallel decoding. arXiv preprint arXiv:2505.16990 , 2025. Zheng, K., Chen, Y., Mao, H., Liu, M.-Y., Zhu, J., and Zhang, Q. Masked diffusion models are secretly time-agnostic masked models and exploit inaccurate categori-cal sampling. In ICLR , 2025. 11 Improving Sampling for Masked Diffusion Models via Information Gain 
+
+# A. Formal Definitions of Baseline Samplers 
+
+To provide a rigorous comparison, we formalize the action selection mechanism for each baseline sampler. At each decoding step t, let pθ (· | zt, ℓ ) denote the predicted token distribution at masked position ℓ ∈ M t. The samplers differ in their scoring function ϕ(zt, ℓ ), where the top-K positions with the lowest scores are selected for decoding. 
+
+Uniform (Nie et al., 2025) This baseline selects positions uniformly at random from the mask set Mt:
+
+ϕUniform (zt, ℓ ) = ϵ, ϵ ∼ U (0 , 1) (6) 
+
+Confidence (Chang et al., 2022) This baseline prioritizes positions where the model is most certain about the top-1 prediction: 
+
+ϕConf (zt, ℓ ) = max  
+
+> v∈V
+
+pθ (v | zt, ℓ ) (7) 
+
+Entropy (Ye et al., 2025) Positions with the minimum predictive uncertainty are selected: 
+
+ϕneg entropy (zt, ℓ ) = X
+
+> v∈V
+
+pθ (v | zt, ℓ ) log pθ (v | zt, ℓ ) (8) 
+
+Margin (Kim et al., 2025a) This baseline considers the gap between the two most likely tokens, selecting positions with the largest margin: 
+
+ϕMargin (zt, ℓ ) = ptop1 − ptop2 (9) 
+
+KLASS (Kim et al., 2025b) This method incorporates a KL-divergence constraint to maintain consistency between consecutive decoding steps. Originally, KLASS (Kim et al., 2025b) supports dynamic decoding by selecting all positions that satisfy the KL threshold. To ensure a fair performance comparison with other samplers, we adapt it to decode a fixed number of tokens per step. Following the original implementation, we set the threshold ϵ = 5 × 10 −4. Effectively, KLASS prioritizes positions where the KL divergence is below the threshold, ranking them by confidence, and only falls back to other positions if more tokens are required. This can be formalized as the following scoring function: 
+
+ϕConf (zt, ℓ ) + 1(DKL (pθ (·| zt,ℓ )∥pθ (·| zt+1 ,ℓ )) <ϵ ) (10) where positions with higher scores are prioritized. In our experiments, we first select positions satisfying the KL constraint based on confidence, and then fill the remaining budget from the other positions. 
+
+PC-Sampler (Huang et al., 2025) This sampler regulates the decoding trajectory by combining a position-aware weight with content-aware confidence calibration. It modulates the selection priority of each candidate token xℓ at position ℓ using an exponential decay function wℓ = e−λ·ℓ, where λ ≥ 0 controls the positional penalty. To discourage generic tokens, it calibrates the confidence score using the token frequency distribution pD′ (xℓ) and a content-aware calibration term C(ℓ) 
+
+> t
+
+:
+
+ϕPC (zt, ℓ ) = C(ℓ) 
+
+> t
+
+· wℓ (11) 
+
+Block Diffusion (Arriola et al., 2025; Wu et al., 2025b) This sampler employs a position scheduling function It(ℓ) that indicates whether position ℓ lies within the currently active diffusion block at time step t. Specifically, It(ℓ) takes the value 1 if ℓ ∈ B σ(t) and 0 otherwise, where Bσ(t) denotes the active block determined by a scheduling rule σ(t). The sampling process restricts candidate positions to the active block and applies a standard heuristic: 
+
+ϕBlock (zt, ℓ ) = 
+
+(
+
+ϕ(zt, ℓ ), if It(ℓ) = 1 ,
+
+−∞ , otherwise . (12) Here, the active block Bσ(t) slides over time according to σ(t), typically following a sequential or random traversal of the position indices, thereby gradually diffusing information across the entire sequence. 12 Improving Sampling for Masked Diffusion Models via Information Gain 
+
+# B. Detailed Hyperparameter Settings 
+
+In this section, we provide a detailed overview of the hyperparameter settings used across all experiments. All experiments were conducted on NVIDIA A800 GPUs. 
+
+Reasoning and Coding Tasks. For tasks involving logical reasoning (GSM8K, MATH500) and code generation (Hu-manEval, MBPP), we set the token sampling temperature τtoken = 0 .7 to strike a balance between output diversity and structural coherence. For the Info-Gain Sampler, we employ a relatively low position temperature τpos = 0 .1 to focus the selection on the most informative candidate positions, while generating N = 8 candidate actions per step for parallel evaluation. To maintain high throughput during predictable decoding phases, we set the acceleration threshold γ = 0 .8,which allows the sampler to skip the full evaluation routine when the maximum token probability is high. For block diffusion settings on Semi-AR models (SDAR and TraDo), we use a fixed block size of 16. The decoding budget K (tokens per step) is varied between 1 and 2 to evaluate performance under different acceleration ratios. Maximum generation lengths are benchmark-specific: 256 tokens for GSM8K, HumanEval, and MBPP; 512 tokens for MATH500 and SDAR benchmarks; and 1024 tokens for the TraDo-8B model to accommodate longer reasoning chains. 
+
+Text-to-Image Generation. For multimodal experiments using the MMaDa model on ImageNet and GenEval, we adopt a more conservative token temperature τtoken = 0 .4 and a matching position temperature τpos = 0 .4 to ensure high fidelity and alignment with text prompts. The candidate set size is kept at N = 8 . We follow a 50-step decoding trajectory governed by a cosine schedule, which progressively reduces the number of masked positions to refine image details. For extreme acceleration tests (Section E), we utilize a 5-step linear schedule to evaluate the sampler’s robustness under severe budget constraints. 
+
+Creative Writing. We evaluate creative writing performance using 200 prompts selected from the Alpaca dataset. Following the Min-P paper (Nguyen et al., 2024), we employ GPT-4.1 (OpenAI, 2025) as an LLM judge to assess generation quality. For this experiment, the maximum generation length is set to 1024 tokens, with a fixed block size of 16. 
+
+# C. Theoretical Analysis of the Info-Gain Objective 
+
+Setup and notation. At decoding step t, let zt denote the current state and Mt the set of masked positions. For each 
+
+ℓ ∈ M t, define the per-position predictive entropy 
+
+H(ℓ)(zt) := H X(ℓ) | zt
+
+, (13) and the average state uncertainty 
+
+H(zt) := 1
+
+|M t|
+
+X
+
+> ℓ∈M t
+
+H(ℓ)(zt). (14) For an action at selecting positions At ⊆ M t, the next state is zt−1 = Apply( zt, a t) and Mt−1 = Mt \ At. The Info-Gain objective is defined as 
+
+IG( at; zt) := H(zt) − H (zt−1), C(at | zt) := X
+
+> ℓ∈At
+
+H(ℓ)(zt), (15) 
+
+JIG (at; zt) := C(at | zt) − IG( at; zt), (16) where C(at | zt) measures the immediate uncertainty of the chosen positions, and IG( at; zt) quantifies the reduction in overall state uncertainty. 
+
+Expected information gain. Sampling at from a sampler π(· | zt) induces randomness in IG( at; zt) and JIG (at; zt). Let 
+
+˜I(At; zt) := E[IG( at; zt)] , JM I (At; zt) := E[JIG (at; zt)] , (17) where the expectation is over the sampled token assignments while keeping At fixed. 
+
+Proposition C.1 (Upper bound on expected information gain) . For any state zt and position set At ⊆ M t,
+
+˜I(At; zt) ≤ C(at | zt), and thus JM I (At; zt) ≥ 0. (18) 13 Improving Sampling for Masked Diffusion Models via Information Gain 
+
+Proof. Define 
+
+α := 1
+
+|At|
+
+X
+
+> ℓ∈At
+
+H(ℓ)(zt), β := 1
+
+|M t−1|
+
+X
+
+> ℓ∈M t−1
+
+H(ℓ)(zt), γ := |At||M t| . (19) Then C(at | zt) = |At|α and H(zt) = γα + (1 − γ)β.Let Y := X(At) be the sampled assignments. For any ℓ ∈ M t−1,
+
+I(Y ; X(ℓ) | zt) ≤ min( H(Y | zt), H (ℓ)(zt)) ≤ min( |At|α, H (ℓ)(zt)) . (20) By the entropy-reduction decomposition, 
+
+˜I(At; zt) = γ(α − β) + 1
+
+|M t−1|
+
+X
+
+> ℓ∈M t−1
+
+E[I(Y ; X(ℓ) | zt)] . (21) 
+
+Case 1: α ≤ β. Then I(Y ; X(ℓ) | zt) ≤ | At|α, giving 
+
+˜I(At; zt) ≤ γ(α − β) + |At|α ≤ | At|α = C(at | zt). (22) 
+
+Case 2: α > β . Then I(Y ; X(ℓ) | zt) ≤ H(ℓ)(zt) and 
+
+˜I(At; zt) ≤ γ(α − β) + β ≤ α ≤ | At|α = C(at | zt). (23) In both cases, ˜I(At; zt) ≤ C(at | zt), implying 
+
+JM I (At; zt) = C(at | zt) − ˜I(At; zt) ≥ 0. (24) 
+
+Practical implications. Proposition C.1 establishes that, for any fixed position set At, the expected Info-Gain objective 
+
+JM I (At; zt) is non-negative. This provides a theoretical guarantee that, on average, the cost of committing to selected positions is never underestimated relative to the actual reduction in state uncertainty. In practice, we find that the realized 
+
+JIG (at; zt), computed along individual decoding trajectories, closely tracks this expectation. On benchmarks such as GSM8K, more than 95% of observed JIG values are non-negative or slightly below zero (e.g., JIG ≥ − 5 × 10 −4), indicating that the bound is rarely violated. Furthermore, IG( at; zt) is highly semantically sensitive: it captures not only the immediate uncertainty of the chosen positions but also how these assignments influence the uncertainty of the remaining masked positions. As a result, JIG (at; zt)
+
+naturally discourages actions that would commit to poorly conditioned or inconsistent states, effectively preventing error propagation during decoding. This behavior manifests as a strong implicit correction mechanism, enabling the sampler to recover from suboptimal early decisions and maintain coherent, high-quality generation. Overall, the Info-Gain objective provides a computationally efficient and robust signal for action selection, balancing immediate certainty with long-term state stability throughout the iterative decoding process. 
+
+# D. Pseudo codes for Info-Gain Sampler and Info-Gain Beam Search 
+
+We provide PyTorch-style pseudo codes for the implementation of Info-Gain Sampler and Info-Gain Beam Search. 
+
+D.1. Info-Gain Sampler  
+
+> 1
+
+def info_gain_sampler(model, seq_len, K, N):  
+
+> 2
+
+# Initialize: all positions masked  
+
+> 3
+
+z = torch.full((1, seq_len), MASK_ID)  
+
+> 45
+
+# Initial forward pass  
+
+> 6
+
+with torch.no_grad():  
+
+> 7
+
+logits = model(z) # [1, seq_len, vocab_size] 
+
+14 Improving Sampling for Masked Diffusion Models via Information Gain 
+
+Figure 6. Empirical distribution of JIG values sorted from highest to lowest. The 5th percentile is −5 × 10 −4, indicating the bound is rarely violated in practice.  
+
+> 89
+
+for t in range(K):  
+
+> 10
+
+# 1. Sample candidate actions  
+
+> 11
+
+candidates = action_sampler(z, model, N)  
+
+> 12 13
+
+# 2. Parallel Evaluation  
+
+> 14
+
+z_candidates = apply(z,candidates)  
+
+> 15
+
+logits_candidates = model(z_candidates)  
+
+> 16
+
+costs = compute_information_gain(logits,logits_candidates)  
+
+> 17 18
+
+# 3. State Transition  
+
+> 19
+
+best_idx = torch.argmin(costs)  
+
+> 20
+
+z = z_candidates[best_idx:best_idx+1]  
+
+> 21
+
+logits = logits_candidates[best_idx:best_idx+1]  
+
+> 22
+
+return z
+
+Listing 1. Info-Gain Sampler 
+
+D.2. Info-Gain Beam Search  
+
+> 1
+
+def ig_beam(model, seq_len, K, N, beam_size):  
+
+> 2
+
+# Initialize the queue  
+
+> 3
+
+beam = [(torch.full((1, seq_len), MASK_ID), 0.0)]  
+
+> 45
+
+for t in range(K):  
+
+> 6
+
+next_beam_candidates = []  
+
+> 7
+
+next_f = []  
+
+> 89
+
+# Expand each beam  
+
+> 10
+
+for z, g in beam:  
+
+> 11
+
+# 1. Action Sampling  
+
+> 12
+
+candidates = action_sampler(z, model, num_candidates=N)  
+
+> 13 14
+
+# 2. Update Beam candidates  
+
+> 15
+
+z_candidates = apply(z, candidates) 
+
+15 Improving Sampling for Masked Diffusion Models via Information Gain  
+
+> 16
+
+logits_candidates = model(z_candidates)  
+
+> 17
+
+transition_costs = compute_cost(candidates)  
+
+> 18
+
+state_values = compute_state(logits_candidates)  
+
+> 19 20
+
+g_candidates = g + transition_costs  
+
+> 21
+
+f_candidates = g_candidates + state_values  
+
+> 22 23
+
+for i in range(N):  
+
+> 24
+
+next_beam_candidates.append((z_candidates[i:i+1], g_candidates[i]))  
+
+> 25
+
+next_f.append(f_candidates[i])  
+
+> 26 27
+
+# 3. Selection  
+
+> 28
+
+f_tensor = torch.tensor(next_f)  
+
+> 29
+
+kept_indices = torch.argsort(f_tensor)[:beam_size]  
+
+> 30
+
+beam = [next_beam_candidates[i] for i in kept_indices]  
+
+> 31 32
+
+beam.sort(key=lambda x: x[1])  
+
+> 33
+
+best_z, best_g = beam[0]  
+
+> 34
+
+return best_z 
+
+Listing 2. Info-Gain Beam Search 
+
+# E. Experiments in Extremely Low-Step Generation Scenarios 
+
+In this section, we present additional experimental results for scenarios where the number of decoding steps is severely constrained. First, we present the results for the ImageNet-512 benchmark using the MMaDa model in a text-to-image generation setting. The experimental configuration is similar to that in Section 4.1, with the key difference being the use of a linear step schedule and a highly constrained budget of only 5 decoding steps. As shown in Figure 7, our method demonstrates significantly better visual quality and structural coherence under these extreme conditions. Furthermore, we visualize the evolution of cumulative entropy averaged over 10,000 sampled instances in Figure 8. 
+
+(a) Info-Gain (b) Confidence 
+
+(c) Entropy (d) Margin 
+
+Figure 7. Visual results on ImageNet-512 with an extreme budget of only 5 decoding steps. The Info-Gain Sampler maintains superior structural coherence compared to baseline heuristics. 
+
+To further evaluate the robustness of our sampler, we conduct an ultra-low step generation experiment using the Dream 16 Improving Sampling for Masked Diffusion Models via Information Gain  
+
+> Figure 8. Evolution of cumulative entropy during image generation on the Image256 benchmark. The results are averaged over all labels using a 5-step linear schedule. The curves illustrate how Info-Gain Sampler manages global uncertainty compared to other methods throughout the decoding process.
+
+Model. We construct a simple writing task containing 50 prompts (e.g., “Write a story about a cat”) and require the model to decode the content within a very small number of steps, for a fixed length of 80 tokens. In this extreme regime, most baselines fail to generate meaningful and coherent text. We record the ”Collapse Step” for each method, defined as the minimum number of steps required to ensure that fewer than 50% of the generated samples exhibit severe repetitions or grammatical errors. For all experiments, the token sampling temperature is set to 0.4. For Info-Gain Sampler, the position sampling temperature is 0.4 and the number of action sets is N = 8 . The results are summarized in Table 7.  
+
+> Table 7. Comparison of Collapse Steps on ultra-low step writing tasks. Lower values indicate better robustness in extreme acceleration scenarios.
+
+Sampler Collapse Step ( ↓)Entropy 13 Confidence 12 Margin 12 
+
+Info-Gain 8
+
+The purpose of both experiments in ultra-low step generation is to evaluate how to generate meaningful content under conditions of extremely limited information and few decoding steps. The performance of the greedy sampler is significantly inferior to that of the Info-Gain Sampler. This demonstrates that by balancing the utilization of immediate information with the information gain for future decisions, the Info-Gain Sampler effectively achieves the most meaningful generation within a restricted number of decoding steps. 
+
+# F. Resource Overhead Analysis 
+
+F.1. Memory Overhead Analysis 
+
+Let MW denote model weights, MA activations, and MC (L) the KV-cache for sequence length L. The key difference lies in how memory scales with the number of candidates N :17 Improving Sampling for Masked Diffusion Models via Information Gain 
+
+1. Non-cached Inference: Mtotal = MW + N · MA
+
+2. Info-Gain Sampler (Shared Prefix): Mtotal = MW + MC (L − 1) + N · MA
+
+3. Info-Gain Beam Search (Diverse Prefixes): Mtotal = MW + N · MC (L − 1) + N · MA
+
+For Info-Gain Sampler, the additional memory cost for increasing N is dominated by transient activations MA, which are relatively small compared to weights MW . In contrast, Info-Gain Beam Search requires storing N separate KV-caches 
+
+MC (L − 1) , leading to linear memory explosion with N . This is shown in Table 8  
+
+> Table 8. Memory efficiency comparison under KV-caching.
+
+# Method KV-Cache Count Memory Scaling 
+
+# Info-Gain Sampler 1 (shared) O(MW + MC + N · MA)
+
+# Info-Gain Beam Search B (diverse) O(MW + B · MC + N · B · MA)
+
+Empirical measurements on TraDo-8B-Instruct (512 tokens, block size 16) validate this analysis. As shown in Figure 10, Info-Gain Sampler maintains stable memory usage with only 24% overhead at N = 8 , while Info-Gain Beam Search exhibits substantial memory surge due to divergent trajectory caching. 
+
+F.2. Computation Overhead Analysis 
+
+The computational overhead of Info-Gain Sampler stems primarily from evaluating N candidates per step. The theoretical time complexity is: 
+
+Ttheoretical = K · N · Tf (25) where K is decoding steps, N is candidates per step, and Tf is one forward pass cost. 
+
+Practical optimizations significantly reduce overhead: 
+
+1. Batched Parallel Evaluation: All N candidates are processed simultaneously: 
+
+Tbatch = K · (Tf + ϵ), ϵ ≪ (N − 1) Tf (26) 2. KV-Cache Reuse: Shared prefix reduces attention computation: 
+
+Tcached ≈ K · Tprefix + K(N − 1) 
+
+N Tattn (27) 3. High-confidence Bypass: If the maximum token probability exceeds a threshold γ, the full sampling routine is skipped to reduce latency. As shown in Fig. 9, our adaptive threshold mechanism effectively manages computational cost while maintaining high decoding quality. By dynamically adjusting the candidate acceptance threshold, we achieve near-optimal entropy reduction with minimal time overhead. This explains why practical speedups (1.2–1.5 ×) are significantly better than theoretical predictions ( N ×). While evaluating more candidates ( N ) increases per-step cost, it often reduces total steps ( K) needed for convergence. Our batched implementation and threshold optimization ensure that the quality improvements are achieved with only a modest increase in overhead (typically 20–40% on average for reasoning tasks). 18 Improving Sampling for Masked Diffusion Models via Information Gain 
+
+Figure 9. Effect of utility threshold on cumulative entropy reduction and generation time. 
+
+Figure 10. Memory usage comparison. Info-Gain Sampler maintains low overhead via prefix sharing. 
+
+19

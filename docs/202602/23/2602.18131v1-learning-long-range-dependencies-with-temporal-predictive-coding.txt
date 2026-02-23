@@ -1,0 +1,748 @@
+Title: Learning Long-Range Dependencies with Temporal Predictive Coding
+
+URL Source: https://arxiv.org/pdf/2602.18131v1
+
+Published Time: Mon, 23 Feb 2026 01:35:22 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+Tom Potter * Oliver Rhodes 
+
+University of Manchester 
+
+{thomas.potter, oliver.rhodes }@manchester.ac.uk 
+
+# Abstract 
+
+Predictive Coding (PC) is a biologically-inspired learning framework characterised by local, parallelisable operations, proper-ties that enable energy-efficient implemen-tation on neuromorphic hardware. Despite this, extending PC effectively to recurrent neural networks (RNNs) has been challeng-ing, particularly for tasks involving long-range temporal dependencies. Backpropa-gation Through Time (BPTT) remains the dominant method for training RNNs, but its non-local computation, lack of spatial par-allelism, and requirement to store extensive activation histories results in significant en-ergy consumption. This work introduces a novel method combining Temporal Predic-tive Coding (tPC) with approximate Real-Time Recurrent Learning (RTRL), enabling effective spatio-temporal credit assignment. Results indicate that the proposed method can closely match the performance of BPTT on both synthetic benchmarks and real-world tasks. On a challenging machine translation task, with a 15-million parameter model, the proposed method achieves a test perplexity of 7.62 (vs. 7.49 for BPTT), marking one of the first applications of tPC to tasks of this scale. These findings demonstrate the poten-tial of this method to learn complex temporal dependencies whilst retaining the local, par-allelisable, and flexible properties of the orig-inal PC framework, paving the way for more energy-efficient learning systems. 
+
+# 1 Introduction 
+
+Backpropagation of errors (BP) (Rumelhart et al., 1986) has long served as the dominant algorithm for 
+
+> ∗Corresponding author
+
+training artificial neural networks (ANNs), powering breakthroughs in computer vision (Krizhevsky et al., 2012), natural language processing (Devlin et al., 2018), and reinforcement learning (Mnih et al., 2013). In recent years, the scale of ANNs has exploded, with networks now containing billions of parameters. Train-ing these models is becoming prohibitively expensive, especially in terms of energy consumption. This has led to growing concerns about the environmental im-pact and long-term sustainability of the field (Schwartz et al., 2019), prompting the search for learning algo-rithms with lower energy demands. Motivated by the efficiency of biological intelligence, neuroscience-inspired alternatives to BP have started to gain traction. The brain is subjected to strict re-source constraints, reasoning and learning with a frac-tion of the energy of its artificial counterparts. In-spired by this, several works have explored the po-tential of biologically-inspired learning algorithms as a pathway towards more efficient learning systems (Xie and Seung, 2003; Scellier and Bengio, 2017; Song et al., 2024). These algorithms suit neuromorphic hardware, which leverages local, parallelisable computation to replicate the low-power design of the brain. Predictive Coding (PC) (Rao and Ballard, 1999) has emerged as a promising neuroscience-inspired alterna-tive to BP that has the potential to address these energy concerns. With roots in theories of cortical function (Mumford, 1991, 1992), information theory (Atick, 1991; Attneave, 1954), and ties to variational inference (Friston, 2003, 2005, 2008), PC presents a method of credit assignment consisting of local, paral-lelisable operations. Recent works have demonstrated that parameter up-dates produced by PC algorithms can approximate those of BP (Whittington and Bogacz, 2017; Millidge et al., 2022) and, under certain conditions, match them exactly (Song et al., 2020; Salvatori et al., 2022). This suggests PC has the potential to replicate the strong empirical results of BP via purely local computation. 
+
+> arXiv:2602.18131v1 [cs.LG] 20 Feb 2026 Learning Long-Range Dependencies with Temporal Predictive Coding
+
+When these equivalence constraints are relaxed, PC has been shown to outperform BP in terms of sample efficiency, robustness, and in online scenarios (Song et al., 2024) with recent work demonstrating PC-derived gradients approximate higher-order updates (Mali et al., 2024). Despite these promising results, much of the PC liter-ature focuses on static, non-temporal data. Although works have proposed algorithms for recurrent neural networks (RNNs) (Ororbia et al., 2020; Millidge et al., 2024; Tang et al., 2023; Jiang and Rao, 2024; Annabi et al., 2022), they have only seen application on small-scale problems. Furthermore, many of them mark a departure from the flexible, generally applicable na-ture of the original PC framework, requiring hypernet-works (Jiang and Rao, 2024) or complex connectivity structures (Ororbia et al., 2020). To address this issue, this work investigates for the first time whether PC, when combined with a form of Real-Time Recurrent Learning (see Section 2.2), can effectively capture complex temporal relationships in sequential tasks. In doing so, this work makes the following contributions: 
+
+• Introduces Temporal Predictive Coding with Real-Time Recurrent Learning (tPC RTRL), an algorithm that enables spatio-temporal credit as-signment in RNNs whilst retaining the local and parallelisable properties of PC. 
+
+• Demonstrates that tPC RTRL can closely match the performance of BPTT across both small-scale synthetic tasks and larger real-world datasets, in-cluding language modelling on WikiText-2 (Mer-ity et al., 2017) and translation on an English-French subset of CCMatrix (Schwenk et al., 2021). 
+
+• Provides the first application of PC to train recur-rent architectures on large-scale sequence-based tasks, demonstrating the potential of tPC RTRL as a candidate for online learning in energy-efficient edge AI hardware. 
+
+# 2 Background 
+
+2.1 Predictive Coding (PC) 
+
+Predictive Coding (PC) is an increasingly popular the-ory of cortical function. It describes the brain as a hi-erarchical system, where each layer continuously pre-dicts the activity of the layer below, or at the lowest layer, incoming sensory input. In the short term, these predictions are refined by changes in neural activity, potentially implemented by inhibitory feedback con-nections in a process which resembles short-term per-ceptual inference. In the long term, these predictions are improved by changes in synaptic weights, allowing the brain to build an internal model of the environ-ment, a process which reflects learning. When considered from a machine learning perspective, PC yields an algorithm consisting of local, parallelis-able operations with both inference and learning rules driven by gradient descent on a single quantity known as the free energy. In practice, neural implementa-tions of PC adopt an Expectation-Maximisation (EM) (Dempster et al., 1977) approach known as Inference Learning (IL) (Whittington and Bogacz, 2017). This begins with an iterative inference phase where the free energy is minimised with respect to the model’s inter-nal activations (E-step), before further minimising the free energy, this time with respect to the parameters of the model (M-step). Although this is seen as the standard implementation, other variants of EM, such as incremental EM (Neal and Hinton, 1998), can also be used (Salvatori et al., 2024). The following section introduces the concept of free energy for a general hi-erarchical PC model, before describing how PC can be applied to RNNs in a temporal setting. 
+
+Free Energy The free energy, F, for a PC network is defined as: 
+
+F =DKL [Q(x1: L; θ)|| P (x1: L|o; W0: L−1)] + EQ(x1: L;θ) [− ln P (o; W0: L−1)] , (1) where: 
+
+• o is some observed sensory input. 
+
+• x1: L are the latent variables across layers 1 to L.
+
+• Q(x1: L; θ) is an approximate posterior over the latent variables, parameterised by θ.
+
+• P (x1: L|o; W0: L−1) is the recognition density de-scribing the most likely latent variables given the sensory input and the parameters of the model, 
+
+W0: L−1.The DKL term measures the divergence between the approximate posterior and the true recognition den-sity, which can be interpreted as a measure of how well the inferred latent variables align with the prior beliefs of the model. The log-likelihood term quantifies how well these inferred variables explain the incoming observations under the model. This presents a familiar complexity-accuracy trade-off, where minimising this free energy encourages the model to find a balance be-tween fitting observations with minimal violation of prior beliefs. Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+From Free Energy to Local Errors Within a PC network, it is assumed that the joint distribution over latent variables and sensory input, where x0 = o, has the following structure: 
+
+P (x1: L, x0) = P (xL)
+
+> L−1
+
+Y
+
+> l=0
+
+P (xl|xl+1 ). (2) Furthermore, let P (xl|xl+1 ) be a multivariate Gaus-sian with mean μl and covariance Σl, such that: 
+
+μl = gl(xl+1 ; Wl), (3) where gl is a deterministic function which takes the latent variables at the layer above, xl+1 , and is pa-rameterised by the weights of the layer, Wl. These functions represent the layer-wise downward predic-tions typical of PC theory. This gives the network the following structure: 
+
+P (x1: L, x0) = N (xL; 0 , 1) 
+
+> L−1
+
+Y
+
+> l=0
+
+N (xl; μl, Σl). (4) Let Q(x1: L; θ) factorise via a mean-field approxima-tion into conditionally independent distributions over latent variables at each layer: 
+
+Q(x1: L; θ) = 
+
+> L−1
+
+Y
+
+> l=0
+
+Q(xl; θl). (5) Now, when modelling these factors with appropriate distributions, either a Gaussian distribution or Dirac delta function, the free energy reduces to a sum of precision-weighted local errors. After dropping con-stants, this becomes: 
+
+F =
+
+> L−1
+
+X
+
+> l=0
+
+
+
+ln |Σl| + || ϵl|| 2
+
+Σl
+
+
+
+, (6) where ϵl = xl − μl is the prediction error at layer l. In most implementations, the covariances are set to fixed identity matrices and disappear. For a full demon-stration of how F reduces to a sum of local errors, see Millidge et al. (2021). This general description defines a generative hierarchi-cal PC network where the highest latent variables, xL,are assumed to be drawn from some fixed distribution. For a discriminative PC model, xL is assumed to be drawn from some input data generating distribution. This work adopts the discriminative form, taking in-put data at the highest level and predicting a target output, or label, at x0. Appendix A describes this process in detail. 
+
+Temporal Predictive Coding Temporal Predic-tive Coding (tPC) (Tang et al., 2023; Millidge et al., 2024) is a variant of PC which extends the original framework to sequential data and recurrent models. Under this definition, inference should also depend on ˆx(t−1) 1: L , the converged hidden state from the previous time step: 
+
+P (x(t)1: L, x(t)0 , ˆx(t−1) 1: L ) = 
+
+P (x(t) 
+
+> L
+
+)P (x(t)0 |x(t)1 )
+
+> L−1
+
+Y
+
+> l=1
+
+P (x(t) 
+
+> l
+
+|x(t)
+
+> l+1
+
+, ˆx(t−1)  
+
+> l
+
+). (7) This yields a hierarchy of Gaussians similar to the static case, but with layer-wise prediction functions 
+
+gl which incorporate this new dependency: 
+
+μ(t) 
+
+> l
+
+=
+
+(
+
+gl(x(t)
+
+> l+1
+
+; Wl) if l = 0 
+
+gl(x(t)
+
+> l+1
+
+, ˆx(t−1)  
+
+> l
+
+; Wl) otherwise (8) The free energy under this definition remains the same sum of local errors. At each time step, the iterative inference process is conducted to find the latents that best explain the sensory input and are consistent with the previous time step’s inferences. The parameters of the network could be updated in an online fashion, or batched through time and applied once the whole sequence has been presented. Appendix B describes the tPC algorithm in full. 
+
+2.2 Real-Time Recurrent Learning (RTRL) 
+
+Williams and Zipser (1989) were the first to introduce Real-Time Recurrent Learning (RTRL), as an alterna-tive to BPTT for training RNNs. Unlike BPTT, the memory requirement of RTRL is independent of the length of the input sequence, as it does not need to hold the whole unrolled network in memory. Instead, RTRL performs credit assignment by maintaining, and recursively updating, an influence matrix, M(t), which tracks the contribution of each parameter to the cur-rent hidden state, x(t). Consider an RNN with a single hidden layer of n units with P parameters, excluding read-out weights which can be learnt without the need for temporal information. The recursive influence ma-trix update is given by: 
+
+M(t) = ∂x(t)
+
+∂W ,
+
+= ∂x(t)
+
+∂W(t) + ∂x(t)
+
+∂x(t−1) 
+
+∂x(t−1) 
+
+∂W ,
+
+= ¯M(t)
+
+| {z } 
+
+> Immediate Influence
+
++ J(t)M(t−1) 
+
+| {z }
+
+> Historic Influence
+
+, (9) where W(t) represents an application of the parame-ters at t. ¯M(t) is the immediate influence of the pa-rameters on the current hidden state and J(t) is the Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+Jacobian of the hidden state transition function. With this matrix maintained, exact gradients with respect to an incoming loss, L(t), can be computed directly: 
+
+∂L(t)
+
+∂W = ∂L(t)
+
+∂x(t) M(t). (10) Although RTRL presents a method of performing spatio-temporal credit assignment with memory re-quirements that are independent of the input sequence length, it still suffers from memory issues, this time when scaling with network size. The influence matrix typically occupies nP ≈ O(n3) memory, making it im-practical for large networks. In addition, when consid-ering multi-layer RNNs, each hidden layer is influenced by all of the parameters of the layers below. Therefore, an L layer network must maintain L(L+1) /2 influence matrices (Irie et al., 2024). BPTT does not suffer from this issue and scales linearly with the number of layers in both time and memory requirements. Recent works have explored methods of reducing the requirements of multi-layer RTRL, demonstrating that some of the benefits of increased network expressability can be ob-tained if each layer maintains an influence matrix for only its own parameters (Zucchet et al., 2023). Several works have explored methods of reducing the 
+
+O(n3) memory requirements of RTRL. This includes approximating the influence matrix via decomposition (Mujika et al., 2018; Tallec and Ollivier, 2018) or in-troducing sparse approximations (Menick et al., 2021). Other works have considered the design of recurrent cells which make exact RTRL tractable (Irie et al., 2024; Zucchet et al., 2023). These works rely on the idea of element-wise recurrence, where each hidden node is influenced by a distinct subset of its own pa-rameters. This diagonalises the influence matrix, as there are no intra-layer connections to consider. 
+
+# 3 Methods 
+
+In practice, tPC networks fail to reliably learn long-range temporal relationships in sequential data. In some generative cases, where the next input can be predicted largely from recent context, this limitation is less obvious. However, many applications require the ability to model these types of relationships, es-pecially when information must be aggregated from distant time steps to make accurate predictions. To solve these challenges, this section introduces a form of RTRL-enhanced tPC, subsequently referred to as tPC RTRL. 
+
+3.1 RTRL-enhanced tPC 
+
+Under the definition of tPC introduced in Section 2.1, the parameters are learnt via gradient descent on the free energy at time t. That is: ∆W = −η ∂F(t)
+
+∂μ(t)
+
+∂μ(t)
+
+∂W(t) , (11) where η is a parameter learning rate and W(t) rep-resents an application of the parameters W at time 
+
+t. For readout parameters which do not influence the hidden state, this is sufficient. However, this update rule fails to account for the fact that some parameters influence the free energy not only through their im-mediate application at the current time step, but also through their historic influence on the evolving hidden state. An update rule which takes this into account is likely to yield better performance when capturing long-range relationships present in data. Following RTRL, consider a matrix, M(t), which esti-mates the influence of the parameters on the current hidden state, x(t). Using this, an update which consid-ers the historic influence of the parameters over several time steps can be defined as: ∆W = −η
+
+
+
+∂F(t)
+
+∂μ(t)
+
+∂μ(t)
+
+∂ ˆx(t−1) M(t−1) 
+
+| {z }
+
+> Historic
+
++ ∂F(t)
+
+∂W(t)
+
+| {z }
+
+> Immediate
+
+ (12) The typical RTRL rule for updating the influence ma-trix requires calculating the Jacobian of the hidden state transition function, and the immediate influence of the parameters on the current hidden state (Eq. 9). However, in the case of tPC, the hidden state tran-sition is not defined by a feedforward function, but rather an optimisation process. Therefore, the influ-ence matrix update rule must be changed to reflect that the converged hidden state does not necessarily take the value of the predicted hidden state: 
+
+M(t) =
+
+ ∂μ(t)
+
+∂W(t) + ∂μ(t)
+
+∂ ˆx(t−1) M(t−1) 
+
+
+
+> μ(t)=ˆ x(t)
+
+(13) The key difference between this update rule and that of RTRL is that the converged hidden state ˆ x(t) is substituted for the predicted hidden state μ(t) when updating the influence matrix. At the point of ideal convergence, where F = 0, these two terms are exactly equal, and therefore this update rule becomes exact. In practice, this is almost never the case as there is usually always some internal error present. However, the results in this Section 4 demonstrate that this ap-proximation is sufficient to allow the model to learn in both small problems and on real-world datasets. The full tPC RTRL algorithm is described in Appendix C. Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+# 4 Experiments 
+
+This section demonstrates that tPC RTRL can effec-tively learn long-range temporal relationships in se-quential data, addressing the limitations of the tPC baseline. This will begin by exploring a synthetic sequence copy task, before considering 2 larger real-world datasets: language modelling on WikiText-2 (Merity et al., 2017) and machine translation on an English-French subset of CCMatrix (Schwenk et al., 2021). The results of these experiments demonstrate that tPC RTRL can closely match the performance of BPTT, showing its ability to learn long-range tempo-ral relationships. 
+
+4.1 Copy Task 
+
+For this task, the model is presented with a sequence of digits and required to output the same sequence after a fixed delay. Although the task is simple, the infor-mation required to make these predictions is separated from the learning signal by several time steps, making it difficult for models to succeed without the ability to capture long-range dependencies. 
+
+Setup: The input is a sequence of 30 digits sampled uniformly from the integers 1-9, with 0 reserved as a padding token. The target output is the same sequence of digits translated 10 time steps into the future with both sequences padded for a total of 40 time steps. The network architecture for all models considered is a many-to-many RNN with a single hidden layer of 128 units and tanh nonlinearities. Four models are trained on this task, one with each learning algorithm considered in this work: BPTT, spatial BP, tPC, and tPC RTRL. The BPTT model is trained using the standard BPTT algorithm, un-rolling the network across all time steps of the sequence to aggregate the influence of all historic applications of the network parameters. The spatial BP model is trained using BP without temporal information. This means that for each incoming loss, only the most re-cent application of the network parameters is included in the compute graph. The tPC and tPC RTRL mod-els are trained using the algorithms described in Sec-tions 2.1 and 3.1, respectively. Both BP-based models use a cross-entropy loss, whilst the PC-based models use a squared-error loss function for internal energy and a cross-entropy loss function for output energy as in Pinchetti et al. (2022). Furthermore, both use an inference learning rate of 0.9 and complete 4 inference iterations per time step. All models are trained with a batch size of 16 and evaluated on 200 randomly gen-erated test samples every 16 batches. For full details of the experimental setup, see Appendix D.1. Table 1: The Validation Loss and Accuracy of tPC RTRL and BPTT on the Sequence Copying Task. 
+
+Method Val Loss Val Accuracy 
+
+BPTT 0.0176 ± 0.0020 0.9993 ± 0.0003 tPC RTRL 0.0574 ± 0.0028 1.0000 ± 0.0000 
+
+Results: The results of this experiment are shown in Figure 1. First, it is clear that the baseline tPC and spatial BP training methods are not successful in this task, clearly demonstrating the limitations of tPC and highlighting the need for an improved method of capturing relationships of this kind. On the other hand, BPTT and tPC RTRL handle the task with ease, quickly reaching near perfect accuracy, with both methods exhibiting similar stability and speed of con-vergence. Table 1 reports the validation loss and accu-racy of BPTT and tPC RTRL, averaged over 5 runs, providing further evidence that the proposed method closely matches the performance of BPTT. 
+
+4.2 WikiText-2 
+
+The results seen on the previous task highlight that tPC RTRL has the potential to improve performance on tasks with long-range dependencies. Extending this approach to more challenging datasets requires more expressive models and architectures capable of sup-porting computationally tractable RTRL. To address this requirement, the Linear Recurrent Unit (LRU) (Orvieto et al., 2023) is adopted for the following ex-periments. The LRU is a complex-valued linear RNN with element-wise recurrence, enabling computation-ally tractable RTRL by significantly reducing the size of the required influence matrix (Zucchet et al., 2023). By choosing the LRU, tPC RTRL can be scaled from the small tasks considered so far, to more complex, real-world datasets. WikiText-2 (Merity et al., 2017) is a word-level lan-guage modelling dataset consisting of high-quality En-glish Wikipedia articles. The train split contains ap-proximately 2,000,000 tokens across 600 distinct arti-cles with a vocabulary size of 33,000 words. The val-idation and test splits each contain just over 200,000 tokens from 60 articles. 
+
+Setup: Before training, the vocabulary is reduced to the most frequent 10,000 words, all tokens are converted to lowercase, and markdown syntax is re-moved. The dataset is then split into chunks of 70 tokens. These tokens are embedded using frozen 300-dimension FastText (Bojanowski et al., 2017) word embeddings. The embeddings are pretrained using Wikipedia data, and therefore, there is a minimal, but Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+Figure 1: Cross-Entropy Loss and Accuracy of BPTT, Spatial BP, tPC and tPC RTRL on the Sequence Copying Task in Section 4.1. The Shaded Regions Represent the Standard Deviation of the Results Across 5 Runs. non-zero risk of information leakage from the training data into the WikiText-2 validation and test splits. All models consist of a single LRU block with a recur-rent state size of 1,024 and a hidden state size of 300, followed by 2 readout projections with dropout and 
+
+tanh nonlinearities. The first projects to the hidden state size of 300, and the second projects to the vo-cabulary size of 10,000. This gives a total of 4,332,472 trainable parameters for each model. As in Section 4.1, all BP-based models are trained with a cross-entropy loss, whilst the PC-based models use a squared-error loss function for internal energy and a cross-entropy loss function for output energy. Both PC models use an inference learning rate of 0.1 for 3 iterations. All models are trained with a batch size of 64, for 20 epochs. For a full description of the experimental setup, see Appendix D.2. 
+
+Results: Table 2 shows the mean test perplexity of the final trained models, averaged over 5 runs, with the epoch with the lowest validation loss used for eval-uation. The baseline tPC and spatial BP methods perform worst, with mean perplexities of 108.99 and 103.38 respectively. BPTT and tPC RTRL achieve slightly lower mean perplexity of 98.62 and 99.19 re-spectively, indicating some performance gain from the ability to capture longer-range relationships. Even though all methods are close in performance, these re-sults appear consistent with a two-tailed t-test yielding 
+
+p < 0.01 for all comparisons between the models. Figure 2 shows the train and validation loss of each model over the course of training. Again, tPC RTRL appears to converge at a similar rate to BPTT. Al-though this provides evidence that tPC RTRL per-forms similarly to BPTT on this task, it is clear that there is minimal performance gain from the ability to model long-range relationships when performing next-token prediction at this scale. This phenomenon has Table 2: The Perplexity of the Models When Applied to the WikiText-2 Test Set. 
+
+Method Test Perplexity ↓
+
+Spatial BP 103 .38 ± 0.39 tPC 108 .99 ± 0.54 BPTT 98 .62 ± 0.23 tPC RTRL 99 .19 ± 0.18 been noted in other works (Menick et al., 2021). Sec-tion 4.3 aims to address this, exploring the application of tPC RTRL to a more complex dataset where the ability to capture these relationships is critical. 
+
+4.3 Machine Translation 
+
+To test the ability of tPC RTRL to scale to tasks with more complex long-range dependencies, a ma-chine translation task is considered. In this task, mod-els trained with limited temporal information typically struggle. This is because the entire source sentence must be consumed before outputting a translation, introducing a long-range dependency between corre-sponding tokens in the source and target sentences. 
+
+Setup: A translation task is constructed using a sub-set of the CCMatrix dataset (Schwenk et al., 2021). This dataset contains 1.5 billion parallel sentence pairs across 200 languages. An English-French subset of 600,000 sentence pairs is sampled from the dataset, with 500,000 pairs used for training, 50,000 for vali-dation and 50,000 for testing. During sampling, sen-tences are filtered to ensure a maximum total sequence length of 128 tokens. Minimal preprocessing is per-formed on the dataset, with all text converted to lower-case and tokenised using a Byte-Pair Encoding (BPE) tokeniser (Sennrich et al., 2016) trained on the source and target sentences from the training set. The vo-Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+Figure 2: Mean Train and Validation Loss During Training on WikiText-2 in Section 4.2, Averaged Over 5 Runs. cabulary size is set to 10,000 tokens. The underlying models are the same architecture as those used in Section 4.2, now with a recurrent state size of 1,024 and a hidden state size of 1,024 for a to-tal of 15,498,000 trainable parameters. Both BP-based models use a cross-entropy loss, with 0.1 label smooth-ing applied to the target output. The PC models use squared-error loss functions for the internal energy and the same smoothed cross-entropy loss function for the output energy. The tPC RTRL model used an infer-ence learning rate of 0.025 for 3 inference iterations, whilst the baseline tPC model used an inference learn-ing rate of 0.01 for 5 iterations. All models are trained with a batch size of 128, for 20 epochs. For a full description of training setup, architectures and hyper-parameters, see Appendix D.3. 
+
+Results: Table 3 shows the test perplexity and BLEU scores (Papineni et al., 2002) for all models on the reserved English-French translation set, showing that BPTT and tPC RTRL achieve low perplexities of 7.49 and 7.62 and BLEU scores of 21.11 and 20.71, respectively, substantially outperforming spatial BP and tPC. Translations were generated via beam search with a beam size of 10 and length penalty of 0.7, with these settings chosen by a validation sweep to opti-mise BLEU. Spatial BP and tPC not only have much higher perplexities, but also produce poorer transla-tions with minimal overlap, as reflected in their poor BLEU scores. In the case of tPC, the model failed to converge to the level of spatial BP, even after extensive hyperparameter tuning. Table 3: The Perplexity and BLEU Score of the Models When Applied to the Reserved English-French Translation Test Set. 
+
+Method Test Perplexity ↓ Test BLEU ↑
+
+Spatial BP 16 .03 8.93 tPC 28 .31 3.07 BPTT 7.49 21 .11 tPC RTRL 7.62 20 .71 
+
+Figure 3: Train and Validation Loss During Training on the English-French Translation Task in Section 4.3. The Train Loss is Smoothed to Improve Readability. Figure 3 shows the train and validation loss of each model over the course of training, demonstrating that both tPC RTRL and BPTT appear to behave simi-larly, converging at an almost identical rate, and to similar final loss values. The alignment of quantita-tive metrics and training behaviour confirms that tPC RTRL effectively tackles this task in a manner similar to BPTT without sacrificing training stability. 
+
+# 5 Discussion and Opportunities 
+
+The experiments conducted in this work demonstrate that tPC RTRL provides a compelling method of con-ducting spatio-temporal credit assignment in RNNs without relying on BPTT. Results across a synthetic sequence copying task, WikiText-2, and an English-French translation task consistently show that tPC RTRL closely matches the performance of BPTT, overcoming the limitations of tPC. By retaining the local, parallelisable properties of its predecessors, tPC RTRL is a promising candidate for application on edge AI hardware, where the low-energy potential of this al-Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+gorithm enable efficient online learning. 
+
+Scaling and Hardware Considerations To train an RNN with BPTT, the unrolled computation graph must be held in memory, leading to memory require-ments that scale linearly with sequence length. BPTT also suffers from both forward and backward lock-ing, where layers must wait for others to finish before proceeding. This sequential behaviour limits spatial parallelism and makes BPTT poorly suited for neu-romorphic deployment, where long-range communica-tion and repeated transfers between global memory and compute are energetically unfavourable. PC, and its temporal counterpart tPC, replace spatial BP with local inference and learning rules. The nature of these rules means they do not suffer from forward or backward locking and computation is dominated by operations that can be parallelised across the network. However, in its basic form, temporal credit assignment in tPC is limited, and performance on tasks with long-range dependencies is poor. tPC RTRL addresses this, improving temporal credit assignment without stor-ing the full unrolled graph or restricting spatial par-allelism. For a dense n-unit recurrent layer with P
+
+recurrent parameters, RTRL requires O(nP ) ≈ O(n3)memory and compute to maintain the influence ma-trix. However, using an element-wise recurrent unit, such as the LRU, diagonalises this matrix, reducing memory and compute required to maintain it to O(P ). From a hardware perspective, these algorithms natu-rally lend themselves to different paradigms. BPTT relies on global synchronisation and large, compute-heavy matrix operations, well-suited to GPUs. In con-trast, tPC consists of more simple, local operations, enabling spatial parallelism and better matching hard-ware where compute and memory are distributed and co-located, such as near-memory neuromorphic sys-tems (Davies et al., 2018). This locality minimises the need for global data movement, alleviating the von Neumman bottleneck and improving energy efficiency. However, this work has not yet explored the imple-mentation of tPC RTRL on such platforms. Future ef-forts should bridge this gap, reporting real energy mea-surements is essential to validate the efficiency claims that underpin the field of PC. Such an implementation would be a significant step towards training RNNs on neuromorphic hardware capable of rivalling the per-formance of their BPTT, GPU-trained counterparts. 
+
+Practical Considerations As with other PC-based methods, the choices of inference hyperparameters, such as the inference learning rate and number of iter-ations, influence convergence. For this work, a moder-ate amount of tuning was required to find suitable val-ues for each task. However, in the large-scale transla-tion task, no suitable hyperparameters were found for the baseline tPC model. This meant that it did not get near the level of the spatial BP model and high-lights that further research is needed to better under-stand the nature of PC-based optimisation in neural networks. Years of experience with BP-based methods have led to a strong understanding of best practices, or “tips and tricks”, for training these models. This includes initialisation schemes (Glorot and Bengio, 2010), normalisation techniques (Ioffe and Szegedy, 2015), selection of activation functions, or architec-tural choices. However, PC lacks this level of under-standing, making it difficult to apply in practice. In recent years, a number of works have begun to develop this area, helping to better robustly apply these tech-niques (Pinchetti et al., 2024; Frieder et al., 2024; Qi et al., 2025; Frieder and Lukasiewicz, 2022; Innocenti et al., 2024). This progress is orthogonal to the work in this paper and any advances are likely to benefit the presented tPC RTRL approach. 
+
+Architectural Extensions All experiments in this work used architectures with a single recurrent layer as multi-layer RNNs require storing O(L2) influence matrices or making layer-local approximations to keep memory scaling under control. While prior work sug-gests these layer-local assumptions recover some ben-efits of network depth (Zucchet et al., 2023), this has not yet been validated within the tPC RTRL frame-work. Future work should look to develop in this di-rection, demonstrating the potential of tPC RTRL to scale to deeper architectures. Furthermore, although this work opted for the LRU to ensure RTRL remains computationally tractable, the algorithm could work with other element-wise recur-rent units, such as the element-wise Long Short-Term Memory cell (Irie et al., 2024). Or alternatively, could use sparse and factorised approximations of RTRL to reduce the computational complexity and memory footprint of maintaining the influence matrices. 
+
+# 6 Conclusion 
+
+This work introduced a novel extension to tPC, for the first time making use of RTRL to address critical shortcomings of existing approaches to PC in RNNs. The empirical evaluations presented demonstrate that tPC RTRL not only closely matches the performance of BPTT, but retains clear advantages such as local, parallelisable computation. These findings position tPC RTRL as a promising, biologically-inspired learn-ing algorithm for RNNs which is particularly suited for deployment on edge AI platforms, representing a significant step towards low-power energy-efficient Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+training of these networks. Further work will refine and scale this method. The continued exploration of tPC and RTRL aims to contribute towards a new gen-eration of energy-efficient intelligent systems capable of learning complex temporal relationships from real-world data on next-generation hardware. 
+
+References 
+
+Annabi, L., Pitti, A., and Quoy, M. (2022). Continual sequence modeling with predictive coding. Frontiers in Neurorobotics , 16. Atick, J. J. (1991). Could information theory provide an ecological theory of sensory processing? Network: Computation in Neural Systems , 22(1-4):4–44. Attneave, F. (1954). Some informational aspects of visual perception. Psychological Review , 61(3):183– 193. Bojanowski, P., Grave, E., Joulin, A., and Mikolov, T. (2017). Enriching word vectors with subword in-formation. In Transactions of the Association for Computational Linguistics , volume 5, pages 135– 146. MIT Press. Davies, M., Srinivasa, N., Lin, T.-H., Chinya, G., Cao, Y., Choday, S. H., Dimou, G., Joshi, P., Imam, N., Jain, S., Liao, Y., Lin, C.-K., Lines, A., Liu, R., Mathaikutty, D., McCoy, S., Paul, A., Tse, J., Venkataramanan, G., Weng, Y., Wild, A., Yang, Y., and Yao, H. (2018). Loihi: A neuromorphic many-core processor with on-chip learning. IEEE Micro ,38(1):82–99. Dempster, A. P., Laird, N. M., and Rubin, D. B. (1977). Maximum likelihood from incomplete data via the em algorithm. Journal of the Royal Statisti-cal Society: Series B (Methodological) , 39(1):1–22. Devlin, J., Chang, M., Lee, K., and Toutanova, K. (2018). BERT: pre-training of deep bidirectional transformers for language understanding. CoRR ,abs/1810.04805. Frieder, S. and Lukasiewicz, T. (2022). (Non-)Convergence results for predictive coding networks. In Chaudhuri, K., Jegelka, S., Song, L., Szepes-vari, C., Niu, G., and Sabato, S., editors, Proceed-ings of the 39th International Conference on Ma-chine Learning , volume 162 of Proceedings of Ma-chine Learning Research , pages 6793–6810. PMLR. Frieder, S., Pinchetti, L., and Lukasiewicz, T. (2024). Bad minima of predictive coding energy functions. In The Second Tiny Papers Track at ICLR 2024 .Friston, K. (2003). Learning and inference in the brain. 
+
+Neural Networks , 16(9):1325–1352. Friston, K. (2005). A theory of cortical responses. 
+
+Philosophical Transactions of the Royal Society B: Biological Sciences , 360(1456):815–836. Friston, K. (2008). Hierarchical models in the brain. 
+
+PLoS Computational Biology , 4(11):e1000211. Glorot, X. and Bengio, Y. (2010). Understanding the difficulty of training deep feedforward neural networks. In Proceedings of the Thirteenth Inter-national Conference on Artificial Intelligence and Statistics , pages 249–256. JMLR Workshop and Conference Proceedings. Innocenti, F., Achour, E. M., Singh, R., and Buck-ley, C. L. (2024). Only strict saddles in the energy landscape of predictive coding networks? Ioffe, S. and Szegedy, C. (2015). Batch normalization: Accelerating deep network training by reducing in-ternal covariate shift. In Proceedings of the 32nd In-ternational Conference on Machine Learning , pages 448–456. PMLR. Irie, K., Gopalakrishnan, A., and Schmidhuber, J. (2024). Exploring the promise and limits of real-time recurrent learning. In International Conference on Learning Representations (ICLR) , Vienna, Austria. Jiang, L. P. and Rao, R. P. N. (2024). Dynamic predic-tive coding: A model of hierarchical sequence learn-ing and prediction in the neocortex. PLOS Compu-tational Biology , 20(2):1–30. Kingma, D. P. and Ba, J. (2015). Adam: A method for stochastic optimization. In International Conference on Learning Representations (ICLR) .Krizhevsky, A., Sutskever, I., and Hinton, G. E. (2012). Imagenet classification with deep convo-lutional neural networks. In Proceedings of the 25th International Conference on Neural Informa-tion Processing Systems - Volume 1 , NIPS’12, page 1097–1105, Red Hook, NY, USA. Curran Associates Inc. Mali, A., Salvatori, T., and Ororbia, A. (2024). Tight stability, convergence, and robustness bounds for predictive coding networks. Menick, J., Elsen, E., Evci, U., Osindero, S., Si-monyan, K., and Graves, A. (2021). Practical real time recurrent learning with a sparse approxima-tion. In International Conference on Learning Rep-resentations (ICLR) . Spotlight paper. Merity, S., Xiong, C., Bradbury, J., and Socher, R. (2017). Pointer sentinel mixture models. In In-ternational Conference on Learning Representations (ICLR 2017) Workshops . Spotlight paper at the Workshop on Multi-class and Multi-label Learning in Extremely Large Label Spaces. Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+Millidge, B., Seth, A. K., and Buckley, C. L. (2021). Predictive coding: a theoretical and experimental review. CoRR , abs/2107.12979. Millidge, B., Tang, M., Osanlouy, M., Harper, N. S., and Bogacz, R. (2024). Predictive coding networks for temporal prediction. PLoS Computational Biol-ogy , 20(4):e1011183. Millidge, B., Tschantz, A., and Buckley, C. L. (2022). Predictive coding approximates backprop along ar-bitrary computation graphs. Neural Computation ,34(7):1329–1368. Mnih, V., Kavukcuoglu, K., Silver, D., Graves, A., Antonoglou, I., Wierstra, D., and Riedmiller, M. (2013). Playing atari with deep reinforcement learn-ing. Mujika, A., Meier, F., and Steger, A. (2018). Approx-imating real-time recurrent learning with random kronecker factors. In Advances in Neural Informa-tion Processing Systems 31 (NeurIPS 2018) , pages 6594–6603. Mumford, D. (1991). On the computational architec-ture of the neocortex. i. the role of the thalamo-cortical loop. Biological Cybernetics , 65(2):135–145. Mumford, D. (1992). On the computational architec-ture of the neocortex. ii. the role of cortico-cortical loops. Biological Cybernetics , 66(3):241–251. Neal, R. M. and Hinton, G. E. (1998). A view of the em algorithm that justifies incremental, sparse, and other variants. In Jordan, M. I., editor, Learning in Graphical Models , pages 355–368. Springer Nether-lands, Dordrecht. Ororbia, A., Mali, A., Giles, C. L., and Kifer, D. (2020). Continual learning of recurrent neural net-works by locally aligning distributed representa-tions. IEEE Transactions on Neural Networks and Learning Systems , 31(10):4267–4278. Orvieto, A., Smith, S. L., Gu, A., Fernando, A., C ¸ aglar G¨ ul¸ cehre, Pascanu, R., and De, S. (2023). Resur-recting recurrent neural networks for long sequences. In Proceedings of the 40th International Conference on Machine Learning , volume 202 of Proceedings of Machine Learning Research , pages 26670–26698. Papineni, K., Roukos, S., Ward, T., and Zhu, W.-J. (2002). Bleu: a method for automatic evaluation of machine translation. In Proceedings of the 40th Annual Meeting on Association for Computational Linguistics , ACL ’02, page 311–318, USA. Associa-tion for Computational Linguistics. Pinchetti, L., Qi, C., Lokshyn, O., Olivers, G., Emde, C., Tang, M., M’Charrak, A., Frieder, S., Menzat, B., Bogacz, R., Lukasiewicz, T., and Salvatori, T. (2024). Benchmarking predictive coding networks – made simple. Pinchetti, L., Salvatori, T., Yordanov, Y., Millidge, B., Song, Y., and Lukasiewicz, T. (2022). Predic-tive coding beyond gaussian distributions. In Ad-vances in Neural Information Processing Systems 35 (NeurIPS 2022) , pages 1280–1293, New Orleans, LA, USA. Qi, C., Lukasiewicz, T., and Salvatori, T. (2025). Training deep predictive coding networks. In New Frontiers in Associative Memories .Rao, R. P. and Ballard, D. H. (1999). Predictive coding in the visual cortex: a functional interpretation of some extra-classical receptive-field effects. Nature Neuroscience , 2(1):79–87. Rumelhart, D. E., Hinton, G. E., and Williams, R. J. (1986). Learning representations by back-propagating errors. nature , 323(6088):533–536. Salvatori, T., Song, Y., Lukasiewicz, T., Bogacz, R., and Xu, Z. (2022). Reverse differentiation via pre-dictive coding. In Proceedings of the 36th AAAI Conference on Artificial Intelligence , pages 8150– 8158. Salvatori, T., Song, Y., Yordanov, Y., Millidge, B., Xu, Z., Sha, L., Emde, C., Bogacz, R., and Lukasiewicz, T. (2024). A stable, fast, and fully automatic learn-ing algorithm for predictive coding networks. In 
+
+International Conference on Learning Representa-tions .Scellier, B. and Bengio, Y. (2017). Equilibrium prop-agation: Bridging the gap between energy-based models and backpropagation. Schwartz, R., Dodge, J., Smith, N. A., and Etzioni, O. (2019). Green AI. CoRR , abs/1907.10597. Schwenk, H., Wenzek, G., Edunov, S., Grave, E., and Joulin, A. (2021). CCmatrix: Mining billions of high-quality parallel sentences on the web. In Pro-ceedings of the 59th Annual Meeting of the Associa-tion for Computational Linguistics and the 11th In-ternational Joint Conference on Natural Language Processing , pages 6490–6500, Online. Association for Computational Linguistics. Sennrich, R., Haddow, B., and Birch, A. (2016). Neu-ral machine translation of rare words with subword units. In Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics (Vol-ume 1: Long Papers) , pages 1715–1725. Association for Computational Linguistics. Song, Y., Lukasiewicz, T., Xu, Z., and Bogacz, R. (2020). Can the brain do backpropagation? — ex-act implementation of backpropagation in predictive coding networks. In Larochelle, H., Ranzato, M., Hadsell, R., Balcan, M., and Lin, H., editors, Ad-vances in Neural Information Processing Systems ,Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+volume 33, pages 22566–22579. Curran Associates, Inc. Song, Y., Millidge, B., Salvatori, T., Lukasiewicz, T., Xu, Z., and Bogacz, R. (2024). Inferring neural activity before plasticity as a foundation for learn-ing beyond backpropagation. Nature Neuroscience ,27(2):348–358. Tallec, C. and Ollivier, Y. (2018). Unbiased online recurrent optimization. In International Conference on Learning Representations (ICLR) .Tang, M., Barron, H., and Bogacz, R. (2023). Sequen-tial memory with temporal predictive coding. In 
+
+Proceedings of the 37th Conference on Neural Infor-mation Processing Systems (NeurIPS 2023) .Whittington, J. C. R. and Bogacz, R. (2017). An ap-proximation of the error backpropagation algorithm in a predictive coding network with local hebbian synaptic plasticity. Neural computation , 29:1229 – 1262. Williams, R. J. and Zipser, D. (1989). A learning algo-rithm for continually running fully recurrent neural networks. Neural Computation , 1(2):270–280. Xie, X. and Seung, H. S. (2003). Equivalence of back-propagation and contrastive hebbian learning in a layered network. Neural Computation , 15(2):441– 454. Zucchet, N., Meier, R., Schug, S., Mujika, A., and Sacramento, J. (2023). Online learning of long-range dependencies. In Advances in Neural Information Processing Systems 36 (NeurIPS 2023) .Learning Long-Range Dependencies with Temporal Predictive Coding - Appendix 
+
+# A Inference Learning Algorithm 
+
+Algorithm 1 provides a full description of the Inference Learning (IL) algorithm for a discriminative PC network. 
+
+Algorithm 1 IL for a discriminative PC network 
+
+Input : Target output x0, input data xL, parameters W0: L−1, inference iterations Niter , inference learning rate 
+
+α, and parameter learning rate η.
+
+Output: Updated parameters.  
+
+> 1:
+
+Initialise latent variables x1: L to feed-forward values.  
+
+> 2:
+
+Inference (E-step)  
+
+> 3:
+
+for i = 1 to Niter do  
+
+> 4:
+
+Compute μl = gl(xl+1 ; Wl).  
+
+> 5:
+
+Compute ϵl = xl − μl. 
+
+> 6:
+
+Update xl ← xl − α ∂F 
+
+> ∂xl
+
+. 
+
+> 7:
+
+end for  
+
+> 8:
+
+Learning (M-step)  
+
+> 9:
+
+Update Wl ← Wl − η ∂F 
+
+> ∂Wl
+
+. 
+
+> 10:
+
+Return updated parameters W0: L−1.
+
+# B Temporal PC Algorithm 
+
+Algorithm 2 provides a full description of the Temporal PC (tPC) algorithm for a discriminative tPC network with multiple recurrent layers. 
+
+# C tPC RTRL Algorithm 
+
+The full algorithm for tPC RTRL is shown in Algorithm 3. This version of the algorithm uses time-batched updates, where parameter updates are accumulated across all time steps before being applied. However, the algorithm can be easily adapted to use immediate updates by moving the parameter update step inside the time loop. Section 5 briefly highlighted some of the works aiming to improve the practical application of PC-based methods. One such work, by Qi et al. (2025), found that altering the error term used in the free energy during parameter updates improved training stability and convergence. In their formulation, the free energy is altered by changing the error term to: 
+
+ϵ(t) 
+
+> l
+
+= x(t) 
+
+> l
+
+− μ(t) 
+
+> l, 0
+
+, (14) where μ(t) 
+
+> l, 0
+
+is the initial guess for the latent variables at time t, defined by the feedforward initialisation. This change defines a corresponding learning-phase free energy, F(t) 
+
+> W
+
+, whilst leaving the free energy used at inference unchanged. Altering the parameter updates in this way improved stability and end performance of both tPC and tPC RTRL and therefore was adopted for all experiments in this work. Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+Algorithm 2 Learning with a tPC network 
+
+Input : Sensory input x(t)0 for t ∈ 1, . . . T , parameters W0: L−1, inference iterations Niter , inference learning rate 
+
+α, and parameter learning rate η.
+
+Output: Updated parameters. 
+
+1: Initialise hidden state ˆ x(0) 1: L.
+
+2: for t = 1 to T do 
+
+3: Initialise latent variables x(t)1: L to feed-forward values. 
+
+4: for i = 1 to Niter do 
+
+5: Compute μl = gl(x(t)
+
+> l+1
+
+, ˆx(t−1)  
+
+> l
+
+; Wl). 
+
+6: Compute ϵl = xl − μl.
+
+7: Update xl ← xl − α ∂F 
+
+> ∂xl
+
+.
+
+8: end for 
+
+9: if not time-batching then 
+
+10: Update Wl ← Wl − η ∂F 
+
+> ∂Wl
+
+.
+
+11: end if 
+
+12: end for 
+
+13: if time-batching then 
+
+14: Update Wl ← Wl − η PTt=1 ∂F(t) 
+
+> ∂Wl
+
+.
+
+15: end if 
+
+16: Return updated parameters W0: L−1.
+
+# D Experimental Setup 
+
+This section will detail the experimental setup for all three tasks considered in this work. This includes the sequence copying task, language modelling on WikiText-2, and machine translation on an English-French subset of CCMatrix. 
+
+D.1 Sequence Copying Task 
+
+The models used in the sequence copying task are all many-to-many RNNs with a single hidden layer and tanh 
+
+nonlinearities. In practice, this means that the hidden state and output at time t are computed as: 
+
+h(t) = tanh( x(t)Wih + h(t−1) Whh ), (15) 
+
+y(t) 
+
+> μ
+
+= h(t)Who , (16) where Wih , Whh and Who are the input, hidden and output weight matrices respectively. x(t) is the input at time t, h(t) is the hidden state at time t, and y(t) 
+
+> μ
+
+is the predicted output at time t.The BP-based approaches all used a cross-entropy loss function and then, for any incoming loss, either unrolled the network across all time steps (BPTT) or detached the compute graph at the current time step (spatial BP). The tPC model used a squared-error loss function for internal energy and a cross-entropy loss function for output energy. This gives a total energy function of: 
+
+F(t) = || h(t) 
+
+> μ
+
+− h(t)|| 2 + CE (y(t) 
+
+> μ
+
+, y(t)). (17) Here, the subscript μ is used to differentiate between the predicted variables and their free or clamped counter-parts. The networks are then trained using either tPC or tPC RTRL. Table 4 provides a summary of the hyperparameters used in this task for all models, including the hyperparameter search which was conducted to find them. All models were trained using the Adam optimiser (Kingma and Ba, 2015) with no learning rate schedule. Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+Algorithm 3 tPC RTRL for a discriminative tPC network with a single recurrent layer and time-batched updates. 
+
+Input : Input data x(t) 
+
+> L
+
+, target output x(t)0 , non-readout parameters WL−1, readout parameters W0: L−2, Niter ,
+
+α, η. Output: Updated parameters. 
+
+1: Zero init hidden state ˆ x(0) 
+
+> L−1
+
+.
+
+2: Zero init influence matrix M(0) .
+
+3: for t = 1 to T do 
+
+4: Init variables x(t)1: L−1 to feed-forward values. 
+
+5: for i = 1 to Niter do 
+
+6: Compute μ(t) 
+
+> l
+
+(Eq. 8). 
+
+7: Compute ϵ(t) 
+
+> l
+
+= x(t) 
+
+> l
+
+− μ(t) 
+
+> l
+
+.
+
+8: Update x(t) 
+
+> l
+
+← x(t) 
+
+> l
+
+− α ∂F(t)
+
+> ∂x(t)
+> l
+
+.
+
+9: end for 
+
+10: Set converged hidden state ˆ x(t) 
+
+> L−1
+
+= x(t)
+
+> L−1
+
+.
+
+11: Accumulate recurrent parameter update ∆ WL−1 = −η
+
+
+
+∂F(t)
+
+> W
+
+∂μ(t)
+
+∂μ(t)
+
+∂ ˆx(t−1) M(t−1) 
+
+| {z }
+
+> Historic
+
++ ∂F(t)
+
+> W
+
+∂W(t)
+
+> L−1
+
+| {z }
+
+> Immediate
+
+.
+
+12: Update influence matrix (Eq. 13). 
+
+13: Accumulate readout parameter update:∆ W0: L−2 = −η ∂F(t)
+
+> W
+> ∂W(t)0: L−2
+
+.
+
+14: end for 
+
+15: Apply accumulated updates. 
+
+16: Return updated parameters. 
+
+BP PC Hyperparameter Range Spatial BP BPTT Range tPC tPC RTRL 
+
+Parameter LR [5 e-3 , 1e-3 , 5e-4 , 2e-4] 5e-3 5e-3 [5 e-3 , 1e-3 , 5e-4 , 2e-4] 5e-3 5e-3 Batch Size - 16 16 - 16 16 Hidden Size - 128 128 - 128 128 Input Size - 10 10 - 10 10 Output Size - 10 10 - 10 10 Inference LR - - - [0.05, 0.1, 0.5, 0.9] 0.9 0.9 Inference Iterations - - - [3, 4, 5] 4 4Inference Optimiser - - - - SGD SGD Inference Momentum - - - [0, 0.9] 0.9 0.9 
+
+Table 4: Hyperparameter values and search ranges used for the sequence copying task. If a range is specified, the optimal values shown are the best performing hyperparameters found during an exhaustive grid search. 
+
+D.2 WikiText-2 
+
+All models used for the WikiText-2 task are LRUs with a 2-layer readout head. The hidden state, intermediate states, and output at time t are computed as: 
+
+h(t) = λ ⊙ h(t−1) + γ ⊙ x(t)B, (18) 
+
+x(t) 
+
+> lru
+
+= m ⊙ tanh( Re [h(t)C] + x(t)D), (19) 
+
+x(t) 
+
+> r
+
+= tanh( x(t)
+
+> lru
+
+Wr ), (20) 
+
+y(t) 
+
+> μ
+
+= x(t) 
+
+> r
+
+Wo, (21) where B and C are complex-valued weight matrices, D, Wr , and Wo are a real-valued weight matrices. The vectors λ and γ are complex-valued vectors used for element-wise multiplication, denoted by ⊙, and m is a binary dropout mask. When this work refers to the recurrent state size of the LRU, it refers to the size of the Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+complex-valued variable h(t), when it refers to the hidden state size, it refers to the size of x(t) 
+
+> lru
+
+and x(t) 
+
+> r
+
+. For a full description of the LRU, see Orvieto et al. (2023). A free energy, defined over this architecture, is computed as: 
+
+F(t) = 12 || Re [h(t) 
+
+> μ
+
+] − Re [h(t)]|| 2
+
++ 12 || Im [h(t) 
+
+> μ
+
+] − Im [h(t)]|| 2
+
++ || x(t) 
+
+> lru ,μ
+
+− x(t)
+
+> lru
+
+|| 2
+
++ || x(t) 
+
+> r,μ
+
+− x(t) 
+
+> r
+
+|| 2
+
++ CE (y(t) 
+
+> μ
+
+, y(t)), (22) with the subscript μ used to differentiate between the predicted variables and their free or clamped counterparts. The first two terms are the squared error of the real and imaginary parts of the hidden state, the third term is the squared error of the LRU output, the fourth term is the squared error of the readout intermediate layer, and the final term is a cross-entropy loss function applied to the readout output. Unlike with the sequence copying task, it was not feasible to perform an exhaustive hyperparameter search for the PC-based moels on this dataset. Instead, the hyperparameters are tuned by hand, attempting to find a balance between end performance and stability. The hyperparameters used for the WikiText-2 task are shown in Table 5. All models were trained using the Adam optimiser with a cosine learning rate schedule with a warmup period lasting for 10% of the total training steps. 
+
+BP PC Hyperparameter Spatial BP BPTT tPC tPC RTRL 
+
+Parameter Learning Rate 5e-3 5e-3 5e-3 5e-3 Batch Size 64 64 64 64 Hidden Size 300 300 300 300 Recurrent Size 1024 1024 1024 1024 Dropout Rate 0.3 0.3 0.3 0.3 Inference Learning Rate - - 0.1 0.1 Inference Iterations - - 3 3Inference Optimiser - - SGD SGD Inference Momentum - - 0.9 0.9 Gradient Norm Clip 2.0 2.0 2.0 2.0 Epochs 20 20 20 20 Table 5: Hyperparameter values for all models used in the WikiText-2 task 
+
+D.3 English-French Translation 
+
+The architecture for the translation task is the same as that used for WikiText-2, with the exception that the recurrent state size and hidden state size are both set to 1,024. The free energy is computed in the same way as for WikiText-2, with the addition of label smoothing applied to the cross-entropy loss function used for the output energy. This is done to improve generalisation and reduce overfitting. The hyperparameters used for this task are shown in Table 6. As with WikiText-2, these hyperparameters were tuned by hand. All models were trained using the Adam optimiser with a cosine learning rate schedule with a warmup period lasting for 10% of the total training steps. The embedding layer used to embed the BPE tokenised input is trained from scratch with BPTT on an indepen-dent training run which is not used for evaluation throughout this work. It is then kept frozen for all training runs. Learning Long-Range Dependencies with Temporal Predictive Coding 
+
+BP PC Hyperparameter Spatial BP BPTT tPC tPC RTRL 
+
+Parameter Learning Rate 5e-3 5e-3 5e-3 5e-3 Batch Size 128 128 128 128 Hidden Size 1024 1024 1024 1024 Recurrent Size 1024 1024 1024 1024 Model Dropout Rate 0.2 0.2 0.2 0.2 Embedding Dropout Rate 0.1 0.1 0.1 0.1 Inference Learning Rate - - 0.01 0.025 Inference Iterations - - 5 3Inference Optimiser - - SGD SGD Inference Momentum - - 0.9 0.9 Gradient Norm Clip 2.0 2.0 2.0 2.0 Epochs 20 20 20 20 Label Smoothing 0.1 0.1 0.1 0.1 Table 6: Hyperparameter values for all models used in the English-French translation task.

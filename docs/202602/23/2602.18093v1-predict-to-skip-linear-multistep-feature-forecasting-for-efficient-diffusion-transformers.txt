@@ -1,0 +1,827 @@
+Title: Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers
+
+URL Source: https://arxiv.org/pdf/2602.18093v1
+
+Published Time: Mon, 23 Feb 2026 01:31:29 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers 
+
+Hanshuai Cui 1 2 Zhiqing Tang 1 Qianli Ma 2 Zhi Yao 1 2 Weijia Jia 1
+
+## Abstract 
+
+Diffusion Transformers (DiT) have emerged as a widely adopted backbone for high-fidelity image and video generation, yet their iterative denois-ing process incurs high computational costs. Ex-isting training-free acceleration methods rely on feature caching and reuse under the assumption of temporal stability. However, reusing features for multiple steps may lead to latent drift and visual degradation. We observe that model out-puts evolve smoothly along much of the diffusion trajectory, enabling principled predictions rather than naive reuse. Based on this insight, we pro-pose PrediT , a training-free acceleration frame-work that formulates feature prediction as a linear multistep problem. We employ classical linear multistep methods to forecast future model out-puts from historical information, combined with a corrector that activates in high-dynamics regions to prevent error accumulation. A dynamic step modulation mechanism adaptively adjusts the pre-diction horizon by monitoring the feature change rate. Together, these components enable substan-tial acceleration while preserving generation fi-delity. Extensive experiments validate that our method achieves up to 5.54 × latency reduction across various DiT-based image and video gener-ation models, while incurring negligible quality degradation. 
+
+## 1. Introduction 
+
+Generative AI has achieved remarkable success across a wide range of applications, such as image and video genera-tion, and controllable content creation (Fui-Hoon Nah et al., 2023; Cao et al., 2025). Diffusion models (DMs) (Dhariwal & Nichol, 2021; Ho et al., 2020; Rombach et al., 2022) 
+
+> 1
+
+School of Artificial Intelligence, Beijing Normal University, Beijing 100875, China 2Institute of Artificial Intelligence and Fu-ture Networks, Beijing Normal University, Zhuhai 519087, China. Correspondence to: Zhiqing Tang <zhiqing.tang@bnu.edu.cn >.
+
+Preprint. February 23, 2026. Original   
+
+> PrediT
+> Text -to -Image
+> FLUX. 1 [DEV]
+> 4.28x 2.48x
+> 3.28x
+> Class -to -Image
+> DiT -XL /2-256x256
+> Text -to -Video
+> HunyuanVideo
+> Original
+> PrediT
+
+Figure 1. Accelerating Diffusion Transformer inference across multiple models. PrediT achieves significant speedup on various DiT-based architectures for both image and video generation while preserving visual quality. 
+
+generate data by learning to reverse a gradual noising pro-cess, becoming the foundation of these advances. Early DMs relied on U-Net (Blattmann et al., 2023; Ramesh et al., 2022) architectures, but the limited receptive field of con-volutional networks makes it difficult to capture long-range dependencies, restricting generation quality for complex scenes. Diffusion Transformers (DiT) (Peebles & Xie, 2023) have been proposed to address this limitation, leveraging the self-attention mechanism to model global relationships across the entire latent space. DiT models are now a widely adopted backbone behind state-of-the-art models (Zheng et al., 2024; Chen et al., 2023b; 2024b; Liu et al., 2024; Esser et al., 2024). However, DiT inference is computa-tionally expensive, as the quadratic attention cost combined with iterative denoising results in significant latency, making real-time generation impractical. To accelerate DiT inference, two main categories of meth-ods have been explored. Training-based approaches, such as distillation (Salimans & Ho, 2022; Meng et al., 2023) 1
+
+> arXiv:2602.18093v1 [cs.CV] 20 Feb 2026 Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers
+
+and quantization (Shang et al., 2023; Li et al., 2023), re-duce model complexity but require substantial training data and compute, and may degrade generation quality due to distribution shift. Training-free methods are increasingly popular due to their plug-and-play nature. Among these, caching-based approaches exploit the temporal redundancy in diffusion sampling by caching intermediate features and reusing them across consecutive steps, thereby reducing the number of full model samplings (Liu et al., 2025c). Despite their efficiency, existing caching methods face limi-tations. Reuse-based methods such as DeepCache (Ma et al., 2024b), FORA (Selvaraju et al., 2024), and ∆-DiT (Chen et al., 2024c) directly substitute previous model outputs for current ones, assuming that features remain unchanged across steps. However, this assumption breaks down in regions of high-dynamics along the denoising trajectory, leading to latent drift and potentially causing visual artifacts. To maintain acceptable quality, these methods must limit their acceleration ratio, resulting in modest speedups. More advanced approaches such as AB-Cache (Yu et al., 2025) and TaylorSeer (Liu et al., 2025d) extrapolate future features from historical information. While these methods improve upon naive reuse, they still suffer from error accumulation under fixed skip intervals, especially when the model output exhibits non-uniform dynamics. A key observation motivating our approach is that the model’s feature trajectory along the diffusion process is locally smooth (see Figure 2a), which suggests that the tem-poral structure of the denoising process can be exploited beyond naive reuse. To enable high-quality generation with aggressive acceleration, we identify two key challenges that must be addressed: (1) How to predict accurately and stably? Naive reuse is a zero-order approximation, while existing forecasting methods rely on finite-difference esti-mation that is sensitive to noise and unstable in higher-order terms, causing error accumulation under large skip intervals. 
+
+(2) How to adapt the prediction horizon dynamically? 
+
+The dynamics varies significantly throughout the diffusion trajectory, with the initial and final phases exhibiting rapid changes while middle timesteps are smooth. A fixed skip schedule cannot account for this variation, leading to over-skipping (quality loss) or under-skipping (limited speedup). In this paper, we propose PrediT (Pre dictive DiT ), a training-free framework that treats feature estimation as a linear multistep prediction problem. We employ the Adams-Bashforth predictor, which directly combines histor-ical function values without explicit derivative estimation, to extrapolate future model outputs with improved numerical stability. An Adams-Moulton corrector is further applied in high-dynamics regions to refine predictions and prevent error accumulation. A dynamic step modulation mechanism monitors the relative change rate and adaptively adjusts how many steps can be safely skipped. In contrast to prior methods that either passively reuse stale features or apply fixed-interval extrapolation without adaptive control, PrediT allows principled prediction with adaptive step modulation, achieving aggressive acceleration without quality degrada-tion. As shown in Figure 1, PrediT achieves 4.28 × speedup on FLUX (Labs et al., 2025), 2.48 × on DiT-XL/2 (Pee-bles & Xie, 2023), and 3.28 × on HunyuanVideo (Kong et al., 2024) while maintaining comparable visual fidelity. In summary, our main contributions are: • We analyze why naive feature reuse leads to latent drift and show that diffusion trajectories are locally smooth, motivating higher-order polynomial prediction. • We propose PrediT, a training-free framework em-ploying the Adams-Bashforth predictor with Adams-Moulton correction for stable feature forecasting. A dynamic step modulation mechanism monitors relative feature change rate and adaptively adjusts the predic-tion interval. • Extensive experiments on several DiT-based models demonstrate that PrediT achieves up to 5.54 × speedup while maintaining comparable generation quality, out-performing existing caching methods. 
+
+## 2. Related Work 
+
+Diffusion Models. Diffusion models (DMs) (Dhariwal & Nichol, 2021; Ho et al., 2020; Rombach et al., 2022) have achieved remarkable success across diverse genera-tive tasks. These models generate high-quality samples by progressively denoising data through an iterative re-finement process (Croitoru et al., 2023; Yang et al., 2023). Early diffusion models predominantly relied on U-Net ar-chitectures but exhibited challenges in capturing long-range dependencies across spatial regions (Chen et al., 2023a; 2024a). To address these limitations, Diffusion Transform-ers (DiTs) (Peebles & Xie, 2023) replace the U-Net back-bone with a transformer-based architecture (Blattmann et al., 2023; Ramesh et al., 2022). Despite their impressive gener-ation quality and scalability advantages, DiTs suffer from higher inference latency compared to their predecessors. This computational burden has motivated extensive research into accelerating DiT inference. 
+
+Efficient Diffusion Models. Numerous approaches have been proposed to accelerate diffusion models. DDIM (Song et al., 2020a) introduces a non-Markovian formulation that allows deterministic sampling with significantly fewer steps. Model complexity reduction methods primarily focus on distillation (Salimans & Ho, 2022; Meng et al., 2023) and quantization (Shang et al., 2023; Li et al., 2023), which transfer knowledge to smaller models or reduce numerical precision respectively. However, these methods often in-2Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers Start (Noise)         
+
+> End (Final Latent)
+> (a) Feature Trajectory 0.00 0.25 0.50 0.75 1.00
+> Diffusion Timestep t
+> 10 2
+> 10 1
+> Approx. Error
+> 0.00 0.25 0.50 0.75 1.00
+> Diffusion Timestep t
+> 0
+> 2
+> 4
+> 6
+> Accumulated Drift
+> Direct Reuse
+> AB Method
+> ABM Method (b) Comparison of Approximation Error and Accumulated Drift
+> Figure 2. Analysis of direct feature reuse limitations. (a) Feature trajectory visualization via PCA shows local smoothness along the diffusion process. (b) Comparison of per-step approximation error and accumulated drift: naive reuse incurs significant error accumulation, while higher-order prediction methods reduce drift.
+
+troduce notable trade-offs. Large sampling reduction can compromise generation quality and diversity, distillation requires substantial computational resources and may be limited by teacher model performance, and extreme quanti-zation can lead to noticeable degradation in visual fidelity. 
+
+Diffusion Model Caching. Cache-based acceleration meth-ods have emerged as a promising training-free paradigm that exploits temporal redundancy in the denoising process. DeepCache (Ma et al., 2024b) pioneers this approach by caching and reusing high-level features across adjacent de-noising timesteps. ∆-DiT (Chen et al., 2024c) introduces a DiT-specific caching mechanism that stores feature differ-ences rather than raw outputs. FORA (Selvaraju et al., 2024) implements a static caching strategy with a fixed interval pa-rameter. More sophisticated approaches include PAB (Zhao et al., 2024), which applies different broadcast ranges for spatial, temporal, and cross-modal attention mechanisms. TeaCache (Liu et al., 2025a) intelligently determines when to use cached results based on input similarity. Smooth-Cache (Liu et al., 2025b) analyzes layer-wise representation errors from calibration data to adaptively determine caching intensity. ProfilingDiT (Ma et al., 2025a) distinguishes foreground-focused and background-focused transformer blocks, selectively caching static background features. While these direct feature reuse methods show impressive acceleration, they rely on features from previous timesteps that may not perfectly align with the current denoising stage, causing accumulated errors that manifest as artifacts or qual-ity loss. An alternative approach involves predicting future timestep features rather than directly reusing cached results. TaylorSeer (Liu et al., 2025d) employs Taylor series expan-sion to forecast features at future timesteps. AB-Cache (Yu et al., 2025) provides theoretical justification through the Adams-Bashforth numerical method, revealing a linear re-lationship between outputs of consecutive denoising steps. ABM-Solver (Ma et al., 2025b) extends this framework for inversion and editing tasks. Yet these prediction-based methods adopt fixed skip intervals without adaptive control, leading to error accumulation when feature dynamics vary significantly across the diffusion trajectory. 
+
+## 3. Method 
+
+We present PrediT, a training-free acceleration framework for DiTs that formulates feature prediction as a linear mul-tistep problem. We first analyze the limitations of existing reuse-based methods and the smoothness property of dif-fusion trajectories, then introduce our predictor-corrector scheme with dynamic step modulation. 
+
+3.1. Preliminaries Diffusion Models. DMs generate data by learning to reverse a gradual noising process. Given clean data x0, a forward process progressively adds Gaussian noise over timesteps 
+
+t ∈ [0 , 1] to produce xt. The reverse process starts from pure noise x1 ∼ N (0 , I ) and iteratively denoises to recover 
+
+x0. It can be formulated as solving an Ordinary Differential Equation (ODE) (Song et al., 2020a;b): 
+
+dx dt = fθ (xt, t ), (1) where fθ is the model’s velocity prediction (Lipman et al., 2022). The solution is obtained by numerical integration from t = 1 to t = 0 .
+
+Diffusion Transformers. Diffusion Transformers (DiT) (Peebles & Xie, 2023) replace the U-Net backbone with a transformer architecture. The latent zt is patchi-fied into tokens, processed through self-attention and MLP layers, and unpatchified back to latent dimensions. Each DiT block applies Adaptive Layer Normalization (AdaLN) conditioned on timestep t:
+
+h′ = Attn (AdaLN (h)) , h′′ = MLP (AdaLN (h′)) . (2) While DiT achieves superior generation quality, the quadratic attention cost combined with dozens of iterative steps makes inference computationally expensive. 
+
+Feature Reuse. Current caching methods accelerate infer-ence by reusing previous model outputs (Ma et al., 2024b; 3Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers AB Predictor Method ABM Predictor -Corrector Method 
+
+Dynamics Metric 
+
+True False       
+
+> Prediction
+> Correction Correction
+> Prediction AB Predicted ABM Predicted ABM Corrected
+
+··· ··· ··· 𝒙 𝒏 "𝟏 𝒙 𝒏 $𝟏 𝒙 𝒏 ··· ··· ··· 𝒙 𝒏 "𝟏 𝒙 𝒏 $𝟏 𝒙 𝒏 
+
+"𝒙 𝒏 "𝒙 𝒏 $𝟏 
+
+(∥ 𝒇 𝒏 − 𝒇 𝒏 "𝟏 ∥𝟏 )/∥ 𝒇 𝒏 ∥𝟏 ≥ 𝝉 ) 𝒓 
+
+Figure 3. Overview of the PrediT framework. PrediT formulates feature prediction as a linear multistep problem, using historical model outputs to extrapolate future features and reduce redundant model calls. The threshold τ and correction ratio r control the selection between ABM for high-dynamics and AB for low-dynamics regions. 
+
+Chen et al., 2024c). Given the current state xn at timestep 
+
+tn, these methods approximate the model output as: 
+
+ˆfn ≈ fn−k, (3) where fn−k is a cached output from k steps earlier. This zero-order approximation assumes f remains constant, in-curring a local truncation error (LTE) of O(∆ t). This error accumulates over consecutive skips, causing latent drift and visual artifacts. 
+
+Linear Multistep Methods. Linear multistep meth-ods (Hairer et al., 1993; Butcher, 2016) are classical numer-ical techniques for solving ODEs that use multiple previous function values to achieve higher-order accuracy. Starting from the integral form of Equation (1): 
+
+xn+1 = xn +
+
+Z tn+1 
+
+> tn
+
+f (x(s), s ) ds, (4) these methods approximate the integrand by a polynomial interpolating past values {fn, f n−1, . . . }, achieving LTE of 
+
+O(∆ tk+1 ) for order k. This provides a principled frame-work for predicting model outputs without explicit deriva-tive estimation (Lu et al., 2022; 2025). 
+
+3.2. PrediT Framework 
+
+As illustrated in Figure 3, PrediT combines an Adams-Bashforth predictor with an Adams-Moulton corrector under dynamic step modulation. 
+
+Adams-Bashforth Predictor. The Adams-Bashforth (AB) method is an explicit linear multistep method that extrapo-lates from historical function values (Liu et al., 2022a). For order k, the AB formula is: 
+
+xn+1 = xn + ∆ t
+
+> k−1
+
+X
+
+> j=0
+
+βj fn−j , (5) where βj are coefficients derived from Lagrange interpola-tion (see Appendix A). Specifically, for the second-order case (AB2): 
+
+xn+1 = xn + ∆t
+
+2 (3 fn − fn−1), (6) 0.00 0.25 0.50 0.75 1.00   
+
+> Diffusion Timestep t
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> Dynamics Change Rate  δ
+> Dynamics Rate δ
+> Uniform Rate
+> Non-linearity Gap
+
+(a) Non-uniform Change Rate 1 2 3 4 5    
+
+> Skip Step Interval k
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> Feature Deviation  High Dynamics Stage ( t= 0 .15 )
+> Low Dynamics Stage ( t= 0 .75 )
+> Tolerance Threshold
+
+(b) Skip Sensitivity 
+
+Figure 4. Feature dynamics vary across the diffusion process. (a) Initial and final phases exhibit rapid changes. (b) Approximation error grows with skip interval, especially in high-dynamics regions. 
+
+which achieves LTE of O(∆ t3), compared to O(∆ t2) for Euler. Crucially, AB directly combines historical function values without explicit derivative estimation, avoiding the instability of finite-difference approaches. 
+
+Adams-Moulton Corrector. While AB is efficient, its ex-plicit nature can accumulate errors in high-dynamics regions. The Adams-Moulton (AM) method is an implicit corrector that includes the future value fn+1 :
+
+xn+1 = xn + ∆ t
+
+> k−1
+
+X
+
+> j=−1
+
+γj fn−j , (7) where γ−1 corresponds to fn+1 . For the second-order case (AM2): 
+
+xn+1 = xn + ∆t
+
+12 (5 fn+1 + 8 fn − fn−1). (8) Combining AB as predictor and AM as corrector yields the Adams-Bashforth-Moulton (ABM) scheme (Karras et al., 2022), which first predicts ˜xn+1 using AB, then evaluates 
+
+˜fn+1 = fθ (˜ xn+1 , t n+1 ), and finally corrects using AM. While ABM achieves LTE of O(∆ t4) and improved stabil-ity, it requires one extra model call compared to AB alone. As shown in Figure 2(b), AB significantly reduces approx-imation error compared to naive reuse, and ABM further improves accuracy with lower accumulated drift. To balance accuracy and efficiency, PrediT dynamically selects between AB and ABM based on the relative feature 4Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers  
+
+> Table 1. Comparison of visual quality and efficiency in text-to-image generation on FLUX.
+
+Method Acceleration Image CLIP Aesthetic Latency(s) ↓ Speedup ↑ FLOP(T) ↓ Speedup ↑ Reward ↑ Score ↑ Score ↑
+
+Original: 50 Steps 23.71 1.00 × 3719.50 1.00 × 0.9767 31.9448 6.7448 
+
+∆-DiT( N = 2 ) 15.86 1.50 × 1859.75 2.00 × 0.9357 32.0211 6.5344 TeaCache( τ = 0 .4) 12.31 1.92 × 1438.92 2.58 × 0.8710 31.7885 6.4400 ABM-Solver( τ = 0 .1) 13.05 1.82 × 952.22 3.90 × 0.9378 32.0804 6.7260 
+
+Original: 25 Steps 11.58 2.05 × 1859.75 2.00 × 0.9467 31.6430 6.7307 
+
+∆-DiT( N = 3 ) 11.50 2.06 × 1264.63 2.94 × 0.9385 31.8708 6.4825 TeaCache( τ = 0 .8) 10.46 2.26 × 899.32 4.13 × 0.7933 31.6661 6.4048 FORA( N = 3 ) 8.73 2.71 × 1264.63 2.94 × 0.9715 32.0571 6.5433 AB-Cache( N = 3 ) 8.74 2.71 × 1339.06 2.78 × 0.9357 31.8480 6.6625 TaylorSeer( O = 2 , N = 5 ) 6.52 3.64 × 892.68 4.17 × 0.9676 31.9409 6.7439 
+
+FORA( N = 4 ) 6.90 3.44 × 967.07 3.85 × 0.9618 32.0679 6.5243 AB-Cache( N = 4 ) 6.49 3.65 × 1026.76 3.62 × 0.9308 31.8125 6.6681 TaylorSeer( O = 2 , N = 6 ) 6.02 3.94 × 743.90 5.00 × 0.9761 31.8897 6.7225 
+
+PrediT( O = 2 , τ = 2 ) 5.54 4.28 × 743.92 5.00 × 0.9773 32.1938 6.7307 
+
+PrediT( O = 2 , τ = 2 .5) 4.28 5.54 × 639.77 5.81 × 0.9506 32.0696 6.7174   
+
+> †Bold indicates the best result, underline indicates the second best. The same applies to the following tables.
+
+change rate: 
+
+δn = ∥fn − fn−1∥1
+
+∥fn∥1 + ϵ , (9) where ϵ is a small constant for numerical stability. ABM is applied in high-dynamics regions where accuracy is critical, while AB is used in smooth regions to maximize speedup. 
+
+Dynamic Step Modulation. As shown in Figure 4a, the model’s feature dynamics vary significantly along the dif-fusion trajectory, with initial and final phases exhibiting rapid changes. Figure 4b further reveals that skipping in high-dynamics regions incurs substantially larger feature deviation than in low-dynamics regions. Notably, even skip-ping multiple steps in smooth regions produces less error than a single skip in high-dynamics regions. Therefore, a fixed skip schedule cannot adapt to this variation (Karras et al., 2024). We compute the adaptive skip interval from the dynamics metric δn:
+
+J =
+
+ τ
+
+(δn + ϵ)1/(p+1) 
+
+
+
+, (10) where τ is the threshold parameter and p is the sensitivity exponent. The decision logic selects ABM without skipping when δn ≥ τ , ABM with limited skipping when τ · r ≤
+
+δn < τ , and AB only with large skipping when δn < τ · r,where r is the correction ratio. This ensures model calls focus on high-dynamics regions while maximizing skips in smooth regions. 
+
+Error Analysis. The total approximation error consists of discretization error from numerical integration, prediction error from polynomial extrapolation during skips, and ac-cumulated drift from consecutive skips. Our framework mitigates these by using higher-order AB/AM methods to reduce discretization error, adaptive skip interval to limit prediction error in curved regions, and ABM correction to reset accumulated drift when δn exceeds the threshold. De-tailed error bounds are provided in Appendix B, and the complete algorithm is presented in Appendix C. 
+
+## 4. Experiments 
+
+4.1. Experimental Settings Models, Datasets, and Solvers. We evaluate PrediT on three representative DiT-based models. For text-to-image generation, we use FLUX.1-dev (Labs et al., 2025) with 50 sampling steps and prompts from DiffusionDB (Wang et al., 2023). For text-to-video generation, we use Hunyuan-Video (Kong et al., 2024) with Rectified Flow (Liu et al., 2022b) solver, with prompts from VBench gallery (Zhang et al., 2025). For class-to-image generation, we use DiT-XL/2 (Peebles & Xie, 2023) with DDIM solver (Song et al., 2020a) on ImageNet (Deng et al., 2009) 256 ×256. 
+
+Evaluation Metrics. For text-to-image, we report ImageRe-ward (Xu et al., 2023) to measure human preference align-ment, CLIP Score (Radford et al., 2021) for text-image consistency, and Aesthetic Score for visual appeal. For text-to-video, we use VBench (Zhang et al., 2025) for se-mantic quality and LPIPS (Zhang et al., 2018), SSIM (Wang et al., 2004), PSNR for frame-level fidelity compared to the original output. For class-to-image, we report FID and sFID (Heusel et al., 2017) for distribution similarity and In-ception Score (IS) (Salimans et al., 2016) for sample quality and diversity. Detailed metric definitions are provided in Appendix D. 5Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers TaylorSeer 
+
+> 3.94x
+> TeaCache
+> 2.26x
+> FORA
+> 3.44x
+> AB -Cache
+> 3.65x
+> ∆-DiT
+> 2.06x
+> ABM -Solver
+> 1.82x
+> PrediT
+> 4.28x
+> Original -50
+> 1.00x
+
+Figure 5. Visual quality comparison of different acceleration meth-ods on FLUX. PrediT achieves higher acceleration while maintain-ing comparable visual quality. 
+
+Implementation Details. All experiments are conducted with FlashAttention (Dao et al., 2022) enabled. FLUX. 1 and HunyuanVideo are evaluated on a single NVIDIA A800 80GB GPU, while DiT-XL/2 uses an NVIDIA RTX 4090 24GB GPU. For FLUX.1, we generate 1024 ×1024 images. For HunyuanVideo, we test two settings: 544p ×860p with 17 frames and 480p ×640p with 45 frames. For DiT-XL/2, we generate 50K 256 ×256 images on ImageNet for FID evaluation. All baselines share the same solver, number of denoising steps, and CFG scale, unless otherwise specified by the original method. 
+
+4.2. Text-to-Image Generation Quantitative Results. We evaluate PrediT on FLUX. 1 for text-to-image generation and compare with representative acceleration methods in Table 1. At comparable acceleration ratios, PrediT matches or improves generation quality across all metrics. Specifically, PrediT achieves superior speedup while attaining the highest ImageReward and CLIP Score, even surpassing the original 50-step baseline. When pushing to more aggressive acceleration, PrediT reaches up to 5.54 ×
+
+Table 2. Ablation study of predictor-corrector scheme and DSM on FLUX.1.                                          
+
+> Method Acceleration Image CLIP FLUX.1 Latency(s) ↓Speedup ↑Reward ↑Score ↑
+> Original: 50 steps 23.71 1.00 ×0.9767 31.9448
+> Only AB w/o DSM 6.49 3.65 ×0.9308 31.8125
+> Only ABM w/o DSM 11.89 1.99 ×0.9318 31.8634
+> Only AB + DSM 3.65 6.49 ×0.9374 31.8534
+> Only ABM + DSM 6.15 3.86 ×0.9671 32.1778
+> PrediT 5.54 4.28 ×0.9773 32.1938
+
+speedup with only marginal quality degradation. In con-trast, reuse-based methods such as ∆-DiT and FORA suffer from noticeable quality drops at lower speedups. TeaCache achieves only 2.26 × speedup but yields a lower ImageRe-ward, significantly below the original. Prediction-based methods like TaylorSeer show improved quality retention but still fall short of PrediT at equivalent accelerations. 
+
+Visual Comparison. Figure 5 presents qualitative compar-isons on FLUX. 1 (full prompts are provided in Appendix E, and more visual results are shown in Appendix F). Other acceleration methods exhibit visible artifacts including blur-riness and loss of fine details, particularly in regions with complex textures. PrediT maintains visual fidelity compa-rable to the original model while achieving significantly higher acceleration, demonstrating the effectiveness of our principled prediction approach over naive feature reuse. 
+
+Ablation Study. To validate the effectiveness of our predictor-corrector scheme and Dynamic Step Modulation (DSM), we conduct ablation experiments on FLUX. 1 as shown in Table 2. Using only AB predictor without DSM achieves 3.65 × speedup but with degraded ImageReward. Adding DSM to AB increases speedup to 6.49 × while maintaining similar quality, demonstrating that adaptive step modulation allows larger skipping in smooth regions. Using ABM alone with DSM yields 3.86 × speedup with improved quality, showing the benefit of the corrector in high-dynamics regions. The full PrediT framework, which dynamically selects between AB and ABM based on the dynamics metric, achieves an effective balance with 4.28 ×
+
+speedup and the highest ImageReward, validating the effec-tiveness of combining predictive feature forecasting with adaptive step modulation. 
+
+4.3. Text-to-Video Generation Quantitative Results. We extend our evaluation to text-to-video generation on HunyuanVideo, testing two resolu-tion settings as shown in Table 3. At 544p ×860p with 17 frames, PrediT achieves 3.28 × speedup while maintaining the highest VBench score and best visual metrics. Com-pared to other methods, PAB and TeaCache provide limited speedups with 50 sampling steps. Prediction-based methods face challenges in video generation; for example, TaylorSeer 6Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers  
+
+> Table 3. Comparison of visual quality and efficiency in text-to-video generation on HunyuanVideo on a single A800 GPU.
+
+Settings Method Acceleration Visual Quality Latency(s) ↓ Speedup ↑ VBench(%) ↑ LPIPS ↓ SSIM ↑ PSNR ↑
+
+544p ×860p, 17frames 
+
+Original: 50 Steps 76.71 1.00 × 82.08 0.0000 1.000 ∞
+
+PAB( N = 8 ) 66.21 1.16 × 80.81 0.1433 0.8370 27.41 
+
+TeaCache( τ = 0 .14 ) 57.71 1.33 × 82.18 0.1466 0.8536 25.64 
+
+Original: 25 Steps 40.29 1.90 × 81.51 0.1973 0.8196 23.17 ProfilingDiT( N = 6 ) 44.60 1.72 × 80.33 0.2610 0.6662 18.77 TaylorSeer( O = 1 , N = 4 ) 39.30 1.95 × 82.05 0.4021 0.5526 15.33 AB-Cache( N = 3 ) 32.14 2.39 × 82.36 0.1587 0.8512 24.67 
+
+PrediT( O = 2 , τ = 2 ) 27.21 2.81 × 82.45 0.1329 0.8693 25.81 
+
+PrediT( O = 3 , τ = 2 .5) 23.36 3.28 × 82.36 0.1429 0.8616 25.77 480p ×640p, 45frames 
+
+Original: 50 Steps 117.43 1.00 × 80.12 0.0000 1.000 ∞
+
+PAB( N = 8 ) 95.14 1.23 × 78.45 0.1712 0.7969 25.67 
+
+TeaCache( τ = 0 .14 ) 77.86 1.51 × 80.05 0.1701 0.8036 23.48 
+
+Original: 25 Steps 62.14 1.89 × 79.76 0.2221 0.7599 20.95 AB-Cache( N = 3 ) 49.29 2.38 × 79.89 0.1801 0.7995 22.68 
+
+PrediT( O = 2 , τ = 2 ) 41.29 2.84 × 80.14 0.1401 0.8345 24.25 
+
+PrediT( O = 3 , τ = 2 .5) 36.14 3.24 × 80.08 0.1513 0.8280 24.06                
+
+> †ProfilingDiT and TaylorSeer can only generate up to 17 frames at 544p ×860p resolution on a single A800 GPU, and run OOM at 480p ×640p with 45 frames. 29 53 77 105 129
+> Number of Frames
+> 10 2
+> 10 3
+> Latency (s)
+> Original PrediT
+> (a) 544P 29 53 77 105 129
+> Number of Frames
+> 10 2
+> 10 3
+> Latency (s)
+> Original PrediT (b) 720P
+> Figure 6. Latency comparison between the original method and PrediT on HunyuanVideo at 544P and 720P resolutions across different frame counts.
+
+achieves comparable speedup but with degraded visual qual-ity, indicating accumulated prediction errors across video frames. AB-Cache shows better quality retention but PrediT still outperforms it in both acceleration and visual fidelity. At 480p ×640p with 45 frames, the computational challenge increases, yet PrediT maintains consistent acceleration with the best VBench score. Notably, ProfilingDiT and Tay-lorSeer encounter out-of-memory (OOM) errors at this set-ting, highlighting the memory efficiency of our approach. Detailed memory analysis is provided in Appendix G. 
+
+Scaling Analysis. Figure 6 illustrates the latency scaling behavior across different frame counts at 544P and 720P resolutions. The original method exhibits near-linear la-tency growth with increasing frames, becoming prohibitive for longer video generation. PrediT consistently reduces latency across all configurations, with the acceleration ratio remaining stable as frame count increases. This demon-strates that our dynamic step modulation adapts effectively to the temporal structure of video diffusion, maintaining efficient inference regardless of video length. 
+
+Visual Comparison. Figure 7 presents visual comparisons on HunyuanVideo. Other acceleration methods suffer from noticeable quality degradation, including blurriness and loss of fine details in both spatial and temporal dimensions. PrediT preserves the visual quality of the original model, with sharp details and consistent motion across frames, vali-dating the effectiveness of our predictor-corrector scheme. 
+
+4.4. Class-to-Image Generation Quantitative Results. In Table 4, we evaluate PrediT on DiT-XL/2 for class-conditional ImageNet generation, com-paring with existing acceleration methods under both 50-step and 70-step DDIM sampling. Notably, Learning-to-Cache (L2C) (Ma et al., 2024a) learns to conduct caching in a dynamic manner for diffusion transformers, which is not training-free. At 50 steps, PrediT achieves 2.12 × speedup while improving FID from 2.28 to 2.24, demonstrating that our method can simultaneously accelerate inference and en-hance generation quality. This improvement stems from the reduced discretization error of our higher-order prediction scheme. In comparison, FORA achieves 2.03 × speedup but degrades FID to 3.52, and L2C provides only 1.25 ×
+
+acceleration. At 70 steps, PrediT maintains consistent per-formance with 2.48 × speedup and FID of 2.24. Notably, TaylorSeer exhibits severe quality collapse at 70 steps with FID degrading to 10.12, indicating numerical instability in its Taylor series extrapolation over longer sampling trajecto-ries. PrediT avoids this issue through the stability properties 7Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers Original -50    
+
+> 1.00x
+> PrediT
+> 3.28x
+> AB -Cache
+> 2.38x
+> PAB
+> 1.16x
+> TeaCache
+> 1.33x
+> ProfilingDiT
+> 1.72x
+> TaylorSeer
+> 1.95x
+> “Vincent van Gogh is painting in the room ”“a motorcycle on the left of a bus, front view ”“Yellow flowers swing in the wind ”
+> Shape and color of flowers Actions of characters Location of motorcycle and bus
+
+Figure 7. Visual quality comparison of different acceleration methods on HunyuanVideo. Other acceleration methods suffer from blurriness or loss of details, while PrediT maintains comparable visual quality with higher acceleration. 
+
+Table 4. Comparison of visual quality and efficiency in class-to-image generation on DiT-XL/2.                                                                                       
+
+> Method Steps Latency(s) ↓Speedup ↑FID ↓sFID ↓IS ↑
+> DDIM 50 0.569 1.00 ×2.28 4.25 242.26 L2C 0.550 0.455 1.25 ×2.39 4.40 235.75 FORA 250 0.331 1.72 ×2.73 4.90 234.57 FORA 350 0.280 2.03 ×3.52 6.39 226.18 TaylorSeer 3350 0.409 1.39 ×2.41 4.69 235.83
+> PrediT 41,0.150 0.309 1.84 ×2.23 4.60 240.10 PrediT 41,0.350 0.268 2.12 ×2.24 4.78 239.55
+> DDIM 70 0.779 1.00 ×2.21 4.29 243.92 FORA 270 0.449 1.73 ×2.43 4.59 244.19 FORA 370 0.335 2.33 ×2.85 5.40 241.42 TaylorSeer 3370 0.553 1.41 ×10.12 16.35 175.62
+> PrediT 41,0.170 0.356 2.19 ×2.15 4.61 245.15 PrediT 41,0.370 0.314 2.48 ×2.24 4.77 239.54
+
+of Adams methods and adaptive corrector activation. 
+
+Quality-Speedup Trade-off. Figure 8 visualizes the quality-speedup trade-off between DDIM and PrediT with different predictor orders. Higher-order predictors achieve better FID and IS at the cost of slightly reduced speedup. Notably, PrediT with O = 4 surpasses the DDIM base-line in both FID and IS while still providing acceleration, demonstrating that our method can improve quality while accelerating inference. Suggesting that users choose the pa-rameters flexibly. Additional ablation studies with various hyperparameter configurations are provided in Appendix H. 
+
+## 5. Conclusion 
+
+In this paper, we presented PrediT, a training-free accelera-tion framework for DiTs that formulates feature prediction Better Better 
+
+Figure 8. Quality-speedup trade-off on DiT-XL/2. PrediT achieves better quality at a higher speedup compared to the original model. 
+
+as a linear multistep problem. Observing that model outputs evolve smoothly along the diffusion trajectory, we moved be-yond naive feature reuse to principled prediction. Our frame-work employs the Adams-Bashforth predictor to extrapolate future model outputs from historical information, and an Adams-Moulton corrector that activates in high-dynamics regions to prevent error accumulation. The dynamic step modulation mechanism adaptively adjusts the prediction horizon based on the relative feature change rate, enabling aggressive skipping in smooth regions while maintaining accuracy in high-dynamics regions. Experiments across DiT-based models demonstrate the effectiveness of PrediT. Future work includes extending our framework to emerging architectures such as Mixture-of-Experts DiT models and exploring applications in interactive generation scenarios. 8Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers 
+
+## Impact Statements 
+
+This paper presents work whose goal is to advance the field of machine learning, particularly in efficient inference for generative models. The proposed PrediT framework has several positive societal implications: • Environmental Efficiency: By reducing model in-ference latency while maintaining generation quality, our method directly lowers the energy consumption and carbon footprint of running large-scale diffusion models for image and video generation. • Democratization of Access: Our method introduces minimal memory overhead, enabling high-resolution video generation on a consumer-grade GPU without out-of-memory errors. This broadens access to ad-vanced generative tools for researchers and creators with limited computational resources. 
+
+## References 
+
+Blattmann, A., Dockhorn, T., Kulal, S., Mendelevitch, D., Kilian, M., Lorenz, D., Levi, Y., English, Z., Voleti, V., Letts, A., et al. Stable video diffusion: Scaling latent video diffusion models to large datasets. arXiv preprint arXiv:2311.15127 , 2023. Butcher, J. C. Numerical methods for ordinary differential equations . John Wiley & Sons, 2016. Cao, Y., Li, S., Liu, Y., Yan, Z., Dai, Y., Yu, P., and Sun, L. A survey of ai-generated content (aigc). ACM Computing Surveys , 57(5):1–38, 2025. Chen, H., Xia, M., He, Y., Zhang, Y., Cun, X., Yang, S., Xing, J., Liu, Y., Chen, Q., Wang, X., et al. Videocrafter1: Open diffusion models for high-quality video generation. 
+
+arXiv preprint arXiv:2310.19512 , 2023a. Chen, H., Zhang, Y., Cun, X., Xia, M., Wang, X., Weng, C., and Shan, Y. Videocrafter2: Overcoming data limitations for high-quality video diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 7310–7320, 2024a. Chen, J., Yu, J., Ge, C., Yao, L., Xie, E., Wu, Y., Wang, Z., Kwok, J., Luo, P., Lu, H., et al. Pixart-α: Fast training of diffusion transformer for photorealistic text-to-image synthesis. arXiv preprint arXiv:2310.00426 , 2023b. Chen, J., Ge, C., Xie, E., Wu, Y., Yao, L., Ren, X., Wang, Z., Luo, P., Lu, H., and Li, Z. Pixart-σ: Weak-to-strong training of diffusion transformer for 4k text-to-image generation. In European Conference on Computer Vision ,pp. 74–91. Springer, 2024b. Chen, P., Shen, M., Ye, P., Cao, J., Tu, C., Bouganis, C.-S., Zhao, Y., and Chen, T. δ-dit: A training-free acceleration method tailored for diffusion transformers. arXiv preprint arXiv:2406.01125 , 2024c. Croitoru, F.-A., Hondru, V., Ionescu, R. T., and Shah, M. Diffusion models in vision: A survey. IEEE transac-tions on pattern analysis and machine intelligence , 45(9): 10850–10869, 2023. Dao, T., Fu, D. Y., Ermon, S., Rudra, A., and R ´e, C. FlashAt-tention: Fast and memory-efficient exact attention with IO-awareness. In Advances in neural information pro-cessing systems , 2022. Deng, J., Dong, W., Socher, R., Li, L.-J., Li, K., and Fei-Fei, L. Imagenet: A large-scale hierarchical image database. In 2009 IEEE conference on computer vision and pattern recognition , pp. 248–255. Ieee, 2009. Dhariwal, P. and Nichol, A. Diffusion models beat gans on image synthesis. In Advances in neural information processing systems , volume 34, pp. 8780–8794, 2021. Esser, P., Kulal, S., Blattmann, A., Entezari, R., M ¨uller, J., Saini, H., Levi, Y., Lorenz, D., Sauer, A., Boesel, F., et al. Scaling rectified flow transformers for high-resolution image synthesis. In Forty-first international conference on machine learning , 2024. Fui-Hoon Nah, F., Zheng, R., Cai, J., Siau, K., and Chen, L. Generative ai and chatgpt: Applications, challenges, and ai-human collaboration. Journal of information tech-nology case and application research , 25(3):277–304, 2023. Hairer, E., Wanner, G., and Nørsett, S. P. Solving ordi-nary differential equations I: Nonstiff problems . Springer, 1993. Heusel, M., Ramsauer, H., Unterthiner, T., Nessler, B., and Hochreiter, S. Gans trained by a two time-scale update rule converge to a local nash equilibrium. In Advances in neural information processing systems , volume 30, 2017. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. In Advances in neural information pro-cessing systems , volume 33, pp. 6840–6851, 2020. Karras, T., Aittala, M., Aila, T., and Laine, S. Elucidating the design space of diffusion-based generative models. In Advances in neural information processing systems ,volume 35, pp. 26565–26577, 2022. Karras, T., Aittala, M., Lehtinen, J., Hellsten, J., Aila, T., and Laine, S. Analyzing and improving the training dynamics of diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 24174–24184, 2024. 9Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers 
+
+Kong, W., Tian, Q., Zhang, Z., Min, R., Dai, Z., Zhou, J., Xiong, J., Li, X., Wu, B., Zhang, J., et al. Hunyuan-video: A systematic framework for large video generative models. arXiv preprint arXiv:2412.03603 , 2024. Labs, B. F., Batifol, S., Blattmann, A., Boesel, F., Con-sul, S., Diagne, C., Dockhorn, T., English, J., English, Z., Esser, P., et al. Flux. 1 kontext: Flow matching for in-context image generation and editing in latent space. 
+
+arXiv preprint arXiv:2506.15742 , 2025. Li, X., Liu, Y., Lian, L., Yang, H., Dong, Z., Kang, D., Zhang, S., and Keutzer, K. Q-diffusion: Quantizing dif-fusion models. In Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision , pp. 17535–17545, 2023. Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. Liu, F., Zhang, S., Wang, X., Wei, Y., Qiu, H., Zhao, Y., Zhang, Y., Ye, Q., and Wan, F. Timestep embedding tells: It’s time to cache for video diffusion model. In Pro-ceedings of the Computer Vision and Pattern Recognition Conference , pp. 7353–7363, 2025a. Liu, J., Geddes, J., Guo, Z., Jiang, H., and Nandwana, M. K. Smoothcache: A universal inference acceleration tech-nique for diffusion transformers. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 3229–3238, 2025b. Liu, J., Wang, X., Lin, Y., Wang, Z., Wang, P., Cai, P., Zhou, Q., Yan, Z., Yan, Z., Shi, Z., et al. A survey on cache meth-ods in diffusion models: Toward efficient multi-modal generation. arXiv preprint arXiv:2510.19755 , 2025c. Liu, J., Zou, C., Lyu, Y., Chen, J., and Zhang, L. From reusing to forecasting: Accelerating diffusion mod-els with taylorseers. arXiv preprint arXiv:2503.06923 ,2025d. Liu, L., Ren, Y., Lin, Z., and Zhao, Z. Pseudo numeri-cal methods for diffusion models on manifolds. arXiv preprint arXiv:2202.09778 , 2022a. Liu, X., Gong, C., and Liu, Q. Flow straight and fast: Learning to generate and transfer data with rectified flow. 
+
+arXiv preprint arXiv:2209.03003 , 2022b. Liu, Y., Zhang, K., Li, Y., Yan, Z., Gao, C., Chen, R., Yuan, Z., Huang, Y., Sun, H., Gao, J., et al. Sora: A review on background, technology, limitations, and opportunities of large vision models. arXiv preprint arXiv:2402.17177 ,2024. Lu, C., Zhou, Y., Bao, F., Chen, J., Li, C., and Zhu, J. Dpm-solver: A fast ode solver for diffusion probabilistic model sampling in around 10 steps. In Advances in neural information processing systems , volume 35, pp. 5775– 5787, 2022. Lu, C., Zhou, Y., Bao, F., Chen, J., Li, C., and Zhu, J. Dpm-solver++: Fast solver for guided sampling of diffusion probabilistic models. Machine Intelligence Research , pp. 1–22, 2025. Ma, X., Fang, G., Bi Mi, M., and Wang, X. Learning-to-cache: Accelerating diffusion transformer via layer caching. In Advances in Neural Information Processing Systems , volume 37, pp. 133282–133304, 2024a. Ma, X., Fang, G., and Wang, X. Deepcache: Acceler-ating diffusion models for free. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 15762–15772, 2024b. Ma, X., Liu, Y., Liu, Y., Wu, X., Zheng, M., Wang, Z., Lim, S.-N., and Yang, H. Model reveals what to cache: Profiling-based feature reuse for video diffusion mod-els. In Proceedings of the IEEE/CVF International Con-ference on Computer Vision (ICCV) , pp. 17150–17159, October 2025a. Ma, Y., Di, D., Liu, X., Chen, X., Fan, L., Chen, W., and Su, T. Adams bashforth moulton solver for inversion and editing in rectified flow. arXiv preprint arXiv:2503.16522 ,2025b. Meng, C., Rombach, R., Gao, R., Kingma, D., Ermon, S., Ho, J., and Salimans, T. On distillation of guided diffu-sion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 14297– 14306, 2023. Peebles, W. and Xie, S. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF interna-tional conference on computer vision , pp. 4195–4205, 2023. Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al. Learning transferable visual models from natural language supervision. In International conference on machine learning , pp. 8748–8763. PmLR, 2021. Ramesh, A., Dhariwal, P., Nichol, A., Chu, C., and Chen, M. Hierarchical text-conditional image generation with clip latents. arXiv preprint arXiv:2204.06125 , 1(2):3, 2022. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., and Ommer, B. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pp. 10684–10695, 2022. 10 Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers 
+
+Salimans, T. and Ho, J. Progressive distillation for fast sampling of diffusion models. arXiv preprint arXiv:2202.00512 , 2022. Salimans, T., Goodfellow, I., Zaremba, W., Cheung, V., Radford, A., and Chen, X. Improved techniques for train-ing gans. In Advances in neural information processing systems , volume 29, 2016. Selvaraju, P., Ding, T., Chen, T., Zharkov, I., and Liang, L. Fora: Fast-forward caching in diffusion transformer acceleration. arXiv preprint arXiv:2407.01425 , 2024. Shang, Y., Yuan, Z., Xie, B., Wu, B., and Yan, Y. Post-training quantization on diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 1972–1981, 2023. Song, J., Meng, C., and Ermon, S. Denoising diffusion im-plicit models. arXiv preprint arXiv:2010.02502 , 2020a. Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Er-mon, S., and Poole, B. Score-based generative modeling through stochastic differential equations. arXiv preprint arXiv:2011.13456 , 2020b. Wang, Z., Bovik, A. C., Sheikh, H. R., and Simoncelli, E. P. Image quality assessment: from error visibility to struc-tural similarity. IEEE transactions on image processing ,13(4):600–612, 2004. Wang, Z. J., Montoya, E., Munechika, D., Yang, H., Hoover, B., and Chau, D. H. Diffusiondb: A large-scale prompt gallery dataset for text-to-image generative models. In 
+
+Proceedings of the 61st annual meeting of the association for computational linguistics , pp. 893–911, 2023. Xu, J., Liu, X., Wu, Y., Tong, Y., Li, Q., Ding, M., Tang, J., and Dong, Y. Imagereward: learning and evaluating human preferences for text-to-image generation. In Pro-ceedings of the 37th International Conference on Neural Information Processing Systems , pp. 15903–15935, 2023. Yang, L., Zhang, Z., Song, Y., Hong, S., Xu, R., Zhao, Y., Zhang, W., Cui, B., and Yang, M.-H. Diffusion models: A comprehensive survey of methods and applications. 
+
+ACM computing surveys , 56(4):1–39, 2023. Yu, Z., Zou, Z., Shao, G., Zhang, C., Xu, S., Huang, J., Zhao, F., Cun, X., and Zhang, W. Ab-cache: Training-free acceleration of diffusion models via adams-bashforth cached feature reuse. In Proceedings of the 33rd ACM In-ternational Conference on Multimedia , pp. 10408–10417, 2025. Zhang, F., Tian, S., Huang, Z., Qiao, Y., and Liu, Z. Evalu-ation agent: Efficient and promptable evaluation frame-work for visual generative models. In Annual Meeting of the Association for Computational Linguistics (ACL), 2025 , 2025. Zhang, R., Isola, P., Efros, A. A., Shechtman, E., and Wang, O. The unreasonable effectiveness of deep features as a perceptual metric. In Proceedings of the IEEE conference on computer vision and pattern recognition , pp. 586–595, 2018. Zhao, X., Jin, X., Wang, K., and You, Y. Real-time video generation with pyramid attention broadcast. arXiv preprint arXiv:2408.12588 , 2024. Zheng, Z., Peng, X., Yang, T., Shen, C., Li, S., Liu, H., Zhou, Y., Li, T., and You, Y. Open-sora: Democratiz-ing efficient video production for all. arXiv preprint arXiv:2412.20404 , 2024. 11 Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers 
+
+## A. Adams Method Coefficients 
+
+A.1. Derivation of Second-Order Adams-Bashforth (AB2) 
+
+The Adams-Bashforth method approximates the integral R tn+1  
+
+> tn
+
+f (x(s), s ) ds by constructing a Lagrange interpolating polynomial through historical function values. For the second-order case (AB2), we use two points (tn, f n) and (tn−1, f n−1).The Lagrange interpolating polynomial is: 
+
+P (s) = fn · s − tn−1
+
+tn − tn−1
+
++ fn−1 · s − tn
+
+tn−1 − tn
+
+= fn · s − tn−1
+
+h − fn−1 · s − tn
+
+h , (11) where h = ∆ t is the uniform step size. Integrating from tn to tn+1 :
+
+Z tn+1 
+
+> tn
+
+P (s) ds = fn
+
+h
+
+Z tn+1 
+
+> tn
+
+(s − tn−1) ds − fn−1
+
+h
+
+Z tn+1 
+
+> tn
+
+(s − tn) ds (12) 
+
+= fn
+
+h
+
+ (s − tn−1)2
+
+2
+
+tn+1 
+
+> tn
+
+− fn−1
+
+h
+
+ (s − tn)2
+
+2
+
+tn+1 
+
+> tn
+
+(13) 
+
+= fn
+
+h · (2 h)2 − h2
+
+2 − fn−1
+
+h · h2
+
+2 = 3h
+
+2 fn − h
+
+2 fn−1. (14) Thus, the AB2 formula is: 
+
+xn+1 = xn + h
+
+2 (3 fn − fn−1), (15) with coefficients β0 = 32 and β1 = − 12 .
+
+A.2. Derivation of Second-Order Adams-Moulton (AM2) 
+
+The Adams-Moulton method includes the future value fn+1 in the interpolation, making it implicit. For the second-order case (AM2), we construct a polynomial through three points (tn+1 , f n+1 ), (tn, f n), and (tn−1, f n−1):
+
+P (s) = fn+1 L−1(s) + fnL0(s) + fn−1L1(s), (16) where Lj (s) are the Lagrange basis polynomials. After computing the integrals: 
+
+Z tn+1 
+
+> tn
+
+L−1(s) ds = 5h
+
+12 ,
+
+Z tn+1 
+
+> tn
+
+L0(s) ds = 8h
+
+12 ,
+
+Z tn+1 
+
+> tn
+
+L1(s) ds = − h
+
+12 . (17) Thus, the AM2 formula is: 
+
+xn+1 = xn + h
+
+12 (5 fn+1 + 8 fn − fn−1), (18) with coefficients γ−1 = 512 , γ0 = 812 , and γ1 = − 112 .
+
+A.3. Higher-Order Coefficients 
+
+Following the same derivation procedure, we obtain coefficients for higher-order methods. Table 5 and Table 6 summarize the coefficients and local truncation errors (LTE) for orders 1–4. 
+
+Table 5. Adams-Bashforth coefficients and local truncation errors. 
+
+Order β0 β1 β2 β3 LTE AB1 1 – – – 12 h2f ′′ 
+
+AB2 32 − 12 – – 512 h3f ′′′ 
+
+AB3 23 12 − 16 12 512 – 924 h4f (4) 
+
+AB4 55 24 − 59 24 37 24 − 924 251 720 h5f (5) 
+
+Note that AM of the same order has a smaller LTE coefficient than AB, providing improved accuracy at the cost of requiring 
+
+fn+1 .12 Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers 
+
+Table 6. Adams-Moulton coefficients and local truncation errors. 
+
+Order γ−1 γ0 γ1 γ2 γ3 LTE AM1 1 – – – – − 12 h2f ′′ 
+
+AM2 512 812 − 112 – – − 124 h3f ′′′ 
+
+AM3 924 19 24 − 524 124 – − 19 720 h4f (4) 
+
+AM4 251 720 646 720 − 264 720 106 720 − 19 720 − 3160 h5f (5) 
+
+## B. Error Analysis 
+
+B.1. Discretization Error 
+
+For an ODE ˙x = f (x, t ) with exact solution x(t), the local truncation error (LTE) of a numerical method measures the error introduced in a single step assuming exact previous values. 
+
+Proposition B.1 (AB Local Truncation Error) . The Adams-Bashforth method of order k has LTE: 
+
+τ AB n = Ckhk+1 f (k)(ξ) + O(hk+2 ), (19) 
+
+where Ck is a constant depending on k, and ξ ∈ [tn, t n+1 ].
+
+The global error after N steps is bounded by: 
+
+∥xN − x(tN )∥ ≤ eLT − 1
+
+L max  
+
+> n
+
+∥τn∥ = O(hk), (20) where L is the Lipschitz constant of f and T is the total integration time. 
+
+B.2. Prediction Error During Skips 
+
+When skipping model calls, we use AB to predict fn+1 from history: 
+
+ˆfn+1 =
+
+> k−1
+
+X
+
+> j=0
+
+αj fn−j , (21) where αj are extrapolation coefficients. The prediction error is: 
+
+ϵpred = ∥fn+1 − ˆfn+1 ∥ ≈ O (hk∥f (k)∥). (22) This error depends on the local curvature of the trajectory. Our dynamics metric δn approximates the first derivative, providing a proxy for curvature. 
+
+B.3. Error Accumulation and Mitigation 
+
+When J consecutive steps are skipped, errors accumulate: 
+
+ϵacc (J) ≈
+
+> J
+
+X
+
+> i=1
+
+ϵpred (i) · (1 + Lh )J−i. (23) The exponential factor (1 + Lh )J−i reflects error propagation through the ODE. Our framework mitigates this through: 1. Adaptive skip interval : When δn is large, J is automatically reduced via Equation (10). 2. ABM correction : When δn ≥ τ , we invoke ABM which evaluates the true fn+1 , resetting the prediction error to the discretization error of AM. 13 Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers 
+
+3. Threshold-based switching : The correction ratio r creates a buffer zone where ABM is used even for moderate dynamics. 
+
+Proposition B.2 (Error Bound with Dynamic Step Modulation) . Under the assumption that ∥f (k)∥ ≤ M and with threshold 
+
+τ chosen such that δn < τ implies ∥f ′∥ ≤ τ ∥f ∥, the accumulated error over a trajectory satisfies: 
+
+∥ϵtotal ∥ ≤ C1hk + C2τ J max + C3NABM , (24) 
+
+where Jmax is the maximum allowed skip interval and NABM is the number of ABM corrections that reset the accumulated drift. 
+
+This shows that the error is controlled by the interplay between the method order k, the threshold τ , and the frequency of corrections. 
+
+## C. Algorithm Pseudocode 
+
+Algorithm 1 PrediT: Predictive Diffusion Transformer Inference 
+
+Require: Noise x1, timesteps {tn}Nn=0 , model fθ , order k, threshold τ , ratio r
+
+Initialize history buffer H ← ∅ , skip counter J ← 0
+
+for n = 0 to N − 1 do 
+
+∆t ← tn+1 − tn
+
+if J > 0 then 
+
+x ← x + AB k(∆ t, H) // Skip: use cached history 
+
+J ← J − 1
+
+else 
+
+fn ← fθ (x, t n) // Compute model output 
+
+δn ← ∥ fn − fn−1∥1/(∥fn∥1 + ϵ) // Dynamics metric 
+
+if δn ≥ τ then 
+
+x ← ABM k(x, ∆t, f n, H, f θ ) // Corrected by ABM 
+
+else if δn ≥ τ · r then 
+
+x ← ABM k(x, ∆t, f n, H, f θ ), J ← ComputeSkip (δn, τ ) // Corrected by ABM with dynamic step modulation 
+
+else 
+
+x ← x + AB k(∆ t, [fn] ∪ H ), J ← ComputeSkip (δn, τ ) // Predicted by AB with dynamic step modulation 
+
+end if 
+
+Update H ← [fn] ∪ H 
+
+end if end for return x
+
+## D. Evaluation Metrics 
+
+D.1. Text-to-Image Metrics ImageReward. ImageReward measures the alignment between generated images and human preferences. It is trained on human preference data to predict which image better matches the given text prompt: ImageReward (x, c ) = fϕ(x, c ), (25) where x is the generated image, c is the text prompt, and fϕ is the reward model trained on human annotations. 
+
+CLIP Score. CLIP Score evaluates the semantic consistency between the generated image and the input text prompt using a pretrained CLIP model: CLIPScore (x, c ) = max(100 · cos( EI (x), E T (c)) , 0) , (26) 14 Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers 
+
+where EI and ET are the image and text encoders of CLIP, and cos( ·, ·) denotes cosine similarity. 
+
+Aesthetic Score. Aesthetic Score predicts the visual appeal of generated images using a model trained on human aesthetic ratings: AestheticScore (x) = gψ (EI (x)) , (27) where gψ is a linear regressor trained on the Aesthetic Visual Analysis (AVA) dataset aesthetic annotations. 
+
+D.2. Text-to-Video Metrics VBench. VBench is a comprehensive benchmark that evaluates video generation across multiple dimensions, including subject consistency, background consistency, motion smoothness, aesthetic quality, and imaging quality. The overall score is a weighted combination of these sub-metrics. 
+
+LPIPS. Learned Perceptual Image Patch Similarity measures perceptual similarity between frames: LPIPS (x, y ) = X
+
+> l
+
+1
+
+HlWl
+
+X
+
+> h,w
+
+∥wl ⊙ ( ˆϕhw l (x) − ˆϕhw l (y)) ∥22, (28) where ˆϕl are normalized activations from layer l of a pretrained network and wl are learned weights. 
+
+SSIM. Structural Similarity Index measures the structural similarity between two images: SSIM (x, y ) = (2 μxμy + c1)(2 σxy + c2)(μ2 
+
+> x
+
++ μ2 
+
+> y
+
++ c1)( σ2 
+
+> x
+
++ σ2 
+
+> y
+
++ c2) , (29) where μx, μ y are local means, σx, σ y are standard deviations, σxy is the covariance, and c1, c 2 are stability constants. 
+
+PSNR. Peak Signal-to-Noise Ratio measures the reconstruction quality: PSNR (x, y ) = 10 · log 10 
+
+ R2
+
+MSE (x, y )
+
+
+
+, (30) where R is the maximum possible pixel value, and MSE is the mean squared error. 
+
+D.3. Class-to-Image Metrics FID. Fr´ echet Inception Distance measures the similarity between the distributions of generated and real images: FID = ∥μr − μg ∥2 + Tr (Σ r + Σ g − 2(Σ r Σg )1/2), (31) where (μr , Σr ) and (μg , Σg ) are the mean and covariance of Inception features for real and generated images. 
+
+sFID. Spatial FID computes FID on spatial feature maps rather than pooled features, better capturing spatial structure. 
+
+Inception Score. Inception Score evaluates both quality and diversity of generated samples: IS = exp ( Ex[DKL (p(y|x)∥p(y))]) , (32) where p(y|x) is the conditional class distribution from an Inception classifier and p(y) = Ex[p(y|x)] is the marginal distribution. Higher IS indicates both confident class predictions and diverse class coverage. 
+
+## E. Text-to-Image Prompt 
+
+The prompts used for the visual comparisons in Figure 5 are listed below: 1. Column 1: [“rat with bandages on bandaged arms holding wakizashi, highly detailed, d & d, fantasy, highly detailed, digital painting, trending on artstation, concept art, sharp focus, illustration, global illumination, shaded, art by artgerm and greg rutkowski and fuji choko and viktoria gavrilenko and hoang lap”] 15 Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers                                     
+
+> Table 7. Memory Usage (MB) on Different Resolutions and Frames using A800 80GB.
+> Method 480p ×640p ×45f 480p ×640p ×65f 544p ×860p ×17f 544p ×860p ×65f 720p ×1280p ×129f
+> Original 44295 45949 43131 49477 74465 PrediT 44819 46313 44043 49715 74525 PAB 79831 OOM 55045 OOM OOM TeaCache 48619 51499 48227 53319 80083 ProfilingDiT OOM OOM 57237 OOM OOM TaylorSeer OOM OOM 61557 OOM OOM
+
+2. Column 2: [“anna from frozen — — fine detail!! anime!! realistic shaded lighting!!, directional lighting 2 d poster by ilya kuvshinov, magali villeneuve, artgerm, jeremy lipkin and michael garmash and rob rey”] 3. Column 3: [“a boy holding on to a dying old dog connecting him to his childhood”] 4. Column 4: [“a beautiful ultradetailed anime illustration of unknown backroom level nature by bjarke ingels, landscape sunlight laser studio ghibli infrared cyberpunk at night synthwave tokyo vaporwave neon noir magic realism, archdaily, wallpaper, highly detailed, trending on artstation.”] 5. Column 5: [“the moon as a lightbulb being unscrewed by someones hand”] 
+
+## F. More Visual Results 
+
+F.1. More Visual Comparisons on FLUX.1 
+
+Figure 9 presents additional visual comparisons on FLUX.1. While reuse-based methods exhibit visible degradation in fine details and prediction-based methods show subtle artifacts, PrediT preserves sharp details and accurate color reproduction across diverse prompts, validating the effectiveness of our approach. 
+
+F.2. More Visual Comparisons on HunyuanVideo 
+
+Figure 10 provides additional visual comparisons on HunyuanVideo. Video generation is more challenging as errors can accumulate across both denoising steps and video frames. Existing methods show blurriness or temporal inconsistencies, while PrediT maintains sharp spatial details and smooth temporal transitions, achieving up to 3.28 × speedup while preserving visual quality. 
+
+## G. Memory Usage Analysis 
+
+Video generation with DiT models requires substantial GPU memory due to the large spatial-temporal feature maps. We therefore analyze the memory consumption of different acceleration methods on HunyuanVideo across various resolutions and frame settings using a single NVIDIA A800 80GB GPU. As shown in Table 7, PrediT introduces minimal memory overhead compared to the original model, with only 1%-2% additional memory usage across all settings. In contrast, prediction-based methods require storing Taylor expansion coefficients and historical gradients, leading to out-of-memory (OOM) errors at most settings. PAB also suffers from OOM at higher resolutions due to its attention caching mechanism. TeaCache shows moderate memory increase but remains functional. These results demonstrate that PrediT achieves significant speedup while maintaining memory efficiency, making it practical for real-world video generation applications. 
+
+## H. Supplementary Results for Ablation Studies 
+
+We conduct more ablation studies on DiT-XL/2 to analyze the impact of different hyperparameter configurations. Table 8 shows results with varying predictor order, dynamics threshold, and correction ratio. Higher-order predictors achieve better quality at the cost of reduced speedup, while smaller τ values lead to more frequent corrections and improved quality. Notably, with O = 4 and τ = 0 .75 , PrediT achieves FID of 2.17, surpassing the baseline, demonstrating that our method can improve quality while accelerating inference. 16 Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers 
+
+Table 8. Ablation Study with Different Configurations on ImageNet with DiT-XL/2. 
+
+Settings Latency(s) ↓ Speedup ↑ FID ↓ sFID ↓ IS ↑
+
+DDIM-50 0.569 1.00 × 2.28 4.25 242.3 
+
+(O = 2 , τ = 1 .25 , r = 0 .3) 0.219 2.60 × 2.97 5.33 222.6 
+
+(O = 2 , τ = 1 .25 , r = 0 .1) 0.250 2.28 × 3.01 5.24 222.5 
+
+(O = 2 , τ = 1 .00 , r = 0 .3) 0.251 2.27 × 2.71 5.31 228.4 
+
+(O = 2 , τ = 1 .00 , r = 0 .2) 0.297 1.92 × 2.72 5.28 228.3 
+
+(O = 2 , τ = 1 .00 , r = 0 .1) 0.293 1.94 × 2.78 5.30 227.7 
+
+(O = 2 , τ = 0 .75 , r = 0 .3) 0.291 1.96 × 2.44 4.84 235.0 
+
+(O = 2 , τ = 0 .75 , r = 0 .1) 0.306 1.86 × 2.48 4.88 234.3 
+
+(O = 3 , τ = 1 .25 , r = 0 .3) 0.228 2.50 × 2.54 5.12 231.1 
+
+(O = 3 , τ = 1 .25 , r = 0 .1) 0.259 2.20 × 2.49 4.85 232.4 
+
+(O = 3 , τ = 1 .00 , r = 0 .3) 0.254 2.24 × 2.39 4.89 235.8 
+
+(O = 3 , τ = 1 .00 , r = 0 .2) 0.286 1.99 × 2.39 4.89 235.8 
+
+(O = 3 , τ = 1 .00 , r = 0 .1) 0.287 1.98 × 2.37 4.77 237.8 
+
+(O = 3 , τ = 0 .75 , r = 0 .3) 0.295 1.93 × 2.25 4.70 239.7 
+
+(O = 3 , τ = 0 .75 , r = 0 .1) 0.312 1.82 × 2.25 4.65 239.9 
+
+(O = 4 , τ = 1 .25 , r = 0 .3) 0.240 2.37 × 2.41 5.12 234.7 
+
+(O = 4 , τ = 1 .25 , r = 0 .1) 0.269 2.12 × 2.33 4.82 236.8 
+
+(O = 4 , τ = 1 .00 , r = 0 .3) 0.268 2.12 × 2.24 4.78 239.5 
+
+(O = 4 , τ = 1 .00 , r = 0 .2) 0.302 1.88 × 2.24 4.75 239.8 
+
+(O = 4 , τ = 1 .00 , r = 0 .1) 0.309 1.84 × 2.23 4.60 240.1 
+
+(O = 4 , τ = 0 .75 , r = 0 .3) 0.305 1.87 × 2.17 4.61 242.7 
+
+(O = 4 , τ = 0 .75 , r = 0 .1) 0.324 1.76 × 2.16 4.49 243.3 
+
+## Statement on Large Language Model Usage 
+
+In the preparation of this manuscript, Large Language Models (LLMs) were mainly utilized for the purpose of language polishing. The LLM played no role in the generation of core ideas. All final content was thoroughly reviewed and approved by the authors. 17 Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers “hyperfuturistic overtuned bmw electric sports concept car with extremly high details, riding through a cyberpunk …"
+
+"a geometrical and isometric portrait of a harlequin, fractal flowering background, digital art, trending on artstation" 
+
+"victo ngai cute fox sticker design, highly detailed, high quality, digital painting, by ross tran and studio ghibli …"
+
+"a black and white ink drawing of a large - eyed ten year old girl named lucy dressed in winter fur parka and …"
+
+"oil matte portrait, blue witch using fire magic on clown. digital painting, fantasy, concept art, cinematic colors …"
+
+"1950 s couple being incinerated by nuclear war h640" 
+
+"a photo of a snow owl and grizzly bear hybrid" 
+
+"a elaborate robot coding, on screen old video game shown, robot hold a controller, 8 k, artstation" 
+
+Original -50 PrediT ABM -Solver TeaCache ∆-DiT FORA AB -Cache TaylorSeer 
+
+Figure 9. More Visual Comparisons on FLUX.1. Zoom in for best viewing. 
+
+18 Predict to Skip: Linear Multistep Feature Forecasting for Efficient Diffusion Transformers " A tranquil tableau of a peaceful orchid garden showcased a variety of delicate blooms "
+
+> "A person is making snowman"
+> "underwater coral reef"
+> "A person is sailing"
+
+Original -50 PrediT PAB TeaCache ProfilingDiT TaylorSeer AB -Cache 
+
+Figure 10. More Visual Comparisons on HunyuanVideo. Zoom in for best viewing. 
+
+19

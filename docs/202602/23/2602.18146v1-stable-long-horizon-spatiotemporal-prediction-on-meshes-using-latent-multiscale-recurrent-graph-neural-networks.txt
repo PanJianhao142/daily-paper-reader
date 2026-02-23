@@ -1,0 +1,605 @@
+Title: Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks
+
+URL Source: https://arxiv.org/pdf/2602.18146v1
+
+Published Time: Mon, 23 Feb 2026 01:33:01 GMT
+
+Number of Pages: 25
+
+Markdown Content:
+# Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks 
+
+Lionel Salesses, Larbi Arbaoui, Tariq Benamara, Arnaud Francois, Caroline Sainvitu 
+
+Cenaero Gosselies, Belgium 
+
+lionel.salesses@cenaero.be 
+
+# Abstract 
+
+Accurate long-horizon prediction of spatiotempo-ral fields on complex geometries is a fundamental challenge in scientific machine learning, with ap-plications such as additive manufacturing where temperature histories govern defect formation and mechanical properties. High-fidelity simulations are accurate but computationally costly, and de-spite recent advances, machine learning methods remain challenged by long-horizon temperature and gradient prediction. We propose a deep learn-ing framework for predicting full temperature his-tories directly on meshes, conditioned on geom-etry and process parameters, while maintaining stability over thousands of time steps and gen-eralizing across heterogeneous geometries. The framework adopts a temporal multiscale architec-ture composed of two coupled models operating at complementary time scales. Both models rely on a latent recurrent graph neural network to cap-ture spatiotemporal dynamics on meshes, while a variational graph autoencoder provides a compact latent representation that reduces memory usage and improves training stability. Experiments on simulated powder bed fusion data demonstrate accurate and temporally stable long-horizon pre-dictions across diverse geometries, outperform-ing existing baseline. Although evaluated in two dimensions, the framework is general and exten-sible to physics-driven systems with multiscale dynamics and to three-dimensional geometries. 
+
+Keywords Long-Horizon Prediction · Multiscale Modeling ·
+
+Additive Manufacturing · Scientific Machine Learning · Graph Autoencoder 
+
+# 1. Introduction 
+
+Accurate long-horizon prediction of spatiotemporal fields defined on complex and evolving geometries is a central challenge in scientific machine learning. Such problems arise across a wide range of physical systems, including additive manufacturing [ 1], climate and weather modeling [ 2], [ 3], and fluid dynamics [ 4], where system dynamics exhibit strong coupling between fast local phenomena and slow global evolution. Learning models that are both tempo-rally stable over long horizons and computationally efficient remains an open problem, particularly when predictions must be made directly on irregular meshes [ 5 ], [ 6]. Additive manufacturing provides a representative and practically rel-evant instance of this challenge. During metal powder bed fusion, the temperature history governs defect formation, residual stresses, and final mechanical properties (see [ 7]and [ 8]). While high-fidelity numerical solvers can accu-rately capture these thermal dynamics, their computational cost precludes real-time inference and limits large-scale de-sign exploration (see [ 9] and [ 10 ]). While recent machine learning approaches have shown promise in accelerating thermal prediction, achieving reliable long-range forecasts of temperature fields and gradients on variable geometries remains difficult in practice [ 11 ]. A key difficulty stems from the intrinsic temporal multiscale structure of the un-derlying physics. In additive manufacturing, short-term intralayer dynamics are dominated by highly localized laser-material interactions, whereas long-term interlayer dynam-ics are governed by heat diffusion and cumulative energy deposition. Treating these disparate time scales within a single monolithic sequence model often leads to unstable training, excessive memory usage, or error accumulation over long horizons [ 12 ]. In this work, we propose a Latent Multiscale Recurrent Graph Neural Network (LM-RGNN) framework that explicitly leverages this temporal separation. 
+
+> arXiv:2602.18146v1 [cs.LG] 20 Feb 2026
+
+Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks Our approach decomposes long-horizon prediction into two coupled but independently trained models operating at com-plementary time scales. Both models perform sequence prediction directly on meshes using a recurrent graph neural network, while a Variational Graph Autoencoder (VGAE) provides a compact latent representation of temperature fields. This latent formulation substantially reduces mem-ory requirements and facilitates stable information propaga-tion over long temporal horizons. From a machine learning perspective, our contribution is a general latent multiscale modeling strategy for long-horizon spatiotemporal predic-tion on graphs, rather than a task-specific architecture. The proposed framework is designed to accommodate variable meshes, long sequences, and multiscale temporal dynamics, which are common across many physics-driven learning problems. Additive manufacturing serves as a challenging testbed that highlights these characteristics but does not constrain the applicability of the method. We evaluate the proposed approach on simulated powder bed fusion data and demonstrate improved predictive accuracy, temporal stability, and computational efficiency compared to an exist-ing graph-based baseline [ 11 ]. Beyond temperature fields, the model accurately captures derived quantities such as spatial and temporal gradients and melt-pool localization. While our experiments focus on two-dimensional simula-tions, the framework naturally extends to three-dimensional geometries and other multiscale physical systems. Overall, this work advances the state of long-horizon spatiotempo-ral modeling on graphs by introducing a latent multiscale formulation that improves stability and scalability, offering a general tool for scientific machine learning applications characterized by coupled fast and slow dynamics. Poten-tial extensions and application domains are discussed in Appendix A. 
+
+# 2. Related Work 
+
+Machine Learning for Spatiotemporal and Physics-Based Modeling. Learning long-horizon spatiotemporal dynamics governed by PDEs remains a central challenge in scientific machine learning. Autoregressive models, while widely used due to their simplicity, often suffer from error accumulation and instability over long rollouts, particularly when applied to high-dimensional physical fields. Lippe et al. [ 12 ] show that standard autoregressive models often fail to produce stable and accurate rollout predictions due to their inability to capture the high-frequency components of PDE solutions. To address this limitation, they introduce PDE-Refiner, a diffusion-inspired refinement framework that enhances high-frequency modeling for autoregressive predictors operating on fixed regular grids through a multi-step refinement strategy. The method is validated on fluid dynamics benchmarks, yielding substantial improvements in rollout accuracy over horizons of up to 1000 time steps. Graph-based models have emerged as a natural paradigm for learning physics on unstructured domains. The EA-GLE framework [ 13 ] introduces an autoregressive graph encoder-decoder architecture combining mesh clustering with a core attention mechanism to model turbulent flow dynamics directly on simulation meshes. Trained on CFD data, EAGLE demonstrates the ability to predict flows across varying two-dimensional geometries, with evaluation over horizons of up to 250 time steps showing a gradual, though limited, error growth. Similarly, the Temporal Graph Net-work (TGN) framework [ 6 ] explores recurrent graph-based architectures for physics prediction on unstructured meshes, highlighting the difficulty of achieving long-horizon stabil-ity due to the joint spatialtemporal complexity of physical systems. Recent work has also explored attention-based and operator-learning approaches for spatiotemporal model-ing. The ASNO framework [ 14 ] proposes an autoregressive architecture that decouples spatial and temporal modeling using attention mechanisms, followed by a neural opera-tor to predict spatiotemporal fields. ASNO is evaluated on benchmark PDE systems, including melt pool prediction in additive manufacturing. Operating on fixed grids, it re-ports stable rollouts up to 95 time steps with reduced error accumulation compared to baselines. 
+
+Machine Learning for Additive Manufacturing and Thermal Modeling. Several studies in additive manufac-turing employ Physics-Informed Neural Networks (PINNs) to achieve accurate thermal predictions for a specific geome-tries [ 15 , 16 ], achieving good melt pool reconstruction but typically focusing on limited geometries and short predic-tion horizons. Tian et al. [ 1 ] combine physics-informed RNNs with convolutional LSTMs to autoregressively pre-dict thermal histories on regular grids for thin-wall geome-tries, achieving an RMSE of about 20 °C over short-term horizons (11.25 s), demonstrating the potential of recurrent formulations for thermal modeling, but without evaluation in long-horizon rollout settings. Graph-based learning has recently gained traction in additive manufacturing due to its ability to operate directly on variable part meshes. Choi et al. [ 11 ] propose a GNN-RNN architecture trained on addi-tive manufacturing simulations to predict thermal histories for unseen complex three-dimensional geometries. Operat-ing at the subsequence level, their model achieves accurate and stable predictions over horizons of up to 50 time steps. Considering to its strong performance and close method-ological relevance, this approach is adopted as a baseline in the present work and detailed in Appendix D. 
+
+Positioning of This Work. In contrast to prior approaches, our work targets long-horizon spatiotemporal prediction on irregular meshes by explicitly leveraging the temporal mul-tiscale structure of the underlying physics. Unlike single-scale autoregressive graph models such as EAGLE [ 13 ]2Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks or subsequence-based approaches in additive manufactur-ing [ 11 ], we decompose the prediction task into coupled interlayer and intralayer models operating at complemen-tary time scales. This design enables stable prediction over thousands of time steps while remaining computationally efficient. Moreover, whereas diffusion-based refinement strategies [ 12 ] and neural operator approaches [ 14 ] primar-ily operate on fixed grids, our framework directly models fields on variable meshes using a latent recurrent graph neural network. While evaluated in the context of addi-tive manufacturing, the proposed latent multiscale RGNN framework is general and applicable to a broad class of physics-driven systems characterized by coupled fast local dynamics and slow global evolution. 
+
+# 3. Additive Manufacturing Benchmark and Dataset 
+
+The task addressed in this work is to predict the com-plete temperature history during the additive manufacturing process using a deep learning approach capable of han-dling variable part geometry. The present study focused on two-dimensional geometries, which already pose signifi-cant modeling challenges; however, the proposed machine learning framework is explicitly designed with scalability to three-dimensional parts in mind, where data generation costs, memory requirements, and computational complexi-ties become substantially higher. The task can be formulated around the following objectives: (i) Achieve temporally stable long-horizon predictions of the full temperature evolution defined on geometry-specific simulation meshes. (ii) Accurately predict temperature fields with respect to physically and application-relevant metrics, including spatial and temporal temperature gradients that are critical to printed part quality (see [17] or [18]). (iii) Generalize effectively to geometries unseen during training. (iv) Control memory consumption to ensure scalability and to anticipate the significant increase in memory foot-print of three-dimensional simulations. (v) Ensure inference times is compatible with near real-time prediction, enabling future applications such as process monitoring. The dataset is derived from two-dimensional numerical sim-ulations performed using a finite element-based thermal solver. Those simulations are designed to predict spatial and temporal evolution of the temperature during additive manufacturing of metallic parts with a particular focus on the powder bed fusion process. Numerical simulations are based on a layer by layer progressive approach that employs mesh element activation techniques. For each layer, the thermal evolution is characterized by a distinct heating and cooling phase. During the heating phase, thermal responses are computed using a moving Gaussian heat source with an alternating linear laser path. Each activated layer is com-posed of a metallic powder region and a solid metal region targeted by the laser heat source. More details on the manu-facturing process and the modeling hypothesis can be found in Appendix B. The dataset is designed to train and develop a deep learning approach focusing on geometrical charac-teristics. Process parameters including laser course speed, laser power, cooling time and scan trajectory are kept fixed throughout this study. Each simulation is associated with a parameterized geometry that satisfies additive manufactura-bility constraints, as detailed in Appendix B.1. An example of such a geometry is shown in Figure 1. Additional de-tails on the dataset generation and the underlying simulation model are provided in Appendix B.2 and Appendix B.3, respectively.  
+
+> Figure 1. Example of printed geometry. Metallic powder is in gray, the final printed part is in blue and the part boundaries are highlighted in green.
+
+For each simulation in the dataset, we have access to the computational mesh, including its topology, node coordi-nates, and material mask, as well as the laser process param-eters, namely the time-resolved laser position and power. The simulated temperature field is provided at each simu-lation time step for all currently unmasked nodes. Since the simulation domain increases progressively in a layer-by-layer manner during the printing process, an active-node mask is available at every time step. Temperature fields are defined at mesh nodes and recorded for each simulation time step (see Figure 2 for representative snapshots). The length of the resulting temperature sequences depends on the part geometry and, in the present dataset, ranges from 6600 to 12000 time steps (corresponding to approximately 1600s to 3000s). Temperature values span from a minimum of 20°C to a maximum of approximately 2100°C. The highest temperatures occur in the vicinity of the laser beam, where metallic powder melts down to form the melt pool. This region is characterized by steep temperature gradients and complex physical processes, including phase change, which are modeled through the inclusion of a latent heat term in the governing equations. The 140 generated simulations are 3Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks randomly partitioned into 80 simulations for training, 20 for validation, and 40 for testing.  
+
+> Figure 2. Temperature field snapshots for a fixed printed geometry at multiple time steps. The green lines indicate the part boundaries, enclosing the solid metallic region. The temperature is simulated for both metallic part and the surrounding powder.
+
+# 4. Latent Multiscale Recurrent Graph Architecture 
+
+In this section, we introduce an architecture for predicting the temperature history of a printed part from process param-eters and geometric information. The proposed approach adopts a time-multiscale modeling strategy based on two coupled models, each operating at a distinct temporal scale. Both models are built upon two core components: a RGNN, which enables the sequential modeling of temperature fields defined on a mesh, and a VGAE, which provides a compact latent representation of the temperature fields. 
+
+4.1. Architecture Design Motivations 
+
+Since the temperature fields are defined on simulation meshes, it is natural and advantageous to operate directly on mesh-based data using GNNs, thereby avoiding interpo-lation onto a fixed snapshot grid, which would introduce additional approximation errors. In particular, mesh repre-sentations more accurately capture part interfaces, whereas image-based interpolations tend to blur these interfaces, leading to aliasing and loss of geometric fidelity. GNNs enable the processing of both local mesh connectivity and global structural features, allowing them to simultaneously model fine-scale details and the overall geometry of the part. As a result, GNNs are well suited to this class of problems. The objective of this work is to learn a mapping from the process parameters (specifically the laser path) to time-resolved sequences of temperature fields over very long temporal horizons. This requirement necessitates a model with strong temporal stability and minimal error ac-cumulation. As discussed in Appendix C.1, RNN are well suited to this class of problems; however, this approach poses significant computational challenges. In particular, the memory footprint required for backpropagation through long sequences becomes prohibitive. To address this limita-tion, we adopt Truncated Backpropagation Through Time (TBPTT) [ 19 ], which restricts backpropagation to a limited number of time steps while allowing the forward pass to proceed sequentially. This strategy substantially reduces memory usage while maintaining the ability to model long-term temporal dependencies. A second major challenge arises from the vanishing and exploding gradient phenom-ena commonly encountered in recurrent neural networks. To mitigate these effects, we employ an interlayer and in-tralayer splitting strategy (detailed below), which allows the RNN to be trained on coarser temporal sequences. This strat-egy enables the interlayer and intralayer models to be trained independently, facilitating modular development and more effective prototyping. To extend recurrent neural networks to graph-structured data, we introduce a RGNN architecture that combines a standard recurrent unit (specifically a Gated Recurrent Unit (GRU)) with graph neural network layers. For computational efficiency, the RGNN operates on a low-dimensional latent representation of the temperature fields rather than the full high-dimensional state, substantially reducing memory usage and alleviating GPU constraints on batch size and TBPTT sequence length. The tempera-ture fields defined on complex geometries exhibit multiple sources of variability, including global geometric structure and highly localized thermal dynamics associated with the laser-induced melt pool. To obtain such latent representa-tions, we employ a VGAE, which generalizes the classical VAE to graph-structured data (see [ 20 ] and [ 21 ]). The use of hierarchical graph pooling and unpooling operations allows the VGAE to extract multiscale features from both the part geometry and the temperature field, making it well suited for downstream recurrent modeling. We now provide a detailed description of the components that constitute the proposed architecture. 
+
+4.2. GraphGRU: Graph Gated Recurrent Unit 
+
+The standard formulation of the GRU operates on vector-valued inputs and hidden states. This formulation has been extended to structured data such as images and graphs by replacing linear transformations with convolutional or graph-based operators [ 22 ]. In this work, we generalize the GRU to graph-structured data by replacing the matrix multipli-cations in the classical GRU with Message-Passing Graph 4Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks Neural Networks (MPGNNs). Implementation details of the resulting GraphGRU module are provided in Appendix C.2. 
+
+4.3. RGNN: Recurrent Graph Neural Network 
+
+Let T0 denote the initial temperature and M the part mesh, which is represented as a graph (A, E ), where A is the adjacency matrix and E contains edge features encoding geometric information such as edge lengths and unit direc-tion vectors. The initial hidden state H0 is constructed by normalizing the initial temperature field and padding it with zeros to match the recurrent hidden state size. At each time step t, the model is provided with an active-node mask mt, a material mask μt indicating the local material state (metal or powder), and a vector of global attributes gt+1 that encodes process parameters, including changes in laser position and power since the previous time step. The RGNN evolves according to the following recurrent update (see Figure 11): 
+
+Xt+1 = mt+1 ⊕ μt+1 ,Ht+1 = GraphGRU( Xt+1 , H t, g t+1 ) ⊙ mt+1 ,Tt+1 = Ht+1 [0] ,
+
+(1) where the hidden state Ht is a node-feature tensor whose first component corresponds to the nodal temperature Tt.
+
+4.4. VGAE: Variational Graph Auto-Encoder 
+
+The VGAE takes as input a temperature field Ttrue defined on a mesh, represented as a graph (A, E ), together with a mask of active nodes m. Its purpose is to encode the tem-perature field into a compact latent representation defined on a reduced, latent graph. The learned latent representa-tion enables downstream models to operate directly in latent space, substantially reducing memory consumption. Im-plementation details of the VGAE module are provided in Appendix C.4. 
+
+4.5. Latent-RGNN 
+
+The RGNN introduced in Section 4.3 can be extended to operate directly in latent space. The recurrent hidden state may be initialized either to zero or by encoding the initial temperature field using a pre-trained VGAE encoder. In the latter case, the initial latent state is set to the node-wise mean of the latent distribution predicted by the encoder. The latent-RGNN produces a sequence of latent representations, which are subsequently decoded into temperature fields us-ing the pre-trained VGAE decoder with fixed parameters. The primary motivation for the latent-RGNN design is to reduce GPU memory consumption and avoid computation-ally expensive operations on high-dimensional fields. More details are given is Appendix C.5. 
+
+4.6. Time-Multiscale Strategy 
+
+The layer-by-layer nature of the additive manufacturing pro-cess naturally induces two distinct temporal scales: (i) an 
+
+interlayer scale, corresponding to the temperature field at the completion of each printed layer, and (ii) an intralayer 
+
+scale, corresponding to the fine-grained temporal evolution of the temperature field during the printing of a single layer. We exploit this structure by introducing a time-multiscale modeling strategy based on two coupled but independently trained models, as summarized in Figure 3. The interlayer model is trained to predict the temperature field at the end of each layer and capture long-term thermal dynamics dom-inated by heat diffusion and cumulative heat accumulation effects. Conditioned on these interlayer predictions, the intralayer model is trained to reconstruct the temperature evolution within each layer. Specifically, it takes as input the predicted initial temperature at the start of a layer, along with the layer associated process parameters, and outputs the transient temperature fields until layer completion. The intralayer model focuses on short-term dynamics associ-ated with laser motion and melt-pool phenomena, which are characterized by large but spatially localized temperature gradients. Both models are trained on substantially shorter temporal sequences than a full-sequence RGNN, resulting in improved training stability and reduced probability of vanishing and exploding gradient effects. In addition, this two-stage design enables more efficient inference: once the interlayer predictions are obtained, intralayer temperature evolution for all layers can be computed in parallel. This contrasts with full-sequence RGNNs, which require strictly sequential prediction across all time steps and thus incur significantly higher inference costs. Let {Tt}Nt=0 denote the sequence of temperature fields over time. This sequence can be partitioned according to the layer structure of the pro-cess into a collection of layer-wise subsequences {T (l)}Ll=0 ,where L denotes the total number of layers. Each subse-quence T (l) = {Tt}Nl
+
+> t=0
+
+, corresponds to the temperature evolution during the printing of layer l, with Nl denoting the number of time steps associated with that layer. We further denote ˜T (l) the temperature field after completion of printing layer l.
+
+Interlayer Model. The interlayer model, implemented us-ing the latent-RGNN architecture, is trained to predict the se-quence of layer-wise terminal temperature fields { ˜T (l)}Nl
+
+> l=0
+
+.It takes as input global geometric information, including active-node masks and material masks, as well as a sequence of layer-level process descriptors such as layer width, print-ing duration, and cooling duration. 
+
+Intralayer Model. The intralayer model, also based on the latent-RGNN architecture, is trained to predict the within-layer temperature evolution T (l) for each layer l.5Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks  
+
+> Figure 3. Overview of the LM-RGNN architecture and its main components, including the latent-RGNN and the VGAE.
+
+It is conditioned on the initial temperature field at the start of the layer, as predicted by the interlayer model, together with the same global geometric information and a sequence of time-resolved process parameters. 
+
+Latent-Multiscale-RGNN (LM-RGNN). The LM-RGNN refers to the coupled architecture obtained by integrating the interlayer and intralayer models described above (see Figure 3). 
+
+# 5. Experiments and Results 
+
+All details regarding the optimizer, learning rate scheduler, temperature sequence subsampling strategy, and training hyperparameters are provided in Appendix E. 
+
+5.1. Evaluation Metrics 
+
+We assess model performance using a comprehensive set of metrics, including Mean Absolute Error (MAE), Mean Absolute Percentage Error (MAPE), Mean Maximum Error (MME), melt-pool Intersection over Union (mpIoU), and temporal MAE (t-MAE). In addition, we evaluate errors on spatial and temporal temperature gradients through the MAE of spatial gradients ( MAE ∇xy ) and temporal gradients (MAE ∇t ). The t-MAE metric is used to quantify temporal stability of the predictions. In addition to predictive accu-racy, we report the number of model parameters, memory consumption at training-time, and per-time-step inference time measured in milliseconds. Further details on the eval-uation metrics and experimental protocol are provided in Appendix F. 
+
+5.2. Baseline 
+
+As a baseline for comparison, we reimplemented the Decoupled-RGNN architecture proposed by [ 11 ]. This model is designed to predict the temperature evolution throughout the printing process and to generalize across previously unseen geometries. Additional details regarding the architecture and our implementation are provided in Appendix D. 
+
+5.3. VGAE Model Performance 
+
+The VGAE model performances are reported in Appendix G.2. For all latent-based models considered in the following, we employ a VGAE trained with a latent dimensionality of 16, which produced the best predictive accuracy. Overall, the VGAE exhibits favorable performance with respect to the considered objectives, yielding low reconstruction error, stable behavior over time, satisfactory accurate predictions of melt pool extent, and controlled worst-case errors. 
+
+5.4. LM-RGNN Model Performance Temperature Prediction Accuracy. Tables 1 and 2 re-port the performance metrics of the interlayer, intralayer, and LM-RGNN models, together with their ablated variants and the Decoupled-RGNN baseline. A detailed analysis of the differences between each model and its ablated coun-terpart is provided in Section 5.5. Figures 16 and 17 in Appendix G.3 provide a visual comparison of temperature predictions, for a representative geometry and time step, between the LM-RGNN model and the Decoupled-RGNN 6Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks baseline. Overall, the LM-RGNN (which combines the pre-dictions of the interlayer and intralayer models) achieves consistently better performance than the Decoupled-RGNN baseline. Improvements are observed across temperature prediction accuracy, spatial and temporal gradient errors, and melt-pool estimation. These gains are obtained with a memory footprint comparable to the baseline, while in-ference time is only marginally higher (+0.97ms/time step). The interlayer and intralayer models exhibit similar MAE values; however, their MAPE scores differ substantially. This difference is primarily due to the lower temperature magnitudes observed in interlayer data, which correspond to end-of-layer cooling phases, as opposed to intralayer se-quences that include active laser heating and substantially higher temperatures. As a result, relative errors are mag-nified for the interlayer model. In contrast, the interlayer model attains lower MME values, reflecting the absence of extreme temperature peaks during cooling periods. We further note that the VGAE was trained on the full set of tem-perature fields rather than being specialized for interlayer states, which represent only a small fraction of the dataset. Training a dedicated VGAE on interlayer temperature fields could therefore further improve interlayer prediction accu-racy. Finally, although the interlayer model exhibits a higher per-step inference time than the intralayer model due to its larger number of parameters, this has a limited impact on the overall inference cost of the LM-RGNN. Indeed, the interlayer model is invoked only once per printed layer (100 time steps in total), whereas the intralayer model accounts for the majority of time-step predictions. 
+
+Temporal Stability. Figure 6 reports the t-MAE for the LM-RGNN and the Decoupled-RGNN baseline. The LM-RGNN exhibits strong temporal stability, characterized by low-amplitude oscillations and no noticeable error accumu-lation over time. In contrast, the Decoupled-RGNN baseline shows a gradual but persistent increase in error, together with more pronounced temporal fluctuations. Further in-sight is provided in Figures 4 and 5, which demonstrate the temporal stability of the interlayer and intralayer models, respectively. For the intralayer setting, larger error oscil-lations are observed at late time steps. This behavior can be partially explained by data sparsity, which affects the reliability of the averaged error estimates, as only a lim-ited number of simulations extend beyond approximately 2800s. Consistent with the behavior observed for the VGAE in Figure 15, an initial error peak is present at early time steps. This effect arises from the computation of MAE over a temporally varying active domain and reflects error con-centration during the early stages of the printing process. A detailed analysis of this phenomenon is provided in the Appendix G.1.    
+
+> Figure 4. Temporal MAE (t-MAE) on the test set for the interlayer model, compared with its full-dimensional (non-latent) counter-part.
+> Figure 5. Temporal MAE (t-MAE) on the test set for the intralayer model, compared with its ablated variants.
+> Figure 6. Temporal MAE on the test set for the LM-RGNN model, compared with its ablated variant and the Decoupled-RGNN base-line.
+
+5.5. Ablation Study 
+
+Tables 1 and 2, together with Figures 4, 5, and 6, report performance metrics and temporal MAE results for the in-terlayer, intralayer, and LM-RGNN models, as well as their corresponding ablated variants. For the interlayer setting, we compare the latent-RGNN architecture with a non-latent ablation that operates directly on full-resolution temperature fields while maintaining a comparable model size. The non-latent variant exhibits substantially higher training variabil-ity, increased memory consumption, and degraded perfor-7Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks 
+
+Table 1. Comparison of performance metrics on the test set across the proposed models, their ablated variants (marked by the ,→ symbol) , and the baseline.                                                                                                                                            
+
+> Model MAE (°C) MAPE (%) MME (°C) mpIoU MAE ∇xy (°C/mm) MAE ∇t(°C/s) Parameters Interlayer 7.29 ±0.17 4.48 ±0.22 44.5 ±0.5 2.10 ±0.05 0.76 ±0.09 85k
+> ,→w/o latent 17.80 ±9.16 4.73 ±1.57 95.0 ±40.6 4.65 ±1.54 0.40 ±0.18 91k Intralayer 6.48 ±0.19 2.20 ±0.010 108.7 ±2.80 0.87 ±0.0016 2.46 ±0.030 1.61 ±0.020 42k
+> ,→w/o latent 6.80 ±0.34 2.43 ±0.18 50.6 ±2.0 0.91 ±0.0081 2.27 ±0.10 1.28 ±0.064 41k LM-RGNN 6.50 ±0.10 2.58 ±0.002 108.7 ±0.28 0.85 ±0.0017 2.44 ±0.030 1.98 ±0.0031 127k
+> ,→w/o latent & multiscale strategy 26.28 ±1.45 7.25 ±1.12 111.46 ±5.1 0.69 ±0.097 5.98 ±1.30 7.13 ±0.84 131k Baseline Decoupled-RGNN 26.57 ±3.44 6.59 ±1.26 170.9 ±19.5 0.67 ±0.032 6.41 ±1.28 7.79 ±0.70 111k
+
+Table 2. Comparison of per-time-step inference time and training-time memory pressure across the proposed models, their ablated variants (marked by the ,→ symbol), and the baseline.                    
+
+> Model Inference time (ms) Mem. pressure Interlayer 30.4 Low
+> ,→w/o latent 30.9 Medium
+> Intralayer 12.35 Low
+> ,→w/o latent 14.28 Medium
+> LM-RGNN 14.47 Low
+> ,→w/o latent & multiscale strategy 68.19 High
+> Baseline Decoupled-RGNN 13.50 Low
+
+mance across most metrics, with the exception of MAE ∇t ,which remains low for both variants. In the intralayer setting, the latent-RGNN and its non-latent counterpart achieve com-parable performance. The non-latent model yields slightly improved MME, melt-pool estimation, and gradient-related metrics; however, these gains come at the cost of higher inference time and significantly increased memory usage due to full-field processing. Consequently, for the intralayer model, operating in the latent space primarily provides ben-efits in terms of memory efficiency rather than predictive accuracy. Overall, latent representations yield more pro-nounced performance gains for the interlayer model than for the intralayer model. We assume that this difference arises from the nature of the temporal dynamics: consecu-tive intralayer states are highly similar, with changes largely confined to local regions around the laser path, whereas in-terlayer states differ more substantially due to layer addition, extended thermal diffusion, and cumulative energy input. In this context, predicting intralayer transitions is well suited to message-passing architectures with limited receptive fields. By contrast, the latent representation, defined on a coarser mesh, enables more efficient global information propagation for interlayer dynamics, followed by accurate reconstruction via the pretrained VGAE decoder. Finally, we compare the LM-RGNN with an ablated non-latent RGNN trained on full sequences without temporal multiscale decomposition. The ablated model performs significantly worse. One contribut-ing factor is the difficulty of training RGNNs on extremely long sequences (up to 1800 time steps after subsampling), which leads to poor gradient propagation, unstable optimiza-tion, and oscillatory training loss. In addition, operating on full-resolution temperature fields substantially increases memory requirements, forcing the use of very small batch sizes and further degrading training stability. 
+
+# 6. Conclusion 
+
+Contributions. We introduced a LM-RGNN framework for predicting full temperature histories in additive manufac-turing directly on the part mesh, conditioned on geometric and process parameters. The integration of a VGAE with a temporal multiscale RGNN enables stable and accurate long-horizon prediction while mitigating the memory burden as-sociated with high-resolution simulation data. The explicit decomposition into interlayer and intralayer models allows the framework to capture both slow, diffusion-dominated thermal evolution and fast, laser-induced spatially local-ized dynamics, leading to improved accuracy of predicted temperature fields, spatial and temporal gradients, and melt-pool localization relative to existing baseline. Extensive experiments on simulated powder bed fusion data demon-strate that the proposed architecture achieves accurate and temporally stable predictions over thousands of time steps across diverse geometries. 
+
+Limitations and Future Work. While the proposed framework is designed with three-dimensional geometries and broader process generalization in mind, the present study is limited to two-dimensional simulations and a single powder bed fusion process with fixed parameters. More-over, the models are trained exclusively on simulated data, and further investigation is needed to assess robustness to process variability and transferability to experimental mea-surements. 
+
+Broader Impact. Beyond additive manufacturing, the pro-posed latent-multiscale-RGNN framework provides a gen-eral approach for modeling physics-driven systems with coupled fast and slow temporal dynamics on complex ge-ometries. Potential application domains include fluid dy-namics and climate and weather modeling (see Appendix A for a detailed discussion). 8Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks 
+
+# Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+# Acknowledgments 
+
+This work is supported by the “ARIAC by DigitalWallo-nia4.ai” reasearch project (grant agreement No 2010235 – TRAIL institute) and benefited from computational re-sources made available on Lucia, the Tier-1 supercom-puter of the Walloon Region, infrastructure funded by the Walloon Region (grant agreement No 1910247). This work is supported by the European Regional Development Fund (ERDF/FEDER) and the Walloon Region of Belgium through project 364 Cenaero_AdviseAM (programme 2021-2027). 
+
+# References 
+
+[1] Mingxuan Tian, Haochen Mu, Tao Liu, Mengjiao Li, Donghong Ding, and Jianping Zhao. Physics-informed machine learning-based real-time long-horizon tem-perature fields prediction in metallic additive manu-facturing. Communications Engineering , 4(1):168, 2025. [2] Yogesh Verma, Markus Heinonen, and Vikas Garg. Climode: Climate and weather forecasting with physics-informed neural odes. arXiv preprint arXiv:2404.10024 , 2024. [3] Ilan Price, Alvaro Sanchez-Gonzalez, Ferran Alet, Tom R Andersson, Andrew El-Kadi, Dominic Masters, Timo Ewalds, Jacklynn Stott, Shakir Mohamed, Peter Battaglia, et al. Probabilistic weather forecasting with machine learning. Nature , 637(8044):84–90, 2025. [4] Rui Gao, Shayan Heydari, and Rajeev K Jaiman. To-wards spatio-temporal prediction of cavitating fluid flow with graph neural networks. International Jour-nal of Multiphase Flow , 177:104858, 2024. [5] Ling Zhao, Yujiao Song, Chao Zhang, Yu Liu, Pu Wang, Tao Lin, Min Deng, and Haifeng Li. T-GCN: A temporal graph convolutional network for traffic prediction. IEEE transactions on intelligent transportation systems , 21(9):3848–3858, 2019. [6] Miaocong Yue, Huayong Liu, Xinghua Chang, Laip-ing Zhang, and Tianyu Li. TGN: A temporal graph network for physics prediction. Applied Sciences ,14(2):863, 2024. [7] Shubhavardhan Ramadurga Narasimharaju, Wenhan Zeng, Tian Long See, Zicheng Zhu, Paul Scott, Xi-angqian Jiang, and Shan Lou. A comprehensive review on laser powder bed fusion of steels: Processing, mi-crostructure, defects and control methods, mechanical properties, current challenges and future trends. Jour-nal of Manufacturing Processes , 75:375–414, 2022. [8] Peiying Bian, Ali Jammal, Kewei Xu, Fangxia Ye, Nan Zhao, and Yun Song. A review of the evolu-tion of residual stresses in additive manufacturing during selective laser melting technology. Materials ,18(8):1707, 2025. [9] Michele Chiumenti, Eric Neiva, Emilio Salsi, Miguel Cervera, Santiago Badia, Joan Moya, Zhuoer Chen, Caroline Lee, and Christopher Davies. Numerical mod-elling and experimental validation in selective laser melting. Additive Manufacturing , 18:171–185, 2017. [10] Christian Burkhardt, Paul Steinmann, and Julia Mergheim. Thermo-mechanical simulations of pow-der bed fusion processes: accuracy and efficiency. Ad-vanced Modeling and Simulation in Engineering Sci-ences , 9(1):18, 2022. [11] Jin Young Choi, Sina Malakpour Estalaki, Daniel Quispe, Rujing Zha, Rowan Rolark, Mojtaba Mozaf-far, and Jian Cao. Transfer learning enabled geometry, process, and material agnostic RGNN for tempera-ture prediction in directed energy deposition. Additive Manufacturing , page 104876, 2025. [12] Phillip Lippe, Bas Veeling, Paris Perdikaris, Richard Turner, and Johannes Brandstetter. Pde-refiner: Achieving accurate long rollouts with neural pde solvers. Advances in Neural Information Processing Systems , 36:67398–67433, 2023. [13] Steeven Janny, Aurélien Beneteau, Madiha Nadri, Julie Digne, Nicolas Thome, and Christian Wolf. Eagle: Large-scale learning of turbulent fluid dy-namics with mesh transformers. arXiv preprint arXiv:2302.10803 , 2023. [14] Vispi Nevile Karkaria, Doksoo Lee, Yi-Ping Chen, Yue Yu, and Wei Chen. ASNO: An interpretable attention-based spatio-temporal neural operator for robust scientific machine learning. In ICML 2025 Workshop on Reliable and Responsible Foundation Models , 2025. [15] Qiming Zhu, Zeliang Liu, and Jinhui Yan. Machine learning for metal additive manufacturing: predict-ing temperature and melt pool fluid dynamics using physics-informed neural networks. Computational Mechanics , 67(2):619–635, 2021. 9Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks [16] Shuheng Liao, Tianju Xue, Jihoon Jeong, Samantha Webster, Kornel Ehmann, and Jian Cao. Hybrid ther-mal modeling of additive manufacturing processes using physics-informed neural networks for tempera-ture prediction and parameter identification. Computa-tional Mechanics , 72(3):499–512, 2023. [17] Haider Ali, Hassan Ghadbeigi, and Kamran Mumtaz. Residual stress development in selective laser-melted Ti6Al4V: a parametric thermal modelling approach. 
+
+The International Journal of Advanced Manufacturing Technology , 97(5):2621–2633, 2018. [18] Daniyal Abolhasani, SM Hossein Seyedkashi, Namhyun Kang, Yang Jin Kim, Young Yun Woo, and Young Hoon Moon. Analysis of melt-pool behaviors during selective laser melting of AISI 304 stainless-steel composites. Metals , 9(8):876, 2019. [19] Herbert Jaeger. Tutorial on training recurrent neu-ral networks, covering BPPT, RTRL, EKF and the echo state network approach , volume 5. GMD-Forschungszentrum Informationstechnik Bonn, 2002. [20] Thomas N Kipf and Max Welling. Variational graph auto-encoders. arXiv preprint arXiv:1611.07308 ,2016. [21] Mario Lino Valencia, Tobias Pfaff, and Nils Thuerey. Learning distributions of complex fluid simulations with diffusion graph networks. In The Thirteenth In-ternational Conference on Learning Representations ,2025. [22] Youngjoo Seo, Michaël Defferrard, Pierre Van-dergheynst, and Xavier Bresson. Structured sequence modeling with graph convolutional recurrent networks. In International conference on neural information pro-cessing , pages 362–373. Springer, 2018. [23] Alessandro Candreva, Giuseppe De Nisco, Maur-izio Lodi Rizzini, Fabrizio D’Ascenzo, Gaetano Maria De Ferrari, Diego Gallo, Umberto Morbiducci, and Claudio Chiastra. Current and future applica-tions of computational fluid dynamics in coronary artery disease. Reviews in Cardiovascular Medicine ,23(11):377, 2022. [24] Evangelos Boutsianis, Hitendu Dave, Thomas Frauen-felder, Dimos Poulikakos, Simon Wildermuth, Marko Turina, Yiannis Ventikos, and Gregor Zund. Com-putational simulation of intracoronary flow based on real coronary geometry. European journal of Cardio-thoracic Surgery , 26(2):248–256, 2004. [25] Cyrus Tanade, Nusrat Sadia Khan, Emily Rakestraw, William D Ladd, Erik W Draeger, and Amanda Ran-dles. Establishing the longitudinal hemodynamic map-ping framework for wearable-driven coronary digital twins. NPJ Digital Medicine , 7(1):236, 2024. [26] Krzysztof Psiuk-Maksymowicz, Damian Borys, Bart-lomiej Melka, Maria Gracka, Wojciech P Adamczyk, Marek Rojczyk, Jaroslaw Wasilewski, Jan Głowacki, Mariusz Kruk, Marcin Nowak, et al. Methodology of generation of CFD meshes and 4D shape reconstruc-tion of coronary arteries from patient-specific dynamic CT. Scientific Reports , 14(1):2201, 2024. [27] Julian Suk, Guido Nannini, Patryk Rygiel, Christoph Brune, Gianluca Pontone, Alberto Redaelli, and Jelmer M Wolterink. Deep vectorised operators for pulsatile hemodynamics estimation in coronary arter-ies from a steady-state prior. Computer methods and programs in biomedicine , page 108958, 2025. [28] Ziyu Ni, Linda Wei, Lijian Xu, Qing Xia, Hong-sheng Li, Shaoting Zhang, and Dimitris Metaxas. Voxel2hemodynamics: An end-to-end deep learning method for predicting coronary artery hemodynam-ics. In International Workshop on Statistical Atlases and Computational Models of the Heart , pages 15–24. Springer, 2023. [29] Julian Suk, Pim de Haan, Phillip Lippe, Christoph Brune, and Jelmer M Wolterink. Mesh neural networks for SE (3)-equivariant hemodynamics estimation on the artery wall. Computers in biology and medicine ,173:108328, 2024. [30] Catherine O de Burgh-Day and Tennessee Leeuwen-burg. Machine learning for numerical weather and climate modelling: a review. Geoscientific Model De-velopment , 16(22):6433–6477, 2023. [31] Remi Lam, Alvaro Sanchez-Gonzalez, Matthew Will-son, Peter Wirnsberger, Meire Fortunato, Ferran Alet, Suman Ravuri, Timo Ewalds, Zach Eaton-Rosen, Wei-hua Hu, et al. Learning skillful medium-range global weather forecasting. Science , 382(6677):1416–1421, 2023. [32] Tung Nguyen, Johannes Brandstetter, Ashish Kapoor, Jayesh K Gupta, and Aditya Grover. Climax: A foun-dation model for weather and climate. arXiv preprint arXiv:2301.10343 , 2023. [33] D Graham Holmes, Branden J Moore, and Stu-art D Connell. Unsteady vs. steady turbomachinery flow analysis: exploiting large-scale computations to deepen our understanding of turbomachinery flows. In 
+
+SciDAC Conference , 2011. 10 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks [34] Yuki Saka, Max Gunzburger, and John Burkardt. La-tinized, improved LHS, and CVT point sets in hyper-cubes. International Journal of Numerical Analysis and Modeling , 4(3-4):729–743, 2007. [35] Shaked Brody, Uri Alon, and Eran Yahav. How at-tentive are graph attention networks? arXiv preprint arXiv:2105.14491 , 2021. [36] Irina Higgins, Loic Matthey, Arka Pal, Christopher Burgess, Xavier Glorot, Matthew Botvinick, Shakir Mohamed, and Alexander Lerchner. beta-vae: Learn-ing basic visual concepts with a constrained variational framework. In International conference on learning representations , 2017. [37] Guohao Li, Matthias Muller, Ali Thabet, and Bernard Ghanem. DeepGCNs: Can GCNs go as deep as CNNs? In Proceedings of the IEEE/CVF interna-tional conference on computer vision , pages 9267– 9276, 2019. [38] Nikhil Vyas, Depen Morwani, Rosie Zhao, Mujin Kwun, Itai Shapira, David Brandfonbrener, Lucas Janson, and Sham Kakade. Soap: Improving and stabilizing shampoo using adam. arXiv preprint arXiv:2409.11321 , 2024. [39] Ilya Loshchilov and Frank Hutter. Sgdr: Stochastic gradient descent with warm restarts. arXiv preprint arXiv:1608.03983 , 2016. 11 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks 
+
+# A. General Applicability of the Proposed Framework 
+
+The proposed LM-RGNN framework targets applications involving spatiotemporal physical fields defined on meshes-(potentially at high spatial resolution to capture localized phenomena) that exhibit pronounced temporal multiscale behavior arising either from the underlying physics or from time-varying inputs such as boundary conditions or external sources. The framework naturally accommodates variable geometries with geometry-specific meshes and, through masking, supports progressively activated spatial domains over time. Representative application domains for which the LM-RGNN architecture could be considered include, but are not limited to: • Hemodynamic flow modeling in coronary arteries with variable geometries, such as in the presence of lesions, is characterized by pronounced temporal multiscale behavior driven by the cardiac cycle [ 23 ]. Within each heartbeat, fast pulsatile dynamics (systolic and diastolic pressure/flow waves) drive rapid changes in velocity, pressure, and wall shear stress. These fluctuations occur on the order of fractions of a second and are crucial to hemodynamic function and pathology (e.g., atherogenesis) [ 24 ]. Over longer periods, variations across cardiac cycles (e.g., changes in heart rate, vessel compliance, stenosis severity) modulate amplitude and phase relationships of flow features and have been investigated as potential slow temporal biomarkers [ 25 ]. The temporal multiscale structure of coronary hemodynamics makes this domain a natural candidate for multiscale sequence modeling. The LM-RGNN framework is well aligned with this setting, as its architecture explicitly separates fast local dynamics from slower global evolution, which may help improve the stability and accuracy of long-horizon predictions without assuming strict periodicity. High-fidelity CFD simulations on patient-specific coronary geometries are an important tool for personalized hemody-namic analysis and clinical decision support [ 26 ]. However, these simulations are computationally intensive and difficult to run in real time or over long sequences of cardiac cycles. Learning-based surrogate models that generalize across geometries and operate directly on unstructured meshes offer a promising alternative. In this context, the LM-RGNN framework could be used to model flow evolution directly on patient-specific artery meshes while maintaining temporal consistency over extended sequences. Several machine learning approaches have recently been explored for coronary hemodynamic prediction, including deep vectorized operators [ 27 ], voxel-based methods such as Voxel2Hemodynamics [ 28 ], and mesh neural networks [ 29 ]. These works demonstrate the feasibility of data-driven hemodynamic modeling and further motivate the exploration of temporally multiscale, mesh-based recurrent frameworks. • Weather and climate modeling on unstructured meshes involves the simulation of physical fields such as temperature, pressure, wind, and humidity that evolve across multiple temporal scales. Fast processes, including diurnal cycles, convection, and frontal systems, typically unfold over hours to days, whereas slower phenomena such as seasonal variability, interannual modes, and long-term climate trends evolve over months to decades. This pronounced temporal multiscale structure presents a challenge for long-horizon prediction and requires modeling approaches that can simultaneously represent short-term variability and longer-term evolution [ 30 ]. By separating the temporal modeling into fast and slow components, LM-RGNN can model rapid weather dynamics and slower climate trends in a manner similar to how its interlayer/intralayer decomposition isolates fast and slow thermal phenomena in additive manufacturing. Contemporary numerical weather and climate models increasingly rely on variable-resolution or unstructured meshes to adapt spatial resolution to regions of interest, such as storms or complex topography, while maintaining computational efficiency elsewhere [ 30 ]. Graph-based learning approaches can operate directly on such meshes, avoiding interpolation to regular grids and helping preserve geometric fidelity over long forecasts. In this context, the LM-RGNN architecture, which operates natively on simulation meshes and leverages a variational graph autoencoder to learn compact latent representations on coarser graphs, offers a potentially efficient means of modeling spatiotemporal dynamics while controlling computational cost. Recent advances in machine learning for weather and climate forecasting further highlight the importance of flexible spatial representations and long-range temporal modeling, as illustrated by approaches such as GraphCast [ 31 ] and ClimaX [32]. • Unsteady flow in turbomachinery compressors results from interactions between rotating and stationary components, such as blade rows, leading to periodic fluctuations in pressure, velocity, and turbulence intensity. Steady-flow assumptions commonly adopted in compressor design may be insufficient to capture these effects, particularly in the presence of rotor–stator interactions, shock dynamics, or stall inception, motivating the use of explicitly unsteady analyses. Moreover, the coupling between fast blade-passing phenomena and slower variations in operating conditions 12 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks (e.g., off-design operation or transient loading) gives rise to temporal multiscale behavior in compressor flows [ 33 ]. This makes long-horizon prediction of unsteady flow a challenging task for surrogate models. Within this context, the LM-RGNN framework provides a structured approach for jointly representing fast oscillatory dynamics and slower temporal trends directly on mesh-based discretizations. 
+
+# B. Details about the Dataset 
+
+B.1. Geometry Parameterization 
+
+In the powder bed fusion process, the part is built layer by layer from spread metallic powder that is selectively melted. Upon completion of the process, the fully consolidated metallic part remains embedded within the surrounding powder bed. Accordingly, the simulation domain includes both the solid metal region and the adjacent powder material as shown in Figure 8. Two-dimensional solid part geometries are parameterized using seven design variables (see Figure 7) that control both shape and size. The overall part height is fixed at 50mm and sliced into 100 layers of thickness 0.5mm. The parameterized geometries are defined by two piecewise-linear side boundaries, each consisting of two segments that may have different slopes. The shape of each side part boundary is individually controlled by three geometric parameters: one height and two angles, while the part base width is defined by an additional geometric parameter. Angle parameters can vary within the range [ π/ 4; 3π/ 4 ] and the base width ranges from 10 mm to 90 mm . The lower bound of angle range represents a key manufacturability constraint imposed to prevent impractical layer superposition during the build process. The parametrization results in variable part widths with distinct start and end points in each layer. The overall variability in the geometry contributes to a diverse range of thermal responses.               
+
+> Figure 7. Geometry parametrization. wis the part base width, hland hrare the heights of left and right line-breaks respectively, α1
+> l,α1
+> r,
+> α2
+> l,α2
+> rare line angles.
+
+B.2. Dataset Generation 
+
+The modeling of the powder bed fusion process is restricted to a two-dimensional thermal framework based on a layer-by-layer approach employing a mesh element activation algorithm. The finite element mesh discretizes all layers deposited on the base plate. To preserve quadrilateral mesh elements, the number of elements is kept constant for each layer of both the solid part and the surrounding powder region; this number is determined from the average width of all layers composing the part. Consequently, the mesh size remains constant along each layer. However, across the powder region, the mesh size is gradually coarsened away from the part, enabling a smooth transition between material domains and reducing numerical errors associated with abrupt changes in thermal properties when the heat source approaches layer boundaries. The transient thermal analysis is discretized into 100 layer-deposition steps using a mesh element activation strategy. For each step, laser heat input is applied over a selectively activated region through a moving heat source. The laser power is maintained at 175 W and translated at a constant scanning velocity of 5mm/s during the exposure phase. Upon completion of the laser scan for each layer, a cooling phase corresponding to a recoating time of 10 s is simulated before activation of the subsequent layer. The scan path is restricted to the solid region of each layer and alternates in direction between successive layers. The transient thermal analysis is performed using a finite element solver based on Euler implicit time-integration scheme. The dataset comprises 140 parametric combinations generated using a Latin-hypercube-based algorithm (Latin Centroidal Voronoi Tessellation (LCVT), see [ 34 ]) to sample the seven design parameters. All simulations were executed on a high-performance computing cluster using 10 SMP processors based on the AMD EPYC Zen 3 (Milan) architecture, with 6 GB of memory allocated per simulation. A summary of key statistics is provided in Table 3, including the number of mesh elements, the number of time steps, and the computational runtime. The number of mesh elements reflects the proportion of the solid part relative to the total domain covering the 100 layers. The number of time steps is proportional to the cumulative 13 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks                 
+
+> Figure 8. Examples of generated geometry. Metallic powder is in gray, the final printed part is in blue and the part boundaries are highlighted in green.
+> Table 3. Simulations statistics Number of elements Runtime Number of time steps mean 29987 1h 38m 37s 9316 std_dev 5756 0h 53m 13s 1341 min 18126 0h 20m 42s 6544 max 43670 3h 51m 2s 12523
+
+width of the solid regions across layers, corresponding to the total laser scan path length. The average runtime per simulation in the dataset is approximately 1.5 hours. 
+
+B.3. Thermal Simulation Model 
+
+The thermal evolution is governed by the transient heat equation with phase-change effects of a specific metallic material, 
+
+Cp(T )ρ ∂T ∂t + ρ ∂L f (T )
+
+∂t = ∇.(λ(T )∇T ), ∀(x, y ) ∈ Ω( t), with T = T (x, y, t ),
+
+−λ(T )∇T.⃗ n = h(T − T ext ), ∀(x, y ) ∈ ∂Ωconvection ,λ(T )∇T.⃗ n = Q(x, t ), ∀(x, y ) ∈ ∂Ω laser ,
+
+where T denotes the temperature, ρ is the material density, Cp(T ) the temperature-dependent heat capacity, λ(T ) the thermal conductivity, and Lf (T ) the latent heat of fusion. The laser heat input is imposed through a Neumann boundary condition, 
+
+Q(x, t ) = S(t) 3Pπr 2 exp 
+
+
+
+− (x − xl(t)) 
+
+r2
+
+
+
+,
+
+with laser power P = 175 W , beam radius r = 2 mm , and xl(t) the laser position moving at constant speed along the prescribed print path. The switching function S(t) equals 1 during heating phases and 0 during cooling phases. The computational domain Ω( t) evolves over time to account for layer deposition through element activation strategy; the top boundary is incrementally displaced upward by 0.5 mm with the addition of each new layer. The laser boundary ∂Ωlaser 
+
+corresponds to the printed region of the top surface, while the remaining boundary ∂Ωconvection = ∂Ω( t) \ ∂Ωlaser is 14 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks subject to convective heat transfer with coefficient h = 10 W.m −2 and external temperature Text = 20 °C (see Figure 9). The material density is fixed to ρ = 8190 kg.m −3 (Inconel 718 material). The thermal conductivity λ(T ) takes distinct values in the powder and solidified metal regions, denoted λpowder (T ) and λmetal (T ), respectively. Temperature-dependent material properties, including Cp , λmetal , λpowder and Lf are specified in Figure 10.   
+
+> Figure 9. Thermal domain at time t.
+
+# C. LM-RGNN Architecture Details 
+
+C.1. Motivation for Full-Sequence Recurrent Modeling over Autoregressive Approaches 
+
+The output of our simulations consists of time-resolved sequences of temperature fields, and the objective of this work is to learn a mapping from the process parameters (specifically the laser path) to these temperature sequences. A common approach for such temporal prediction tasks is to employ an autoregressive architecture, in which each temperature field is predicted from previous fields and the evolving process parameters. However, autoregressive models are known to suffer from error accumulation over time and often exhibit degraded performance when predicting long sequences, typically beyond a few hundreds time steps (see, e.g., [ 6]). Several methods have been proposed to mitigate this issue, including techniques such as PDE-based refiners [ 12 ] and related stabilization approaches. Unlike recurrent models trained on full-length sequences, autoregressive architectures reduce the depth of the trained neural network by operating on shorter subsequences. Nevertheless, our objective is to accurately predict temperature fields over very long temporal horizons and to generalize to even longer sequences corresponding to larger parts, potentially involving tens of thousands of time steps. This requirement necessitates a model with strong temporal stability and minimal error accumulation. A natural solution is to train a recurrent neural network on full-length sequences. Because its hidden state acting as a dynamical memory, an RNN can attenuate the propagation of past prediction errors, effectively behaving as a low-pass filter and re-anchoring predictions through the learned temporal structure. 
+
+C.2. GraphGRU: Graph Gated Recurrent Unit 
+
+GRUs were chosen as the basis for the GraphGRU due to their architectural simplicity and favorable gradient propagation properties, as well as their lower memory footprint compared to transformer-based architectures. However, relative to transformers, GRUs exhibit more limited capacity for modeling long-range temporal dependencies. We define a graph G = ( A, V, E, g ) where A denotes the adjacency matrix, E the associated edge features, V the node features and g the global attributes. When the graph topology A and edge features E are fixed and we use the notation G[V, g ] = ( A, V, E, g ). We consider a temporal sequence of graphs G = {G t}t=1 ..N = {G[V (t), g (t)] = (A, V (t), E, g (t)}t=1 ..N in which node features V (t) and global attributes g(t) evolve over time while the graph topology remains fixed. We define a GraphGRU, taking as input a node feature input state Xt and a node feature hidden state Ht−1,by: 
+
+Zt = sigmoid(MP z (G[Xt ⊕ Ht−1, g t])) ,Rt = sigmoid(MP r (G[Xt ⊕ Ht−1, g t])) ,
+
+ˆHt = tanh(MP h(Xt, R t ⊙ Ht−1, g t)) ,Ht = (1 − Zt) ⊙ Ht−1 + Zt ⊙ ˆHt,
+
+GraphGRU( Xt, H t−1, g t) = Ht,
+
+(2) 15 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks              
+
+> (a) Evolution of heat capacity Cpwith temperature. (b) Evolution of latent heat Lfwith temperature.
+> (c) Evolution of heat conductivity of the metal λmetal with tem-perature.
+> (d) Evolution of heat conductivity of the metallic powder λpowder
+> with temperature.
+> Figure 10. Thermo-physical properties used in the numerical model.
+
+where MP z , MP r and MP h are message passing neural networks that take as input a graph G and return an output node features vector. The quantities Xt, Ht−1, Ht, ˆHt, Zt and Rt are nodes features vectors. The operator ⊕ denotes the node feature-wise concatenation between two node features vectors and the operator ⊙ denotes the element-wise multiplication between two node features vectors. 
+
+C.3. RGNN Architecture  
+
+> Figure 11. RGNN architecture.
+
+C.4. VGAE: Variational Graph Auto-Encoder Propagation of Local Information in VGAE and Flat GNNs. The VGAE architecture is well suited for capturing multiscale geometric and physical features due to the use of hierarchical graph pooling and unpooling operations. These mechanisms facilitate efficient propagation of local information across the graph hierarchy, in contrast to flat GNN architectures in which information propagation is constrained by network depth. As a result, flat GNNs typically require deeper networks to capture long-range dependencies, increasing model complexity and training difficulty. 16 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks 
+
+Compressed Latent Mesh. In contrast to [ 20 ], the adjacency matrix of the compressed graph is constructed determin-istically rather than being learned by the VGAE. Due to the rectangular simulation domain and the quadrilateral mesh structure, a hierarchy of sub-meshes can be constructed efficiently. Specifically, given a mesh Mp, we construct a coarser sub-mesh Mp+1 by retaining one node out of two while always preserving boundary nodes and nodes located at the metal-powder interface. For each edge in the sub-mesh Mp+1 , we associate a feature vector encoding the Euclidean distance and unit direction vector between the corresponding nodes, yielding the edge-feature set Ep+1 . By recursively applying this procedure to an initial mesh M0, we deterministically construct a sequence of nested meshes {Mp}Lp=0 and their associated edge-feature sets {Ep}Lp=0 .
+
+Graph Pooling. Let Mp denote a mesh and Mp+1 the corresponding sub-mesh constructed as described above. We define a graph pooling operator that maps node features from Mp to Mp+1 . For each node ni ∈ Mp+1 , we con-sider the set Pi = {nj ∈ Mp | nj is a neighbor of ni in Mp}. The pooled node feature vi is then computed as 
+
+vi = P  
+
+> nj∈Pi
+
+MLP(LayerNorm( enj →ni ⊕ uj )) , where enj →ni denotes the edge feature in Mp between the nodes 
+
+nj and ni, uj is the node-feature of nj and ⊕ denotes feature concatenation. This pooling operation defines a mapping 
+
+(Mp, V p, E p) → (Mp+1 , V p+1 , E p+1 ), where Vp+1 = {vi for ni ∈ Mp+1 }, and Ep+1 are edge features on Mp+1 .
+
+Graph Unpooling. Conversely, we define a graph unpooling operator that maps node features from Mp+1 back to Mp.For each node ni ∈ Mp, we identify the closest node nj ∈ Mp+1 based on their coordinates. The unpooled node feature ui
+
+is computed as ui = MLP(LayerNorm( enj →ni ⊕ vj )) , where enj →ni denotes the edge feature of Mp between the nodes 
+
+nj and ni, vj is the node-feature of nj in Mp+1 . This defines the mapping (Mp+1 , V p+1 , E p+1 ) → (Mp, V p, E p), where the set of unpooled node features Vp = {ui for ni ∈ Mp}.
+
+VGAE Encoder & Decoder. We define the building blocks of the VGAE encoder and decoder as 
+
+EncoderBlock = GATv2Conv ◦ GraphPool ,
+
+DecoderBlock = GATv2Conv ◦ GraphUnPool , (3) as illustrated in Figure 12, where GATv2Conv denotes the graph attention convolution introduced by [ 35 ]. Let d denote the depth of the VGAE. The encoder and decoder are then constructed by stacking d successive EncoderBlock and 
+
+DecoderBlock modules respectively (see Figure 13).   
+
+> (a) (b) Figure 12. (a) VGAE encoder block. (b) VGAE decoder block.
+
+VGAE Architecture & Loss. The VGAE consists of an encoder that maps an input field to a node-wise latent distribution parameterized by mean and variance vectors, denoted by μ and σ, respectively. Following the standard variational autoencoder framework, latent variables are sampled as z ∼ N (μ, σ ) and subsequently passed through the VGAE decoder to reconstruct the input field (see Figure 3). The VGAE is trained using a loss function adapted from the β-VAE formulation (see [36]): 
+
+L = Lrecon + βLKL ,
+
+Lrecon = 1
+
+N
+
+> N
+
+X
+
+> b=1
+
+1
+
+|mb|
+
+X 
+
+> i∈Vb
+> 0
+
+mb,i .|| T true b,i − T recon b,i || 2,
+
+LKL = − 1
+
+N
+
+> N
+
+X
+
+> b=1
+
+12
+
+X 
+
+> i∈Vbd
+
+(1 + log( σ2
+
+> b,i
+
+) − μ2 
+
+> b,i
+
+− σ2
+
+> b,i
+
+),
+
+(4) where N denotes the batch size, V b 
+
+> 0
+
+the set of nodes in top-level mesh for sample b, mb the corresponding active-node mask, and V bd the set of nodes in the latent mesh for sample b.17 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks      
+
+> (a)
+> (b) Figure 13. (a) VGAE encoder with depth d= 3 . (b) VGAE decoder with depth d= 3 .
+
+VGAE hyper-parameters. VGAE hyper-parameters are summarized in Table 4.            
+
+> Table 4. VGAE hyper-parameters. GraphPool hidden size 32 GraphPool hidden layers 2GraphUnpool hidden size 32 GraphPool hidden layers 2Input features size 3 (temperature, mask, material mask) Output features size 1 (temperature) Encoder hidden size 12, 24, 32 Decoder hidden size 32, 24, 12 Depth 3
+> β100
+
+C.5. Latent-RGNN Architecture Details 
+
+The latent-RGNN is an extension of the RGNN (see Section 4.3) operating directly in latent space. It outputs a sequence of latent representations, which are subsequently decoded into temperature fields using the pre-trained VGAE decoder. To improve computational efficiency, latent representations are decoded in batches rather than sequentially, thereby reducing decoding overhead. In contrast to the original RGNN formulation, which operates on full-resolution temperature fields and directly incorporates the active-node and material masks, the latent-RGNN evolves its hidden state on the latent mesh. However, the active-node and material masks remain defined on the original, high-resolution mesh. To reconcile this mismatch, we employ a lightweight graph encoder based on the graph pooling operations described in Section C.4 to project these auxiliary inputs onto the latent mesh. The resulting compressed representations are concatenated with the latent hidden state and processed by the GraphGRU (see Figure 3). 
+
+C.6. Interlayer and Intralayer Models 
+
+The interlayer and intralayer models are built upon the latent RGNN architecture. Since the latent graph produced by the latent RGNN must be decoded via the VGAE decoder, multiple time steps are batched before decoding to improve computational efficiency, with a marginal increase in memory usage. Architectural hyper-parameters are summarized in Table 5. 18 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks                         
+
+> Table 5. Architecture details of the interlayer and intralayer models. The geometry encoder is used to encode geometrical inputs (active nodes mask, material mask) to the latent mesh. MPGNN denotes Message Passing Graph Neural Network and is used in the GraphGRU architecture. Interlayer latent RGNN Intralayer latent RGNN Hidden feature size 48 32 Geometry encoder: GraphPool hidden size 16 16 Geometry encoder: GraphPool hidden layers 22Geometry encoder hidden size 8, 16, 16 8, 16, 16 Geometry encoder input features size 22Geometry encoder output features size 16 16 GraphGRU MPGNNs hidden size 48 32 GraphGRU MPGNNs processor blocks 21GraphGRU MPGNNs processor depth 22GraphGRU MPGNNs node processor hidden layers 22GraphGRU MPGNNs edge processor hidden layers 22
+
+# D. Baseline Decoupled-RGNN Model Implementation 
+
+For comparison, we reimplemented the RGNN model proposed by [ 11 ]. Since the original work considers a different printing process and operates on three-dimensional data, a direct application to our setting is not possible. We therefore adapted their methodology to our dataset while remaining as faithful as possible to the original implementation. The architecture in [ 11 ] is based on a recurrent graph neural network that differs from ours in several key aspects. Their model processes input sequences of 50 simulation time steps, each represented as a graph encoding geometric and process-related features. Node and edge features are first embedded, and each graph is processed independently by a geometric encoder composed of stacked DeepGCN layers (see [ 37 ]). This constitutes the spatial modeling stage. Subsequently, temporal modeling is performed without further use of the graph structure: the graph-encoded representations are reshaped into per-node temporal sequences and passed through a stacked GRU module, which outputs the predicted temperature sequence at each node. In this design, spatial and temporal processing are explicitly decoupled, in contrast to our approach, which jointly models spatiotemporal dependencies. We note that the baseline model is non-autoregressive and can process arbitrary subsequences of simulation time steps without conditioning on previously predicted temperature states. For training, we initialized the model using the hyper-parameters reported in the original paper and further tuned them to optimize performance on our dataset. A direct quantitative comparison with the results reported in [ 11 ] is not feasible, as the datasets differ substantially and the original work does not provide sufficiently detailed performance metrics. 
+
+# E. Training Details 
+
+Training Setup. All models were trained using the SOAP optimizer [ 38 ] with a learning-rate schedule combining linear warm-up followed by cosine annealing [ 39 ]. Training was performed on a single NVIDIA A100 GPU with 40GB of memory. The validation loss was monitored during training, and early stopping was applied when it ceased to improve. Recurrent models were trained using TBPTT. The learning rate and batch size were selected to maximize validation performance while respecting GPU memory constraints. Due to the large memory footprint of the full-resolution simulation data, the batch size was strongly constrained in the full-dimensional setting. Operating in the latent space induced by the VGAE substantially alleviated memory pressure, enabling larger and more flexible batch sizes. However, latent-space models exhibited more challenging optimization behavior when trained on short temporal subsequences compared to their full-resolution RGNN counterparts. 
+
+Temperature Sequence Subsampling. To reduce memory consumption during training and to accelerate optimization, we employed temporal subsampling strategies for the temperature sequences. For the VGAE, we retained one simulation time step out of seven, while preserving all layer-wise terminal temperature fields, which are subsequently used by the interlayer model. This sampling strategy was sufficient to maintain adequate diversity in the temperature fields. No subsampling was applied to the interlayer model, which operates on a single temperature field per printed layer. For the intralayer model, temperature sequences were subsampled at a rate of one time step out of seven, resulting in shorter subsequences that facilitated more efficient and stable training. This subsampling scheme substantially reduces the memory footprint of the 19 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks simulation data while preserving satisfactory temporal fidelity, as seven simulation steps correspond to approximately 1.75 seconds. Models trained under this regime can be applied at full temporal resolution during inference; however, this may induce a degradation in accuracy due to the resulting distribution shift. This limitation could be mitigated by training with multiple subsampling rates for the intralayer sequences, thereby improving robustness to varying temporal resolutions at inference time. Finally, we note that higher temporal resolution at inference increases computational cost, as it entails predicting a larger number of time steps. Even with a subsampling rate of one out of seven, the resulting sequences remain long, comprising approximately 1,000 to 1,700 time steps. 
+
+Training Hyper-parameters. The training hyper-parameters selected for the different model architectures are summarized in Table 6. The training hyper-parameters that were kept identical across all experiments are summarized in Table 7. The 
+
+Table 6. Training hyper-parameters. The LR warmup is a linear LR scheduler with start factor = 0.1 and duration = 8. Model Learning rate Batch size LR warmup LR scheduler VGAE 1e-3 64 Yes Cosine annealing ( Tmax = 130 , ηmin = 1 e − 4)Interlayer 2e-3 4 Yes Cosine annealing ( Tmax = 140 , ηmin = 1 e − 5)Intralayer 4e-3 64 Yes Cosine annealing ( Tmax = 180 , ηmin = 1 e − 5)Decoupled-RGNN 1e-3 4 Yes Cosine annealing ( Tmax = 130 , ηmin = 1 e − 3)
+
+Table 7. Training hyper-parameters with a fixed value. TBPTT steps 8Early stopping patience 25 SOAP optimizer betas 0.95, 0.95 SOAP optimizer weight decay 0.01 SOAP optimizer preconditioning frequency 8
+
+TBPTT step parameter specifies the number of forward time steps processed before performing backpropagation through time. Further details on this procedure can be found in [ 19 ]. The early-stopping patience parameter determines the number of consecutive epochs with no improvement in validation loss that are tolerated before terminating training. The SOAP optimizer [ 38 ] was selected after comparative experiments with AdamW, as it consistently yielded comparable or improved performance with negligible additional training overhead. 
+
+# F. Evaluation Metrics 
+
+F.1. Metrics Definitions 
+
+We evaluate predictive performance using several complementary error metrics. The Mean Absolute Error (MAE), Mean Absolute Percentage Error (MAPE), Mean Maximum Error (MME) are defined as MAE (T true , T pred ) = 1
+
+N
+
+> N
+
+X
+
+> b=1
+
+1
+
+|mb|
+
+X 
+
+> i∈Vb
+> 0
+
+mb,i .|T true b,i − T pred b,i |,
+
+MAPE (T true , T pred ) = 1
+
+N
+
+> N
+
+X
+
+> b=1
+
+1
+
+|mb|
+
+X 
+
+> i∈Vb
+> 0
+
+mb,i . |T true b,i − T pred b,i ||T true b,i | + ϵ ,
+
+MME (T pred ) = 1
+
+N
+
+> N
+
+X
+
+> b=1
+
+max  
+
+> i∈Vb
+> 0
+
+
+
+mb,i .|T true b − T pred b |
+
+
+
+,
+
+(5) where mb denotes the active-node mask for sample b, N is the number of samples, and V b 
+
+> 0
+
+is the set of mesh nodes on which the temperature fields T true and T pred are defined. To assess the quality of melt-pool localization, we employ the melt-pool Intersection over Union (mpIoU), defined as mpIoU (T true , T pred ) = 1
+
+N
+
+> N
+
+X
+
+> b=1
+
+|{ T true b > θ f } ∩ { T pred b > θ f }| |{ T true b > θ f } ∪ { T pred b > θ f }| ,
+
+20 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks where θf = 1170 °C corresponds to the melting temperature of the material considered in this study. Temporal stability is quantified using the temporal MAE (t-MAE), defined as the time-resolved MAE over a temperature sequence: t-MAE  {T true (t)}t=1 ..N t , {T pred (t)}t=1 ..N t
+
+ =
+
+n NX
+
+> b=1
+
+1
+
+N MAE 
+
+
+
+T true b (t), T pred b (t)
+
+ o 
+
+> t=1 ..N t
+
+,
+
+where {T true (t)}t=1 ..N t and {T pred (t)}t=1 ..N t are true and predicted temperature fields sequence respectively and Nt
+
+denotes the sequence length. Finally, we evaluate errors in spatial and temporal temperature gradients through the Mean Absolute Error of spatial gradients (MAE ∇xy ) and temporal gradients (MAE ∇t ), defined as MAE ∇xy (T true , T pred ) = 1
+
+N
+
+> N
+
+X
+
+> b=1
+
+1
+
+|mb|
+
+X 
+
+> i∈Vb
+> 0
+
+mb,i . 12
+
+
+
+|∂xT true b,i − ∂xT pred b,i | + |∂y T true b,i − ∂y T pred b,i |
+
+
+
+,
+
+MAE ∇t (T true , T pred ) = 1
+
+N
+
+> N
+
+X
+
+> b=1
+
+1
+
+|mb|
+
+X 
+
+> i∈Vb
+> 0
+
+mb,i .|∂tT true b,i − ∂tT pred b,i |,
+
+where ∂x and ∂y denote spatial derivatives along the x and y directions, computed on quadrilateral mesh elements and then projected onto nodes, and ∂t denotes the temporal derivative, computed using finite differences. 
+
+Inference Time. The inference times reported in Table 2 correspond to per-time-step inference costs. These values were obtained by evaluating each model sequentially on the 40 test simulations, measuring the total inference time per simulation, and normalizing by the number of predicted time steps. To ensure reliable measurements, an initial warm-up pass was performed without timing, followed by three full evaluations on the test set. The reported inference times are computed as the average over these runs. 
+
+Memory Pressure. In our setting, memory footprint is difficult to compare quantitatively across models, as it varies substantially with batch size, architectural choices, and other hyper-parameters. We therefore report a qualitative assessment in Table 2, based on the practical difficulty of fitting each model within the 40GB GPU memory limit while maintaining stable training and satisfactory convergence. Although this measure does not precisely reflect absolute memory consumption, it provides useful insight into the impact of memory constraints when selecting model architectures and tuning their hyper-parameters. 
+
+F.2. Relevance of Physical Evaluation Metrics 
+
+The physically motivated metrics (mpIoU, MAE ∇xy , and MAE ∇t ) are particularly relevant, as melt-pool extent and temper-ature gradients in space and time directly influence microstructure evolution and residual stresses in additively manufactured parts [ 8 ]. These quantities are therefore critical for assessing part quality and expected service life: microstructure governs material properties, while residual stresses affect fatigue resistance. Accurate prediction under these metrics supports process optimization toward reduced residual stresses and enhanced microstructural homogeneity. [17]. 
+
+# G. Experiments & Results Supplementary Material 
+
+G.1. On the Early-Time MAE Peak in the Temporal MAE Analysis 
+
+Figure 14 reports the temporal MAE (t-MAE) of the VGAE with latent dimensionality 4 (blue curve), together with the reference function f (t) = t-MAE (0) /domain size(t) (red curve), where t-MAE (0) denotes the MAE of the VGAE at t = 0 
+
+and domain size(t) corresponds to the mean number of active mesh nodes over the test set at time t. The function f (t)
+
+represents the expected decay of the MAE under the idealized assumption that the prediction error remains constant in magnitude but is spatially concentrated at a single location, so that its average decreases solely due to the growth of the active domain. This comparison partially explains the observed shape of the VGAE t-MAE curve. In practice, temperature prediction errors are spatially localized around the laser path, where temperature gradients are highest, particularly at early time steps when thermal diffusion has had limited effect. As the active domain expands over time, these localized errors are 21 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks                                                                    
+
+> Table 8. VGAE performance on the test set for varying latent space dimensionalities. Latent dim. MAE (°C) MAPE (%) MME (°C) mpIoU MAE ∇xy (°C/mm) MAE ∇t(°C/s) Parameters 47.05 ±1.68 2.44 ±0.51 118.6 ±22.5 0.86 ±0.02 3.01 ±0.30 3.68 ±0.84 19.0k 85.74 ±0.93 2.08 ±0.31 98.3 ±12.7 0.88 ±0.003 2.62 ±0.28 2.86 ±0.32 19.8k 16 5.08 ±0.03 1.82 ±0.10 94.5 ±2.5 0.89 ±0.003 2.35 ±0.005 2.59 ±0.05 21.5k
+
+progressively diluted, leading to a decreasing average MAE. A similar behavior is observed across all models, including the baseline and ablated variants. Notably, even for the interlayer model (where predictions correspond to cooling phases with the laser turned off) an initial MAE peak persists. This effect can be attributed to residual error localization in specific regions of the part, such as the upper layers of the metallic domain. Overall, the early-time MAE peak should be interpreted as a consequence of the temporal evolution of the active domain size, rather than as evidence of systematically degraded predictive performance at early stages of the printing process.    
+
+> Figure 14. The blue curve is the temporal MAE (t-MAE) on the test set for the VGAE with latent dim. 4. The red curve is the function
+> f(t) = t-MAE (0) /domain size(t).
+
+G.2. VGAE Model Performance 
+
+Tables 8 and 9 report, respectively, the reconstruction performance metrics and compression characteristics of the VGAE on the test set for varying latent dimensionalities. As the latent dimension increases, reconstruction accuracy improves, while the memory reduction factor correspondingly decreases. The memory reduction factor is computed as the ratio between the total storage required for a full simulation and its compressed latent counterpart. Although increasing the latent dimensionality increases the per-node feature size, this is partially compensated by the substantial reduction in mesh resolution achieved by the encoder. In the present configuration, a VGAE depth of three results in an isotropic reduction of the mesh resolution by a factor of two, corresponding to an overall reduction factor of 64 in the number of nodes. The observed MME may appear relatively large; however, even minor spatial deviations in melt pool localization can induce large pointwise errors due to the extremely steep temperature gradients in the vicinity of the melt pool. Although the VGAE           
+
+> Table 9. VGAE compression performance on the test set for varying latent space dimensionalities. “Sim. data” refers to the combined storage of the simulation mesh description and the corresponding sequence of temperature fields. Latent dim. Sim. data footprint Mem. reduction factor 492 MB 0.06
+> 8185 MB 0.12 16 369 MB 0.23 No compress. 795 MB
+
+does not explicitly model temporal dynamics, its reconstruction error can still be analyzed as a function of time. Figure 15 reports the t-MAE across simulation time steps. An error peak is observed during the early stages of the printing process; 22 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks however, this does not indicate a systematic degradation of model performance at early steps. This behavior arises from the definition of the MAE, which is computed exclusively over active nodes (see Eq. 5 in Appendix F). More details are given in Appendix G.1.  
+
+> Figure 15. Temporal MAE of the VGAE on the test set for different latent dimensionalities. The initial peak in error is attributable to the concentration of reconstruction errors in the vicinity of the laser beam combined with the small domain size at early time steps, as discussed in Appendix G.1.
+
+G.3. Temperature predictions 
+
+Figures 16 and 17 present temperature field predictions obtained with the LM-RGNN and the Decoupled-RGNN models, respectively. 23 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks True temperature (°C) 
+
+> LM-RGNN model Prediction (°C) MAE (°C)
+> Decoupled-RGNN model Prediction (°C) MAE (°C)
+
+Figure 16. Comparison of ground-truth temperature fields with predictions from the LM-RGNN and the Decoupled-RGNN for one of the test geometries at t = 700 s. The corresponding temperature MAE is reported for each model. For visualization, the MAE color scale is clipped at 100°C, as the Decoupled-RGNN can produce substantially higher maximum errors compared to the LM-RGNN. The green lines indicate the part boundaries, enclosing the solid metallic region. 
+
+24 Stable Long-Horizon Spatiotemporal Prediction on Meshes Using Latent Multiscale Recurrent Graph Neural Networks True temperature (°C) 
+
+> LM-RGNN model Prediction (°C) MAE (°C)
+> Decoupled-RGNN model Prediction (°C) MAE (°C)
+
+Figure 17. Comparison of ground-truth temperature fields with predictions from the LM-RGNN and the Decoupled-RGNN for one of the test geometries at t = 1800 s. The corresponding temperature MAE is reported for each model. For visualization, the MAE color scale is clipped at 100°C, as the Decoupled-RGNN can produce substantially higher maximum errors compared to the LM-RGNN. The green lines indicate the part boundaries, enclosing the solid metallic region. 
+
+25

@@ -1,0 +1,410 @@
+Title: Temporal Consistency-Aware Text-to-Motion Generation
+
+URL Source: https://arxiv.org/pdf/2602.18057v1
+
+Published Time: Mon, 23 Feb 2026 01:28:24 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+Research Article 
+
+# Temporal Consistency-Aware Text-to-Motion Generation 
+
+Hongsong Wang 1,2 · Wenjing Yan 1,2 · Qiuxia Lai 3* · Xin Geng 1,2 
+
+> Received: date / Accepted: date
+
+Abstract Text-to-Motion (T2M) generation aims to synthesize realistic human motion sequences from natu-ral language descriptions. While two-stage frameworks leveraging discrete motion representations have advanced T2M research, they often neglect cross-sequence tem-poral consistency, i.e., the shared temporal structures present across different instances of the same action. This leads to semantic misalignments and physically im-plausible motions. To address this limitation, we propose TCA-T2M, a framework for temporal consistency-aware T2M generation. Our approach introduces a tempo-ral consistency-aware spatial VQ-VAE (TCaS-VQ-VAE) for cross-sequence temporal alignment, coupled with a masked motion transformer for text-conditioned motion generation. Additionally, a kinematic constraint block mitigates discretization artifacts to ensure physical plau-sibility. Experiments on HumanML3D and KIT-ML benchmarks demonstrate that TCA-T2M achieves state-of-the-art performance, highlighting the importance of temporal consistency in robust and coherent T2M gen-eration. 
+
+Keywords Text-to-motion generation · Temporal consistency · Motion synthesis · 3D Human Motion       
+
+> 1School of Computer Science and Engineering, Southeast University, Nanjing, China.
+> 2Key Laboratory of New Generation Artificial Intelligence Technology and Its Interdisciplinary Applications (Southeast University), Ministry of Education, China.
+> 3State Key Laboratory of Media Convergence and Communi-cation, Communication University of China, Beijing, China.
+> *Corresponding author: Qiuxia Lai, Email: qxlai@cuc.edu.cn
+
+## 1 Introduction 
+
+Text-to-Motion (T2M) aims to translate natural lan-guage descriptions into realistic human motion sequences, with applications that span virtual reality [1], film pro-duction [2], and human-robot interaction [3 –5]. Recent advances in T2M research have witnessed a surge of research interest, where methods can be broadly cate-gorized into end-to-end frameworks and two-stage ar-chitectures. While early end-to-end approaches explore direct feature alignment between language and motion spaces [6, 7], two-stage architectures, which decomposes the task into motion representation learning and con-ditional motion generation [1, 8 – 10], have emerged as the dominant paradigm due to their superior perfor-mance in semantic fidelity and motion realism. In this setup, a text-independent motion representation space is first learned by capturing the intrinsic characteristics of human motion, followed by text-conditioned genera-tion that bridges the semantic gap, producing coherent motion sequences aligned with language descriptions. Two-stage T2M models can be classified into three main paradigms based on their types of motion represen-tation. AE-based methods [9] learn compact motion rep-resentations through deterministic encoding. Although their outputs can serve as faithful reconstructions of in-put actions, they inherently suffer from limited diversity in motion generation. VAE-based methods [1, 11 –13] introduce probabilistic latent spaces to enable diverse motion synthesis through stochastic sampling. How-ever, their continuous latent spaces pose challenges for text-to-motion alignment due to the nonlinear and high-dimensional nature of motion dynamics. This of-ten leads to unreliable mappings in encoder-decoder architectures [14]. VQ-VAE-based methods [8, 10, 14 –21] tackle this by discretizing continuous motion features   
+
+> arXiv:2602.18057v1 [cs.CV] 20 Feb 2026 2F. Author et al
+
+into codebook tokens, which simplifies the generation process while enhancing computational efficiency. How-ever, the discretization process disrupts the temporal continuity of motion, which often introduces semantic discontinuities between discrete tokens that manifest themselves as unnatural gait artifacts such as “leg slid-ing”. Moreover, while existing T2M models focus on learning motion representations at the instance level, they overlook a fundamental property of human motion, i.e., shared temporal structures across different realiza-tions of the same action. This cross-sequence temporal consistency is crucial for robust motion generation but remains largely unaddressed in current frameworks. Human motion is inherently a spatiotemporally con-tinuous physical process, where semantic consistency is not confined to individual sequences but emerges across multiple realizations of the same action. As illustrated in Fig. 1, diverse motion sequences, such as forward walking, walk-to-sit, and sit-to-stand, exhibit shared temporal structures despite differences in kinematic de-tails. These shared patterns include temporal landmarks such as the timing of foot contacts or body weight shifts, which form the semantic core of an action. Effective motion encoders are expected to capture these cross-sequence temporal correspondences to align sequences according to their underlying motion semantics. This alignment enables the latent space to reflect the fun-damental invariants of human motion, rather than the idiosyncrasies of individual instances. However, existing methods typically neglect this requirement and treat each motion sequence in isolation, which fails to enforce temporal consistency across related actions. Moreover, neglecting temporal consistency can also introduce arti-facts that undermine physical plausibility. Motivated by these insights, we propose TCA-T2M, a framework for temporal consistency-aware T2M gen-eration that integrates cyclic temporal alignment con-straints into discrete representation learning. Our ap-proach contains two major components: the temporal consistency-aware spatial VQ-VAE (TCaS-VQ-VAE) in-tegrated with the kinematic constraint block, and the masked motion transformer. TCaS-VQ-VAE introduces cross-sequence temporal alignment constraints at the decoder input through contrastive learning in the latent space, which encourages the encoder to capture and align temporal consistency features across different instances of the same action. This design promotes both discrimi-native token learning for modeling inter-sequence vari-ations and temporal coherence within each sequence, enabling the model to distinguish fine-grained action differences. To further mitigate gait artifacts caused by representation discretization, inspired by Ref. [22], we introduce a kinematic constraint block into TCaS-VQ-VAE, which enforces kinematic consistency by applying physics-based motion constraints to reduce foot-sliding and enhance the physical realism of generated motions. Finally, the masked motion transformer adopts the de-sign of Ref. [8] for its proven effectiveness, which em-ploys dynamic masking and text-conditioned iterative refinement for phase-wise motion generation. Extensive experiments on the HumanML3D [1] and KIT-ML [23] datasets demonstrate that our approach achieves state-of-the-art performance across both quantitative and qualitative benchmarks, significantly improving motion fidelity and temporal coherence. In summary, the main contributions are as follows: 1) We propose TCA-T2M, a framework for temporal consistency-aware T2M generation that integrates cyclic temporal alignment constraints into discrete representa-tion learning. 2) We introduce temporal consistency-aware spatial VQ-VAE, a pioneering effort to embed cyclic temporal alignment constraints into motion token learning, which enables cross-sequence temporal alignment across di-verse motion instances within the same action category. 
+
+## 2 Related Work 
+
+Text-to-Motion generation Text-to-motion (T2M) gener-ation aims to synthesize natural human motions from textual descriptions. The core challenge lies in bridg-ing the gap between the discrete nature of language and the continuous, spatiotemporal complexity of hu-man motion [24, 25]. Existing methods can be broadly categorized into single-stage and two-stage approaches. Early single-stage methods directly map text to motion in an end-to-end manner. For instance, Lan-guage2Pose [6] aligns action and language features in a shared embedding space, while Ghosh et al [7] designed a hierarchical two-stream sequential model to capture finer joint-level dependencies. While these methods are conceptually simple and computationally efficient, they often struggle to generate high-fidelity, temporally co-herent motions. Two-stage approaches decompose the problem into learning a motion representation space and generating motion sequences conditioned on text. The development of motion representations has followed distinct lines of research. Early work, such as Seq2Seq [9], uses de-terministic autoencoders to embed motion sequences into latent spaces. However, fixed mappings often limit the diversity of generated motions. Variational meth-ods [1, 13] introduce stochasticity via VAEs, enhancing diversity but facing challenges such as non-convex ob-jectives, optimization instability, and the lack of explicit Short form of title 3  
+
+> Fig. 1 Illustration of temporal consistency across three distinct human action sequences. (a) A person walks forward; (b) A person walks and sits down; (c) A person sits down and stands up. Despite differences in kinematic details, these sequences exhibit shared temporal structures. Enforcing temporal alignment in the latent space ensures that motion representation encoder
+> Emaps corresponding action phases across sequences to similar representations. This constraint enables the learned motion representation to capture semantic information while preserving temporal consistency, which is essential for the subsequent text-conditioned motion generation stage in T2M.
+
+temporal constraints, which often lead to fragmented temporal coherence in generated motions. Moreover, continuous latent spaces require high-dimensional repre-sentations to capture fine-grained details, yet existing methods struggle to balance generation quality with latent space dimensionality due to computational con-straints. More recently, discrete token-based approaches, such as VQ-VAE models [10, 26], have been adopted for motion representation learning. By discretizing motion sequences into tokens, these approaches reduce latent dimensionality and exploit local token correlations for efficient learning. However, the discretization process can disrupt the physical continuity of motion, leading to semantic discontinuities between adjacent tokens and introducing artifacts such as unnatural gait transitions. Moreover, while current T2M models focus on instance-level motion representations, they often overlook an important property of human motion, i.e., shared tem-poral structures across different instances of the same action. This cross-sequence temporal consistency is vital for generating realistic, coherent motions but remains underexplored in existing frameworks. 
+
+Cycle-Consistent learning Cycle-consistent learning of-fers a natural solution to cross-sequence temporal align-ment by enforcing structural consistency through cyclic mappings. It has proven effective in various computer vision tasks, such as image matching [27 –29], segmenta-tion [30, 31], video generation [32], and video representa-tion learning [33], where preserving structural coherence across domains is essential. For example, FlowWeb [27] leverages cycle-consistent flow fields to optimize dense correspondences across image collections, while Cycle-GAN [34] applies cycle consistency with adversarial training for image style transfer, effectively suppressing artifacts such as jitter and foot sliding. TCC [33] learns self-supervised video frame embeddings using a tempo-ral cycle-consistency loss, enabling temporal alignment between videos by matching nearest-neighbor frames in the learned embedding space. Beyond vision tasks, cycle-consistency has been applied in cross-task learning, such as visual question answering [35 – 37] and vision-language navigation [38], improving semantic alignment through joint bidirectional training. Inspired by these successes, we extend cycle-consistent learning to the domain of text-to-motion generation. We propose a temporal consistency constraint that en-forces cross-sequence alignment of motion representa-tions within the same action class, addressing a funda-mental limitation of prior T2M methods. By regularizing latent spaces to respect shared temporal structures, our approach enables the generation of semantically coherent and physically plausible motion sequences. 
+
+Temporal consistency in video synthesis Temporal con-sistency is a crucial issue in video synthesis, as even minor inconsistencies can severely degrade perceptual quality. Chu et al. [39] introduced a self-supervised tem-poral constraint that prevents long-term drift and flick-ering in video generation. CCVS [40] combines the au-toregressive framework with a learnable optical flow module to enforce temporal consistency. TECO [41] learns compressed representations to enable efficient video generation with long-range temporal consistency. MagicAnimate [42] introduces an appearance encoder to enhance temporal consistency across video frames. FlowVid [43] proposes a consistent video-to-video synthe-sis framework by leveraging temporal optical flow clues. FETV [44] proposes fine-grained metrics to measure temporal consistency, motion accuracy, and semantic alignment. Although improving temporal consistency in video synthesis has been studied, there is still lim-ited work addressing temporal consistency in motion synthesis, and our work fills this gap. 4 F. Author et al 
+
+## 3 Method 
+
+3.1 Overview 
+
+Our objective is to develop a T2M framework capable of generating high-fidelity 3D human motion sequences from textual descriptions. Given a text prompt c, the system produces a motion sequence m1: N of length N ,where mi ∈ RD , and D represents the dimension of the motion feature. We propose temporal consistency-aware text-to-motion (TCA-T2M), a unified architecture that consists of the temporal consistency-aware spatial VQ-VAE (TCaS-VQ-VAE) and a dynamic mask-guided gen-eration framework (c.f. Fig. 2). Our approach addresses two key limitations of existing discrete representation approaches, namely temporal misalignment and kine-matic implausibility, through cross-sequence temporal constraint modeling and physics-aware optimization. The architecture consists of two core components: (1) TCaS-VQ-VAE, a VQ-VAE-based model that learns cross-sequence temporal patterns via cycle-consistency constraints, incorporates residual quantization to min-imize information loss, and incorporates a kinematic constraint block to enforce joint acceleration continu-ity constraints to enhance motion physicality; and (2) masked motion transformer architecture, a two-stage transformer architecture that leverages dynamic mask unrolling strategies to achieve hierarchical text-motion alignment. The remainder of this section is organized as follows. Section 3.2 details the temporal consistency-aware mo-tion representation learning, residual quantization, and the kinematic constraint block in TCaS-VQ-VAE. Sec-tion 3.3 presents the mask-guided generation framework of the masked motion transformer and also outlines the inference pipeline. 
+
+3.2 Temporal Consistency-aware Spatial VQ-VAE 
+
+The temporal consistency-aware spatial VQ-VAE (TCaS-VQ-VAE) aims to construct a discrete representation space that captures cross-sequence temporal invariances while enhancing motion reconstruction quality through cycle-consistency regularization and residual quantiza-tion. Conventional VQ-VAE architectures process input motion sequences m1: N ∈ RN ×D through stacked convo-lutional layers to extract spatiotemporal features, yield-ing continuous latent representations ze ∈ Rn×d, where 
+
+n/N is the downsampling ratio, and d is the feature dimension of the latent vectors. These representations undergo quantization via nearest-neighbor search in a learnable codebook C = {e1, . . . , e K } ∈ RK×d, pro-ducing discrete token sequences zq = Q(ze) ∈ Rn×d.The decoder reconstructs motion sequences through 
+
+ˆm = D(zq). This method minimizes the reconstruction error through a reconstruction loss, constrains the dis-tance between the encoder output and the codebook via a quantization loss, and uses a commitment loss to encourage the codebook vectors to converge towards the encoder’s output distribution. This loss is defined as 
+
+Lvq = ∥m − ˆm∥22 + ∥sg[ ze] − zq ∥22 + γ∥ze − sg[ zq]∥22, (1) where sg denotes the stop-gradient operation, and γ is the hyperparameter for the commitment loss. 
+
+Temporal Cycle-Consistency Constraint To enable VQ-VAE to learn cross-sequence temporal consistency dur-ing motion reconstruction, this section introduces cycle-consistency constraints. By establishing reversible map-ping relationships between motion sequences, the en-coder is compelled to learn global temporal pattern consistency across different sequences. Specifically, mo-tion sequences are categorized by action labels derived from textual descriptions. Consider two distinct motion sequences U1: T and V1: T from the same action category. Here, the subscript T denotes the temporal dimension, where T represents the total number of frames or time steps in the sequences. After feature extraction and quan-tization, we obtain Uq = Q(E(U )) = {u1, u 2, . . . , u n}
+
+and Vq = Q(E(V )) = {v1, v 2, . . . , v n}. Here, q, Q, and 
+
+E represent quantization, quantizer, and encoder re-spectively. To verify the cycle consistency of a point 
+
+ui ∈ U , we first identify its nearest neighbor in se-quence V as vj = arg min v∈V ∥ui − v∥, and then de-termine the nearest neighbor of vj in sequence U as 
+
+uk = arg min u∈U ∥vj − u∥. If i = k, ui is classified as cycle-consistent, indicating bidirectional one-to-one mapping capability between sequences. By maximiz-ing the ratio of such cycle-consistent points, i.e., the proportion of points establishing mutual mappings be-tween sequences of the same action category—the model captures cross-sequence temporal alignment patterns, thereby addressing the single-sequence modeling limita-tion inherent in conventional VQ-VAE. Cycle-consistency computation inherently involves discrete nearest-neighbor matching, which is not dif-ferentiable and precludes end-to-end optimization. To address this, we model cycle-consistency through dual perspectives of classification and regression. For each point ui in sequence Uq, we compute its similarity to all points vj in sequence Vq and derive the similarity distribution α via softmax transformation 
+
+αj = esj
+
+Pnk=1 esk
+
+, (2) Short form of title 5 
+
+> Fig. 2 Method overview. (a) Temporal consistency-aware spatial VQ-VAE employs hierarchical residual quantization to discretize motion features, incorporates cycle-consistency constraints to enforce temporal coherence, and utilizes a kinematic constraint block to refine motion details. (b) Masked motion transformer adopts a dual-transformer structure for cross-modal text-motion synthesis. Specifically, the motion transformer restores masked motion tokens under CLIP text guidance, while the residual transformer predicts successive residual tokens using textual context and preceding token sequences.
+
+where sj = −∥ vj − ui∥2. The temporally aligned point ˜v in sequence V is obtained as ˜v = P 
+
+> k
+
+αkvk. By treat-ing each point in Uq as an independent class, cycle-consistency detection is reformulated as a nearest-neighbor classification task. We construct an n-class classification framework to predict the cyclic index of ui in Vq and its reciprocal mapping back to Uq, formalizing the cycle classification loss as 
+
+Lcls = −
+
+> n
+
+X
+
+> k=1
+
+I(k = i) log( αj ), (3) where I(·) is the indicator function, and its value is 1 when k = i.While cycle classification loss verifies the temporal mapping’s closed-loop property through probabilistic classification, it exclusively focuses on endpoint cate-gory matching while neglecting spatial offsets of mapped points along the temporal axis. Specifically, the cycle classification loss employs cross-entropy to constrain whether the index k of the soft nearest neighbor ˜v in Vq
+
+matches the original index i when reciprocally mapped to Uq. However, this approach fails to explicitly op-timize the temporal alignment distance between ˜v’s projected position on Uq’s time axis and i, potentially leading to significant temporal misalignment errors. To address this, we introduce a cycle regression loss that directly optimizes temporal alignment accuracy via a dual-constraint mechanism. First, we compute the simi-larity β between the mapped point ˜v and points in Uq
+
+βj = esj
+
+Pnk=1 esk
+
+, (4) where sj = −∥ ev − uj ∥2. The distribution β characterizes the soft alignment region of ˜v on the time axis of Uq.Ideally, β should exhibit a peak around i, indicating temporal alignment between ˜v and ui. To enforce this, we apply a Gaussian prior on β by minimizing the distance between the predicted position μ = P 
+
+> j
+
+βj · j
+
+and the ground true index i, while regularizing the variance σ2 = P 
+
+> j
+
+βj · (j − μ)2 to control the shape of the distribution shape and suppress overfitting to local noise. The cycle regression loss is computed using the mean squared error (MSE), which is mathematically expressed as 
+
+Lreg mse = |i − μ|2
+
+σ2 + λ log( σ), (5) where λ, i and μ denote the regularization weight, mean and variance, respectively. This dual-constraint mech-anism ensures that the peak of β is strictly localized around i with controlled diffusion along the temporal axis, achieving both local mapping precision and noise robustness. In addition to the MSE formulation, the cycle regression loss can also be implemented using the Huber loss to enhance robustness against outliers: 
+
+Lreg huber = 1
+
+σ2 · Lδ (i − μ) + λ log( σ), (6) 6 F. Author et al 
+
+where Lδ is the Huber loss, which is defined as 
+
+Lδ =
+
+ 12 (i − μ)2, if |i − μ| ≤ δδ(|i − μ| − 12 δ), otherwise . (7) where δ is a hyperparameter that controls the behav-ior of Lδ . Based on the ablation results in Section 4.5 and Table 4, we select the MSE-based cycle regression loss Lreg mse as the final formulation for temporal cycle-consistency constraint loss Ltcc .
+
+Residual Quantization To mitigate information loss caused by quantization in traditional VQ-VAE models, which hampers motion reconstruction quality, we introduce a residual quantization mechanism inspired by Ref. [8]. This method enhances detail preservation in discrete representations through layered error compensation. Un-like standard VQ-VAE, which performs a single-stage quantization on continuous latent features, our method decomposes the process into multi-stage residual approx-imations. Specifically. the encoder’s continuous output 
+
+ze is first quantized by the 0-th quantizer to generate a coarse code q0 and a residual r1 = ze − q0. Each subse-quent layer quantizes the remaining residuals iteratively: 
+
+qi = Q(ri) and ri+1 = ri − qi, until the L-th layer completes the process. The final discrete representation is the sum of all quantized codes: zq = PLi=0 qi, which is decoded to reconstruct motion sequences ˆm = D(zq). The core advantage of this design is the suppression of cumulative quantization errors. By propagating residu-als across layers, the gradient flow in the feature space naturally decomposes as ∇ze Lrq = PLi=0 ∇qi Lrq . Here, rq represents the residual quantization. The first quanti-zation layer captures the backbone features, while subse-quent layers refine the residuals, enabling collaborative optimization across the hierarchy. During training, all quantization layers participate in optimizing the com-mitment loss: 
+
+Lrq =
+
+> L
+
+X
+
+> i=1
+
+∥ri − sg[ qi]∥22. (8) Furthermore, layers are randomly dropped during train-ing with probability p, encouraging the model to pri-oritize robust shallow feature learning and to improve generalization. 
+
+Kinematic Constraint Block While residual quantiza-tion mitigates information loss in discrete representa-tions, motion representations based on the SMPL for-mat inherently involve relative rotations and skeletal tree propagation. Minor root node rotations can induce significant artifacts in foot kinematics, manifesting as unnatural gait patterns such as foot sliding. This sec-tion introduces a kinematic constraint block (KCB) that addresses the domain discrepancy between nonlinear mo-tion spaces and linear contact detection caused by root rotation errors. By integrating kinematic modeling with cross-attention mechanisms, our approach resolves these inconsistencies. Given the motion sequence ˆm output by the decoder, we adopt a two-stage process from T2M [1]: kinematic parameter decoupling and skeletal chain propagation. This maps discrete latent representations to physically interpretable kinematic parameter spaces, generating 3D skeletal coordinates p ∈ Rn×J×3, where J is the number of joints. Ankle and foot coordinates undergo threshold-ing to produce binary contact labels. Through differen-tial computation of the skeletal chain, we derive joint velocities and dynamically adjust contact confidence via sigmoid modulation. By fusing contact features, veloc-ities, and coordinates through cross-attention mecha-nisms, multi-scale motion constraints are constructed to rectify decoder outputs while preserving kinematic plausibility. To integrate kinematic constraint into the VQ-VAE optimization framework, we redesign the reconstruction loss to account for KCB adjustments as follows: 
+
+Lvq ′ = ∥m−KCB ( ˆm)∥22+∥sg[ ze]−zq∥22+γ∥ze−sg[ zq]∥22.
+
+(9) 
+
+Loss Function The total loss function for the proposed TCaS-VQ-VAE architecture integrates three compo-nents: (1) The refined VQ-VAE loss that ensures high-fidelity reconstruction, aligns encoder outputs with dis-crete codebook entries, and forces encoder outputs to remain close to their nearest codebook vectors. (2) The cycle-consistency loss that ensures closed-loop temporal alignment through classification-based mapping verifica-tion and refines temporal precision via regression-based error correction. (3) The residual quantization loss that suppresses discretization artifacts through multi-stage residual approximation. The final objective combines these components through weighted summation: 
+
+LTCaS = Lvq ′ + αtLtcc + βr Lrq , (10) where αt and βr denote the weighting coefficients for temporal consistency enforcement and residual error mitigation, respectively. 
+
+3.3 Masked Motion Transformer 
+
+This stage accomplishes progressive generation from textual semantics to physically plausible motions via a hierarchical decoupling mask generation strategy and dynamic alignment of residual quantized representa-tions [8]. The core architecture comprises two cascaded transformer modules: (1) the motion transformer for Short form of title 7
+
+generating base-layer motion tokens and (2) the residual transformer that predicts residual-layer tokens hierar-chically. Both modules engage with CLIP text features through cross-modal attention mechanisms, establishing a unified text-motion optimization framework. The motion transformer pm processes a randomly masked motion token sequence ˜X(0) = [ x(0)  
+
+> i
+
+]ni=1 ∈
+
+Rn×d alongside text embeddings w ∈ Rs×d. It models global motion dependencies via self-attention mecha-nisms while incorporating textual semantic constraints through cross-modal attention. Text embeddings are linearly projected into the motion feature space and concatenated with masked motion tokens to form aug-mented features [ w; ˜X(0) ] ∈ R(s+n)×d, which are then fed into the transformer encoder. The encoder’s output undergoes a softmax operation to produce probability distributions over base-layer motion tokens. The base-layer motion token prediction loss Lmt , which quantifies the generation quality of motion backbone, is defined as 
+
+Lmt = −
+
+> n
+
+X
+
+> i=1
+
+log pm(x(0)  
+
+> i
+
+| w, fX(0) ). (11) This loss optimizes the mapping between textual se-mantics and motion patterns by maximizing the log-probabilities of correct motion tokens. The residual transformer pr processes the motion token sequence predicted by preceding layers to hier-archically predict residual tokens. Each residual layer corresponds to a discretization level within the resid-ual quantization module (RQM), where token granu-larity progressively refines from coarse to fine. For the 
+
+l-th layer, the input comprises the accumulated pre-dictions from previous l − 1 layers combined with text embeddings w, generating the current-layer residual 
+
+∆x (j). Through residual connections, predictions are aggregated across layers to form the complete motion se-quence X(l) = X(l−1) + ∆x (j), which serves as input to the subsequent layer ˜X(l+1) = X(l). The residual layer prediction loss Lrt enforces fine-grained optimization of hierarchical tokens and is defined as 
+
+Lrt = −
+
+> L
+
+X
+
+> j=1
+> n
+
+X
+
+> i=1
+
+log pr(x(j) 
+
+> i
+
+| w, fX(j), j ). (12) The inference pipeline commences with text embed-ding extraction w ∈ Rs×d via the CLIP encoder from input text. The motion sequence is initialized as a fully masked token sequence ˜X(0) = [[ MASK ]] ni=1 . The mo-tion transformer iteratively reconstructs base-layer mo-tion tokens X(0) over T iterations. In each iteration, the model predicts the probability distribution of motion to-kens at the masked positions, samples candidate tokens, retains high-confidence tokens to reinforce text seman-tic constraints, and dynamically adjusts the mask rate based on the iteration count. Subsequently, the resid-ual transformer hierarchically predicts residual tokens through L layers, refining motion details via residual ac-cumulation. The complete motion sequence is obtained by aggregating predictions, X = X(0) + PLj=1 ∆x (j),which is decoded into 3D motion ˆm = D(X) via the TCaS-VQ-VAE decoder. Finally, the KCB polishes the generated sequence to achieve high-fidelity motion syn-thesis. 
+
+## 4 Experiments 
+
+This section provides comprehensive experimental vali-dation and analysis of our TCA-T2M framework. Sec-tion 4.1 shows the experimental setups. Section 4.3 con-ducts quantitative benchmarking against state-of-the-art approaches using standardized evaluation metrics across HumanML3D [1] and KIT-ML [23], demonstrating both quantitative superiority and qualitative advantages. Sec-tion 4.5 performs systematic ablation analyses to isolate the impact of architectural components. Both experi-mental sections validate the technical efficacy of our framework through rigorous quantitative comparisons and qualitative evaluations. 
+
+4.1 Datasets and Evaluation Metrics 
+
+We conduct experiments on two benchmark datasets for text-to-motion generation. HumanML3D [1] is the primary 3D motion-language dataset containing 14616 motion sequences sourced from AMASS [56] and HumanAct12 [57] paired with 44970 text descriptions (12.1 words average). The data are standardized to 20 FPS with 10-second duration clips. Each motion sequence is annotated with at least three diverse textual scripts covering activities such as exercise and dance. KIT-ML [23] includes 3911 motion sequences from KIT [23] and CMU [58], accompanied by 6278 descrip-tions (8.5 words average). The data are downsampled to 12.5 FPS and segmented into 1-4 description clips. Both datasets follow the standard 80%/5%/15% train/validation/test splits with standard data augmentation protocols. We evaluate the motion generation performance us-ing five key metrics from Ref. [1]. Frechet inception distance (FID) assesses global motion quality by com-paring the distributional similarity between generated and real-motion features. R-Precision measures text-motion alignment by matching generated motions to ground-truth descriptions and reporting the Top-1/2/3 8 F. Author et al 
+
+accuracies. Multimodal Distance (MM-Dist) quantifies cross-modal coherence as the average cosine similarity between motion features and text embeddings. Multi-Modality (MModality) evaluates intra-modal diversity by computing the standard deviation of 10 motion sam-ples per text prompt, while Diversity measures global diversity through pairwise Euclidean distances between 300 randomly sampled motion pairs. 
+
+4.2 Implementation Details 
+
+Our models are implemented in PyTorch. For the tem-poral consistency-aware spatial VQ-VAE, we divide the HumanML3D dataset into 110 categories and the KIT-ML dataset into 52 categories, and set the weight of the cycle-consistency loss to 0.1. The residual VQ mod-ule consists of six quantization layers, each equipped with a codebook of 512 codes with 512-dimensional em-beddings. The quantization dropout ratio is set to 0.2. Both the motion transformer and the residual trans-former contain six transformer layers with six heads and a latent dimension of 384, and are applied to the HumanML3D and KIT-ML datasets. The mini-batch size is set to 256 for training the RVQ-VAE, and to 64 and 32 for training the transformers on HumanML3D and KIT-ML, respectively. 
+
+4.3 Comparison to State-of-the-art Methods 
+
+We compare our approach against state-of-the-art base-lines [1, 8, 10, 14, 21, 47 –52] on both HumanML3D [1] and KIT-ML [23] datasets. Results reported in Table 1 and Table 2 demonstrate that our method outperforms existing approaches across key fidelity metrics (FID, R-Precision, MM-Dist) while maintaining comparable performance in diversity-related measures (Diversity, MModality). The results on the two popular dataset confirm the model’s capacity to generate high-fidelity motions without compromising stylistic diversity. In Table 3, we further benchmark our TCaS-VQ-VAE against prior VQ-based methods [8, 14, 21, 59] on both datasets. The results establish clear superiority of our framework in both motion reconstruction and generation tasks. Figure 3 presents qualitative comparisons between our framework and MDM [47]. The baseline method often produces biomechanically implausible motions in complex scenarios. For example, when tasked with narrow beam traversal, MDM generates routine walk-ing motions akin to flat-ground locomotion, failing to execute necessary balance adaptations such as arm-swaying for postural stabilization. In contrast, our model  
+
+> Fig. 3 Qualitative comparisons between MDM [47] and our method across representative motion from the HumanML3D dataset. Key frames highlight critical motion details. The vi-sual comparisons underscore our method’s strength in seman-tic comprehension of textual prompts and consistent action execution across multi-step sequences with dynamic environ-ment adaptation.
+
+demonstrates active environmental adaptation, i.e., it autonomously detects narrow surfaces and activates compensatory postures to maintain stability. Moreover, while MDM [47] achieves semantically plausible motion generation in simple cases (e.g., producing a complete “crouch-takeoff-landing” sequence for isolated “forward jumps”), its performance degrades significantly in more complex contexts. For example, when jump actions are embedded in sequential behaviors (e.g., “walk →jump →turn”), the generated jumps often degenerate into walking or running postures, resulting in inter-frame inconsistency. In contrast, our framework maintains core motion fi-delity across both isolated and multi-step action se-quences, ensuring biomechanical plausibility through dynamic environmental adaptation. 
+
+4.4 Generalization Demonstration 
+
+To evaluate our model’s generalization ability, we con-duct experiments on long-sequence motion generation and zero-shot motion generation. Due to the short duration of motion data in the HumanML3D and KIT datasets, where most samples are under 10 seconds, creating extended motion sequences is challenging. we leverage the pre-trained masked motion model as a prior for synthesizing long motion sequences without further training. Long human motion generation is performed using multiple textual prompts. Our model first produces motion token sequences of arbitrary length for each prompt. Subsequently, our model generates transitional motion tokens based on the end of the prior sequence and the start of the following one. We visualize the long sequence motion generation in Fig. 4(a). Zero-shot motion generation aims to generate plau-sible and semantically aligned human motions for previ-Short form of title 9
+
+Table 1 Comparison of text-to-motion generation performance on the HumanML3D dataset. The arrows ↑, ↓, and → indicate that higher, lower, and closer-to-real-motion values are better, respectively. Bold and underline indicate the best and the second best result. The model marked with * represents results obtained by reproducing the code experiments from the original paper. FID assesses global motion quality. R-Precision measures text-motion alignment. MM-Dist quantifies cross-modal coherence between motion features and text embeddings. MModality evaluates intra-modal diversity, while Diversity measures global diversity. Method Year R-Precision ↑ FID ↓ MM Dist ↓ Diversity → MModality ↑
+
+Top 1 Top 2 Top 3 Real – 0.511 ±.003 0.703 ±.003 0.797 ±.002 0.002 ±.000 2.974 ±.008 9.503 ±.065 -T2M-GPT [21] 2023 0.492 ±.003 0.679 ±.002 0.775 ±.002 0.141 ±.005 3.121 ±.009 9.722 ±.082 1.831 ±.048 
+
+MotionGPT [45] 2023 0.492 ±.003 0.681 ±.003 0.778 ±.002 0.232 ±.008 3.096 ±.008 9.528 ±.071 2.008 ±.084 
+
+MotionGPT [46] 2024 0.364 ±.005 0.533 ±.003 0.629 ±.004 0.805 ±.002 3.914 ±.013 9.972 ±.026 2.473 ±.041 
+
+TM2T [14] 2022 0.424 ±.003 0.618 ±.003 0.729 ±.002 1.501 ±.017 3.467 ±.011 9.920 ±.083 2.424 ±.093 
+
+T2M [1] 2022 0.455 ±.002 0.636 ±.003 0.736 ±.003 1.087 ±.002 3.347 ±.008 9.175 ±.002 2.219 ±.074 
+
+MDM [47] 2023 0.320 ±.005 0.498 ±.004 0.611 ±.007 0.544 ±.044 5.566 ±.027 9.559 ±.086 2.799 ±.072 
+
+MLD [48] 2023 0.481 ±.003 0.673 ±.003 0.772 ±.002 0.473 ±.013 3.196 ±.010 9.724 ±.082 2.413 ±.079 
+
+Mo.Diffuse [49] 2024 0.491 ±.001 0.681 ±.001 0.775 ±.001 0.630 ±.001 3.113 ±.001 9.410 ±.049 1.553 ±.042 
+
+MMM [10] 2024 0.504 ±.003 0.696 ±.003 0.794 ±.002 0.080 ±.003 2.998 ±.007 9.411 ±.058 1.164 ±.041 
+
+Momask ∗ [8] 2024 0.508 ±.003 0.701 ±.003 0.797 ±.002 0.103 ±.003 3.024 ±.008 9.428 ±.070 1.308 ±.058 
+
+MotionLCM [50] 2024 0.502 ±.003 0.698 ±.002 0.798 ±.002 0.304 ±.012 3.012 ±.007 9.607 ±.066 2.259 ±.066 
+
+Mo.Mamba [51] 2024 0.502 ±.003 0.693 ±.002 0.792 ±.002 0.281 ±.011 3.060 ±.058 9.871 ±.084 2.294 ±.058 
+
+CoMo [52] 2024 0.502 ±.002 0.692 ±.007 0.790 ±.002 0.262 ±.004 3.032 ±.015 9.936 ±.066 1.013 ±.046 
+
+Light-T2M [53] 2025 0.511 ±.003 0.699 ±.002 0.795 ±.002 0.040 ±.002 3.002 ±.008 – 1.670 ±.061 
+
+MG-MotionLLM [54] 2025 0.516 ±.002 0.706 ±.002 0.802 ±.003 0.303 ±.010 2.952 ±.009 9.960 ±.073 2.125 ±.159 
+
+GenM 3 [55] 2025 0.511 ±.003 0.705 ±.002 0.804 ±.002 0.046 ±.002 2.852 ±.009 9.675 ±.087 -Ours – 0.517 ±.003 0.709 ±.002 0.806 ±.002 0.068 ±.003 2.951 ±.007 9.485 ±.090 1.103 ±.048 
+
+Table 2 Comparison of text-to-motion generation performance on the KIT-ML dataset. Method Year R-Precision ↑ FID ↓ MM Dist ↓ Diversity → MModality ↑
+
+Top 1 Top 2 Top 3 Real – 0.424 ±.005 0.649 ±.006 0.779 ±.006 0.031 ±.004 2.788 ±.012 11.08 ±.097 -T2M-GPT [21] 2023 0.402 ±.006 0.619 ±.005 0.737 ±.006 0.717 ±.041 3.053 ±.026 10.86 ±.094 1.912 ±.036 
+
+MotionGPT [45] 2023 0.366 ±.005 0.558 ±.004 0.680 ±.005 0.510 ±.016 3.527 ±.021 10.350 ±.084 2.328 ±.117 
+
+MotionGPT [46] 2024 0.340 ±.002 0.570 ±.003 0.660 ±.004 0.868 ±.032 3.721 ±.018 9.972 ±.026 2.296 ±.022 
+
+TM2T [14] 2022 0.280 ±.005 0.463 ±.006 0.587 ±.005 3.599 ±.153 4.591 ±.026 9.473 ±.117 3.292 ±.081 
+
+T2M [1] 2022 0.361 ±.006 0.559 ±.007 0.681 ±.007 3.022 ±.107 3.488 ±.028 10.72 ±.145 2.052 ±.107 
+
+MDM [47] 2023 0.164 ±.004 0.291 ±.004 0.396 ±.004 0.497 ±.021 9.191 ±.022 10.85 ±.109 1.907 ±.214 
+
+MLD [48] 2023 0.390 ±.008 0.609 ±.008 0.734 ±.007 0.404 ±.027 3.204 ±.027 10.80 ±.117 2.192 ±.071 
+
+Mo.Diffuse [49] 2024 0.417 ±.004 0.621 ±.004 0.739 ±.004 1.954 ±.064 2.958 ±.005 11.10 ±.143 0.730 ±.013 
+
+MMM [10] 2024 0.404 ±.005 0.621 ±.005 0.744 ±.004 0.316 ±.028 2.977 ±.019 10.91 ±.101 1.232 ±.039 
+
+Momask ∗ [8] 2024 0.415 ±.005 0.635 ±.006 0.762 ±.004 0.228 ±.009 2.889 ±.020 10.612 ±.088 1.208 ±.042 
+
+Mo.Mamba [51] 2024 0.419 ±.006 0.645 ±.005 0.765 ±.006 0.307 ±.041 3.021 ±.025 11.02 ±.098 1.678 ±.064 
+
+CoMo [52] 2024 0.422 ±.009 0.638 ±.007 0.765 ±.011 0.332 ±.045 2.873 ±.021 10.95 ±.196 1.249 ±.008 
+
+Ours – 0.428 ±.006 0.655 ±.005 0.780 ±.004 0.198 ±.011 2.760 ±.016 10.83 ±.077 1.123 ±.056 
+
+ously unseen actions or motions in the training set. This task requires robust generalization and language com-prehension capabilities in the model. We select samples involving actions not present in the dataset but with similar motions for zero-shot motion generation during testing. The visualization results are shown in Fig. 4(b). 
+
+4.5 Ablation and Parameter Analysis 
+
+To validate the efficacy of our architectural innovations, we conduct systematic ablation studies on two key de-signs: the temporal cycle-consistency constraint (TCC) and the kinematic constraint block (KCB). Experiments are performed on the HumanML3D [1] dataset following the same evaluation protocols as the main benchmark. 10 F. Author et al 
+
+Table 3 Comparison of motion reconstruction and generation performance. We present an analysis of the temporal cycle-consistency constraint (TCC), the kinematic constraint block (KCB) and the residual quantization(RQ) on the HumanML3D and KIT-ML datasets. Method Reconstruction Generation FID ↓ FID ↓ MM-Dist ↓
+
+Evaluation on the KIT-ML dataset M2DM [59] 0.413 ±.009 0.515 ±.029 3.015 ±.017 
+
+T2M-GPT [21] 0.472 ±.011 0.514 ±.029 3.007 ±.023 
+
+Momask [8] 0.184 ±.002 0.228 ±.009 3.021 ±.025 
+
+Ours 0.137 ±.003 0.198 ±.011 2.760 ±.016 
+
+w/o KCB 0.142 ±.002 0.284 ±.014 2.922 ±.021 
+
+w/o TCC 0.170 ±.002 0.292 ±.016 2.943 ±.025 
+
+w/o KCB&TCC 0.189 ±.003 0.297 ±.016 2.947 ±.026 
+
+w/o RQ 0.176 ±.002 0.296 ±.016 2.921 ±.020 
+
+w/o RQ&KCB&TCC 0.198 ±.003 0.309 ±.017 2.958 ±.027 
+
+Evaluation on the HumanML3D dataset TM2T [14] 0.307 ±.002 1.501 ±.017 3.467 ±.011 
+
+M2DM [59] 0.063 ±.001 0.352 ±.005 3.116 ±.008 
+
+T2M-GPT [21] 0.070 ±.001 0.141 ±.005 3.121 ±.009 
+
+Momask [8] 0.034 ±.001 0.103 ±.003 3.024 ±.008 
+
+Ours 0.025 ±.000 0.068 ±.003 2.951 ±.007 
+
+w/o KCB 0.042 ±.000 0.105 ±.004 3.010 ±.010 
+
+w/o TCC 0.054 ±.000 0.111 ±.004 2.994 ±.009 
+
+w/o KCB&TCC 0.058 ±.000 0.119 ±.005 2.988 ±.008 
+
+w/o RQ 0.056 ±.000 0.114 ±.005 2.922 ±.021 
+
+w/o RQ&KCB&TCC 0.071 ±.001 0.128 ±.006 3.032 ±.008 
+
+Fig. 4 Visualizations of long motion generation and zero-shot motion generation. (a) Long motion generation. We in-tegrate three text prompts—“a person walks forward then turns right”,“a person crawling from right to left” and“the person is walking in a counterclockwise circl”—to generate a long-sequence motion. (b) Zero-shot generation. We separately test the text prompts“A person is climbing a ladde” and“A person is rolling” to generate zero-shot motion sequences. 
+
+Table 3 presents a systematic analysis of the im-pact of architectural components. The results demon-strate that the TCC and the KCB substantially improve motion reconstruction fidelity and motion generation quality compared to baseline models. As discussed in Section 3.2, the TCC Ltcc can be realized in different ways. Here, we evaluate the im-pact of different loss functions for realizing Ltcc . Specif-ically, we experiment on a classification-based cycle loss and two regression-based formulations, namely, mean 
+
+Table 4 Ablation study on the impact of loss type, cycle length for the temporal cycle-consistency constraint, and code-book size ( K × d) on HumanML3D. K denotes the number of codes, and d is the embedding dimension. See Section 4.5 for details. Ablations Type Reconstruction Generation FID ↓ FID ↓ MM-Dist ↓                                    
+
+> TCC loss Classification 0.113 ±.001 0.134 ±.004 3.031 ±.008
+> Regression(MSE) 0.025 ±.000 0.068 ±.003 2.951 ±.007
+> Regression(Huber) 0.040 ±.000 0.082 ±.003 2.932 ±.007
+> Cycle length
+> 20.025 ±.000 0.068 ±.003 2.951 ±.007
+> 30.030 ±.000 0.103 ±.004 2.997 ±.008
+> 40.027 ±.000 0.095 ±.004 2.993 ±.007
+> 50.039 ±.000 0.122 ±.004 2.995 ±.007
+> 80.026 ±.000 0.105 ±.004 2.965 ±.009
+> Codebook size
+> 512 ×512 0.025 ±.000 0.068 ±.003 2.951 ±.007
+> 1024 ×256 0.023 ±.000 0.115 ±.005 3.009 ±.009
+> 2048 ×128 0.077 ±.000 0.402 ±.007 3.109 ±.010
+> 4096 ×64 0.582 ±.002 1.323 ±.017 3.445 ±.009
+
+Table 5 Evaluation of temporal consistency for human mo-tion generation. The training time is reported as the average time per iteration on an NVIDIA RTX 4090 GPU. Method Kendall’s tau ↑ Training time (s) HumanML3D KIT-ML Ours w/o TCC 0.1757 0.3524 0.26 Ours 0.2571 0.4820 0.06 
+
+squared error (MSE) and huber loss (with δ = 0 .1). As shown in Table 4, MSE-based regression outper-forms both alternatives across all metrics, achieving the lowest reconstruction FID (0.025) and generation FID (0.068), alongside superior multimodal distance (MM-Dist: 2.951). These results indicate that directly regressing motion features promotes more precise tempo-ral alignment than classification-based or Huber-based regression losses, underscoring the effectiveness of MSE for enforcing cycle consistency. To systematically evaluate the temporal dependency modeling capabilities, we conduct ablation studies on cycle length L. When L = 2, the temporal cycle fol-lows a simple loop [0 , 1, 0], representing a closed-loop traversal from sequence 0 to 1 and back. When L = 3, the loop extends to a multi-stage sequence [0 , 1, 2, 0], introducing additional temporal context for sequential pattern learning. As shown in Table 4, cycle length has a minimal effect on reconstruction and generation metrics, with L = 2 achieving the best balance (reconstruction FID: 0.025, generation FID: 0.068). However, increas-ing L adds computational overhead without significant gains, motivating our choice of L = 2 for efficiency and performance. We examine the trade-off between codebook capac-ity and embedding dimension by varying the number of codes K and their corresponding dimensions d while keeping total capacity approximately constant. Table 4 shows that a 512-entry codebook with 512-dimensional Short form of title 11                      
+
+> Table 6 Comparison of model parameters, inference efficiency, and motion generation quality. Method Model size (M) FID ↓Inference time (s) Tokenizer Total TM2T [14] 36.71 131.01 1.50 0.46 T2M [1] 3.44 40.29 1.09 0.02 T2M-GPT [21] 19.44 32.86 0.12 0.23 Ours 44.90 71.37 0.07 0.09
+
+embeddings achieves the best results across metrics (re-construction FID: 0.025, generation FID: 0.068). While increasing the number of codes from 256 to 1024 or 2048 marginally improves reconstruction fidelity, it signifi-cantly degrades generation quality, as reflected by higher FID and MM-Dist scores. Conversely, reducing embed-ding dimensions (e.g., 4096 × 64) leads to substantial performance degradation, likely due to over-compression and loss of fine-grained motion details. Based on these findings, we adopt the 512 × 512 configuration for high-fidelity motion generation. To evaluate the temporal consistency of motion gen-eration, we adopt Kendall’s tau [33] as the evaluation metric. This metric measures the rank correlation be-tween frames in the generated sequence and the corre-sponding frames in the reference sequence, and it cap-tures how well the temporal order is preserved. Quanti-tative evaluations of temporal consistency are presented in Table 5. When the TCC constraint is removed, the value of this metric drops considerably, demonstrating that our method helps improve the temporal consistency of text-to-motion generation. With the TCC constraint, the per-batch training time increases from 0.06 s to 0.26 s. Although this in-troduces extra training cost, the model size remains unchanged, and therefore the inference time is not af-fected. Analysis and comparison on parameters and infer-ence efficiency are summarized in Table 6. The inference cost is computed as the average inference time for 100 samples on a single NVIDIA 4090 device. Compared to baseline methods, our model achieves a more favorable balance between generation quality and efficiency. Figure 5 illustrates that failure cases of our text-to-motion generation approach. We select text prompts that contain multiple consecutive abrupt motions, where substantial pose changes may occur between adjacent frames. We find that due to the complexity of certain text prompts, the generated motions do not align well with the intended descriptions, and some frames ex-hibit implausible human poses. These examples pose significant challenges for current state-of-the-art text-to-motion generation models and highlight directions for future research. 
+
+## 5 Conclusion and Limitations 
+
+This paper presented TCA-T2M, a framework for tem-poral consistency-aware text-to-motion generation. By integrating cyclic temporal alignment constraints into discrete motion representation learning, TCA-T2M en-ables the encoder to capture invariant temporal struc-tures across sequences of the same action. Our temporal consistency-aware spatial VQ-VAE (TCaS-VQ-VAE) en-sures that corresponding motion phases align in the latent space, while the kinematic constraint block en-hances the physical plausibility of generated motions by enforcing smooth joint dynamics. Extensive experi-ments on HumanML3D and KIT-ML demonstrate that TCA-T2M outperforms existing methods, generating temporally coherent, semantically aligned, and physi-cally realistic motion sequences. Although our approach improves the quality of text-to-motion generation, two key challenges persist in this field. First, semantic comprehension errors remain, with rare cases where the generated motion completely contra-dicts the intended meaning. Second, due to the limited availability of datasets, motion diversity is insufficient. Moreover, since most dataset motions are short, gener-ating long sequences in real time remains a critical area for future research. 
+
+Abbreviations: 
+
+CLIP, contrastive language-image pre-training; Seq2Seq, sequence to sequence; VQ-VAE, vector quantized varia-tional autoencoder 
+
+Declarations:         
+
+> Data Availability: The datasets used in this study are publicly available at: HumanML3D: https://github.com/ EricGuo5513/HumanML3D ; KIT-ML: https://motion-annotation. humanoids.kit.edu/dataset/ . The code is available at https: //github.com/Giat995/TCA-T2M/
+> Competing Interests: Xin Geng is an Associate Editors at Visual Intelligence and was not involved in the editorial review of this article or the decision to publish it. The authors declare that they have no other competing interests.
+> Author Contributions: All the authors contributed to the study conception and design. Conceptualization of this study, methodology and analysis were performed by Hongsong Wang, Wenjing Yan and Qiuxia Lai. All the authors read and ap-proved the final manuscript.
+> Funding: This research was supported by the National Natu-ral Science Foundation of China (Nos. 52441503 and 62302093) and the Natural Science Foundation of Jiangsu Province (No. BK20230833).
+> Acknowledgements: We would like to thank the Big Data Computing Center of Southeast University for their support in facilitating the numerical calculations.
+
+12 F. Author et al 
+
+Fig. 5 Visualizations of failure cases of our approach. (a) shows that a person walks up stairs. Then the person turns right and walks back down stairs. (b) shows a man walking backwards. Then, he punches and kicks. (c) shows a man getting down on his hands and feet and crawling forward. Then, he turns around and crawls back before standing up again. 
+
+## References 
+
+1. Chuan Guo, Shihao Zou, Xinxin Zuo, Sen Wang, Wei Ji, Xingyu Li, and Li Cheng. Generating diverse and natural 3D human motions from text. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 5152–5161. Piscataway: IEEE, 2022. 2. Moritz Kappel, Vladislav Golyanik, Mohamed Elgharib, Jann-Ole Henningson, Hans-Peter Seidel, Susana Castillo, Christian Theobalt, and Marcus Magnor. High-fidelity neural human motion transfer from monocular video. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1541–1550. Piscat-away: IEEE, 2021. 3. Andr´ e Antakli, Erik Hermann, Ingo Zinnikus, Han Du, and Klaus Fischer. Intelligent distributed human motion simulation in human-robot collaboration environments. In 
+
+Proceedings of the International Conference on Intelligent Virtual Agents , pages 319–324. New York: ACM, 2018. 4. Hema Koppula and Ashutosh Saxena. Learning spatio-temporal structure from RGB-D videos for human ac-tivity detection and anticipation. In Proceedings of the 30th International Conference on Machine Learn-ing , pages 792–800. Retrieved January 19, 2026, from http://proceedings.mlr.press/v28/koppula13.pdf., 2013. 5. Hema S Koppula and Ashutosh Saxena. Anticipating human activities using object affordances for reactive robotic response. IEEE Transactions on Pattern Analysis and Machine Intelligence , 38(1)(1):14–29, 2016. 6. Chaitanya Ahuja and Louis-Philippe Morency. Lan-guage2pose: Natural language grounded pose forecasting. In International conference on 3D vision , pages 719–728. Piscataway: IEEE, 2019. 7. Anindita Ghosh, Noshaba Cheema, Cennet Oguz, Chris-tian Theobalt, and Philipp Slusallek. Synthesis of compo-sitional animations from textual descriptions. In Proceed-ings of the IEEE/CVF international conference on com-puter vision , pages 1396–1406. Piscataway: IEEE, 2021. 8. Chuan Guo, Yuxuan Mu, Muhammad Gohar Javed, Sen Wang, and Li Cheng. Momask: Generative masked modeling of 3D human motions. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1900–1910. Piscataway: IEEE, 2024. 9. Angela S Lin, Lemeng Wu, Rodolfo Corona, Kevin Tai, Qixing Huang, and Raymond J Mooney. Generating ani-mated videos of human activities from natural language descriptions. In Samy Bengio, Hanna M. Wallach, Hugo Larochelle, Kristen Grauman, Nicol` o Cesa-Bianchi, and Roman Garnett, editors, Proceedings of the 32nd Inter-national Conference on Neural Information Processing Systems , pages 1–7. Red Hook: Curran Associates, 2018. 10. Ekkasit Pinyoanuntapong, Pu Wang, Minwoo Lee, and Chen Chen. MMM: Generative masked motion model. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , pages 1546–1555. Piscataway: IEEE, 2024. 11. Nikos Athanasiou, Mathis Petrovich, Michael J Black, and G¨ ul Varol. Teach: Temporal action composition for 3D humans. In Proceedings of the 2022 International Conference on 3D Vision , pages 414–423. Piscataway: IEEE, 2022. 12. Junfan Lin, Jianlong Chang, Lingbo Liu, Guanbin Li, Liang Lin, Qi Tian, and Chang-wen Chen. Being comes from not-being: Open-vocabulary text-to-motion gen-eration with wordless training. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 23222–23231. Piscataway: IEEE, 2023. 13. Mathis Petrovich, Michael J Black, and G¨ ul Varol. Temos: Generating diverse human motions from textual descrip-tions. In Shai Avidan, Gabriel J. Brostow, Moustapha Ciss´ e, Giovanni Maria Farinella, and Tal Hassner, edi-tors, Proceedings of the 17th European Conference on Computer Vision , pages 480–497. Cham: Springer, 2022. 14. Chuan Guo, Xinxin Zuo, Sen Wang, and Li Cheng. TM2T: Stochastic and tokenized modeling for the reciprocal gen-eration of 3D human motions and texts. In Shai Avidan, Gabriel J. Brostow, Moustapha Ciss´ e, Giovanni Maria Farinella, and Tal Hassner, editors, Proceedings of the 17th European Conference on Computer Vision , pages 580–597. Cham: Springer, 2022. 15. Seyed Rohollah Hosseyni, Ali Ahmad Rahmani, Seyed Ja-mal Seyedmohammadi, Sanaz Seyedin, and Arash Mo-hammadi. BAD: Bidirectional auto-regressive diffusion for text-to-motion generation. In Proceedings of the IEEE Short form of title 13 
+
+International Conference on Acoustics, Speech and Signal Processing , pages 1–5. Piscataway: IEEE, 2025. 16. Haiyang Liu, Zihao Zhu, Giorgio Becherini, Yichen Peng, Mingyang Su, You Zhou, Xuefei Zhe, Naoya Iwamoto, Bo Zheng, and Michael J Black. Emage: Towards uni-fied holistic co-speech gesture generation via expressive masked audio gesture modeling. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1144–1154. Piscataway: IEEE, 2024. 17. Yifei Liu, Qiong Cao, Yandong Wen, Huaiguang Jiang, and Changxing Ding. Towards variable and coordinated holistic co-speech motion generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1566–1576. Piscataway: IEEE, 2024. 18. Ekkasit Pinyoanuntapong, Muhammad Usama Saleem, Pu Wang, Minwoo Lee, Srijan Das, and Chen Chen. BAMM: bidirectional autoregressive motion model. In Ales Leonardis, Elisa Ricci, Stefan Roth, Olga Rus-sakovsky, Torsten Sattler, and G¨ ul Varol, editors, Pro-ceedings of the 18th European Conference on Computer Vision , pages 172–190. Cham: Springer, 2024. 19. Han Yang, Kun Su, Yutong Zhang, Jiaben Chen, Kaizhi Qian, Gaowen Liu, and Chuang Gan. UniMuMo: Unified text, music and motion generation. In Toby Walsh, Julie Shah, and Zico Kolter, editors, Proceedings of the 39th AAAI Conference on Artificial Intelligence , pages 25615– 25623. Palo Alto: AAAI Press, 2025. 20. Hongwei Yi, Hualin Liang, Yifei Liu, Qiong Cao, Yan-dong Wen, Timo Bolkart, Dacheng Tao, and Michael J Black. Generating holistic 3D human motion from speech. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , pages 469–480. Piscataway: IEEE, 2023. 21. Jianrong Zhang, Yangsong Zhang, Xiaodong Cun, Yong Zhang, Hongwei Zhao, Hongtao Lu, Xi Shen, and Ying Shan. Generating human motion from textual descrip-tions with discrete representations. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 14730–14740. Piscataway: IEEE, 2023. 22. Ronghui Li, YuXiang Zhang, Yachao Zhang, Hongwen Zhang, Jie Guo, Yan Zhang, Yebin Liu, and Xiu Li. Lodge: A coarse to fine diffusion network for long dance gener-ation guided by the characteristic dance primitives. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1524–1534. Piscat-away: IEEE, 2024. 23. Matthias Plappert, Christian Mandery, and Tamim As-four. The kit motion-language dataset. Big data , 4(4):236– 252, 2016. 24. Wanjiang Weng, Xiaofeng Tan, Junbo Wang, Guo-Sen Xie, Pan Zhou, and Hongsong Wang. ReAlign: Text-to-motion generation via step-aware reward-guided alignment. In Toby Walsh, Julie Shah, and Zico Kolter, editors, Proceed-ings of the 39th AAAI conference on artificial intelligence ,pages 1–9. Palo Alto: AAAI Press, 2025. 25. Xiaofeng Tan, Hongsong Wang, Xin Geng, and Pan Zhou. Sopo: Text-to-motion generation using semi-online pref-erence optimization. In Proceedings of the 39th Inter-national Conference on Neural Information Processing Systems , pages 1–14. Red Hook: Curran Associates, 2025. 26. A¨ aron van den Oord, Oriol Vinyals, and Koray Kavukcuoglu. Neural discrete representation learning. In Isabelle Guyon, Ulrike von Luxburg, Samy Bengio, Hanna M. Wallach, Rob Fergus, S. V. N. Vishwanathan, and Roman Garnett, editors, Proceedings of the 31st In-ternational Conference on Neural Information Processing Systems , pages 6306–6315. Red Hook: Curran Associates, 2017. 27. Tinghui Zhou, Yong Jae Lee, Stella X Yu, and Alyosha A Efros. Flowweb: Joint image set alignment by weaving consistent, pixel-wise correspondences. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pages 1191–1200. Piscataway: IEEE, 2015. 28. Tinghui Zhou, Philipp Krahenbuhl, Mathieu Aubry, Qix-ing Huang, and Alexei A Efros. Learning dense correspon-dence via 3D-guided cycle consistency. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 117–126. Piscataway: IEEE, 2016. 29. Xiaowei Zhou, Menglong Zhu, and Kostas Daniilidis. Multi-image matching via fast alternating minimization. In Proceedings of the IEEE international conference on computer vision , pages 4032–4040. Piscataway: IEEE, 2015. 30. Fan Wang, Qixing Huang, and Leonidas J Guibas. Im-age co-segmentation via consistent functional maps. In 
+
+Proceedings of the IEEE international conference on com-puter vision , pages 849–856. Piscataway: IEEE, 2013. 31. Fan Wang, Qixing Huang, Maks Ovsjanikov, and Leonidas J Guibas. Unsupervised multi-class joint image segmentation. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 3142–3149. Piscataway: IEEE, 2014. 32. Ting-Chun Wang, Ming-Yu Liu, Jun-Yan Zhu, Guilin Liu, Andrew Tao, Jan Kautz, and Bryan Catanzaro. Video-to-video synthesis. In Samy Bengio, Hanna M. Wallach, Hugo Larochelle, Kristen Grauman, Nicol` o Cesa-Bianchi, and Roman Garnett, editors, Proceedings of the 32nd In-ternational Conference on Neural Information Processing Systems , pages 1152–1164. Red Hook: Curran Associates, 2018. 33. Debidatta Dwibedi, Yusuf Aytar, Jonathan Tompson, Pierre Sermanet, and Andrew Zisserman. Temporal cycle-consistency learning. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 1801–1810. Piscataway: IEEE, 2019. 34. Jun-Yan Zhu, Taesung Park, Phillip Isola, and Alexei A Efros. Unpaired image-to-image translation using cycle-consistent adversarial networks. In Proceedings of the IEEE International Conference on Computer Vision ,pages 2223–2232. Piscataway: IEEE, 2017. 35. Yikang Li, Nan Duan, Bolei Zhou, Xiao Chu, Wanli Ouyang, Xiaogang Wang, and Ming Zhou. Visual question generation as dual task of visual question answering. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , pages 6116–6124. Piscataway: IEEE, 2018. 36. Meet Shah, Xinlei Chen, Marcus Rohrbach, and Devi Parikh. Cycle-consistency for robust visual question an-swering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 6649– 6658. Piscataway: IEEE, 2019. 37. Duyu Tang, Nan Duan, Tao Qin, and Ming Zhou. Ques-tion answering and question generation as dual tasks. arxiv preprint. arxiv:1706.02027. 2017. 38. Hanqing Wang, Wei Liang, Jianbing Shen, Luc Van Gool, and Wenguan Wang. Counterfactual cycle-consistent learning for instruction following and generation in vision-language navigation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 15471–15481. Piscataway: IEEE, 2022. 39. Mengyu Chu, You Xie, Jonas Mayer, Laura Leal-Taix´ e, and Nils Thuerey. Learning temporal coherence via self-14 F. Author et al 
+
+supervision for GAN-based video generation. ACM Trans-actions on Graphics , 39(4):1–75, 2020. 40. Guillaume Le Moing, Jean Ponce, and Cordelia Schmid. CCVS: Context-aware controllable video synthesis. In Marc’Aurelio Ranzato, Alina Beygelzimer, Yann N. Dauphin, Percy Liang, and Jennifer Wortman Vaughan, editors, Proceedings of the 35th International Confer-ence on Neural Information Processing Systems , pages 14042–14055. Red Hook: Curran Associates, 2021. 41. Wilson Yan, Danijar Hafner, Stephen James, and Pieter Abbeel. Temporally consistent transformers for video generation. In Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlett, editors, Proceedings of the International Conference on Machine Learning ,pages 39062–39098. Retrieved August 2, 2025, from https://proceedings.mlr.press/v202/yan23b.html, 2023. 42. Zhongcong Xu, Jianfeng Zhang, Jun Hao Liew, Han-shu Yan, Jia-Wei Liu, Chenxu Zhang, Jiashi Feng, and Mike Zheng Shou. Magicanimate: Temporally consistent human image animation using diffusion model. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1481–1490. Piscataway: IEEE, 2024. 43. Feng Liang, Bichen Wu, Jialiang Wang, Licheng Yu, Kun-peng Li, Yinan Zhao, Ishan Misra, Jia-Bin Huang, Peizhao Zhang, Peter Vajda, et al. Flowvid: Taming imperfect optical flows for consistent video-to-video synthesis. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8207–8216. Piscat-away: IEEE, 2024. 44. Yuanxin Liu, Lei Li, Shuhuai Ren, Rundong Gao, Shicheng Li, Sishuo Chen, Xu Sun, and Lu Hou. FETV: A bench-mark for fine-grained evaluation of open-domain text-to-video generation. In Alice Oh, Tristan Naumann, Amir Globerson, Kate Saenko, Moritz Hardt, and Sergey Levine, editors, Proceedings of the 37th International Conference on Neural Information Processing Systems , pages 62352– 62387. Red Hook: Curran Associates, 2023. 45. Biao Jiang, Xin Chen, Wen Liu, Jingyi Yu, Gang Yu, and Tao Chen. MotionGPT: Human motion as a foreign lan-guage. In Alice Oh, Tristan Naumann, Amir Globerson, Kate Saenko, Moritz Hardt, and Sergey Levine, editors, 
+
+Proceedings of the 37th International Conference on Neu-ral Information Processing Systems , pages 20067–20079. Red Hook: Curran Associates, 2023. 46. Yaqi Zhang, Di Huang, Bin Liu, Shixiang Tang, Yan Lu, Lu Chen, Lei Bai, Qi Chu, Nenghai Yu, and Wanli Ouyang. MotionGPT: Finetuned llms are general-purpose motion generators. In Michael J. Wooldridge, Jennifer G. Dy, and Sriraam Natarajan, editors, Proceedings of the 38th AAAI Conference on Artificial Intelligence , pages 7368–7376. Palo Alto: AAAI Press, 2024. 47. Guy Tevet, Sigal Raab, Brian Gordon, Yonatan Shafir, Daniel Cohen-Or, and Amit H Bermano. Hu-man motion diffusion model. In In Proceedings of the 11th International Conference on Learning Representations . Retrieved February 2, 2025, from https://openreview.net/forum?id=SJ1kSyO2jwu, 2023. 48. Xin Chen, Biao Jiang, Wen Liu, Zilong Huang, Bin Fu, Tao Chen, and Gang Yu. Executing your commands via motion diffusion in latent space. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 18000–18010. Piscataway: IEEE, 2023. 49. Mingyuan Zhang, Zhongang Cai, Liang Pan, Fangzhou Hong, Xinying Guo, Lei Yang, and Ziwei Liu. Motiondif-fuse: Text-driven human motion generation with diffusion model. IEEE Transactions on Pattern Analysis and Ma-chine Intelligence , 46(6):4115–4128, 2024. 50. Wenxun Dai, Ling-Hao Chen, Jingbo Wang, Jinpeng Liu, Bo Dai, and Yansong Tang. MotionLCM: Real-time con-trollable motion generation via latent consistency model. In Ales Leonardis, Elisa Ricci, Stefan Roth, Olga Rus-sakovsky, Torsten Sattler, and G¨ ul Varol, editors, Pro-ceedings of the 18th European Conference on Computer Vision , pages 390–408. Cham: Springer, 2024. 51. Zeyu Zhang, Akide Liu, Ian Reid, Richard Hartley, Bohan Zhuang, and Hao Tang. Motion Mamba: Efficient and long sequence motion generation. In Ales Leonardis, Elisa Ricci, Stefan Roth, Olga Russakovsky, Torsten Sattler, and G¨ ul Varol, editors, Proceedings of the 18th European Conference on Computer Vision , pages 265–282. Cham: Springer, 2024. 52. Yiming Huang, Weilin Wan, Yue Yang, Chris Callison-Burch, Mark Yatskar, and Lingjie Liu. Como: Control-lable motion generation through language guided pose code editing. In Ales Leonardis, Elisa Ricci, Stefan Roth, Olga Russakovsky, Torsten Sattler, and G¨ ul Varol, ed-itors, Proceedings of the 18th European Conference on Computer Vision , pages 180–196. Cham: Springer, 2024. 53. Ling-An Zeng, Guohong Huang, Gaojie Wu, and Wei-Shi Zheng. Light-T2M: A lightweight and fast model for text-to-motion generation. In Toby Walsh, Julie Shah, and Zico Kolter, editors, Proceedings of the 39th AAAI Conference on Artificial Intelligence , number 9, pages 9797–9805. Palo Alto: AAAI Press, 2025. 54. Bizhu Wu, Jinheng Xie, Keming Shen, Zhe Kong, Jian-feng Ren, Ruibin Bai, Rong Qu, and Linlin Shen. MG-MotionLLM: A unified framework for motion compre-hension and generation across multiple granularities. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 27849–27858. Pis-cataway: IEEE, 2025. 55. Junyu Shi, Lijiang Liu, Yong Sun, Zhiyuan Zhang, Jinni Zhou, and Qiang Nie. Genm 3 : Generative pretrained multi-path motion model for text conditional human mo-tion generation. In Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision , pages 13129– 13139. Piscataway: IEEE, 2025. 56. Naureen Mahmood, Nima Ghorbani, Nikolaus F Troje, Gerard Pons-Moll, and Michael J Black. AMASS: Archive of motion capture as surface shapes. In Proceedings of the IEEE/CVF international conference on computer vision ,pages 5442–5451. Piscataway: IEEE, 2019. 57. Chuan Guo, Xinxin Zuo, Sen Wang, Shihao Zou, Qingyao Sun, Annan Deng, Minglun Gong, and Li Cheng. Ac-tion2Motion: Conditioned generation of 3D human mo-tions. In Proceedings of the ACM International Confer-ence on Multimedia , pages 2021–2029. New York: ACM, 2020. 58. Sheng Yan, Yang Liu, Haoqiang Wang, Xin Du, Mengyuan Liu, and Hong Liu. Cross-modal retrieval for motion and text via droptriple loss. In Proceedings of the ACM International Conference on Multimedia in Asia , pages 1–7. New York: ACM, 2023. 59. Hanyang Kong, Kehong Gong, Dongze Lian, Michael Bi Mi, and Xinchao Wang. Priority-centric human motion generation in discrete latent space. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 14806–14816. Piscataway: IEEE, 2023.
