@@ -1,0 +1,827 @@
+Title: Training-Free Generative Modeling via Kernelized Stochastic Interpolants
+
+URL Source: https://arxiv.org/pdf/2602.20070v1
+
+Published Time: Tue, 24 Feb 2026 03:17:19 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# TRAINING -F REE GENERATIVE MODELING VIA KERNELIZED STOCHASTIC INTERPOLANTS 
+
+A P REPRINT 
+
+Florentin Coeurdoux 1* Etienne Lempereur 2 Nathana¨ el Cuvelle–Magar 3,4
+
+Thomas Eboli 1 St´ ephane Mallat 1 Anastasia Borovykh 1 Eric Vanden-Eijnden 1,51Capital Fund Management, Paris, France 
+
+> 2
+
+D´ epartement d’informatique, ENS, Universit´ e PSL, Paris, France 
+
+> 3
+
+Coll` ege de France, Paris, France 
+
+> 4
+
+CCM, Flatiron Institute, New York, USA 
+
+> 5
+
+Courant Institute of Mathematical Sciences, New York University, New York, USA 
+
+> 6
+
+ML Lab, Capital Fund Management, Paris, France 
+
+## ABSTRACT 
+
+We develop a kernel method for generative modeling within the stochastic interpolant frame-work, replacing neural network training with linear systems. The drift of the generative SDE is 
+
+ˆbt(x) = ∇ϕ(x)⊤ηt, where ηt ∈ RP solves a P × P system computable from data, with P inde-pendent of the data dimension d. Since estimates are inexact, the diffusion coefficient Dt affects sample quality; the optimal D∗ 
+
+> t
+
+from Girsanov diverges at t = 0 , but this poses no difficulty and we develop an integrator that handles it seamlessly. The framework accommodates diverse feature maps—scattering transforms, pretrained generative models etc.—enabling training-free generation and model combination. We demonstrate the approach on financial time series, turbulence, and image generation. 
+
+## 1 Introduction 
+
+Generative diffusion models based on dynamical transport of measure—including score-based models (Song et al., 2020), flow matching (Lipman et al., 2022), rectified flows (Liu et al., 2022), and stochastic interpolants (Albergo & Vanden-Eijnden, 2022; Albergo et al., 2023)—require learning a time-dependent drift or score function, typically by training a neural network on a regression objective. This training step is computationally expensive. Here we show that this training step can be avoided via a kernel method . Given a feature map ϕ : Rd → RP , the drift of the generative process can be approximated as ˆbt(x) = ∇ϕ(x)⊤ηt, where ηt ∈ RP solves a P × P linear system computable from data. The score estimate follows from the exact drift-score relation. This reduces the learning problem from neural network training to solving linear systems—one per time step, precomputed before generation. Since the feature map is finite-dimensional, the drift and score estimates are approximate. The diffusion coefficient 
+
+Dt in the generative SDE, which would be irrelevant with exact estimates, now affects sample quality. We use the optimal schedule D∗ 
+
+> t
+
+(Chen et al., 2024; Ma et al., 2024), obtained by minimizing a path KL bound via Girsanov’s theorem. The resulting D∗ 
+
+> t
+
+is large near t = 0 (strong diffusion when the distribution is nearly Gaussian) and vanishes near t = 1 (pure transport near the data). We develop an integrator that handles both limits seamlessly. The framework accommodates diverse feature maps, like scattering transforms for time series and random fields and pretrained generative models. The latter is particularly notable: pretrained velocity fields can be used directly as feature gradients, enabling training-free combination of models with different architectures or training stages through linear algebra. This work is complementary to Moment-Guided Diffusion (Lempereur et al., 2025), which uses similar feature maps but constrains moments rather than regressing the drift. 
+
+> ∗
+
+Florentin Coeurdoux is the corresponding author. Email: coeurdoux.florentin@gmail.com. 
+
+> arXiv:2602.20070v1 [cs.LG] 23 Feb 2026
+
+Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT 
+
+Main contributions. 
+
+• A kernel reformulation of stochastic interpolants where the drift is estimated by solving a P × P linear system, with P the number of features independent of the input dimension d (Proposition 2.1). • Application of the optimal diffusion coefficient D∗ 
+
+> t
+
+(Chen et al., 2024; Ma et al., 2024) to the kernel setting, with a bound on generation error in terms of drift estimation error (Proposition 2.2). The optimal D∗ 
+
+> t
+
+diverges as t → 0
+
+(infinite diffusion when the distribution is Gaussian) and vanishes as t → 1; see also Appendix B for a structural interpretation. • An integrator for the optimal SDE that handles D∗ 
+
+> 0
+
+= ∞ without clamping (Section 2.4). • Practical constructions using scattering transforms and pretrained generative models, with the ability to combine them (Section 2.5). 
+
+Related work. Our approach builds on stochastic interpolants (Albergo & Vanden-Eijnden, 2022; Albergo et al., 2023), reformulating them as kernel methods (Muandet et al., 2017). The optimal diffusion coefficient D∗ 
+
+> t
+
+we use was derived in Chen et al. (2024); Ma et al. (2024); a similar expression appears in the stochastic optimal control setting (Havens et al., 2025). Closely related is Moment-Guided Diffusion (MGD) (Lempereur et al., 2025), which also uses feature maps within stochastic interpolants but imposes moment constraints E[ϕ(Xt)] = E[ϕ(It)] to sample maximum entropy distributions. MGD requires Dt → ∞ to reach the maximum entropy limit, whereas our approach uses the finite optimal D∗ 
+
+> t
+
+to minimize generation error. Our method is simpler—solving a linear regression beforehand rather than enforcing constraints throughout the dynamics—but offers less control: MGD allows explicit specification of which statistics to match, while our method implicitly targets the full data distribution through drift regression. RKHS formulations of diffusion models appear in Maurais & Marzouk (2024); Yi et al. (2024), using standard kernels (Gaussian, Laplacian) rather than problem-specific feature maps. MMD-based generative methods (Bortoli et al., 2025; Galashov et al., 2024; Gretton et al., 2012) require engineering feature maps; we use ∇ϕ directly from existing models or transforms. On model combination, parameter averaging (Biggs et al., 2024; Wortsman et al., 2022) can degrade performance, distillation (Hinton et al., 2015) requires training, and LoRA merging (Hu et al., 2021; Shah et al., 2024) loses accuracy with many models. Our method is training-free, combining models via linear systems rather than parameter averaging or retraining. 
+
+## 2 Theory 
+
+2.1 Stochastic Interpolants 
+
+Let μ be a target probability distribution on Rd, known only through samples, and assume that μ has a differentiable, everywhere positive density. The stochastic interpolant between noise z ∼ N(0 , Id d) and data a ∼ μ is 
+
+It = αtz + βta, z ∼ N(0 , Id d), a ∼ μ, a ⊥ z, t ∈ [0 , 1] , (1) where α, β ∈ C1([0 , 1]) with α0 = β1 = 1 , α1 = β0 = 0 , and ˙αt < 0, ˙βt > 0 on t ∈ (0 , 1) (e.g., linear αt = 1 − t,
+
+βt = t or trigonometric αt = cos( 12 πt ), βt = sin( 12 πt )). From Albergo et al. (2023), It has density ρt, which coincides with that of the solution Xt of 
+
+dX t = bt(Xt) dt + Dt st(Xt) dt + p2Dt dW t, X0 = z ∼ N(0 , Id d), (2) where Dt ≥ 0 is a tunable diffusion coefficient, the velocity field is bt(x) = E[ ˙It|It = x] for t ∈ [0 , 1] , and the score 
+
+st(x) = ∇ log ρt(x) satisfies, by Tweedie’s identity, st(x) = −α−1 
+
+> t
+
+E[z|It = x] for t ∈ [0 , 1) . The velocity is the minimizer of the regression loss 
+
+Lb[ˆbt] = E|ˆbt(It) − ˙It|2, (3) and bt(x) and st(x) are related by 
+
+st(x) = βt bt(x) − ˙βt xαtγt
+
+, γt := αt ˙βt − ˙αtβt > 0. (4) Since I1 = a ∼ μ by construction, integrating equation 2 yields samples from the target: X1 ∼ μ.2Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT 
+
+2.2 Drift Estimation via Linear Systems 
+
+The key ingredient of our approach is a feature map ϕ : Rd → RP with Jacobian ∇ϕ(x) ∈ RP ×d, so that ∇ϕ(x)⊤v =
+
+PPi=1 vi ∇ϕi(x) ∈ Rd for v ∈ RP . Concrete choices of ϕ are discussed in Section 2.5. We use this map to approximate the velocity as ˆbt(x) = ∇ϕ(x)⊤ηt with ηt ∈ RP , reducing equation 3 to a quadratic problem in ηt.
+
+Proposition 2.1 (Drift estimation) . Define the Gram matrix of the feature gradients {∇ ϕi}Pi=1 under the law of It:
+
+Kt = E∇ϕ(It) · ∇ ϕ(It)⊤ ∈ RP ×P , [Kt]ij = E∇ϕi(It) · ∇ ϕj (It). (5) 
+
+Assume Kt is positive-definite. Then the minimizer of Lb over ˆbt(x) = ∇ϕ(x)⊤ηt is 
+
+ˆbt(x) = ∇ϕ(x)⊤ηt, Kt ηt = E∇ϕ(It) · ˙It
+
+. (6) 
+
+Proof. Expanding Lb = η⊤ 
+
+> t
+
+Ktηt − 2 E[∇ϕ(It) · ˙It]⊤ηt + E[| ˙It|2], the unique minimizer under positive-definite Kt
+
+satisfies Ktηt = E[∇ϕ(It) · ˙It].Given samples (zn, a n)Nn=1 with zn ∼ N(0 , Id d) and an ∼ μ, setting Int = αtzn + βtan and ˙Int = ˙ αtzn + ˙βtan, the empirical system is 
+
+ˆKt ηt = ˆ rt, [ ˆKt]ij = 1
+
+N
+
+> N
+
+X
+
+> n=1
+
+∇ϕi(Int ) · ∇ ϕj (Int ), [ˆ rt]i = 1
+
+N
+
+> N
+
+X
+
+> n=1
+
+∇ϕi(Int ) · ˙Int . (7) In practice, this P × P system is solved on a prescribed time grid 0 = t0 < t 1 < · · · < t K = 1 before generation begins. Since P (the number of features) is independent and can be much smaller than d (the data dimension), this is computationally inexpensive. The coefficients {ηtk }K−1 
+
+> k=0
+
+are stored and reused to generate arbitrarily many samples by integrating equation 2—no further training or optimization is required. 
+
+2.3 Estimation Error and Optimal Diffusion 
+
+Since ϕ : Rd → RP is finite-dimensional, the kernel k(x, y ) = ϕ(x)⊤ϕ(y) has rank at most P and is not characteristic. The velocity estimate ˆbt = ∇ϕ⊤ηt from Theorem 2.1 is therefore the best approximation in class, not the exact velocity. The corresponding score estimate, obtained via equation 4, is 
+
+ˆst(x) = βt ˆbt(x) − ˙βt xαtγt
+
+. (8) Since this relation is exact, errors in ˆbt translate to proportional errors in ˆst. If |x|2/2 ∈ ϕ, this estimate coincides with the one obtained by score matching, i.e., minimizing Ls[ˆ st] = E[|ˆst(It) + α−1 
+
+> t
+
+z|2] over ˆst(x) = ∇ϕ(x)⊤ζt.Using equation 8 to express the score in terms of the drift, the SDE equation 2 becomes 
+
+dX t =
+
+"
+
+1 + Dtβt
+
+αtγt
+
+
+
+∇ϕ(Xt)⊤ηt − Dt ˙βt
+
+αtγt
+
+Xt
+
+#
+
+dt + p2Dt dW t. (9) The generated density ρDt —the law of Xt solving equation 9—depends on the diffusion coefficient Dt. The choice of Dt matters precisely because the estimates are inexact: if ˆbt = bt and ˆst = st, the law of Xt would equal that of 
+
+It for any Dt ≥ 0—this is the defining property of stochastic interpolants (Albergo et al., 2023). But when ˆbt̸ = bt,different choices of Dt yield different generated densities ρDt , and the optimal choice can be found by minimizing the impact of the estimation error. By Girsanov’s theorem, the KL divergence between the path measures of the exact and approximate processes is 
+
+Dpath KL = 14
+
+Z 10
+
+1
+
+Dt
+
+
+
+1 + Dt βt
+
+αtγt
+
+2
+
+E|bt(It) − ∇ ϕ(It)⊤ηt|2 dt, (10) where we used that the exact process has the same marginals as It. By the data processing inequality, this bounds the KL divergence between the generated and target distributions at the terminal time: 
+
+DKL (μD 
+
+> 1
+
+∥μ) ≤ Dpath KL . (11) where με 
+
+> 1
+
+is the distribution of ρε 
+
+> 1
+
+and μ is target distribution. Minimizing the path KL over Dt therefore controls the generation error. 3Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT 
+
+Algorithm 1: Kernelized Stochastic Interpolant Generation (with optimal D∗ 
+
+> t
+
+)
+
+Input: Feature gradients ∇ϕi, i = 1 , . . . , P ; data pairs (zn, a n)Nn=1 ; steps K; schedule αt, β t, γ t
+
+Precompute: For each tk = k/K , k = 0 , . . . , K −1: solve equation 7 for ηtk ∈ RP ;
+
+Generate: X0 ∼ N(0 , Id d);
+
+for k = 0 , . . . , K −1 do 
+
+set t = tk, h = 1 /K ;
+
+Xt+h = βt 
+
+> βt+h
+
+Xt + h
+
+
+
+1 + βt
+
+> βt+h
+
+
+
+∇ϕ(Xt)⊤ηt +
+
+√h(αtβtγt+αt+hβt+hσt+h) 
+
+> βt+h
+
+gt, gt ∼ N(0 , Id d);
+
+Output: X1 ≈ a ∼ μ
+
+Proposition 2.2 (Optimal diffusion coefficient (Chen et al., 2024; Ma et al., 2024)) . The pointwise minimizer of the integrand in equation 10 over Dt > 0 is 
+
+D∗ 
+
+> t
+
+= αtγt
+
+βt
+
+= αt(αt ˙βt − ˙αtβt)
+
+βt
+
+. (12) 
+
+Proof. Writing λt = 1+ Dtβt/(αtγt), the integrand is λ2 
+
+> t
+
+D−1 
+
+> t
+
+= D−1 
+
+> t
+
++2 βt/(αtγt)+ Dtβ2 
+
+> t
+
+/(αtγt)2. Differentiating and setting to zero gives D∗ 
+
+> t
+
+= αtγt/β t, with λ2 
+
+> t
+
+/D t|D∗ 
+
+> t
+
+= 4 βt/(αtγt).The optimal D∗ 
+
+> t
+
+is large for small t—providing strong diffusion when the distribution is nearly Gaussian—and vanishes as t → 1, where the SDE reduces to the probability flow ODE and accurate transport matters most. It is also the unique choice for which the time-reversed SDE becomes score-free (Appendix B). The alternative D → ∞ , natural in Lempereur et al. (2025), is not appropriate here (Appendix C). 
+
+Remark 2.3 (Behavior at the endpoints) . At t = 0 , the drift is known exactly ( I0 = z is independent of the data) and D∗ 
+
+> 0
+
+= ∞, reflecting that the SDE reduces to an OU process restoring the Gaussian; the integrator in Section 2.4 handles this without clamping. At t = 1 , the weight in equation 10 diverges, but this does not affect the algorithm since D∗ 
+
+> t
+
+→ 0 and the integrator reduces to an ODE step. (A careful treatment truncates the path KL at t = 1 − δ and takes δ → 0 after optimizing Dt.) 
+
+2.4 Optimal Diffusion and Integrator 
+
+For the optimal D∗ 
+
+> t
+
+= αtγt/β t, we have 1 + D∗ 
+
+> t
+
+βt/(αtγt) = 2 and D∗ 
+
+> t
+
+˙βt/(αtγt) = ˙βt/β t, so equation 9 reduces to 
+
+dX t =
+
+h
+
+2∇ϕ(Xt)⊤ηt − ˙βt
+
+βt
+
+Xt
+
+i
+
+dt +
+
+r 2αtγt
+
+βt
+
+dW t. (13) This can be written as 
+
+d(βtXt) = 2 βt∇ϕ(Xt)⊤ηt dt + p2αtβtγt dW t. (14) Integrating from t to t + h:
+
+βt+hXt+h − βtXt =
+
+Z t+ht
+
+2βs∇ϕ(Xs)⊤ηs ds +
+
+Z t+ht
+
+p2αsβsσs dW s. (15) We treat ∇ϕ(Xs)⊤ηs explicitly at time t, and approximate R t+ht βs ds ≈ h 
+
+> 2
+
+(βt + βt+h) by the trapezoidal rule. The stochastic integral has variance R t+ht 2αsβsσs ds ≈ h(αtβtγt + αt+hβt+hσt+h). Dividing by βt+h gives the integrator: 
+
+Xt+h = βt
+
+βt+h
+
+Xt + h
+
+
+
+1 + βt
+
+βt+h
+
+
+
+∇ϕ(Xt)⊤ηt +
+
+ph(αtβtγt + αt+hβt+hσt+h)
+
+βt+h
+
+gt, (16) where gt ∼ N(0 , Id) . This scheme handles the singular endpoint t = 0 seamlessly: as t → 0 (where D∗ 
+
+> t
+
+→ ∞ and 
+
+βt → 0), the contribution from Xt vanishes and Xt+h is resampled from a Gaussian—the correct behavior since the SDE reduces to an OU process restoring the initial distribution. No clamping of Dt is required. The generation procedure is summarized in Algorithm 1. 4Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT 
+
+2.5 Choice of Feature Map 
+
+The main challenge in any kernel method is selecting an appropriate kernel—or equivalently, an appropriate feature map ϕ. The expressiveness of ϕ determines how well the ansatz ˆbt = ∇ϕ⊤ηt can approximate the true velocity field, and thus the quality of the generated samples. We discuss three natural choices, each suited to different settings. 
+
+Scattering Spectra. For time series ( d = T ) or random fields ( d = T1 × T2), the wavelet scattering transform (Mal-lat, 2012) provides a natural feature map. The scattering coefficients S[p]x at various paths p (encoding scales, orien-tations) give a finite-dimensional, Lipschitz-continuous, translation-invariant representation. Setting ϕp(x) = S[p]x
+
+and computing ∇ϕp(x) = ∇xS[p]x via backpropagation provides the feature gradients. This choice is well-suited to processes with multiscale structure, such as textures and turbulence (Bruna & Mallat, 2019). 
+
+Pretrained Generative Models. If bit(x), i = 1 , . . . , P are pretrained velocity fields (from flow matching, stochastic interpolants, etc.), we can use them directly as feature gradients by setting ∇ϕi(x) = bit(x). Note that the linear system equation 7 depends only on ∇ϕ, not ϕ itself, so there is no need to construct ϕ explicitly—we can work directly with the pretrained velocity fields. The P × P linear system becomes 
+
+> P
+
+X
+
+> j=1
+
+1
+
+N
+
+> N
+
+X
+
+> n=1
+
+ bit(Int )⊤bjt (Int ) ηjt = 1
+
+N
+
+> N
+
+X
+
+> n=1
+
+bit(Int )⊤ ˙Int , i = 1 , . . . , P, (17) and the combined drift is ˆbt(x) = PPi=1 ηit bit(x). This enables training-free combination of models with different architectures, training stages, or data domains. These choices are not mutually exclusive: scattering coefficients and pretrained velocity fields can be combined into a single feature map, with the linear system automatically determining the optimal weighting. 
+
+## 3 Numerical Illustrations 
+
+3.1 Multiscale Time Series: Financial Log-Returns 
+
+We begin with a one-dimensional setting that highlights two distinctive aspects of our framework: generation from a 
+
+single observed realization, and the use of scattering-transform features to capture multiscale, non-Gaussian structure (Appendix D). We consider daily log-returns of the S&P 500 index from January 2000 to February 2024, a single realization of 
+
+d = 6 ,064 time steps. Financial log-returns exhibit heavy tails, volatility clustering, and the leverage effect (nega-tive correlation between returns and future volatility) making them a challenging test case, especially in the single-realization regime where neural generative models cannot be trained. Figure 1 demonstrates that Algorithm 1 with K = 1 ,200 steps successfully captures the statistical properties of the S&P 500 log-returns. We use the trigonometric schedule αt = cos( 12 πt ), βt = sin( 12 πt ). The top panel shows the original series (blue) alongside a representative generated sample (orange), exhibiting qualitatively similar intermittent volatility bursts and multiscale correlations. Quantitatively, the density plot (bottom left) shows near-perfect agreement between the empirical distributions of the true and generated returns, including the characteristic heavy tails. The leverage effect plot (bottom right) reveals that the generated samples correctly reproduce the asymmetric correlation between past returns and future volatility, a key stylized fact in financial time series (Morel et al., 2024). 
+
+3.2 Physical fields 
+
+We test the framework on two-dimensional physical fields using the Morlet wavelet scattering transform as the feature map ϕ. This setting is particularly natural: scattering coefficients provide a finite-dimensional, Lipschitz-continuous, and translation-invariant representation that captures the multiscale structure characteristic of turbulence and cosmo-logical fields (Cheng et al., 2024). 
+
+Datasets. We consider four fields, chosen to span a range of statistical properties—scale dependence, sparsity, non-Gaussianity, and morphological diversity: • 3D turbulence : two-dimensional slices of 3D turbulent pressure fields from the forced isotropic turbulence simulation (Li et al., 2008; Perlman et al., 2007), available in the Johns Hopkins Turbulence Database at http://turbulence.pha.jhu.edu. These fields exhibit long-range correlations and intermittent structures. 5Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT −10                    
+
+> −5
+> 0
+> 5
+> 10
+> S&P
+> 01000 2000 3000 4000 5000
+> t
+> −10
+> −5
+> 0
+> 5
+> 10
+> Gen
+> −4 −3 −2 −1 01234
+> Value
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Density
+> True
+> Gen
+> −40 −20 020 40 60
+> Lag τ
+> −1.0
+> −0.5
+> 0.0
+> Leverage
+> 1e−5
+> True
+> Gen
+
+Figure 1: Generation from a single S&P 500 daily log-returns realization ( d = 6 ,064 ) using scattering features (P = 217 ). Top : Original (blue) and generated sample (orange), both showing volatility clustering. Bottom left :Log-return densities, with near-perfect agreement including heavy tails. Bottom right : Leverage effect (correlation between past returns and current volatility). • Dark matter : logarithm of 2D slices of the 3D large-scale matter distribution from the Quijote simula-tions (Villaescusa-Navarro et al., 2020). The log-transform accentuates the filamentary cosmic web, producing fields with pronounced non-Gaussian statistics. • Magnetic turbulence : 2D slices of 3D vorticity fields from 3D isothermal magnetic-hydrodynamic (MHD) (Allys et al., 2019). The field is anisotropic due to a mean magnetic field in the horizontal direction. These fields contain coherent vortical structures embedded in a turbulent background. • Weak lensing : simulated convergence maps of gravitational lensing induced by cosmological matter density fluc-tuations (Gupta et al., 2018), displaying sparse spikes in a gaussian-like background. All fields are discretized on 64 × 64 grids with periodic boundary conditions and standardized to zero mean and unit variance. See Appendix D for details on the scattering spectra model. 
+
+Generation. We generate 100 samples per field using Algorithm 1 with K = 5 ,000 integration steps and the optimal diffusion schedule. We use the trigonometric schedule αt = cos( 12 πt ), βt = sin( 12 πt ). Figure 2 displays represen-tative ground-truth samples (top row) alongside generated samples (bottom row) for each field. The generated fields faithfully reproduce the visual characteristics of the data: the intermittent behavior of 3D turbulent pressure fields, the filamentary network of the dark matter cosmic web, the coherent vortices and elongated structures of 3D magnetic turbulence, and the sparse spikes of the lensing convergence maps. 
+
+3.3 Ensemble of Weak Generative Models 
+
+We next evaluate the pretrained-model combination strategy, using deliberately under-trained velocity fields as feature gradients. The key question is whether the linear system equation 17 can extract a combined drift ˆbt = PPi=1 ηitbit that significantly outperforms each constituent model. We use the linear schedule αt = 1 − t, βt = t for all models. 
+
+MNIST ( 28 × 28 ). We stress-test the framework in a compute-constrained regime by training two cohorts of 20 models each: one for 50 SGD steps and one for 100 SGD steps (mini-batches of 128). All models use the same time-conditioned convolutional U-Net backbone (Appendix D) but are initialized with independent random seeds. Individual models produce low-quality samples with severe artifacts (Figure 3, top two rows). We apply Algorithm 1 using subsets of these weak models as feature gradients, with N = 10 ,000 data pairs and 
+
+K = 1 ,000 integration steps. Figure 3 (left, bottom row) shows that the ensemble of 20 models trained for 100 steps 6Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT isotropic turb                    
+
+> 42024
+> Value
+> 10 3
+> 10 2
+> 10 1
+> 10 0
+> Density
+> Gen
+> True
+> cosmic web
+> 42024
+> 2D turbulence
+> 42024
+> weak lensing
+> 42024
+
+original fields 
+
+synthetic fields 
+
+Figure 2: Generation of two-dimensional physical fields using scattering-transform features. Top row : ground-truth samples from each dataset. Bottom row : samples generated by Algorithm 1 with K = 5 ,000 integration steps. From left to right: 3d turbulence (pressure), dark matter (log-density), 3D magnetic turbulence (vorticity), and weak lensing (convergence). produces samples with coherent digit structure—a striking improvement over individual models, achieved without additional training. To quantify this, we compute the log-likelihood of 10,000 generated samples under a fully trained U-Net oracle. Figure 3 (right) plots average oracle log-likelihood versus ensemble size P . Likelihood improves monotonically with 
+
+P and saturates beyond P ≈ 15 , indicating diminishing returns once the ensemble spans a sufficiently rich subspace. The 100-step cohort consistently outperforms the 50-step cohort. 
+
+CelebA ( 128 × 128 ). We repeat the protocol on CelebA ( 128 × 128 , center-cropped), training 25 weak models for 5 epochs (learning rate 10 −4, batch size 128, Adam) with independent seeds, using the U-Net backbone of Martin et al. (2025). We apply Algorithm 1 with N = 10 ,000 and K = 1 ,000 . Figure 4 shows that the ensemble produces coherent face images, whereas individual models generate blurry or incoherent outputs. This demonstrates that the kernelized combination extends to higher-resolution natural images. The framework also enables cross-domain composition, see Appendix E. 
+
+## 4 Conclusion 
+
+We have reformulated stochastic interpolant learning as a finite-dimensional kernel method. The drift is estimated by solving a P × P linear system involving feature gradients, with P independent of the data dimension. The optimal diffusion coefficient, derived via Girsanov’s theorem, minimizes a bound on the KL divergence between generated and target distributions; the resulting integrator handles both endpoints ( D∗ 
+
+> 0
+
+= ∞, D∗ 
+
+> 1
+
+= 0 ) seamlessly. By ac-7Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT 
+
+Figure 3: Left : MNIST samples. Rows 1–2: individual models (50 and 100 SGD steps). Row 3: kernelized ensemble (P = 20 , 100-step cohort). Right : Oracle log-likelihood vs. ensemble size P . Blue: 50-step; orange: 100-step. Error bars: ±1 std over 5 subsets. 
+
+Figure 4: CelebA generation ( 128 × 128 ). Top : samples from an individual weak model (5 epochs of training). 
+
+Bottom : samples from the kernelized ensemble of P = 25 weak models via Algorithm 1. The ensemble produces coherent face images despite each constituent model being severely under-trained. commodating diverse feature maps—scattering transforms and pretrained generative models—the framework enables training-free generation and model combination through linear algebra. This approach is complementary to Moment-Guided Diffusion (Lempereur et al., 2025), which uses similar feature maps but imposes moment constraints to sample maximum entropy distributions; exploring combinations of the two methods is a natural direction for future work. 
+
+## Acknowledgments 
+
+This work was supported by PR[AI]RIE-PSAI-ANR-23-IACL-0008 and the DRUIDS projet ANR-24-EXMA-0002. It was granted access to the HPC resources of IDRIS under the allocations 2025-AD011016159R1 and 2025-A0181016159 made by GENCI. 
+
+## References 
+
+Michael S Albergo and Eric Vanden-Eijnden. Building normalizing flows with stochastic interpolants. In The Eleventh International Conference on Learning Representations , 2022. Michael S Albergo, Nicholas M Boffi, and Eric Vanden-Eijnden. Stochastic interpolants: A unifying framework for flows and diffusions. arXiv preprint arXiv:2303.08797 , 2023. Erwan Allys, F Levrier, S Zhang, C Colling, B Regaldo-Saint Blancard, F Boulanger, P Hennebelle, and S Mallat. The rwst, a comprehensive statistical description of the non-gaussian structures in the ism. Astronomy & Astrophysics ,629:A115, 2019. 8Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT 
+
+Benjamin Biggs, Arjun Seshadri, Yang Zou, Achin Jain, Aditya Golatkar, Yusheng Xie, Alessandro Achille, Ashwin Swaminathan, and Stefano Soatto. Diffusion soup: Model merging for text-to-image diffusion models. In Computer Vision–ECCV 2024: 18th European Conference , pp. 256–272. Springer, 2024. Valentin De Bortoli, Alexandre Galashov, J. Swaroop Guntupalli, Guangyao Zhou, Kevin Murphy, Arthur Gretton, and Arnaud Doucet. Distributional diffusion models with scoring rules, 2025. URL https://arxiv.org/abs/ 2502.02483 .Joan Bruna and St´ ephane Mallat. Multiscale sparse microcanonical models. Mathematical Statistics and Learning , 1 (3):257–315, 2019. Yifan Chen, Mark Goldstein, Mengjian Hua, Michael S. Albergo, Nicholas M. Boffi, and Eric Vanden-Eijnden. Prob-abilistic forecasting with stochastic interpolants and f¨ ollmer processes, 2024. URL https://arxiv.org/abs/ 2403.13724 .Sihao Cheng, Rudy Morel, Erwan Allys, Brice M´ enard, and St´ ephane Mallat. Scattering spectra models for physics. 
+
+PNAS nexus , 3(4):pgae103, 2024. Alexandre Galashov, Valentin de Bortoli, and Arthur Gretton. Deep mmd gradient flow without adversarial training, 2024. URL https://arxiv.org/abs/2405.06780 .Arthur Gretton, Karsten M Borgwardt, Malte J Rasch, Bernhard Sch¨ olkopf, and Alexander Smola. A kernel two-sample test. The Journal of Machine Learning Research , 13(1):723–773, 2012. Arushi Gupta, Jos´ e Manuel Zorrilla Matilla, Daniel Hsu, and Zolt´ an Haiman. Non-gaussian information from weak lensing data via deep learning. Physical Review D , 97(10):103515, 2018. Aaron Havens, Benjamin Kurt Miller, Bing Yan, Carles Domingo-Enrich, Anuroop Sriram, Brandon Wood, Daniel Levine, Bin Hu, Brandon Amos, Brian Karrer, Xiang Fu, Guan-Horng Liu, and Ricky T. Q. Chen. Adjoint sampling: Highly scalable diffusion samplers via adjoint matching, 2025. URL https://arxiv.org/abs/2504.11713 .Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. Distilling the knowledge in a neural network. arXiv preprint arXiv:1503.02531 , 2015. Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. Lora: Low-rank adaptation of large language models. arXiv preprint arXiv:2106.09685 , 2021. Etienne Lempereur, Nathana¨ el Cuvelle-Magar, Florentin Coeurdoux, St´ ephane Mallat, and Eric Vanden-Eijnden. MGD: Moment guided diffusion for maximum entropy generation. arXiv preprint arXiv:2602.17211 , 2025. Yi Li, Eric Perlman, Minping Wan, Yunke Yang, Charles Meneveau, Randal Burns, Shiyi Chen, Alexander Szalay, and Gregory Eyink. A public turbulence database cluster and applications to study lagrangian evolution of velocity increments in turbulence. Journal of Turbulence , (9):N31, 2008. Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matthew Le. Flow matching for generative modeling. In The Eleventh International Conference on Learning Representations , 2022. Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. In The Eleventh International Conference on Learning Representations , 2022. Nanye Ma, Mark Goldstein, Michael S. Albergo, Nicholas M. Boffi, Eric Vanden-Eijnden, and Saining Xie. SiT: Exploring Flow and Diffusion-based Generative Models with Scalable Interpolant Transformers. arXiv:2401.08740 ,2024. St´ ephane Mallat. Group invariant scattering. Communications on Pure and Applied Mathematics , 65(10):1331–1398, 2012. S´ egol` ene Martin, Anne Gagneux, Paul Hagemann, and Gabriele Steidl. Pnp-flow: Plug-and-play image restoration with flow matching. In International Conference on Learning Representations , 2025. Aimee Maurais and Youssef Marzouk. Sampling in unit time with kernel fisher-rao flow, 2024. URL https:// arxiv.org/abs/2401.03892 .Rudy Morel, St´ ephane Mallat, and Jean-Philippe Bouchaud. Path shadowing Monte Carlo. Quantitative Finance , 24 (9):1199–1225, 2024. doi: 10.1080/14697688.2024.2399285. Jean Morlet, Georges Arens, Eliane Fourgeau, and Dominique Glard. Wave propagation and sampling theory—part i: Complex signal and scattering in multilayered media. Geophysics , 47(2):203–221, 1982a. Jean Morlet, Georges Arens, Eliane Fourgeau, and Dominique Glard. Wave propagation and sampling theory—part ii: Sampling theory and complex waves. Geophysics , 47(2):222–236, 1982b. Krikamol Muandet, Kenji Fukumizu, Bharath Sriperumbudur, and Bernhard Sch¨ olkopf. Kernel mean embedding of distributions: A review and beyond. Foundations and Trends in Machine Learning , 10(1-2):1–141, 2017. 9Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT 
+
+Eric Perlman, Randal Burns, Yi Li, and Charles Meneveau. Data exploration of turbulence simulations using a database cluster. In Proceedings of the 2007 ACM/IEEE Conference on Supercomputing , SC ’07, New York, NY, USA, 2007. Association for Computing Machinery. ISBN 9781595937643. doi: 10.1145/1362622.1362654. URL https: //doi.org/10.1145/1362622.1362654 .Viraj Shah, Nataniel Ruiz, Forrester Cole, Erika Lu, Svetlana Lazebnik, Yuanzhen Li, and Varun Jampani. Ziplora: Any subject in any style by effectively merging loras. In European Conference on Computer Vision , pp. 422–438. Springer, 2024. Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equations. arXiv:2011.13456 , 2020. Francisco Villaescusa-Navarro, ChangHoon Hahn, Elena Massara, Arka Banerjee, Ana Maria Delgado, Doogesh Kodi Ramanah, Tom Charnock, Elena Giusarma, Yin Li, Erwan Allys, et al. The quijote simulations. The Astrophysical Journal Supplement Series , 250(1):2, 2020. Mitchell Wortsman, Gabriel Ilharco, Samir Ya Gadre, Rebecca Roelofs, Raphael Gontijo-Lopes, Ari S Morcos, Hongseok Namkoong, Ali Farhadi, Yair Carmon, Simon Kornblith, and Ludwig Schmidt. Model soups: aver-aging weights of multiple fine-tuned models improves accuracy without increasing inference time. In Proceedings of the 39th International Conference on Machine Learning , pp. 23965–23998. PMLR, 2022. Mingyang Yi, Marcos Matabuena, and Ruoyu Wang. Denoising data with measurement error using a reproducing kernel-based diffusion model, 2024. URL https://arxiv.org/abs/2501.00212 .10 Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT 
+
+## A General Hilbert Space Formulation 
+
+The finite-dimensional framework of Section 2 extends to general Hilbert spaces, providing the theoretical foundation and connecting to characteristic kernel theory. Let ϕ : Rd → F be a feature map into a (possibly infinite-dimensional) Hilbert space F with inner product ⟨· , ·⟩ F , and let k(x, y ) = ⟨ϕ(x), ϕ (y)⟩F be the associated positive-definite kernel. The drift ansatz becomes ˆbt(x) = ⟨∇ ϕ(x), η t⟩F , where ∇ϕ(x) maps from Rd to F and ⟨∇ ϕ(x), η t⟩F ∈ Rd. The operator Kt = E[∇ϕ(It) · ∇ ϕ(It)] ∈ F ⊗ F generalizes the matrix equation 5, and the linear system Ktηt =
+
+E[⟨∇ ϕ(It), ˙It⟩] generalizes equation 6. The key result specific to this setting is: 
+
+Theorem A.1 (Exact recovery under characteristic kernels) . If k is characteristic and Kt is positive-definite for all 
+
+t ∈ [0 , 1] , then ˆbt(x) = ⟨∇ ϕ(x), η t⟩F recovers the true velocity field bt(x) = E[ ˙It|It = x] exactly for all t.Proof. Consider the ODE ˙X∗ 
+
+> t
+
+= ⟨∇ ϕ(X∗ 
+
+> t
+
+), η ∗ 
+
+> t
+
+⟩F with X∗ 
+
+> 0
+
+= I0 ∼ N(0 , Id d), where η∗ 
+
+> t
+
+solves EX∗ 
+
+> t
+
+[∇ϕ(X∗ 
+
+> t
+
+) ·∇ϕ(X∗ 
+
+> t
+
+)] η∗ 
+
+> t
+
+= EIt [∇ϕ(It) · ˙It]. The MMD between It and X∗ 
+
+> t
+
+satisfies 
+
+ddt ∥E[ϕ(It)] − E[ϕ(X∗ 
+
+> t
+
+)] ∥2 
+
+> F
+
+= 0 (18) by the chain rule and the definition of η∗ 
+
+> t
+
+. Since X∗ 
+
+> 0
+
+= I0, the MMD vanishes for all t. Characteristicness implies 
+
+X∗
+
+> td
+
+= It, so the two linear systems (for η∗ 
+
+> t
+
+and ηt) coincide and ˆbt = bt.Examples of characteristic kernels include the Gaussian RBF k(x, y ) = exp( −∥ x−y∥2/2σ2), the Laplacian k(x, y ) = exp( −γ∥x − y∥1), and inverse multiquadratic kernels. All require infinite-dimensional feature spaces. The maximum mean discrepancy MMD 2(μ, ˆμ) = ∥Eμ[ϕ] − Eˆμ[ϕ]∥2 
+
+> F
+
+provides a goodness-of-fit measure: it equals 
+
+E[k(x, x ′)] + E[k(y, y ′)] − 2E[k(x, y )] and vanishes iff μ = ˆ μ when k is characteristic. In the finite-dimensional setting of the main text, the MMD reduces to the distance between mean feature vectors ∥E[ϕ(x)] − E[ϕ(y)] ∥2 and is not a true metric on distributions. 
+
+## B Time Reversal of the Optimal SDE 
+
+We show that the time reversal of the optimal SDE equation 13 is an Ornstein–Uhlenbeck-type process, independent of the target distribution μ.
+
+Forward process. With the exact drift bt and score st, the optimal SDE equation 2 with D∗ 
+
+> t
+
+= αtγt/β t can be written as 
+
+dX t =
+
+"
+
+γt st(Xt) + ˙βt
+
+βt
+
+Xt
+
+#
+
+dt + √γt dW t, γt = 2αtγt
+
+βt
+
+. (19) To see this, note that from the score-drift relation equation 4, bt = αtγt 
+
+> βt
+
+st + ˙βt 
+
+> βt
+
+x, so 
+
+bt + D∗ 
+
+> t
+
+st = 2 bt − ˙βt
+
+βt
+
+x = 2αtγt
+
+βt
+
+st + ˙βt
+
+βt
+
+x = γt st + ˙βt
+
+βt
+
+x. (20) 
+
+Time reversal. Let τ = 1 − t and Yτ = X1−τ . By the standard time-reversal formula for diffusions, Yτ satisfies 
+
+dY τ = [ −f1−τ (Yτ ) + γ1−τ s1−τ (Yτ )] dτ + √γ1−τ d ¯Wτ , (21) where ft(x) = γtst(x) + ˙βt 
+
+> βt
+
+x is the forward drift and ¯Wτ is a Brownian motion in reversed time. Substituting: 
+
+−f1−τ (Yτ ) + γ1−τ s1−τ (Yτ ) = −γ1−τ s1−τ (Yτ ) − ˙β1−τ
+
+β1−τ
+
+Yτ + γ1−τ s1−τ (Yτ )= − ˙β1−τ
+
+β1−τ
+
+Yτ .
+
+(22) 11 Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT 
+
+The score terms cancel, leaving 
+
+dY τ = − ˙β1−τ
+
+β1−τ
+
+Yτ dτ +
+
+s
+
+2α1−τ σ1−τ
+
+β1−τ
+
+d ¯Wτ . (23) This is a linear SDE with no dependence on the target distribution μ or the score st—it is purely determined by the interpolant schedule αt, βt.
+
+Marginals. The reversed process Yτ has the same marginal distribution as I1−τ at each τ ∈ [0 , 1] . Equivalently, 
+
+Y1−t has the same law as It for each t ∈ [0 , 1] . In particular, Y0 = X1 ∼ μ (data) and Y1 = X0 ∼ N(0 , Id) (noise). The SDE equation 23 transports the data distribution back to Gaussian noise via a simple OU-type dynamics. 
+
+Linear interpolant. For αt = 1 − t, βt = t, γt = 1 , we have at reversed time τ = 1 − t:
+
+˙β1−τ
+
+β1−τ
+
+= 11 − τ , γ1−τ = 2τ
+
+1 − τ . (24) The reversed SDE becomes 
+
+dY τ = − 11 − τ Yτ dτ +
+
+r 2τ
+
+1 − τ d ¯Wτ . (25) This can be integrated explicitly: setting Zτ = (1 − τ )−1Yτ , we have dZ τ = (1 − τ )−1p2τ / (1 − τ ) d ¯Wτ , so Zτ is a time-changed Brownian motion and Yτ = (1 − τ )Zτ .
+
+Interpretation. The cancellation of the score in the time-reversed drift is a consequence of the optimal choice 
+
+D∗ 
+
+> t
+
+= αtγt/β t. For other choices of Dt, the reversed process would still depend on st and hence on the target μ. The optimal diffusion coefficient thus has a special structure: it is precisely the value for which the backward dynamics become score-free. This is the mirror image of standard score-based diffusion (Song et al., 2020), where the forward process is an OU process (score-free) and the backward process requires the score; here, the forward process uses the score, and with D∗ 
+
+> t
+
+, the backward process reduces to OU-type dynamics. 
+
+## C Exponential Families and the D → ∞ Limit 
+
+For finite Dt, the generated density ρDt is not in any particular parametric family. However, in the limit D → ∞ 
+
+(constant in time), the Fokker–Planck equation 
+
+∂tρDt + ∇ ·  ˆbt ρDt
+
+ = D ∇ ·  ˆst ρDt + ∇ρDt
+
+ (26) becomes dominated by its right-hand side, which equilibrates to an exponential family member ¯ρt ∝ exp( −θ⊤ 
+
+> t
+
+Φ) for some θt determined by ˆst, provided that this density is normalizable. This is not guaranteed in general, as it requires that the SDE 
+
+dX τ = ∇Φ( Xτ )⊤θt dτ + √2 dW τ (27) (with t fixed) has an invariant distribution. In addition, even if this distribution exists, it is a maximum entropy distribution matching the moments implied by the estimated drift ˆbt rather than the true moments E[Φ( It)] of the interpolant. There is no reason to expect this to be closer to the target than what is achieved with finite Dt.This explains why the D → ∞ limit is natural in Moment-Guided Diffusion (Lempereur et al., 2025), where the target moments are imposed explicitly and the maximum entropy distribution is the goal, but not here: finite D∗ 
+
+> t
+
+better exploits the information in ˆbt by preserving the transport dynamics. 
+
+## D Experimental Details 
+
+MNIST U-Net. A sinusoidal time embedding (scaled for t ∈ [0 , 1] ) is passed through a small MLP and injected into every UNetBlock by projection to channel size and additive conditioning. The U-Net has two encoder stages (32 → 64 channels) with 3 × 3 convolutions, BatchNorm, and ReLU, separated by 2 × 2 max pooling, followed by a 128-channel bottleneck. The decoder mirrors this with transposed-conv upsampling and skip connections. A final 
+
+1 × 1 conv produces the single-channel output. 
+
+CelebA U-Net. We follow the architecture of Martin et al. (2025), training weak models for only 5 epochs. 12 Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT 
+
+Scattering Spectra. The scattering spectra model exploits cross-scale dependencies by considering the covariances between wavelet transform moduli of the field. To reduce the number of coefficients, these covariances are themselves compressed in a wavelet basis. A field of size d is thus described with O(log( d)3) low-degree functions with small variance that capture moments of multiscale processes up to order four. For the S&P time series, we follow Morel et al. (2024) and use J = 8 dyadic scales, leading to a model of P = 217 
+
+coefficients. For two dimensional physical fields, we follow Cheng et al. (2024) and use J = 6 dyadic scales and L = 4 orientations, yielding P = 6803 coefficients. In both cases, the scattering transform is computed with the Morlet wavelet Morlet et al. (1982a,b). Feature gradients ∇ϕp(x) are computed via automatic differentiation through the scattering network. 
+
+## E Cross-Domain Model Composition 
+
+A distinctive feature of our framework is that the pretrained velocity fields in the ensemble need not be trained on the same dataset. Since the linear system equation 17 is solved using data pairs (zn, a n) from the target distribution, the coefficients ηt optimally reweight the feature gradients for the target, regardless of their training provenance. This enables cross-domain composition: models trained on semantically related source domains can contribute useful representational structure for generating samples from a different target domain. 
+
+Setup. We train 10 weak models (50 SGD steps, mini-batches of 128) on each of three source domains—Fashion-MNIST, EMNIST (letters), and Kuzushiji-MNIST—as well as 10 models on the target domain, MNIST. Each model uses the same U-Net backbone described in Appendix D with an independent random initialization. At inference, we compose all 40 models ( P = 40 ) and solve the linear system equation 17 using N = 10 ,000 MNIST data pairs. The 10 MNIST models alone serve as a baseline. 
+
+Results. Figure 5 displays representative samples. The top four rows show outputs from individual weak models trained on each domain: the source-domain models produce images consistent with their training data but irrelevant to MNIST, while the MNIST models produce noisy digits. The bottom row shows samples generated by composing all 40 models via Algorithm 1: the resulting digits are sharper and more coherent than those from the 10 MNIST models alone. This improvement arises because the source-domain velocity fields, despite being trained on different image classes, provide useful low-level feature gradients (edges, strokes, curves) that the linear system repurposes for MNIST generation. The framework automatically determines the time-varying contribution of each source through the coefficients ηt, up-weighting models whose velocity fields align with the target drift and down-weighting those that do not. 13 Training-Free Generative Modeling via Kernelized Stochastic Interpolants A P REPRINT 
+
+Figure 5: Cross-domain model composition for MNIST generation. Rows 1–4: samples from individual weak models trained on Kuzushiji-MNIST, Fashion-MNIST, EMNIST (letters), and MNIST, respectively. Row 5: samples gener-ated by composing all 40 source- and target-domain models via Algorithm 1, using MNIST data to solve the linear system. The cross-domain ensemble produces sharper digits than the MNIST-only models (row 4). 14

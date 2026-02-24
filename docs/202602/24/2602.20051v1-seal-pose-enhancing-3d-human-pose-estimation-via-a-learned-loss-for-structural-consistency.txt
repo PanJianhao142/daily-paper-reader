@@ -1,0 +1,595 @@
+Title: SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency
+
+URL Source: https://arxiv.org/pdf/2602.20051v1
+
+Published Time: Tue, 24 Feb 2026 03:16:31 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 
+
+Yeonsung Kim 1 * Junggeun Do 2 * Seunguk Do 1 Sangmin Kim 1 Jaesik Park 1 Jay-Yoon Lee 1
+
+## Abstract 
+
+3D human pose estimation (HPE) is character-ized by intricate local and global dependencies among joints. Conventional supervised losses are limited in capturing these correlations because they treat each joint independently. Previous stud-ies have attempted to promote structural consis-tency through manually designed priors or rule-based constraints; however, these approaches typ-ically require manual specification and are often non-differentiable, limiting their use as end-to-end training objectives. We propose SEAL-pose, a data-driven framework in which a learnable loss-net trains a pose-net by evaluating structural plausibility. Rather than relying on hand-crafted priors, our joint-graph-based design enables the loss-net to learn complex structural dependen-cies directly from data. Extensive experiments on three 3D HPE benchmarks with eight back-bones show that SEAL-pose reduces per-joint errors and improves pose plausibility compared with the corresponding backbones across all set-tings. Beyond improving each backbone, SEAL-pose also outperforms models with explicit struc-tural constraints, despite not enforcing any such constraints. Finally, we analyze the relationship between the loss-net and structural consistency, and evaluate SEAL-pose in cross-dataset and in-the-wild settings. 
+
+## 1. Introduction 
+
+3D human pose estimation (3D HPE) requires predicting accurate joint positions while preserving the underlying anatomical structure (Liu et al., 2024). This task is particu-larly difficult because the output space is governed by com-
+
+> *
+
+Equal contribution 1Seoul National University, South Korea 
+
+> 2
+
+Texas A&M University, College Station, Texas, USA. Correspon-dence to: Jaesik Park <jaesik.park@snu.ac.kr >, Jay-Yoon Lee 
+
+<lee.jayyoon@snu.ac.kr >.
+
+Preprint. February 24, 2026. Baseline SEAL Pose  
+
+> Input 2D Pose
+> 1
+> 2
+> 12
+
+Figure 1. SEAL-pose improves structural consistency by preserv-ing skeletal symmetry and kinematic connectivity; under the same 2D input, KTPFormer (baseline) can exhibit local joint incon-sistencies (e.g., ankle/wrist) that propagate to the overall limb configuration. 
+
+plex local and global dependencies between joints. However, common training objectives such as mean squared error (MSE) and mean per-joint position error (MPJPE) penalize individual joint errors without accounting for structural con-sistency, which often results in implausible or anatomically inconsistent poses. Therefore, it is critical to effectively model the structures in the output space to predict accu-rate and plausible 3D poses. Previous studies (Zheng et al., 2020; Wu et al., 2022; Fang et al., 2018; Xu et al., 2022; Kim & Lee, 2024) have attempted to capture such structural dependencies using hand-crafted constraints, which can fail to reflect the natural structural consistency of human poses. To overcome these limitations, we propose SEAL-pose, a framework that provides structural guidance for 3D pose estimation via a trainable loss. Building on Structured En-1
+
+> arXiv:2602.20051v1 [cs.CV] 23 Feb 2026 SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency
+
+ergy As Loss (SEAL) (Lee et al., 2022), we adapt learnable energy-based loss to 3D human pose estimation, where the output is a high-dimensional 3D geometry constrained by skeletal topology. At the core of SEAL-pose is a skeleton-aware loss-net jointly optimized with a pose estimation model (pose-net). Leveraging skeletal topology as an in-ductive bias, the loss network learns local and global struc-tural relations—from adjacent joints to long-range depen-dencies—directly from data. We construct joint-wise cou-pled 2D–3D inputs for the loss-net, providing observation-conditioned signals that it can aggregate across joints to capture structural plausibility beyond per-joint regression. Although alternating optimization between the pose-net and loss-net can seem to be brittle, a simple greedy hyperparam-eter tuning shows a reliable convergence of SEAL-pose in practice. Finally, to evaluate structural quality beyond standard er-rors such as MPJPE, we introduce two complementary metrics—Limb Symmetry Error (LSE) and Body Seg-ment Length Error (BSLE)—that quantify symmetry and segment-length consistency of predicted poses. Our frame-work is model-agnostic and easily extends to single-frame, multi-frame, and diffusion-based pose estimation models by simply incorporating the loss network during training. Ex-tensive experiments on Human3.6M (Ionescu et al., 2014), MPI-INF-3DHP (Mehta et al., 2017), and Human3.6M 3D WholeBody (Zhu et al., 2023) demonstrate that SEAL-pose not only reduces per-joint errors (Table 1, 2, 3) but also produces more plausible poses, evaluated by the newly proposed LSE and BSLE (Table 4 and Figure 4, 5). In summary, the contributions of this paper are as follows: (i) We redesign SEAL for 3D pose estimation and propose SEAL-pose to bridge the gap between previous discrete label–space dependency modeling and continuous 3D geometric outputs governed by skeletal constraints. (ii) We introduce a skeleton-aware graph loss-net with joint-wise 2D-3D coupled representations, and demon-strate consistent improvements across datasets and backbones with no test-time overhead. (iii) We propose structure-aware evaluation metrics (LSE/BSLE) and further explore leveraging diverse hypotheses as negative samples, which provides ad-ditional gains in both single-frame and multi-frame settings. 
+
+## 2. Related Work 
+
+2.1. 3D Human Pose Estimation 
+
+3D human pose estimation is a well-established computer vi-sion task involving the prediction of 3D joint positions from 2D images or videos. This task is inherently challenging because it requires inferring spatial relationships while en-suring anatomical plausibility from incomplete visual infor-mation. Current approaches generally follow two paradigms: (1) directly predicting 3D poses from images (Pavlakos et al., 2017; 2018) or (2) estimating 2D poses first and then lifting them to 3D space (Zheng et al., 2023; Liu et al., 2024). The 2D-to-3D lifting has been widely adopted due to progress in 2D human pose estimation (Zheng et al., 2023). While single frame models such as SimpleBaseline (Mar-tinez et al., 2017) and SemGCN (Zhao et al., 2019) perform well, they process frames independently and thus cannot enforce temporal consistency, often resulting in jitter. This limitation has motivated multi-frame models that leverage temporal dynamics for more stable and robust 3D pose esti-mation. 
+
+Transformer-based models. Transformers (Vaswani et al., 2023) have become a major backbone for 3D human pose estimation. PoseFormer (Zheng et al., 2021) was the first transformer-based architecture for this task, and PoseFormerV2 (Zhao et al., 2023) improved efficiency via frequency-domain representations. While PoseFormer-style models typically handle spatial relations before temporal modeling, MixSTE (Zhang et al., 2022) interleaves the two through a mixed spatio-temporal encoder. P-STMO (Shan et al., 2022) further introduces a pre-trained spatio-temporal masked autoencoder to capture motion dynamics efficiently. To incorporate skeletal priors into self-attention, Motion-AGFormer (Mehraban et al., 2024) combines GCNs with Transformers, whereas KTPFormer (Peng et al., 2024) in-jects kinematic and trajectory priors to stabilize attention. 
+
+Graph-based models. Graph-based models, such as Graph Convolutional Networks (Kipf & Welling, 2017) and Graph Attention Networks (Veli ˇckovi ´c et al., 2018), are widely used in human pose estimation because they naturally en-code skeletal structure (Zhao et al., 2019), but their local receptive fields limit long-range reasoning. Graformer ad-dresses this by injecting joint and edge-aware priors into the attention mechanism, enabling global, structure-aware interactions (Zhao et al., 2022). Building on this idea, we design a structure-aware loss-net that guides the pose-net to learn the human kinematic structure consistently. 
+
+2.2. Output Structure of 3D HPE 
+
+3D HPE has inherent challenges such as ambiguity due to incomplete information, which is further compounded in single-frame scenarios. To address this issue, previous works have designed methods that consider prior knowledge of human body structure and joint relationships (Fang et al., 2018; Xu et al., 2022; Zheng et al., 2020; Chen et al., 2022), and enforced structural plausibility by explicitly constrain-ing bone length, angles, and symmetry (Cao & Zhao, 2021; Wu et al., 2022; Bigalke et al., 2022; Chen et al., 2022). 2SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 𝑥 ! "𝑦 !   
+
+> Loss -Net
+> E!
+> Pose -Net
+> 𝐹 "𝐿 "
+> 𝑦 !
+> joint one -hot vector
+> 𝑥 !"𝑦 !
+> Loss -Net
+> E!
+> Pose -Net
+> 𝐹 "𝐿 #
+> 𝑦 !
+> joint one -hot vector
+> alternate
+> Q
+> K
+> V
+> Scale
+> SoftMax
+> MatMul
+> MatMul
+> =
+> (b) MLP -based Loss -Net Architecture
+> (c) Graph -based Loss -Net Architecture
+> Dropout
+> ReLU
+> Batch Norm
+> Linear
+> Dropout
+> ReLU
+> Batch Norm
+> Linear
+> Appendix A.2.2
+> (a) Overview
+> Energy Score
+> Energy Score
+
+Figure 2. (a) Overview of SEAL-pose. SEAL-pose combines a pose-net Fϕ that lifts 2D keypoints xi to a predicted 3D keypoints ˜yi
+
+with a loss-net Eθ (graph-based or MLP) that predicts an energy score, where yi denotes the ground-truth 3D pose. It adopts alternating optimization : it first freezes Eθ and optimizes Fϕ to minimize the energy of predicted poses. Then, it freezes Fϕ and trains Eθ so that its energy better reflects pose quality. (b-c) Loss-net Architecture Variants. 
+
+Beyond these approaches, recent studies have explored gen-erating multiple hypotheses or plausible 3D poses to alle-viate depth ambiguity and structural uncertainty. For in-stance, (Kim & Lee, 2024) proposed a Biomechanical Pose Generator to augment training data with biomechanically valid poses, along with Binary Depth Coordinates to resolve the depth ambiguity by classifying the joint depths as front or back. Similarly, (Rommel et al., 2024) introduced Ma-niPose, a manifold-constrained multi-hypothesis approach that estimates the plausibility of each candidate and restricts them to the human pose manifold. Despite their contributions, most existing methods rely on prior knowledge or predefined rules, which may limit scala-bility and adaptability. In contrast, we aim to address these limitations by providing a more flexible and general ap-proach for 3D HPE that captures joint dependencies without explicit prior knowledge. In addition, our method, SEAL-pose, is agnostic to model architecture and can potentially be extended to various tasks with complex output structures. 
+
+## 3. Methodology 
+
+3.1. Preliminaries: Structured Energy as Loss (SEAL) 
+
+The Structured Energy As Loss (SEAL) framework im-proves structured prediction by using a structured energy network as a trainable loss. Concretely, SEAL introduces a secondary network (loss-net) that scores the plausibility of a model’s outputs, and uses this score to provide learning sig-nals for the primary predictor (task-net). This formulation encourages the task-net to account for dependencies among output variables without relying on handcrafted constraints. SEAL is commonly instantiated in two variants: SEAL-static and SEAL-dynamic. SEAL-static uses a fixed, pre-trained loss-net during training, while SEAL-dynamic up-dates the loss-net jointly as the pose-net evolves. Prior work reports that SEAL-dynamic often yields stronger su-pervision than SEAL-static. Accordingly, we adopt the SEAL-dynamic formulation in our framework. 
+
+3.2. Designing SEAL for 3D HPE. 
+
+Unlike the discrete structured output spaces typically con-sidered in SEAL, 3D human pose estimation operates in a continuous, high-dimensional coordinate space. In this set-ting, structure is expressed as geometric relationships on the human skeleton. To make a trainable loss effective in this setting, we design SEAL-pose around three choices. First, we implement the loss-net as a skeleton-aware, graph-based model to capture both local and global joint relationships. Second, we design and evaluate loss-net input representa-tions to tackle the non-trivial challenge of learning compat-ibility between 2D and 3D skeletal points in a continuous geometric space. Third, we introduce synthetic negatives to strengthen the loss net’s training signal in deterministic 3D HPE models, which lack the natural diversity of negatives available in probabilistic formulations considered in Lee et al. (2022). 
+
+3.3. Training Procedure. 
+
+Our framework consists of two components: (i) pose-net, which can be any 3D HPE model that predicts 3D joint positions from 2D inputs, and (ii) loss-net, a trainable loss function that dynamically learns to evaluate the structural 3SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 
+
+Algorithm 1 SEAL-pose Algorithm                                                            
+
+> Require: (x,y): training data (2D inputs and 3D ground-truth outputs)
+> Require: Fϕ: pose-net with parameters ϕ
+> Require: Eθ: loss-net with parameters θ
+> Require: optimizer ϕ: optimizer for pose-net
+> Require: optimizer θ: optimizer for loss-net
+> Require: T: number of training iterations 1: Initialize ϕ0,θ0randomly 2: for t= 1 to Tdo
+> 3: Sample mini-batch Bt={(xi, y i)}|Bt|
+> i=1
+> 4: ˜yi←Fϕt−1(xi)for all (xi, y i)∈Bt
+> 5: gθ← ∇ θ1
+> |Bt|
+> P
+> (xi,y i)∈BtLE(xi, y i,˜yi;θt−1)
+> 6: θt←θt−1−ηθgθ
+> 7: gϕ← ∇ ϕ1
+> |Bt|
+> P
+> (xi,y i)∈BtLF(xi, y i;θt)
+> 8: ϕt←ϕt−1−ηϕgϕ
+> 9: end for
+
+plausibility of predicted poses. The pose-net and loss-net are updated in an alternating manner, allowing the loss-net to adapt to the evolving predictions of the pose-net and pro-vide informative structural learning signals. Specifically, the pose-net is optimized with a combined objective consisting of the standard mean squared error and the loss-net energy score, which we denote as LF , while the loss-net is trained with an energy-shaping objective LE that assigns lower en-ergy to ground-truth poses and higher energy to implausible predictions. Although alternating updates can be unstable, we find that combining the energy term with supervised loss yields stable training and often faster convergence (§5.2). Our framework can be seamlessly combined with various backbone models, from single-frame lifting models to multi-frame models, since the loss-net can be introduced indepen-dently of the pose-net architecture. Furthermore, it does not incur any additional inference cost because the loss-net is only used during training. The overall procedure is summa-rized in Algorithm 1, and detailed explanations are provided in Appendix A.1. 
+
+3.4. Graph-based Loss-Net. 
+
+In SEAL-pose, the capability of the loss-net to capture struc-tural dependencies in the output space is crucial for guiding the pose-net toward more plausible predictions. Beyond merely modeling local (short-range) and global (long-range) relations, the loss-net must aggregate them into a unified, whole-pose signal that can effectively guide the task net-work. To further enhance this ability, we use a graph-based design for the loss-net, enabling more effective use of skele-tal structure. We adopt Graphormer (Ying et al., 2021) as the loss-net backbone with task-specific simplifications, us-ing self-attention to model both short- and long-range joint dependencies. This design results in a more expressive and structure-aware trainable loss function, providing stronger structural guidance for the task network and ultimately yield-ing more consistent and coherent 3D pose predictions. In addition, to assess the suitability of graph-based struc-tures, we also implement an MLP-based loss-net as a base-line. This comparison allows us to examine whether utiliz-ing graph structure provides benefits over a simpler fully-connected neural network. Overall implementation details of loss-nets are provided in Appendix A.2.2. 
+
+3.5. Loss-net Input Design via Early Fusion 
+
+In 3D HPE, the output space is continuous, with infinitely many pose candidates. As a result, subtle differences in 2D cues and 3D hypotheses are often hard to disentangle in representation space when the two modalities are weakly coupled. Therefore, the energy should be conditioned on the 2D observation—ideally via early fusion—so that it reflects how compatible a 3D hypothesis is with the given evidence. In contrast, SEAL was originally motivated by discrete struc-tured prediction, where the loss-net typically operates on label embeddings. Its input design does not explicitly model 2D-conditioned 3D compatibility in geometric space. To better reflect this requirement in 3D HPE, we design a joint-aligned early-fusion input that directly exposes 2D–3D com-patibility signals to the loss-net. Combined with a graph-based loss-net, early fusion captures fine-grained joint-wise 2D–3D compatibility, and message passing lifts these lo-cal cues to whole-skeleton consistency, producing globally coherent energies. Details are provided in Appendix A.7. 
+
+3.6. Negative Sampling Strategies 
+
+Because 3D poses lie in a continuous, high-dimensional space, negatives are effectively unbounded, which can make learning unstable. We therefore use a margin-based objec-tive with hard negatives to provide a stable separation signal and enforce meaningful energy gaps. 
+
+Hard negatives from diffusion samples. A diffusion-based model generates multiple candidate poses per input. We construct a hard negative by selecting the candidate that best matches the 2D observation under reprojection: 
+
+˜yneg = arg min  
+
+> k=1 ,...,K
+
+MPJPE 2D
+
+
+
+Π
+
+
+
+˜y(k)
+
+, u
+
+
+
+,
+
+where u denotes the ground-truth 2D keypoints and Π( ·)
+
+is the camera projection. This 2D-based selection yields a reprojection-consistent negative that better reflects 2D–3D compatibility. 
+
+Single-frame negatives from 2D perturbations. We con-struct K negative samples by perturbing the input 2D key-points and passing them through the same deterministic pose-net: 
+
+x(k)noisy = x + ϵ(k), ϵ(k) ∼ U  ∥ϵ∥2 ≤ Rmax 
+
+, (1) 
+
+˜y(k)neg = Fϕ
+
+
+
+x(k)noisy 
+
+
+
+, k = 1 , . . . , K. (2) 4SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 
+
+We keep the original prediction-to-ground-truth margin loss and add a negative–negative ordering regularizer: we sort negatives by their 2D MPJPE and compare adjacent and randomly sampled pairs, encouraging the loss-net energy to capture fine-grained structural discrepancies. 
+
+ℓpair (i, j ) = 
+
+h
+
+κ MPJPE  ˜y(i)
+
+> neg
+
+, ˜y(j)
+
+> neg
+
+ − E(i) 
+
+> neg
+
++ E(j)
+
+> neg
+
+i
+
+> +
+
+. (3) 
+
+Multi-frame extension via neighboring frames. In the multi-frame setting, we use the same pairwise loss, but leverage neighboring frames to form implicit negative pairs, using window-averaged poses and energies. We sample two nearby start indices t and s and form window-averaged pose and energy: 
+
+¯E(u) = 1
+
+w
+
+> w−1
+
+X
+
+> i=0
+
+Eu+i, ¯y(u) = 1
+
+w
+
+> w−1
+
+X
+
+> i=0
+
+˜yu+i. (4) We then apply the same pairwise form: 
+
+ℓpair (t, s ) = 
+
+h
+
+κ · MPJPE  ¯y(t), ¯y(s) − ¯E(t) − ¯E(s)
+
+i
+
+> +
+
+.
+
+(5) Detailed ablation results are reported in Appendix A.4. 
+
+## 4. Experimental Setup 
+
+4.1. Datasets and Evaluation Metrics Datasets. We conduct our empirical experiments on Hu-man3.6M dataset (H36M) (Ionescu et al., 2014), MPI-INF-3DHP (3DHP) (Mehta et al., 2017) dataset and Human3.6M 3D WholeBody dataset (H3WB) (Zhu et al., 2023). H36M is the most widely used dataset for 3D human pose esti-mation (Zheng et al., 2023; Liu et al., 2024). 3DHP is a more challenging dataset than H36M because it contains fewer samples and includes both indoor and outdoor scenes, while H36M only contains indoor scenes. H3WB is a recent dataset for 3D whole-body pose estimation. H3WB extends H36M by providing whole-body keypoint annotations with detailed information about hands, face, and feet, making it suitable for evaluating fine-grained 3D pose estimation. Following common practice on 3DHP, which is typically evaluated using ground-truth 2D inputs, we also report re-sults on H36M with ground-truth 2D keypoints for a fair comparison across datasets. 
+
+Evaluation Metrics. We follow common practice in 3D human pose estimation and report standard metrics, such as mean per-joint position error (MPJPE), procrustes-aligned MPJPE (P-MPJPE), percentage of correct keypoints (PCK), area under curve (AUC), and pelvis-aligned MPJPE (PA-MPJPE), according to the evaluation protocol of each dataset. These metrics remain the standard benchmarks to evaluate per-joint error. However, they do not measure structural plausibility, whether the predicted poses conform to anatomical constraints. 
+
+4.2. Structural Consistency Metrics 
+
+To further evaluate structural consistency, we introduce two additional metrics. 
+
+Limb Symmetry Error (LSE). LSE measures violation of the left–right symmetry by comparing the lengths of the corresponding limbs, such as the lower arms and thighs. For a limb pair (li1, li2), (ri1, ri2), LSE is defined as the normalized difference in length between the left and right counterparts: LSE i = 100 · ∥li1 − li2∥ − ∥ ri1 − ri2∥
+
+(∥li1 − li2∥ + ∥ri1 − ri2∥)/2
+
+Body Segment Length Error (BSLE). BSLE measures deviations in the lengths of body segments, pair of adjacent joints, by comparing predicted poses and ground-truth poses. A special case of BSLE focuses on limbs, where symmetric differences are most pronounced, is referred to as limb length error (LLE) . For each segment i, with predicted adjacent keypoints ki1, ki2 and corresponding ground truth keypoints ti1, ti2, BSLE is defined as: BSLE i = 100 · 1 − ∥ki2 − ki1 ∥∥ti2 − ti1 ∥
+
+We emphasize that these metrics are not used as training loss. Instead, our trainable loss-net is designed to learn structural consistency directly from data without requiring explicit priors such as fixed bone lengths or symmetry constraints. LSE and BSLE are used solely for evaluation purposes, providing complementary insights into whether predicted poses are anatomically plausible. 
+
+4.3. Backbone models 
+
+We employed a diverse set of pose estimation models as our pose-net backbones, ranging from general baselines to recent state-of-the-art methods. Specifically, we used SimpleBaseline (Martinez et al., 2017), SemGCN (Zhao et al., 2019), and VideoPose (Pavllo et al., 2019) for single-frame setting, and MixSTE (Zhang et al., 2022), P-STMO (Shan et al., 2022), PoseFormerV2 (Zhao et al., 2023), D3DP (Shan et al., 2023), KTPformer (Peng et al., 2024) and MotionAGFormer (Mehraban et al., 2024) for multi-frame setting. These backbones cover a broad range of architectures, from commonly used designs to state-of-the-art models, allowing us to verify the effectiveness and robustness of SEAL-pose across different designs. Further implementation details are provided in the Appendix A.2. 5SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency  
+
+> Figure 3. Qualitative Comparison of Predicted Poses on H36M .Predictions from SEAL-pose (bottom, blue) demonstrate clear improvements over the baseline (top, red) by producing structures closer to the ground-truth human pose (black).
+
+## 5. Experimental Results 
+
+We provide a comprehensive set of 34 experimental results (single-frame models: 3 baselines × 3 datasets × 2 SEAL-pose variants; multi-frame models: 4 baselines × 2 variants on H36M and 3DHP), which consistently corroborate our findings and offer strong evidence for the robustness and generalizability of our approach. 
+
+5.1. Comparison with Baselines Single -Frame Settings. As shown in Table 1 (Human3.6M) and Table 2 (MPI-INF-3DHP), SEAL-pose consistently im-proves performance across all baseline models. On Hu-man3.6M, SEAL-pose reduces both MPJPE and P-MPJPE, with graph-based loss-net variants yielding the largest gains. On MPI-INF-3DHP, which contains more diverse and In-The-Wild scenarios, the improvements are even more pro-nounced. SEAL-pose also improves whole-body pose esti-mation on the H3WB dataset, as shown in (Table 3), demon-strating that our trainable loss function is also beneficial in complex whole-body settings. However, when the loss-net is graph-based, its bias toward local neighborhoods may underutilize global context and thus underperform a simpler MLP loss-net. We leave a deeper analysis of the balance between local and global reasoning for future work. 
+
+Multi -Frame Settings. Multi-frame models already per-form strongly by leveraging temporal information, and re-cent architectures have largely reached a saturated regime in benchmark performance. In this work, we apply SEAL-pose to a broad set of multi-frame backbones, including gen-eral transformer-style baselines (P-STMO, MixSTE, Pose-FormerV2), a diffusion-based model (D3DP), and recent state-of-the-art methods (KTPFormer, MotionAGFormer). Despite the strength of these models, adding our loss-net consistently yields additional improvements across all back-bones, as shown in Table 1 and Table 2. 
+
+5.2. Training stability and hyperparameter search 
+
+The convergence trends in Fig. 7 further support stable opti-mization. We retain an explicit supervised regression loss in LF as an optimization anchor, and use the energy term only as an auxiliary regularizer that shapes structural plau-sibility; this anchor stabilizes training and yields reliable convergence. Building on this stability, rather than exhaustively searching the large hyperparameter space, we adopt a simple greedy tuning protocol (Appendix A.5), which is efficient in prac-tice. To further verify robustness, we additionally evaluate several nearby sub-optimal settings; Table 8 and Fig. 8 show consistent convergence behavior without instability. 
+
+5.3. Structural Consistency Evaluation 
+
+We evaluated structural consistency by examining the LSE, LLE, and BSLE metrics on the H36M, 3DHP, and H3WB datasets. For comparison, we also included a setting with ex-plicit bone length constraints as a loss term, to directly con-trast SEAL-pose with manually designed constraint-based approaches. In result, SEAL-pose consistently showed lower error val-ues across all three structural metrics on H36M and 3DHP datasets, as detailed in Table 4. These results indicate that SEAL-pose effectively captures structured dependencies in human poses, leading to more anatomically plausible and consistent 3D pose predictions. For a more detailed examination, we grouped samples into bins with compara-ble P-MPJPE and analyzed our proposed structural consis-tency metrics (LSE, BSLE, LLE) within each bin. Even when comparing predictions with similar P-MPJPE, SEAL-pose consistently yielded lower values on these metrics than the baseline, as shown in Fig. 4. These intra-bin com-parisons reveal a limitation of standard training objective: by optimizing primarily for pointwise coordinate error (e.g. MSE, MPJPE), they are relatively insensitive to violations of structural plausibility (e.g., symmetry, limb proportionality, kinematic consistency), leading to higher LSE/BSLE/LLE within similar P-MPJPE ranges. Notably, LSE is defined without reference to ground truth, yet the results on 3DHP highlight that SEAL-pose more effectively internalizes struc-tural constraints. On Human3.6M, absolute errors are al-ready small, so the differences are less pronounced, but SEAL-pose still demonstrates an advantage over the base-line. However, SEAL-pose showed mixed results on the H3WB dataset, This is likely due to the dataset’s noisy labeling, which is shown from the relatively high LSE of the ground truth poses. Moreover, since H3WB provides annotations for a very large number of keypoints including body, face, hands, and feet, capturing coherent structural dependencies across all regions is inherently more challenging, making further improvements less straightforward. While SEAL-pose did not significantly outperform the baseline in this setting, it still achieved better results compared to directly 6SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 
+
+Table 1. Performances on Human3.6M . SEAL-pose improves MPJPE and P-MPJPE across models. D3DP and KTPformer use 
+
+T =243 , H =20 , K =10 , J Best .
+
+Method MPJPE ↓ P-MPJPE ↓
+
+Single-frame models 
+
+SimpleBaseline (Martinez et al., 2017) 43.8 34.7 + SEAL-pose (MLP) 42.5 33.9 + SEAL-pose (Graph) 40.7 32.3 
+
+SemGCN (Zhao et al., 2019) 47.0 37.9 + SEAL-pose (MLP) 44.9 36.5 + SEAL-pose (Graph) 43.4 35.7 
+
+VideoPose (Pavllo et al., 2019) 41.6 32.4 + SEAL-pose (MLP) 41.0 32.3 + SEAL-pose (Graph) 41.2 32.1 
+
+Method MPJPE ↓ P-MPJPE ↓
+
+Multi-frame models 
+
+MixSTE ( T =243 ) (Zhang et al., 2022) 20.8 16.1 + SEAL-pose (MLP) 20.6 15.8 + SEAL-pose (Graph) 20.0 15.7 
+
+Poseformer V2 ( T =27 ) (Zhao et al., 2023) 42.7 31.6 + SEAL-pose (MLP) 41.5 31.2 + SEAL-pose (Graph) 40.5 30.3 
+
+D3DP (Shan et al., 2023) 20.4 15.4 + SEAL-pose (MLP) 18.1 13.9 + SEAL-pose (Graph) 17.7 13.7 
+
+KTPformer (Peng et al., 2024) 18.9 14.3 + SEAL-pose (MLP) 18.9 14.5 + SEAL-pose (Graph) 18.3 13.9 
+
+Table 2. Performances on MPI-INF-3DHP . SEAL-pose consis-tently reduces MPJPE and improves PCK and AUC. D3DP uses 
+
+T =243 , H =20 , K =20 , J Best .
+
+Method MPJPE ↓ PCK ↑ AUC ↑
+
+Single-frame models 
+
+SimpleBaseline (Martinez et al., 2017) 80.9 86.9 53.8 + SEAL-pose (MLP) 71.8 89.3 58.7 + SEAL-pose (Graph) 68.2 90.2 60.4 
+
+SemGCN (Zhao et al., 2019) 74.5 89.5 56.4 + SEAL-pose (MLP) 71.8 90.4 57.9 + SEAL-pose (Graph) 62.9 92.7 61.7 
+
+VideoPose (Pavllo et al., 2019) 66.4 90.8 60.5 + SEAL-pose (MLP) 64.0 91.7 62.1 + SEAL-pose (Graph) 62.2 91.8 63.1 
+
+Method MPJPE ↓ PCK ↑ AUC ↑
+
+Multi-frame models 
+
+P-STMO ( T =81 ) (Shan et al., 2022) 33.4 98.0 77.5 + SEAL-pose (MLP) 32.9 98.1 77.7 + SEAL-pose (Graph) 32.5 98.2 78.0 
+
+Poseformer V2 ( T =27 ) (Zhao et al., 2023) 29.6 97.0 77.8 + SEAL-pose (MLP) 28.5 97.4 78.4 + SEAL-pose (Graph) 27.8 97.5 79.0 
+
+D3DP (Shan et al., 2023) 28.8 98.2 80.4 + SEAL-pose (MLP) 28.5 98.6 80.8 + SEAL-pose (Graph) 27.8 98.7 80.9 
+
+MotionAGFormer-L (Mehraban et al., 2024) 16.2 98.2 85.3 + SEAL-pose (MLP) 15.2 99.1 89.0 
+
++ SEAL-pose (Graph) 15.3 99.0 88.9 
+
+Table 3. Performance on the Human3.6M WholeBody . SEAL-pose reduces P-MPJPE across all body parts, resulting in more coherent predictions. † from H3WB’s official benchmark. ‡ nose-aligned MPJPE for face and wrist-aligned MPJPE for hands. Method Whole-body Body Face/Aligned ‡ Hand/Aligned ‡                                         
+
+> Jointformer †88.3 84.9 66.5 / 17.8 125.3 / 43.7 3D-LFM 64.1 60.8 56.6 / 10.4 78.2 / 28.2 SimpleBaseline (Martinez et al., 2017) 67.4 63.3 49.9 / 14.1 98.0 / 34.8 + SEAL-pose (MLP) 62.8 61.1 46.3 / 13.7 90.7 / 34.2 + SEAL-pose (Graph) 64.8 61.6 47.6 / 13.3 94.0 / 34.5 VideoPose (Pavllo et al., 2019) 61.5 57.4 48.8 / 11.9 84.1 / 30.3 + SEAL-pose (MLP) 58.6 54.8 45.0 /11.5 82.3 / 29.3 + SEAL-pose (Graph) 59.5 56.3 46.1 / 11.5 82.3 / 28.7
+
+injecting explicit structural constraints, suggesting that a trainable loss function provides a more flexible and gener-alizable way of enforcing plausibility in whole-body pose estimation. Overall, the improved structural consistency metrics highlight that loss-net’s ability to capture structures in human poses helps the pose-net to predict more anatomi-cally consistent and plausible 3D human poses. 
+
+5.4. Ablation Studies Analysis of the Energy-Guided Pose-Net. We conduct gradient-based inference (GBI) on the output of the pose-net using the trained loss-net to verify its ability to capture plausible human pose structures. Starting from the pose-net prediction, GBI iteratively refines the pose by following 
+
+Table 4. Structural Consistency Evaluation Across Datasets .SEAL-pose reduces structural error metrics such as LSE, LLE, and BSLE (see §4.2 for the definitions), improving plausibility. Dataset Metric MPJPE ↓ LSE ↓ LLE ↓ BSLE ↓
+
+H36M Ground Truth 0.00 0.00 0.00 SimpleBaseline (Martinez et al., 2017) 43.8 4.85 5.09 6.12 + Constraint (Cao & Zhao, 2021) 41.5 4.35 4.54 6.17 + SEAL-pose 40.7 3.68 3.94 5.49 
+
+3DHP Ground Truth 1.21 0.00 0.00 SimpleBaseline (Martinez et al., 2017) 80.9 10.14 11.60 8.13 + Constraint (Cao & Zhao, 2021) 75.0 7.80 10.02 7.87 + SEAL-pose 68.2 6.22 6.02 5.93 
+
+H3WB Ground Truth 4.42 0.00 0.00 SimpleBaseline (Martinez et al., 2017) 67.4 6.60 6.56 6.22 
+
++ Constraint (Cao & Zhao, 2021) 65.1 6.88 6.82 6.66 + SEAL-pose 62.8 6.55 6.13 6.73 
+
+gradient signals from the loss-net, which are expected to lower the assigned energy (Appendix A.3). Each iteration corresponds to a single training-style update step, and the curves—averaged over all test examples—show gradual im-provement rather than drastic one-step changes. Since these metrics directly reflect structural plausibility, the consis-tent reduction indicates that the loss-net effectively captures human pose structure and provides meaningful gradient signals. The effect is more pronounced on the challeng-ing 3DHP dataset, but the same trend is also observed on H36M, as shown in Fig. 6 in Appendix A.3, confirming the consistency of the results. 7SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency    
+
+> Figure 4. Comparison of structural consistency in MPI-INF-3DHP. Average structural inconsistency measures (from left to right: LSE, BSLE, LLE) are displayed for predictions of baselines (red) and SEAL-pose (blue) binned by P-MPJPE. SEAL-pose con-sistently achieves lower structural errors even under similar P-MPJPEs.
+> Figure 5. Gradient-Based Inference results on MPI-INF-3DHP .P-MPJPE, LSE, LLE, and BSLE all decrease steadily over iter-ations, indicating that the loss-net effectively captures structural plausibility and provides meaningful corrective feedback to the pose-net.
+
+Analysis of the Learned Energy. We further examine whether the loss-net energy aligns with structural consis-tency metrics. The graph-based loss-net energy exhibits a positive correlation with the proposed structural metrics (LSE/BSLE/LLE), implying that higher energy corresponds to less structurally plausible poses. For instance, for LSE we observe Kendall’s τ ≈ 0.29 , which corresponds to roughly 
+
+65% correct pairwise orderings. For the other metrics, we obtain 59 .1% for BSLE and 60 .6% for LLE. This suggests that the energy correlates with global structural plausibility, especially symmetry consistency. 
+
+Analysis of Graph-based Architecture. We compared graph-based and MLP-based loss-nets. Overall results show that the graph-based loss-net consistently provides better structural guidance, leading to lower per-joint errors and improved structural plausibility, as shown in Sections 5.1 and 5.3. This trend is also reflected in the pairwise or-dering analysis: the graph-based loss-net achieves ∼10% higher correct pairwise orderings than the MLP-based loss-net across our structural metrics. This suggests that the graph-based loss-net provides more suitable training signals for learning structure-aware guidance. 
+
+Cross-Dataset Evaluation for Generalization and Ro-bustness To test whether the loss-net overfits the train-ing data, we run cross-dataset experiments between Hu-man3.6M (H36M) and MPI-INF-3DHP (3DHP), training on one dataset and evaluating on the other. If the loss-net were merely memorizing domain-specific patterns, adding SEAL-pose would be expected to worsen cross-dataset per-formance relative to the baseline, which would provide di-rect evidence of overfitting. These results highlight two key points. First, the cross-dataset experiments indicate that limited domain generalization and sensitivity to input formatting are common issues in 3D HPE models, as both the baseline and SEAL-pose suffer from dataset shift. Sec-ond, regarding the original concern about the overfitting of the loss-net, we actually observe the opposite behavior as the gain of SEAL-pose over the baseline increases un-der the domain shift (Fig. 11, Table 5). This suggests that the loss-net does not overfit in a way that harms the pose-net’s cross-dataset performance. Finally, we complement the cross-dataset evaluation with qualitative results on In-The-Wild images to further assess robustness. As shown in Appendix A.6 (Fig. 9, 10), SEAL-pose yields more struc-turally consistent poses than the baseline(PoseFormerV2, KTPFormer) on the In-The-Wild images.                      
+
+> Table 5. Cross-dataset evaluation between Human3.6M (H36M) and MPI-INF-3DHP (3DHP) using PoseFormerV2. SEAL-pose does not introduce additional degradation beyond the baseline under dataset shift, suggesting no harmful loss-net overfitting. Train →Test MPJPE ↓P-MPJPE ↓
+> Baseline SEAL-pose Baseline SEAL-pose H36M →3DHP 111.4 97.3 83.2 70.3
+> 3DHP →H36M 157.0 151.9 109.7 107.9
+
+## 6. Conclusion 
+
+In this paper, we propose SEAL-pose, a novel framework that introduces a trainable loss function for 3D human pose estimation. Unlike prior approaches relying on ex-plicit priors or architecture-specific constraints, our pro-posed loss-net learns structural dependencies directly from data, and can be seamlessly integrated with a wide range of backbone pose-nets. We design the loss-net as a graph-based model, representing joints as nodes and bones as edges, which enables principled learning of both local (bone lengths, adjacency) and global (symmetry, long-range re-lations) dependencies in human pose. Our experiments on Human3.6M, MPI-INF-3DHP, and H3WB demonstrate that SEAL-pose not only reduces per-joint pose estimation er-rors, but also improves structural plausibility, confirmed by our proposed LSE and BSLE metrics, showing that the graph-based loss-net provides stronger structural guidance. Overall, SEAL-pose highlights the promise of trainable loss functions as a general paradigm for structured prediction tasks with complex output dependencies. 8SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 
+
+## 7. Impact Statements 
+
+This paper proposes SEAL-pose, a trainable loss-function framework for 3D human pose estimation that learns struc-tural dependencies among joints directly from data. By train-ing a pose-net using a loss-net that evaluates structural plau-sibility, SEAL-posereduces per-joint errors while improving the overall structural validity of predicted poses. This can en-able more reliable pose estimation for downstream applica-tions such as motion analysis, human–computer interaction, sports analytics, rehabilitation/healthcare, and animation. As with human-centric perception models in general, the proposed approach could be misused for privacy-invasive purposes such as surveillance or tracking, and dataset bi-ases may lead to performance disparities under certain en-vironments or conditions. Future work should strengthen robustness evaluation across diverse datasets and in-the-wild settings, and deployment should follow consent-based and privacy-preserving principles. 
+
+## References 
+
+Belanger, D. and McCallum, A. Structured prediction en-ergy networks. In Balcan, M. and Weinberger, K. Q. (eds.), Proceedings of the 33nd International Conference on Machine Learning, ICML 2016, New York City, NY, USA, June 19-24, 2016 , volume 48 of JMLR Workshop and Conference Proceedings , pp. 983–992. JMLR.org, 2016. URL http://proceedings.mlr.press/ v48/belanger16.html .Bigalke, A., Hansen, L., Diesel, J., and Heinrich, M. P. Do-main adaptation through anatomical constraints for 3d human pose estimation under the cover. In Konukoglu, E., Menze, B., Venkataraman, A., Baumgartner, C., Dou, Q., and Albarqouni, S. (eds.), Proceedings of The 5th International Conference on Medical Imaging with Deep Learning , volume 172 of Proceedings of Machine Learning Research , pp. 173–187. PMLR, 06–08 Jul 2022. URL https://proceedings.mlr.press/ v172/bigalke22a.html .Cao, X. and Zhao, X. Anatomy and geometry constrained one-stage framework for 3d human pose estimation. In Ishikawa, H., Liu, C.-L., Pajdla, T., and Shi, J. (eds.), 
+
+Computer Vision – ACCV 2020 , pp. 227–243, Cham, 2021. Springer International Publishing. ISBN 978-3-030-69525-5. Chen, T., Fang, C., Shen, X., Zhu, Y., Chen, Z., and Luo, J. Anatomy-aware 3d human pose estimation with bone-based pose decomposition. IEEE Trans. Cir. and Sys. for Video Technol. , 32(1):198–209, January 2022. ISSN 1051-8215. doi: 10.1109/TCSVT.2021. 3057267. URL https://doi.org/10.1109/ TCSVT.2021.3057267 .Fang, H., Xu, Y., Wang, W., Liu, X., and Zhu, S. Learning pose grammar to encode human body configuration for 3d pose estimation. In McIlraith, S. A. and Weinberger, K. Q. (eds.), Proceedings of the Thirty-Second AAAI Con-ference on Artificial Intelligence, (AAAI-18), the 30th in-novative Applications of Artificial Intelligence (IAAI-18), and the 8th AAAI Symposium on Educational Advances in Artificial Intelligence (EAAI-18), New Orleans, Louisiana, USA, February 2-7, 2018 , pp. 6821–6828. AAAI Press, 2018. doi: 10.1609/AAAI.V32I1.12270. URL https: //doi.org/10.1609/aaai.v32i1.12270 .Gatys, L. A., Ecker, A. S., and Bethge, M. Texture synthesis using convolutional neural networks. In Cortes, C., Lawrence, N. D., Lee, D. D., Sugiyama, M., and Garnett, R. (eds.), Advances in Neural Information Processing Systems 28: Annual Conference on Neural Information Processing Systems 2015, December 7-12, 2015, Montreal, Quebec, Canada , pp. 262– 270, 2015a. URL https://proceedings. neurips.cc/paper/2015/hash/ a5e00132373a7031000fd987a3c9f87b-Abstract. html .Gatys, L. A., Ecker, A. S., and Bethge, M. A neural al-gorithm of artistic style. CoRR , abs/1508.06576, 2015b. URL http://arxiv.org/abs/1508.06576 .Goodfellow, I. J., Shlens, J., and Szegedy, C. Explaining and harnessing adversarial examples. In Bengio, Y. and Le-Cun, Y. (eds.), 3rd International Conference on Learning Representations, ICLR 2015, San Diego, CA, USA, May 7-9, 2015, Conference Track Proceedings , 2015. URL 
+
+http://arxiv.org/abs/1412.6572 .Ionescu, C., Papava, D., Olaru, V., and Sminchisescu, C. Human3.6m: Large scale datasets and predictive methods for 3d human sensing in natural environments. IEEE Transactions on Pattern Analysis and Machine Intelli-gence , 2014. Kim, J.-H. and Lee, S.-W. Toward approaches to scalability in 3d human pose estimation. In The Thirty-eighth Annual Conference on Neural Information Processing Systems ,2024. URL https://openreview.net/forum? id=xse8QMGnyM .Kingma, D. P. and Ba, J. Adam: A method for stochas-tic optimization. In Bengio, Y. and LeCun, Y. (eds.), 
+
+3rd International Conference on Learning Represen-tations, ICLR 2015, San Diego, CA, USA, May 7-9, 2015, Conference Track Proceedings , 2015. URL http: //arxiv.org/abs/1412.6980 .9SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 
+
+Kipf, T. N. and Welling, M. Semi-supervised classi-fication with graph convolutional networks. In In-ternational Conference on Learning Representations ,2017. URL https://openreview.net/forum? id=SJU4ayYgl .Lee, J. Y., Mehta, S. V., Wick, M. L., Tristan, J., and Car-bonell, J. G. Gradient-based inference for networks with output constraints. In The Thirty-Third AAAI Conference on Artificial Intelligence, AAAI 2019, The Thirty-First Innovative Applications of Artificial Intel-ligence Conference, IAAI 2019, The Ninth AAAI Sym-posium on Educational Advances in Artificial Intelli-gence, EAAI 2019, Honolulu, Hawaii, USA, January 27 - February 1, 2019 , pp. 4147–4154. AAAI Press, 2019. doi: 10.1609/AAAI.V33I01.33014147. URL https:// doi.org/10.1609/aaai.v33i01.33014147 .Lee, J.-Y., Patel, D., Goyal, P., Zhao, W., Xu, Z., and Mc-Callum, A. Structured energy network as a loss. In Oh, A. H., Agarwal, A., Belgrave, D., and Cho, K. (eds.), 
+
+Advances in Neural Information Processing Systems ,2022. URL https://openreview.net/forum? id=F0DowhX7_x .Liu, Y., Qiu, C., and Zhang, Z. Deep learning for 3d human pose estimation and mesh recovery: A survey. Neuro-computing , pp. 128049, 2024. ISSN 0925-2312. doi: https://doi.org/10.1016/j.neucom.2024.128049. Ma, Z. and Collins, M. Noise contrastive estimation and negative sampling for conditional models: Consistency and statistical efficiency. In Riloff, E., Chiang, D., Hockenmaier, J., and Tsujii, J. (eds.), Proceedings of the 2018 Conference on Empirical Methods in Natu-ral Language Processing , pp. 3698–3707, Brussels, Bel-gium, October-November 2018. Association for Compu-tational Linguistics. doi: 10.18653/v1/D18-1405. URL 
+
+https://aclanthology.org/D18-1405/ .Martinez, J., Hossain, R., Romero, J., and Little, J. J. A simple yet effective baseline for 3d human pose es-timation. In 2017 IEEE International Conference on Computer Vision (ICCV) , pp. 2659–2668, 2017. doi: 10.1109/ICCV.2017.288. Mehraban, S., Adeli, V., and Taati, B. Motionagformer: Enhancing 3d human pose estimation with a transformer-gcnformer network. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , pp. 6920–6930, January 2024. Mehta, D., Rhodin, H., Casas, D., Fua, P., Sotnychenko, O., Xu, W., and Theobalt, C. Monocular 3d human pose estimation in the wild using improved cnn supervision. In 2017 International Conference on 3D Vision (3DV) ,pp. 506–516, 2017. doi: 10.1109/3DV.2017.00064. Mordvintsev, A., Olah, C., and Tyka, M. In-ceptionism: Going deeper into neural networks, 2015. URL https://api.semanticscholar. org/CorpusID:69951972 .Pavlakos, G., Zhou, X., Derpanis, K. G., and Daniilidis, K. Coarse-to-fine volumetric prediction for single-image 3D human pose. In Computer Vision and Pattern Recognition (CVPR) , 2017. Pavlakos, G., Zhou, X., and Daniilidis, K. Ordinal depth supervision for 3D human pose estimation. In Computer Vision and Pattern Recognition (CVPR) , 2018. Pavllo, D., Feichtenhofer, C., Grangier, D., and Auli, M. 3d human pose estimation in video with temporal convo-lutions and semi-supervised training. In Conference on Computer Vision and Pattern Recognition (CVPR) , 2019. Peng, J., Zhou, Y., and Mok, P. Ktpformer: Kinematics and trajectory prior knowledge-enhanced transformer for 3d human pose estimation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pp. 1123–1132, 2024. Rommel, C., Letzelter, V., Samet, N., Marlet, R., Cord, M., P ´erez, P., and Valle, E. Manipose: Manifold-constrained multi-hypothesis 3d human pose estimation. In Advances in Neural Information Processing Systems , volume 37. Curran Associates, Inc., 2024. Shan, W., Liu, Z., Zhang, X., Wang, S., Ma, S., and Gao, W. P-stmo: Pre-trained spatial temporal many-to-one model for 3d human pose estimation. In Computer Vision– ECCV 2022: 17th European Conference, Tel Aviv, Israel, October 23–27, 2022, Proceedings, Part V , pp. 461–478. Springer, 2022. Shan, W., Liu, Z., Zhang, X., Wang, Z., Han, K., Wang, S., Ma, S., and Gao, W. Diffusion-based 3d human pose estimation with multi-hypothesis aggregation. In Pro-ceedings of the IEEE/CVF International Conference on Computer Vision , pp. 14761–14771, 2023. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, L., and Polosukhin, I. Attention is all you need, 2023. URL https://arxiv.org/ abs/1706.03762 .Veli ˇckovi ´c, P., Cucurull, G., Casanova, A., Romero, A., Li `o, P., and Bengio, Y. Graph attention networks. In 
+
+International Conference on Learning Representations ,2018. URL https://openreview.net/forum? id=rJXMpikCZ .Wu, L., Yu, Z., Liu, Y., and Liu, Q. Limb pose aware networks for monocular 3d pose estimation. IEEE Trans-actions on Image Processing , 31:906–917, 2022. doi: 10.1109/TIP.2021.3136613. 10 SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 
+
+Xu, Y., Wang, W., Liu, T., Liu, X., Xie, J., and Zhu, S. Monocular 3d pose estimation via pose grammar and data augmentation. IEEE Trans. Pattern Anal. Mach. Intell. , 44(10):6327–6344, 2022. doi: 10.1109/ TPAMI.2021.3087695. URL https://doi.org/10. 1109/TPAMI.2021.3087695 .Ying, C., Cai, T., Luo, S., Zheng, S., Ke, G., He, D., Shen, Y., and Liu, T.-Y. Do transformers really perform badly for graph representation? Advances in neural information processing systems , 34:28877–28888, 2021. Zhang, J., Tu, Z., Yang, J., Chen, Y., and Yuan, J. Mixste: Seq2seq mixed spatio-temporal encoder for 3d human pose estimation in video. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 13232–13242, June 2022. Zhao, L., Peng, X., Tian, Y., Kapadia, M., and Metaxas, D. N. Semantic graph convolutional networks for 3d human pose regression. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 3425–3435, 2019. Zhao, Q., Zheng, C., Liu, M., Wang, P., and Chen, C. Pose-formerv2: Exploring frequency domain for efficient and robust 3d human pose estimation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 8877–8886, June 2023. Zhao, W., Wang, W., and Tian, Y. Graformer: Graph-oriented transformer for 3d pose estimation. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 20438–20447, June 2022. Zheng, C., Zhu, S., Mendieta, M., Yang, T., Chen, C., and Ding, Z. 3d human pose estimation with spatial and temporal transformers. Proceedings of the IEEE Interna-tional Conference on Computer Vision (ICCV) , 2021. Zheng, C., Wu, W., Chen, C., Yang, T., Zhu, S., Shen, J., Kehtarnavaz, N., and Shah, M. Deep learning-based human pose estimation: A survey. ACM Comput. Surv. ,56(1), aug 2023. ISSN 0360-0300. doi: 10.1145/3603618. URL https://doi.org/10.1145/3603618 .Zheng, X., Chen, X., and Lu, X. A joint relationship aware neural network for single-image 3d human pose estima-tion. IEEE Transactions on Image Processing , 29:4747– 4758, 2020. doi: 10.1109/TIP.2020.2972104. Zhu, Y., Samet, N., and Picard, D. H3wb: Human3.6m 3d wholebody dataset and benchmark. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 20166–20177, October 2023. 11 SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 
+
+## A. Appendix 
+
+A.1. Detailed SEAL-pose 
+
+In our framework, the pose-net Fϕ(x) is optimized to mini-mize a weighted sum of the mean squared error (MSE) loss and the output of the loss-net (energy) Eθ (x, ˜y). Specifi-cally, the pose-net parameters ϕ are updated in the following manner: 
+
+ϕt ← ϕt−1 − ηϕ∇ϕ
+
+1
+
+|Bt|
+
+X
+
+> (x,y )∈Bt
+
+LF (ϕ; θ), (6) where Bt is the mini-batch of training samples at iteration 
+
+t, ηϕ is the learning rate for the pose-net, and LF (ϕ; θ) is the combined loss function. The combined loss function is defined as: 
+
+LF (xi, y i; θ) = 
+
+> M
+
+X
+
+> j=1
+
+MSE (yj , F ϕ(x)j ) + αE θ (x, F ϕ(x)) ,
+
+(7) where M refers to the total number of joints in the pose estimation dataset and x represents the input data, specif-ically the 2D joint coordinates. The variable yj denotes the ground-truth 3D joint coordinates, while Fϕ(x)j = ˜ yj
+
+represents the predicted 3D joint coordinates from the pose-net. The energy term Eθ (x, F ϕ(x)) is computed by the loss-net and implicitly evaluates the structural dependencies between joints. Finally, α is a hyperparameter controlling the balance between the MSE loss and the energy term. The loss-net is dynamically trained to adapt to the pose-net’s predictions by minimizing the loss LE :
+
+θt ← θt−1 − ηθ ∇θ
+
+1
+
+|Bt|
+
+X
+
+> (x,y )∈Bt
+
+LE (x, y, F ϕt−1 (x); θ).
+
+(8) We employ two types of loss for LE : margin-based loss and a simplified form of noise contrastive estimation (NCE) ranking loss (Ma & Collins, 2018), both suggested in (Lee et al., 2022). The margin-based loss enforces the loss-net to decrease the energy Eθ (x, y ) of the ground truth label y and increase the energy Eθ (x, ˜y) of the pose-net’s incorrect prediction ˜y,such that the difference between the two energies is suffi-ciently large to exceed the margin. The margin-based loss is defined as:             
+
+> Lmargin
+> E(xi, y i,˜yi;θ) = max
+> ˜y[∆( y, ˜y)−Eθ(x, ˜y) + Eθ(x, y )] +,
+> (9)
+
+where ∆( y, ˜y) denotes a task-specific margin function, MPJPE in our implementation. Similarly, the NCE ranking loss minimizes the energy of the ground truth label y while increasing the energy of the pose-net’s prediction ˜y, treating the pose-net’s predictions as negative samples. The NCE ranking loss is defined as:            
+
+> LNCE
+> E(xi, y i,˜yi;θ) = −log exp( −Eθ(x, y )) exp( −Eθ(x, y )) + exp( −Eθ(x, ˜y)) .
+> (10)
+
+A.2. Implementation Details 
+
+A.2.1. P OSE -N ET 
+
+We have modified the input and output layers of pose-net models to align with the dimensions of each dataset. In single-frame settings, we used separate Adam optimiz-ers (Kingma & Ba, 2015) without learning rate decay for the loss-net and pose-net and trained models with a batch size of 1024 for 50 epochs on H36M and 3DHP, and a batch size of 64 for 200 epochs on H3WB. For multi-frame backbones, we adopt the training configurations from the original works—i.e., the same training schedules, data aug-mentations, and hyperparameters as in their papers/official implementations. In our experiments, we do not retune backbone-specific settings; instead, we only vary three hy-perparameters introduced by our method: the pose-net learn-ing rate ( lr p), the loss-net learning rate ( lr l), and the energy weight ( α). A.2.2. L OSS -N ET 
+
+Graphormer injects structure into self-attention by adding shortest path distance (SPD)–based spatial bias bϕ(vi,v j ) and an edge-path bias cij (edges along a shortest path) to the attention logits: 
+
+Aij = (hiWQ)( hj WK )⊤
+
+√d + bϕ(vi,v j ) + cij .
+
+Separately, degree-based centrality is encoded by adding learnable embeddings to node inputs (not as an attention bias) (Ying et al., 2021). Because human skeletal graphs are small and regular compared with molecular or social net-works, we adopt Graphormer’s core idea while simplifying it for human pose estimation. Concretely, we (i) remove node-level degree–centrality embeddings and (ii) do not define categorical edge types. On small, skeletal graphs, such handcrafted encodings can act like noise and distract attention, so we eliminate them and let the model infer struc-ture directly from data while retaining only the shortest-path biases. This minimalist biasing reduces spurious induc-tive signals and helps the pose-net produce outputs with stronger structural consistency. Beyond encoding local and global dependencies, Graphormer also introduces a global, CLS-like virtual node vcls that aggregates whole-graph in-formation (Ying et al., 2021). We adopt this component in the loss-net: a virtual node vcls attends to all joints and produces a compact summary signal of skeletal structure. 12 SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 
+
+This design summarizes pose-level structure and guides the pose-net toward structurally coherent outputs. We design the graph-based loss-net, following the Graphormer foundation, with model width d=256 , H=8 
+
+attention heads, depth = 6 blocks; the same graph bias is shared across layers. For inputs, we represent each node by concatenating the keypoint’s 2D coordinates with its pre-dicted 3D coordinates and encoding the joint identity via a one-hot vector; the resulting feature is linearly projected to dimension d=32 , and a learnable CLS token is prepended. The head is an MLP that outputs a scalar energy, and we train the loss-net with either a margin-based objective (e.g., an MPJPE margin) or NCE. For the MLP loss-net, we adjusted the SimpleBaseline ar-chitecture by modifying the dimensions and depth of the hidden layers. Specifically, we set the hidden size to 2048 with 2 residual block stages and omitted batch normalization and dropout layers. 
+
+A.3. Gradient-Based Inference 
+
+We implement a gradient-based inference (GBI) method with trained loss-net and pose-net, to examine whether the loss-net effectively captures structural dependencies in hu-man poses. GBI is a method that leverages gradients to iteratively refine the outputs (Goodfellow et al., 2015; Mord-vintsev et al., 2015; Gatys et al., 2015b;a; Belanger & Mc-Callum, 2016) or parameters (Lee et al., 2019) of neural networks, and we adopt the former approach. Specifically, we iteratively update the predictions of pose-net along the gradient provided by the loss-net, with the objective of de-creasing the energy. This procedure provides a direct way to evaluate whether the learned energy function captures hu-man pose structure. If the loss-net has successfully learned structural dependencies, then following its gradient should progressively refine the predictions toward more plausible poses. The results on the H36M dataset are shown in Fig. 6, where all metrics steadily decrease over iterations, consis-tent with the trends observed for 3DHP in Fig. 5. 
+
+A.4. Result of Negative Sampling Strategies 
+
+In diffusion-based models, selecting the lowest-MPJPE sam-ple as a hard negative yields the largest gain for multi-frame models, reducing MPJPE by 2.7mm on H36M. In the single-frame setting, we generate synthetic negatives by perturbing 2D keypoints and forwarding them through the same de-terministic pose-net. On 3DHP (MPJPE), the proposed negative–negative pairwise regularizer (Sec. 3.6) provides additional gains of 2.6mm for SimpleBaseline and 0.6mm for SemGCN (Table 6), while VideoPose shows no notice-able change. Finally, in the multi-frame setting, we further introduce a neighboring-window negative term that contrasts hypotheses across nearby frames; this yields a modest but 
+
+Figure 6. Gradient-Based Inference results on Human3.6M .P-MPJPE, LSE, LLE, and BSLE all decrease steadily over iter-ations, indicating that the loss-net effectively captures structural plausibility and provides meaningful corrective feedback to the pose-net. 
+
+consistent improvement over the strong MixSTE baseline (Table 7), suggesting that cross-window negative contrasts can provide a complementary training signal to the structural guidance of the loss-net. 
+
+Table 6. SEAL-pose on 3DHP (single-frame models). In parenthe-ses: ∆ MPJPE vs. each backbone baseline.                
+
+> Setting SimpleBaseline SemGCN VideoPose
+> SEAL-pose (Graph) 68.2 (-12.7) 62.9 (-11.6) 62.2 (-4.2)
+> SEAL-pose (Graph + pair-loss) 65.6 (-15.3) 62.3 (-12.2) 64.1 (-2.3)
+
+Table 7. SEAL-pose on H36M with fixed Λ and K columns. In parentheses: ∆ vs. MixSTE ( T =243 ); negative is better.                         
+
+> Setting ΛKTMPJPE ↓P-MPJPE ↓
+> MixSTE (baseline) ——243 20.8 16.1 SEAL-pose (Graph margin) 10 −3—243 20.3 (-0.5) 15.8 (-0.3)
+> SEAL-pose (Graph margin + pair-loss) 10 −33243 20.0 (-0.8) 15.7 (-0.4)
+
+A.5. Simple greedy tuning protocol 
+
+In practice, we adopt a simple greedy tuning protocol: 1. We first tune the pose-net learning rate lr p (pose-net w/o loss-net), 2. Given fixed lr p, we explore the loss-net learning rate 
+
+lr l and energy weight α then fix the best lr l.3. Given fixed lr p, lr l, we finally tune the energy weight 
+
+α.When we apply the above greedy search, we did not observe “any” training instability. The following With a concrete ex-ample on 3DHP with VideoPose (Pavllo et al., 2019) shows the specific instance of greedy search over three hyperpa-rameters (lr p, lr l, α ). Please refer to Table 8. The best configuration we found was: • pose-net lr (lr p) = 1e-4 13 SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 
+
+• loss-net lr (lr l) = 1e-4 • energy weight (α) = 5e-3 This setting yields a MPJPE of 62.18 ( < 66.4 of baseline). Many nearby settings achieve very similar performance, within about 0.7 mm of the best score. Across the broader grid of learning rate and energy weight, the resulting MPJPE varies smoothly from roughly 62 mm up to approximately 67 mm as we move away from this well-tuned region, rather than collapsing or diverging. Regarding the specific ques-tion on the sensitivity to energy weight: for fixed learning rates lr p = lr l = 1 e−4, sweeping α over two orders of magnitude (from 1e-4 to 1e-2) changes MPJPE from 62.18 mm to at most 63.82 mm. We find that energy weight α in the range of roughly 2e-3–5e-3 gives near-optimal perfor-mance, and values outside this band shift model smoothly rather than catastrophically. Similar patterns hold for other backbones and datasets.     
+
+> Figure 7. Convergence comparison between the baseline and SEAL-pose during training. Left: MPJPE, Right: P-MPJPE across epochs. Compared to the baseline (red), SEAL-pose (blue) exhibits similarly stable training dynamics while converging slightly faster, reaching comparable or lower error levels earlier.
+> Figure 8. Energy convergence across hyperparameter settings.
+> Across hyperparameters, the energy score consistently converges to a stable regime, suggesting that training remains stable and proceeds reliably after reaching a steady sub-optimal solution.
+
+A.6. In-The-Wild Images visualization 
+
+Fig. 9, 10 shows qualitative In-The-Wild comparisons be-tween the baseline(PoseFormerV2, KTPFormer) and SEAL-pose. SEAL-pose often yields more structurally plausi-ble poses, with more natural limb articulations (e.g., el-bow/shoulder flexion) and more consistent left–right con-figurations (red/blue denote left/right), particularly for chal-lenging poses such as hands-together or asymmetric arm motions. Overall, these visualizations suggest that incor-porating the loss-net helps maintain structural consistency under noisy 2D observations. 
+
+A.7. Effect of Input Mechanism on Loss-Net Energy. 
+
+For joint j, let k2Dj and k3Dj denote the 2D and 3D key-points, respectively. We define the coordinate vector as 
+
+kcoord  
+
+> j
+
+= [ k2Dj , k3Dj ] and use a one-hot joint label vector 
+
+ej . Depending on the mechanism, the loss-net node input is either hj = [ k3Dj , ej ] (3D-only) or hj = [ kcoord  
+
+> j
+
+, ej ] = [k2Dj , k3Dj , ej ] (2D–3D fused with joint labels). We eval-uate four mechanisms to represent 2D/3D information for learning a 2D–3D compatibility energy. 
+
+M1 (3D-only prior) uses 3D-only inputs hj = [ k3Dj , ej ]
+
+to compute a graph energy. M2 (bilinear coupling) 
+
+forms global descriptors g2d and g3d from {k2Dj , ej }j and 
+
+{k3Dj , ej }j , and couples them via E = bilinear( g2d, g 3d).
+
+M3 (early fusion) computes a unified graph energy on fused inputs hj = [k2Dj , k3Dj , ej ]. M4 (SEAL) uses a decomposed energy E = Elocal (x, y ) + Eglobal (y),where Eglobal (y) = E({ [k3Dj , ej ] }j ) and Elocal (x, y ) = 
+
+PJj=1 (y)⊤Wj ˜y. Compared to early fusion (M3), M4 cou-ples x and y only through the global feature, without joint-aligned 2D–3D node interactions. Table 9 compares four loss-net input mechanisms (M1–M4) across three backbones. M3 performs best overall, achiev-ing the lowest MPJPE on VideoPose and SemGCN, while M1 is best on SimpleBaseline. The MLP-based loss-net shows relatively consistent behavior across mechanisms, with M3 generally performing strongly. Graph-based loss-nets can represent structural dependencies more effectively by modeling joint interactions and multi-hop relational pat-terns, which increases their expressive power compared to an MLP-based loss-net. However, this added expressiv-ity also makes performance more sensitive to how 2D and 3D information is injected: in our ablations, we observed slightly more rank swapping across input-mechanism vari-ants under the graph loss-net. This sensitivity highlights that carefully designing the input mechanism is crucial for fully leveraging graph-based reasoning. Empirically, M3 per-formed best by exposing joint-aligned 2D–3D compatibility cues for local learning and aggregating them via message passing into a globally consistent and plausible pose en-ergy. Overall, our input-mechanism design(M3) is not a minor implementation choice but a necessary and impact-ful component for 3D HPE, and the early-fusion outcome constitutes a key observation from our design process. 14 SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 
+
+Figure 9. Qualitative Comparisons of SEAL-pose with PoseFormerV2 (Zhao et al., 2023) on In-The-Wild images. Provides visualizations on unseen In-The-Wild images, illustrating that our method produces structurally plausible poses in out-of-distribution settings. 
+
+Figure 10. Qualitative Comparisons of SEAL-pose with KTPFormer (Peng et al., 2024) on an In-The-Wild Images. Provides visualizations on unseen In-The-Wild images, illustrating that our method produces structurally plausible poses in out-of-distribution settings. 
+
+15 SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency pose-net lr loss-net lr energy weight MPJPE 
+
+0.00010 0.00010 0.005 62.178 0.00010 0.00010 0.002 62.308 0.00005 0.00003 0.004 62.476 0.00005 0.00003 0.005 62.505 0.00010 0.00003 0.004 62.602 0.00010 0.00003 0.005 62.719 0.00010 0.00010 0.001 62.820 0.00010 0.00005 0.001 62.841 0.00010 0.00004 0.003 62.892 0.00010 0.00005 0.005 62.919 0.00010 0.00010 0.010 62.948 0.00010 0.00004 0.005 62.955 0.00010 0.00004 0.004 62.998 0.00010 0.00010 0.00050 63.072 0.00010 0.00005 0.002 63.079 0.00010 0.00010 0.003 63.085 0.00010 0.00002 0.005 63.236 0.00010 0.00002 0.001 63.276 0.00005 0.00010 0.005 63.356 0.00005 0.00010 0.004 63.365 0.00010 0.00003 0.001 63.381 0.00010 0.00003 0.003 63.479 0.00010 0.00001 0.005 63.520 0.00010 0.00002 0.004 63.554 0.00005 0.00050 0.004 63.561 0.00010 0.00010 0.004 63.570 0.00010 0.00003 0.002 63.580 0.00020 0.00003 0.004 63.693 0.00010 0.00005 0.004 63.782 0.00050 0.00010 0.001 63.789 0.00010 0.00010 0.00010 63.819 0.00020 0.00005 0.001 63.895 0.00005 0.00003 0.00050 64.006 0.00005 0.00005 0.001 64.045 0.00010 0.00004 0.006 64.092 0.00010 0.00001 0.001 64.159 0.00005 0.00003 0.00010 64.495 0.00050 0.00003 0.004 64.555 0.00005 0.00020 0.004 64.599 0.00005 0.00003 0.001 64.639 0.00005 0.00003 0.00005 64.751 0.00005 0.00003 0.00020 64.948 0.00005 0.00003 0.002 65.091 0.00020 0.00003 0.005 65.358 0.00050 0.00010 0.004 65.571 0.00050 0.00003 0.005 66.290 0.00050 0.00010 0.005 67.015 0.00002 0.00003 0.004 67.233 
+
+Table 8. Hyperparameter sweep over learning rates(pose-net/loss-net) and energy weight. 
+
+Table 9. MPJPE sensitivity to loss-net input designs (M1–M4). 
+
+MPJPE is reported for four input designs with the backbone base-line. Best results among M1–M4 are boldfaced; Min–Max (Range) summarizes variation across designs.                               
+
+> Backbone Baseline M1 M2 M3 M4 Min–Max (Range) SimpleBaseline 80.9 66.6 67.0 68.2 66.8 66.6–68.2 (1.6) SemGCN 74.5 64.3 63.2 62.9 67.3 62.9–67.3 (4.4) VideoPose 66.4 66.5 66.5 62.2 65.9 62.2–66.5 (4.3) Avg. (3 backbones) 73.9 65.8 65.6 64.4 66.7 –
+
+16 SEAL-pose: Enhancing 3D Human Pose Estimation via a Learned Loss for Structural Consistency 
+
+(a) Train 3DHP → Test H36M (MPJPE / P-MPJPE). 
+
+(b) Train H36M → Test 3DHP (MPJPE / P-MPJPE). 
+
+Figure 11. Cross-dataset error distributions in PoseFormerV2. 
+
+SEAL-pose closely follows the baseline distribution and does not introduce additional degradation under dataset shift, while typically reducing the high-error tail. 
+
+A.8. Cross-dataset experiment 
+
+Fig. 11 plots error histograms (MPJPE / P-MPJPE), where each bar counts the number of test samples falling into the same error bin. Across both transfer directions, SEAL-pose shows a left-shifted distribution compared to the baseline. 17

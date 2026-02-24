@@ -1,0 +1,453 @@
+Title: Spatial-Temporal State Propagation Autoregressive Model for 4D Object Generation
+
+URL Source: https://arxiv.org/pdf/2602.18830v1
+
+Published Time: Tue, 24 Feb 2026 01:30:52 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Spatial-Temporal State Propagation Autoregressive Model for 4D Object Generation 
+
+## Liying Yang 1∗, Jialun Liu 2†, Jiakui Hu 3, Chenhao Guan 1, Haibin Huang 2, Fangqiu Yi 2,Chi Zhang 2, Yanyan Liang 1† 
+
+> 1
+
+## Macau University of Science and Technology 2 TeleAI 3 Peking University  
+
+> †
+
+## Corresponding Authors 
+
+## Abstract 
+
+Generating high-quality 4D objects with spatial-temporal consistency is still formidable. Existing diffusion-based methods often struggle with spatial-temporal inconsistency, as they fail to leverage outputs from all previous timesteps to guide the generation at the current timestep. There-fore, we propose a Spatial-Temporal State Propagation 
+
+Auto Regressive Model (4DSTAR), which generates 4D ob-jects maintaining temporal-spatial consistency. 4DSTAR formulates the generation problem as the prediction of to-kens that represent the 4D object. It consists of two key components: (1) The dynamic spatial-temporal state prop-agation autoregressive model (STAR) is proposed, which achieves spatial-temporal consistent generation. Unlike standard autoregressive models, STAR divides prediction tokens into groups based on timesteps. It models long-term dependencies by propagating spatial-temporal states from previous groups and utilizes these dependencies to guide generation at the next timestep. To this end, a spatial-temporal container is proposed, which dynamically updat-ing the effective spatial-temporal state features from all his-torical groups, then updated features serve as conditional features to guide the prediction of the next token group. (2) The 4D VQ-VAE is proposed, which implicitly encodes the 4D structure into discrete space and decodes the dis-crete tokens predicted by STAR into temporally coherent 4D Gaussians. Experiments demonstrate that 4DSTAR gener-ates spatial-temporal consistent 4D objects, and achieves performance competitive with diffusion models. 
+
+## 1. Introduction 
+
+Generating 4D object has made tremendous progress. The recent 4D object generation approaches can be called into two main categories. Optimization methods [1, 12, 39, 40, 50, 56, 58, 60] generate 4D objects by score distilling [30]  
+
+> *Research done when Liying was an intern at TeleAI Inconsistent
+> appearance
+> at two
+> timesteps
+> Consistent
+> appearance
+> at two
+> timesteps
+> Ours Input Previous Work
+> T=1
+> T=24
+
+Figure 1. Diffusion-based methods, such as previous work [57], fail to leverage outputs from all previous timesteps to guide the generation at the current timestep, which generates results with in-consistent appearance at some timesteps. Our 4DSTAR alleviates this issue by leveraging historical outputs to guide the generation at the current timestep. 
+
+prior knowledge from pre-trained diffusion models. But the score distillation is sensitive to prompts [34], which limit the application of optimization methods. Feed-forward methods [18, 34, 53, 57, 62, 63] directly train a diffusion model on 4D datasets. However, they of-ten produce 4D objects with spatial-temporal inconsistency, as they struggle to utilize the outputs from all previous timesteps to guide the generation at the current timestep. In an extreme case (Figure 1), when generating results over a long time span, previous work only relies on the input video and limited view information. This information fails to adequately assist the model in inferring results that are temporally coherent between timestep 1 and timestep 24. To address these limitations, we present a novel feed-forward Spatial-Temporal State Propagation 
+
+Auto Regressive Model, named 4DSTAR, which gen-erates temporal-spatial consistency 4D objects. 4DSTAR 1
+
+> arXiv:2602.18830v1 [cs.CV] 21 Feb 2026
+
+formulates the 4D generation as the token prediction. It comprises a dynamic spatial-temporal state propagation auto-regressive model (STAR) and a 4D VQ-VAE. Specifically, we propose dynamic spatial-temporal state propagation autoregressive model (STAR), which mod-els long-term dependencies across generations from previ-ous timesteps via spatial-temporal state propagation, and leverages dependencies to guide next timestep generation. Firstly, it is necessary for the model to accurately observe all changes during the motion of a 4D object, because changes in some areas at a future timestep can refer to corresponding areas at previous timesteps. An intuitive analogy is to pause the object at any timestep and observe it from all angles. In-spired by this concept, STAR divides prediction tokens into multiple groups based on timesteps. Then, to model long-term dependencies, we propose a Spatial-Temporal Container (S-T Container) integrated into STAR. It is designed to adaptively update effective spatial-temporal state features from all historical prediction groups. In particular, we assume some token features across differ-ent historical groups share similarities in texture and ge-ometry. After merging these similar features, the remain-ing features constitute the effective spatial-temporal state, which provides the reference context for predicting the next token group. Based on this, the S-T container retrieves to-kens from all historical groups and dynamically updates the set of merged features. These updated features then serve as conditional features guiding the prediction of the next token group and are sequentially updated and propagated throughout the autoregressive prediction process of STAR. 
+
+In other words, under T frames, when predicting results at any given t (t ≤ T ), we leverage existing 1 to t − 1 his-torical groups’ spatial-temporal state features to predict results at timestep t, which enables long-term dependen-cies across 1 to t results prediction. 
+
+To decode discrete tokens generated by STAR, we pro-pose a 4D VQ-VAE that implicitly encodes the 4D structure into discrete space and decodes the token sequences into dy-namic 3D Gaussians. To preserve temporal stability, our 4D VQ-VAE avoids compression along the temporal axis. The Spatial-Temporal Decoder within 4D VQ-VAE consists of a Static GS Generation and Spatial-Temporal Offset Predic-tor (STOP). Static GS generation decodes discrete tokens to static Gaussian features. At the same time, STOP jointly leverages cross-frame temporal information from token se-quences and static Gaussian features to decode per-timestep Gaussian offsets, thereby establishing explicit point-level correspondence across frames. This enables spatiotemporal fusion to correct static Gaussians into a canonical 4D space at each timestep. Finally, 4D VQ-VAE produces spatial-temporal consistent dynamic 3D Gaussians. The contributions can be summarized as follows: • To the best of our knowledge, we are the first to propose an autoregressive model for 4D object generation. • To enforce spatial-temporal consistent generation, we propose a Dynamic Spatial-Temporal State Propaga-tion Autoregressive Model (STAR). It models long-term dependencies across previous predictions via spatial-temporal state propagation to guide the generation at the current timestep. • To decode the tokens predicted by STAR, we propose a 4D VQ-VAE, which implicitly encodes the 4D structure into discrete space and decodes discrete tokens into tem-porally coherent dynamic 3D Gaussians. • Experimental results demonstrate that our method can generate spatial-temporal consistent 4D objects and achieves performance competitive with diffusion models. 
+
+## 2. Related Works 
+
+2.1. 3D Generation 
+
+Generating high-quality 3D representations, such as meshes [19, 22, 49, 55], NeRFs [9, 26, 27], and 3D Gaus-sian splats [15, 42, 65] has become a rapidly evolving re-search area. Early methods [32, 36, 43, 54] distill 2D diffu-sion priors [29, 35] into 3D via Score Distillation Sampling (SDS) [31], enabling text- or image-to-3D synthesis but suf-fering from inefficiency and view inconsistency caused by per-instance optimization and single-view ambiguity [22]. To improve scalability, later works [20–22, 37] decouple the process into multi-view generation followed by 3D recon-struction, often fine-tuning pretrained 2D diffusion models on large 3D datasets [5, 6]. Although these approaches pro-duce visually appealing results, the reconstructed meshes are often unsuitable for downstream tasks such as anima-tion. More recent methods [23, 44, 61, 64] abandon 2D pri-ors and train dedicated 3D generative models from scratch, achieving more accurate and detailed geometry. 
+
+2.2. 4D Generation 
+
+Extending 3D generation into the spatiotemporal domain, 4D generation aims to synthesize dynamic 3D content from text, images, videos, or static assets, requiring consistent geometry and temporally coherent motion. MAV3D [39] applies score distillation sampling (SDS) from video diffu-sion models to optimize dynamic NeRFs, while 4D-FY [1] combines image-, video-, and 3D-aware supervision for bet-ter structural fidelity. Consistent4D [12], STAG4D [60], SC4D [50], DreamMesh4D [17] and DS4D [56] enhance temporal consistency via frame interpolation and multi-view fusion but remain limited by slow optimization and color oversaturation from SDS [30]. Recent models such as Diffusion4D [18], 4Diffusion [63], L4GM [34], GVFDiffu-sion [62], and SV4D [52, 57] employ 4D-aware diffusion to generate orbital views of dynamic assets; however, they struggle with spatial-temporal inconsistency. In contrast, 2our method solves this by utilizing outputs from all previ-ous timesteps to guide the generation at current timestep. 
+
+2.3. Autoregressive Visual Generation 
+
+Autoregressive (AR) modeling, pioneered by Pixel-CNN [47], formulates image generation as a sequential pre-diction problem over pixels. Subsequent works such as VQ-VAE [48] and VQGAN [8] extend this paradigm by quan-tizing image patches into discrete tokens and training trans-formers to learn AR priors, analogous to language model-ing [3]. To enhance reconstruction fidelity, RQVAE [16] introduces multi-scale quantization, while VAR [45] refor-mulates AR modeling as next-scale prediction, markedly improving sampling efficiency. Recent efforts further scale AR transformers for text-conditioned visual generation at large scale [10]. In the 3D domain, early studies such as PolyGen [28] and MeshGPT [38] adopt AR models to di-rectly generate mesh vertices and faces. However, these methods are confined to geometric representations and face challenges in scaling to diverse 3D object datasets [5]. In contrast, we propose an autoregressive model for 4D object generation, which updates effective spatial-temporal state features provided by all historical groups, enabling tempo-rally coherent 4D generation. 
+
+## 3. Methodology 
+
+We aim to generate high-quality 4D objects with spatial-temporal consistency. Figure. 2 shows the overview of 4DSTAR, including 4D VQ-VAE and dynamic Spatial-Temporal State Propagation auto-Regressive model. 
+
+3.1. 4D Vector Quantized Variational Autoencoder 
+
+In our 4D VQ-VAE, each 4D object is regarded as the spatial-temporal matrix, which is arranged by 2D view im-ages x ∈ RT ×V ×H×W ×3, where T denotes the number of frames, V denotes the number of views. To capture both fine-grained details and high-level semantics within each 2D view images, we employ the encoder of UniTok [25]. The encoder encodes the spatial-temporal matrix to latent vector, and then obtain the corresponding discrete tokens. Specifically, the matrix is quantized into q ∈ QT ×V ×n× dn ,where n is the dimension of latent vector, n denotes the number of chunks which used to split latent vector. The discrete tokens extracted from the matrix require a decoder for reconstruction. Although a straightforward so-lution is to employ the UniTok decoder, it suffers from a fundamental limitation due to the gap between 2D and 4D representations. Specifically, UniTok decoder is designed for independent 2D image reconstruction and fails to cap-ture the inherent geometric constraints in 4D. Consequently, this leads to spatial-temporal inconsistencies across the re-constructed frames. To address this issue, we propose a spatial-temporal decoder (STD). In contrast to UniTok de-coder, STD decodes tokens as dynamic 3D Gaussians. The STD commits to reconstruct 4D results represented by 4D Gaussian splatting. Specifically, for input discrete tokens q, we employ the multi-head attention modules for token factorization projection. It converts the discrete to-kens into continuous tokens S ∈ RT ×V ×C×N , where C
+
+denotes the dimension of tokens, N denotes the number of tokens. Then, through encoding and decoding these con-tinuous tokens, the coarse decoder in STD can directly de-code coarse Gaussians Gt = {gt
+
+> 1
+
+, g t
+
+> 2
+
+, . . . , g tn}, with the parameters gti = {xti, s ti, γ ti , α ti , c ti} for each timestep t.To further correct these static Gaussians into a canonical 4D space at each timestep, we propose Spatial-Temporal Offset Predictor (STOP) inserted into STD, which jointly leverages cross-frame temporal information from token se-quences and static GS features. 
+
+Spatial-Temporal Offset Predictor (STOP). Specifi-cally, we input static Gaussians and continuous tokens t
+
+of each object into the STOP. For the dynamic 3D Gaus-sians G = {G1, G 2, . . . , G T } in the whole timesteps T ,and continuous tokens Sv = {S1 
+
+> v
+
+, S 2 
+
+> v
+
+, . . . , S Tv } belonging to the whole timesteps T at each view v, we calculate the cross-attention among static Gaussian features and contin-uous tokens along timestep axes. In detail, we set the G as query and Sv as key and value. During the cross-attention calculation, each static Gaussian features can aggregate the global temporal information based on the similar geometry and texture relationships among continuous tokens in tem-poral axes, thereby leveraging temporal context to obtain the coarse offset features at each timestep. Then, a 3D-Unet module is used to refine the coarse offset features, which en-hance the 3D awareness of the features. The refined offset features f to = {xtio , s tio , γ tio , α tio , c tio } can be split as the off-set value of each parameter of the dynamic 3D Gaussians. At last, we update the parameters of dynamic 3D Gaussians as ˆgit = {xti + xtio , s ti + stio , γ ti + γtio , α ti + αtio , c ti + ctio }.
+
+Loss Function. We employ pixel-level rendering loss 
+
+LR among ground truth and rendering views, and use a dis-criminator loss LG to enhance reconstruction fidelity [14]. Furthermore, we introduce the optical flow loss LF to guide the motion modeling. For 4D VQ-VAE training, the overall loss function LVAE = αLR + βLG + γLF , where α, β, γ is weight. More details see supplementary materials. 
+
+3.2. Dynamic Spatial-Temporal State Propagation Auto-Regressive Model (STAR) 
+
+In Sec. 3.1, we introduce how our 4D VQ-VAE encodes and decodes the tokens representing 4D objects. In this section, we introduce our STAR how to predict these tokens. To build long-term dependencies, a simple approach is to use a standard auto-regressive model (e.g., LlamaGen [41]) to predict these tokens. However, this approach faces signif-3+ Camera, 
+
+> Timstep  Conditions
+
+… … 
+
+> S-T Container S-T Container S-T Container
+> SEP
+
+Transformer 
+
+… … 
+
+…    
+
+> EOS
+> Predicted
+> Tokens
+> 360 °
+> 𝟏 𝒔𝒕 Group ( t=1 )
+> 360 °
+> 𝟐 𝒏𝒅 Group ( t=2 )
+> 360 °
+> 𝟑 𝒓𝒅 Group ( t=3 )
+> Text Tokenizer
+> Image Tokenizer
+
+… … 
+
+> Tokens
+> (b). Dynamic Spatial -Temporal State Propagation
+> Autoregressive Model (STAR)
+> Encoder
+> Spatial -Temporal
+> Offset Predictor
+> Static GS
+> Generator
+
+…
+
+…
+
+…
+
+…
+
+………
+
+… … 
+
+… … 
+
+> … …
+> … …
+
+… … 
+
+…
+
+> (a). 4D VQ -VAE
+> Dynamic 3D Gaussians
+> Spatial -Temporal Matrix
+> + Camera,
+> Timstep  Conditions
+> + Camera,
+> Timstep  Conditions
+> STD
+> Codebook
+> Static Gaussian
+> Features
+> Canonical
+> 4D Space
+
+Figure 2. The overall pipeline of our 4DSTAR. 4DSTAR consists of two key components: (a) 4D VQ-VAE. Given a 4D object, we first render it as a spatial-temporal matrix. Then the matrix is encoded by Encoder, and is compressed into discrete tokens. Static GS Generation decodes these tokens to static Gaussians. Meanwhile, Spatial-Temporal Offset Predictor (STOP) corrects static Gaussians into a canonical 4D space at each timestep. Finally, the model outputs dynamic 3D Gaussians. (b) Dynamic Spatial-Temporal State Propagation Autoregressive Model (STAR). The text and video conditions, which are compressed by an image tokenizer are concatenated before the start token as the context. The conditions can either expect the model to generate tokens. The SEP signals the model to begin generating tokens. Then, camera pose and timestep conditions are integrated. When the model starts to predict the next group, the historical groups are integrated into Spatial-Temporal Container (S-T Container). S-T Container updates effective spatial-temporal state features. The features serve as conditional features to guide the prediction of the next token group. Finally, STAR predicts all tokens that represent a 4D object. 
+
+icant challenges. The primary difficulty is the need to pre-cisely predict a massive sequence of tokens (over 40,000) that encapsulates a 4D object. This challenge is com-pounded by high token density, which complicates accu-rate prediction, and the fact that not all historical informa-tion is useful for forecasting the next token. To address these limitations, we propose a Dynamic Spatial-Temporal State Propagation Auto-Regressive Model (STAR), which updates effective spatial-temporal state features based on historical groups. In this section, we provide a detailed in-troduction to STAR. 
+
+3.2.1. Conditions 
+
+Firstly, we introduce the conditions integrated into STAR. 
+
+Text Condition. To extract text features, we utilize FLAN-T5 XL [4] as the text encoder. Then, the text fea-tures are projected by a text tokenizer, which contains an MLP, and serve as the prefill token embeddings in STAR. 
+
+Camera Condition. To condition the camera pose within a group, following [11, 13], we apply the Pl¨ ucker Embedding. This embedding encodes the origin and direc-tion of the ray at each spatial location. The ray is then incor-porated into STAR as the Shift Positional Encoding (SPE). 
+
+Timestep Condition. To condition the temporal infor-mation across groups, we design a Timestep encoder that maps each Timestep t to a temporal embedding ˆt ∈ RDp ,with Dp aligning the dimensions of the Pl¨ ucker Embedding. Similar to to the latter, this temporal embedding is incorpo-rated into STAR as the SPE. 
+
+Monocular Video Condition. Given a monocular video of T frames, we represent it as the set F =
+
+{F1, F 2, . . . , F T }. The 4D VQ-VAE encoder first converts this input into discrete tokens. These tokens are then pro-jected by an image tokenizer, which contains an MLP, to form the prefill token embeddings for STAR. 
+
+3.2.2. Network Architecture 
+
+Based on the conditions in Sec. 3.2.1, STAR is committed to predicting the discrete tokens that represent a 4D object. 
+
+Dividing Groups. First, building upon the concept in-troduced in Sec. 1, STAR divides the prediction tokens into multiple groups, as illustrated in Figure 2 (b). Specif-ically, we consider a prediction token sequence Q =
+
+{q11 , q 21 , q 31 , . . . , q vt , . . . , q VT }, where T denotes the number of timesteps and V denotes the number of views. This sequence is partitioned into T groups, denoted as L =
+
+{L1, L 2, . . . , L T }. The group Lt at time t, contains the par-tial prediction tokens Lt = {q1 
+
+> t
+
+, q 2 
+
+> t
+
+, . . . , q Vt }. Thus, all pre-diction tokens are organized into groups, which STAR then predict them sequentially. During training, the groups L are projected by the image tokenizer into token features ˆL =
+
+{ ˆL1, ˆL2, . . . , ˆLT }. Then the token features and conditions 4serve as the input to STAR. During inference, STAR au-toregressively predicts the token sequences for each group based on the conditioning inputs. 
+
+Spatial-Temporal Container. We propose the Spatial-Temporal Container (S-T Container) to build long-term de-pendencies by dynamically updating spatial-temporal state features from historical groups. S-T Container is designed to merge token features that exhibit similar texture and ge-ometry across historical groups. To identify and extract these potentially similar token features, we employ a k-nearest neighbor based density peaks clustering algorithm (DPC-KNN) [7]. Specifically, given token features ˆLt∈[1 ,t −1] from group 1 to group t − 1 (i.e., time 1 to time t − 1), we compute the local density ρi of each token within groups: 
+
+ρmi = exp (− 1
+
+K
+
+X  
+
+> ynj∈KNN (ymi)
+
+∥ymi − ynj ∥22), (1) where KNN (ymi ) denotes the k-nearest neighbors of the 
+
+m-th token feature in i-th group. Next, we compute the sim-ilar score ϖ as the minimal distance among token features with higher local density: 
+
+ϖmi =
+
+
+
+min  
+
+> j,n :ρnj>ρ mi
+
+∥ymi − ynj ∥22, if ∃j, n s.t ρnj > ρ mi .max  
+
+> j,n
+
+∥ymi − ynj ∥22, otherwise .
+
+(2) where ρmi denotes local density. Then we set cluster cen-ters based on the score ρmi × ϖmi . A higher score means a higher possibility of being a cluster center. Inspired by feature fusion [33, 51, 59], we use an MLP to predict the dissimilar score σ of each token feature. Then we merge the token features according to σ, the merged to-ken features ˆyi = P 
+
+> j∈Ci
+
+σj yj , where Ci denotes the set of the i-th cluster, and yj means the j-th token features in the 
+
+i-th cluster. Next, we refine the merged token features via multi-head attention, obtaining the updated features ˆyi.The updated features ˆyi represents the effective spatial-temporal state features provided by groups 1 to t − 1. These features then serve as condition features, integrated into STAR via MLPs, for predicting the tokens in group t. As the prediction progresses through the groups, the S-T con-tainer iteratively updates the refined token features. In other words, it gradually propagates the dynamic spatial-temporal state, thereby building long-term dependencies across all timesteps. 
+
+Transformer Architecture. We employ Transformer for auto-regressive modeling, which is consisted with stan-dard auto-regressive model. The Transformer is developed based on Llama [46]. 
+
+Loss Function. Following auto-regressive models [41, 46], our STAR generates the conditional probability 
+
+p(qs|q<s ) of token qs at each position s. Then, the cross-entropy (CE) loss is defined as the average of the negative log-likelihoods over all vocabulary positions: 
+
+Lar = − 1
+
+S
+
+> S
+
+X
+
+> s=1
+
+log p(qs|q<t ), (3) The Eq. 3 indicates that STAR studies the transformation process from previous s − 1 tokens to s-th tokens. Due to we have T groups in STAR, we employ chunked CE loss, which we split the chunk based on the group. Each chunk includes one group, formally, 
+
+LAR =
+
+> G
+
+X
+
+> g=1
+
+Chunk (L1 
+
+> ar
+
+, L 2 
+
+> ar
+
+, . . . , L Gar ). (4) where G means the number of groups. 
+
+## 4. Experiments 
+
+4.1. Implementation Details 
+
+Training Dataset and Metrics. We train 4D VQ-VAE and STAR on the train set of Objaverse [5] and Objaverse-XL [6], which includes 56K 4D objects. For text prompts, we first utilize those provided by Cap3D [24]. However, as these prompts describe static appearance, we employ Qwen [2] to generate additional prompts that capture object motion. To evaluate the quality of our 4D generation, we adopt metrics from [12, 60], including CLIP, LPIPS, FVD, and FID-VID. The same metrics are also used to evaluate the reconstruction quality of 4D VQ-VAE. All evaluations are conducted on renderings at a resolution of 512 × 512 .
+
+Training. We train our 4D VQ-VAE on 8 H100 GPUs and STAR on 16 H100 GPUs. More details can be found in the Supplementary Materials. 
+
+4.2. Main Results 
+
+4.2.1. 4D Object Reconstruction Evaluation Dataset. To evaluate the performance on 4D object reconstruction, we construct a test set of 100 objects from Objaverse and Objaverse-XL. We render 8 views of each timestep for each object. These views are grouped as a spatial-temporal matrix as the input of each method. Be-sides, we select 4 views (front, back, left, and right) of each timestep for each object, which are used as ground truth. 
+
+Quantitative comparisons. We compare our 4D VQ-VAE with two 2D image VQ-VAE, including VQ-VAE [41] and UniTok [25]. As shown in Table. 3, our 4D VQ-VAE outperforms other VQ-VAE across all quality metrics. It demonstrates that our VQ-VAE has both superior recon-struction fidelity and better temporal coherence. This is attributed to our 4D VQ-VAE leveraging spatial-temporal information within tokens to reconstruct results. 5Timeline               
+
+> Ground Truth VQ -VAE UniTok 4D VQ -VAE (Ours)
+> Timeline
+> view 1 view 2 view 3 view 1 view 2 view 3 view 1 view 2 view 3 view 1 view 2 view 3
+
+Figure 3. Qualitative comparison with VQ-VAE [41] and UniTok [25] on 4D reconstruction. For VQ-VAE and UniTok, we employ them to reconstruct 2D view images. For our 4D VQ-VAE, we render results under corresponding views. Our 4D VQ-VAE can reconstruct the results with temporal coherence, while VQ-VAE and UniTok cannot reconstruct with temporal coherence. Timeline            
+
+> STAG4D
+> Timeline
+> Input Video view 1 view 2
+> 4DSTAR (Ours)
+> view 1 view 2
+> L4GM
+> view 1 view 2
+> GVFDiffusion
+> view 1 view 2
+> SV4D 2.0
+> view 1 view 2
+
+Figure 4. Qualitative comparison with the state-of-the-art methods [34, 57, 60, 62] on video-to-4D generation. For each method, we render results under two novel views at two timesteps. Our method achieves high-quality generation with spatial-temporal consistency. 
+
+Method CLIP ↑ LPIPS ↓ FVD ↓ FID-VID ↓
+
+VQ-VAE [41] 0.938 0.067 326.570 13.447 
+
+UniTok [25] 0.973 0.050 151.238 4.402 
+
+4D VQ-VAE (Ours) 0.973 0.048 133.372 4.175 
+
+Table 1. Evaluation and comparison of the performance on 4D object reconstruction. The best score is highlighted in bold. All the experiments of the methods are carried out using the code from their official GitHub repository. 
+
+Qualitative comparisons. The qualitative results on test set are presented in Figure. 3. Obviously, the reconstruction quality and temporal coherence of our 4D VQ-VAE both are better than other methods. Specifically, for the top object, VQ-VAE and UniTok cannot reconstruct the texture details of eye at two timesteps, while our 4D VQ-VAE success-fully reconstruct the details. Moreover, for the below ob-ject, VQ-VAE and UniTok reconstruct significantly incon-
+
+Method CLIP ↑ LPIPS ↓ FVD ↓ FID-VID ↓
+
+STAG4D [60] 0.910 0.141 752.215 27.280 
+
+L4GM [34] 0.926 0.132 515.430 20.125 
+
+SV4D 2.0 [57] 0.932 0.139 497.753 19.223 
+
+GVFDiffusion [62] 0.931 0.138 528.336 19.064 
+
+4DSTAR (Ours) 0.952 0.131 464.709 15.312 
+
+Table 2. Evaluation and comparison of the performance on video-to-4D object generation. The best score is highlighted in bold. All the experiments of the methods are carried out using the code from their official GitHub repository. 
+
+sistent texture results at different timesteps, especially for the clothing texture. In contrast, our 4D VQ-VAE recon-structs consistent texture results at both timesteps, which once again demonstrates the ability of our 4D VQ-VAE in ensuring temporal coherence in reconstruction. 64.2.2. Video-to-4D Object Generation Evaluation Dataset. We construct a test set of 100 ob-jects by combining 7 objects from Consistent4D [12] and 93 additional objects from Objaverse-XL test set. To ensure fair comparisons, our model employs a neutral text prompt, “Generate object of the following < imgs >”, which inten-tionally omits any specific appearance or motion descrip-tions. For previous works, we follow their original papers and official implementations, using their semantic text em-beddings (if they have) instead of neutral text prompt. 
+
+Quantitative comparisons. We compare our model with the SOTA methods on the test set, including STAG4D [60], L4GM [34], GVFDiffusion [62], and SV4D 2.0 [57]. The quantitative results are shown in Table. 2. Our 4DSTAR consistently outperforms other methods in all metrics. Specifically, our 4DSTAR notably exceeds the other methods in FVD and FID-VID, which indicates the results generated by our 4DSTAR have fewer temporal ar-tifacts and better temporal coherence than others. Further-more, our 4DSTAR significantly outperforms other meth-ods in CLIP. It demonstrates our methods are superior in terms of quality, fidelity, and spatial-temporal consistency of generation results. In summary, these improvements are attributed to our method, which models long-term depen-dencies across outputs from previous timesteps to enhance spatial-temporal consistent generation. 
+
+Qualitative comparisons. The qualitative results are presented in Figure. 4. Visibly, the generation fidelity and spatial-temporal consistency are both better than other methods. Specifically, when generating the results in two timesteps, the results generated by STAG4D, L4GM, and SV4D 2.0 have different degrees of blurriness and inconsis-tent appearance in the details, especially in areas with com-plex topology (e.g., boy’s hair). Moreover, when generating the results that contain large motion at two timesteps, the results generated by L4GM, GVFDiffusion, and SV4D 2.0 show inconsistent appearance, temporal incoherence, and some noisy points within motion parts. For example, for the arms of the bear, these methods generate clear textures in previous timesteps, while they generate low-quality tex-tures in the future timestep. These methods fail to leverage outputs from previous timesteps to guide generation at the current timestep. In contrast, our 4DSTAR alleviates these issues by leveraging long-term dependencies to guide the generation, achieving high-quality generation. 
+
+4.3. Ablation Study 
+
+Ablation of 4D VQ-VAE. To validate the effect of STOP in 4D VQ-VAE, we conduct an experiment about whether to use STOP in model. The results are shown in Table. 3. Our method significantly outperforms the model without using STOP in all metrics, especially FVD and FID-VID. Besides, Figure. 5 shows the reconstruction results by different mod-                   
+
+> Method CLIP ↑LPIPS ↓FVD ↓FID-VID ↓
+> w/o STOP 0.968 0.057 174.757 5.575
+> 4D VQ-VAE (Ours) 0.973 0.048 133.372 4.175
+> Table 3. Ablation Experiments of 4D VQ-VAE on the test set.
+> Each setup is based on a modification of the immediately preced-ing setups. The best score is highlighted in bold. GT
+> w/o STOP
+> Ours
+> Timeline
+> Figure 5. Ablation of 4D VQ-VAE. Our model which uses STOP, accurately recovers texture details at different timesteps.
+
+els at three timesteps. The model without STOP cannot re-construct consistent texture details across timesteps, while our model, which uses STOP, accurately recovers texture details at different timesteps. It indicates the STOP lever-age of spatial-temporal information among tokens to cor-rect static Gaussians into a canonical 4D space for better temporally coherent reconstruction. 
+
+Ablation of STAR. To validate the effect of S-T Con-tainer in STAR, we conduct several experiments, as shown in Table. 4. Among them, model A based on L4GM with explicit state propagation. Baseline is the naive auto-regressive model. Model B, based on baseline, performs av-erage pooling of historical groups along temporal to merge historical groups, while model C uses MLP to merge them. Our model with S-T Container significantly outperforms other models in all metrics. Our model leverages cluster-ing of S-T Container to preserve diverse spatial-temporal information within historical token features. This process provides a crucial inductive bias for modeling long-term dependencies. However, model B and C struggle to ac-curately extract such information. Although model A ex-plicitly propagates previous results to assist prediction at the next timestep, it only uses the results of one historical frame to guide the generation at the next timestep. This not only makes the model easily forget valid information from all historical results but also fails to filter useful informa-7Method CLIP ↑ LPIPS ↓ FVD ↓ FID-VID ↓                    
+
+> A: L4GM w/ Explicit State Propagation 0.930 0.132 508.192 19.714
+> Baseline 0.939 0.148 883.946 37.066
+> B: w/ Temporal Average Pooling 0.942 0.146 646.558 27.016
+> C: w/ Learnable Token Merging 0.945 0.141 579.288 21.449
+> Ours: w/ S-T Container 0.952 0.131 464.709 15.312
+
+Table 4. Ablation Experiments of STAR on the test set. Each setup is based on a modification of the immediately preceding se-tups. The best score is highlighted in bold. Input 
+
+> Timeline
+> w/ S -T Container (Ours)
+> Baseline
+
+Figure 6. Ablation of STAR. Even slight motion within input, ours produces more temporally consistent results than Baseline. More visualizations see supplementary materials. Clustering 
+
+> Token Features in
+> Historical Groups
+> Token Feature Center
+> Clustering Center
+
+Figure 7. Visualization of the clustering within S-T Container. 
+
+The left is the original distribution of token features belonging to previous (historical) groups. The right visualizes the clustering centers after clustering. The clustering centers preserve the diver-sity of spatial-temporal information within token features. 
+
+tion from historical results, ultimately leading to the gen-eration of spatial-temporal inconsistencies that affect time coherence. In contrast, our model can consistently produce temporally consistent results. By merging regionally simi-lar textures and topological structures via S-T container and propagating remaining features to constitute the effective spatial-temporal state across timesteps, our model gradu-ally establishes long-term dependencies, thereby improving temporal consistency in generation. For model details and more visualizations, please see supplementary materials. 
+
+Visualization of Clustering within S-T Container. The visualization validates the feature update principle in our S-T container. We first plot the distribution of original to-Input: Text and Monocular Video              
+
+> (a) Our Results on Text-Video to 4D Object
+> “A red crewmate character
+> from the game Among Us,
+> with a blue visor and a white
+> cylinder-shaped object on top.
+> The red character with a blue
+> face and a gray hat is rotating
+> slowly on its axis.”
+> (b) Our Results on Text-Image to Static 3D Object
+> “A collection of geometric
+> shapes in a vibrant pink hue .
+> The structures feature angular
+> forms and varying thickness,
+> suggesting a stylized, abstract
+> aesthetic. The object is
+> stationary and does not
+> exhibit any motion .”
+> Input: Text and Image Our Results (Novel Views)
+> Our Results (Novel View)
+> Timeline Timeline
+
+Figure 8. Visualization of (a) our text-video to 4D object gen-eration and (b) our text-image to static 3D object generation. 
+
+Our approach is capable of generating a 4D object with temporal-spatial consistency and a 3D object with multi-view consistency. 
+
+ken features from previous groups using PCA and T-SNE, marking their centers (left of Figure. 7). After clustering these features via our S-T container, we visualize the clus-ter centers (right of Figure. 7). Initially concentrated to-ken feature centers indicate many token features sharing similarities, while the well-separated clustering centers af-ter clustering preserve diverse spatial-temporal information within token features. By merging similar token features, S-T container updates token features in historical features into features with informative spatial-temporal representa-tions. This effectively models long-term dependencies to guide predictions for subsequent groups. 
+
+## 5. Applications 
+
+In Sec. 4, we verify our 4DSTAR is effective at generat-ing 4D objects according to the input video. Additionally, our 4DSTAR supports the text prompt and corresponding video as input, as shown in Figure. 8 (a). Furthermore, our 4DSTAR can generate static 3D objects maintaining multi-view consistency when input text prompt and reference im-age, as shown in Figure. 8 (b). 
+
+## 6. Conclusion 
+
+In this paper, we propose a novel feed-forward Spatial-Temporal State Propagation Autoregressive Model named 4DSTAR, which generates temporal-spatial consistency 4D objects. Its STAR models long-term dependencies across generation results from previous timesteps via spatial-temporal state propagation, and leverages de-pendencies to guide generation at next timestep. A key component is the spatial-temporal container, integrated within STAR, which propagates prediction information from previous groups to enforce spatial-temporal consis-8tency. Furthermore, 4D VQ-VAE is designed to decode the tokens predicted by STAR into temporally coherent dynamic 3D Gaussians. Overall, our method can generate high-quality 4D objects with temporal-spatial consistency. 
+
+## References 
+
+[1] Sherwin Bahmani, Ivan Skorokhodov, Victor Rong, Gordon Wetzstein, Leonidas Guibas, Peter Wonka, Sergey Tulyakov, Jeong Joon Park, Andrea Tagliasacchi, and David B Lin-dell. 4d-fy: Text-to-4d generation using hybrid score dis-tillation sampling. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 7996–8006, 2024. 1, 2 [2] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, et al. Qwen2. 5-vl technical report. arXiv preprint arXiv:2502.13923 , 2025. 5 [3] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Sub-biah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakan-tan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Lan-guage models are few-shot learners. Advances in neural in-formation processing systems , 33:1877–1901, 2020. 3 [4] Hyung Won Chung, Le Hou, Shayne Longpre, Barret Zoph, Yi Tay, William Fedus, Yunxuan Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, et al. Scaling instruction-finetuned language models. Journal of Machine Learning Research , 25(70):1–53, 2024. 4 [5] Matt Deitke, Dustin Schwenk, Jordi Salvador, Luca Weihs, Oscar Michel, Eli VanderBilt, Ludwig Schmidt, Kiana Ehsani, Aniruddha Kembhavi, and Ali Farhadi. Objaverse: A universe of annotated 3d objects. In CVPR , 2023. 2, 3, 5 [6] Matt Deitke, Ruoshi Liu, Matthew Wallingford, Huong Ngo, Oscar Michel, Aditya Kusupati, Alan Fan, Christian Laforte, Vikram Voleti, Samir Yitzhak Gadre, et al. Objaverse-xl: A universe of 10m+ 3d objects. Advances in Neural Informa-tion Processing Systems , 36, 2024. 2, 5 [7] Mingjing Du, Shifei Ding, and Hongjie Jia. Study on den-sity peaks clustering based on k-nearest neighbors and prin-cipal component analysis. Knowledge-Based Systems , 99: 135–145, 2016. 5 [8] Patrick Esser, Robin Rombach, and Bjorn Ommer. Taming transformers for high-resolution image synthesis. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 12873–12883, 2021. 3 [9] Jiatao Gu, Alex Trevithick, Kai-En Lin, Joshua M Susskind, Christian Theobalt, Lingjie Liu, and Ravi Ramamoorthi. Nerfdiff: Single-image view synthesis with nerf-guided dis-tillation from 3d-aware diffusion. In International Confer-ence on Machine Learning , pages 11808–11826. PMLR, 2023. 2 [10] Jian Han, Jinlai Liu, Yi Jiang, Bin Yan, Yuqi Zhang, Zehuan Yuan, Bingyue Peng, and Xiaobing Liu. Infinity: Scaling bit-wise autoregressive modeling for high-resolution image syn-thesis. arXiv preprint arXiv:2412.04431 , 2024. 3 [11] JiaKui Hu, Yuxiao Yang, Jialun Liu, Jinbo Wu, Chen Zhao, and Yanye Lu. Auto-regressively generating multi-view con-sistent images. arXiv preprint arXiv:2506.18527 , 2025. 4 [12] Yanqin Jiang, Li Zhang, Jin Gao, Weiming Hu, and Yao Yao. Consistent4d: Consistent 360° dynamic object gen-eration from monocular video. In The Twelfth International Conference on Learning Representations , 2024. 1, 2, 5, 7 [13] Yash Kant, Aliaksandr Siarohin, Ziyi Wu, Michael Vasilkovsky, Guocheng Qian, Jian Ren, Riza Alp Guler, Bernard Ghanem, Sergey Tulyakov, and Igor Gilitschenski. Spad: Spatially aware multi-view diffusers. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pat-tern Recognition , pages 10026–10038, 2024. 4 [14] Tero Karras, Samuli Laine, and Timo Aila. A style-based generator architecture for generative adversarial networks. In Proceedings of the IEEE/CVF conference on computer vi-sion and pattern recognition , pages 4401–4410, 2019. 3 [15] Bernhard Kerbl, Georgios Kopanas, Thomas Leimk¨ uhler, and George Drettakis. 3d gaussian splatting for real-time radiance field rendering. ACM Trans. Graph. , 42(4):139–1, 2023. 2 [16] Doyup Lee, Chiheon Kim, Saehoon Kim, Minsu Cho, and Wook-Shin Han. Autoregressive image generation using residual quantization. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 11523–11532, 2022. 3 [17] Zhiqi Li, Yiming Chen, and Peidong Liu. Dreammesh4d: Video-to-4d generation with sparse-controlled gaussian-mesh hybrid representation. Advances in Neural Information Processing Systems , 37:21377–21400, 2024. 2 [18] Hanwen Liang, Yuyang Yin, Dejia Xu, Hanxue Liang, Zhangyang Wang, Konstantinos N Plataniotis, Yao Zhao, and Yunchao Wei. Diffusion4d: Fast spatial-temporal consis-tent 4d generation via video diffusion models. arXiv preprint arXiv:2405.16645 , 2024. 1, 2 [19] Minghua Liu, Chao Xu, Haian Jin, Linghao Chen, Mukund Varma T, Zexiang Xu, and Hao Su. One-2-3-45: Any single image to 3d mesh in 45 seconds without per-shape optimiza-tion. Advances in Neural Information Processing Systems ,36, 2024. 2 [20] Ruoshi Liu, Rundi Wu, Basile Van Hoorick, Pavel Tok-makov, Sergey Zakharov, and Carl Vondrick. Zero-1-to-3: Zero-shot one image to 3d object. In Proceedings of the IEEE/CVF international conference on computer vision ,pages 9298–9309, 2023. 2 [21] Yuan Liu, Cheng Lin, Zijiao Zeng, Xiaoxiao Long, Lingjie Liu, Taku Komura, and Wenping Wang. Syncdreamer: Gen-erating multiview-consistent images from a single-view im-age. arXiv preprint arXiv:2309.03453 , 2023. [22] Xiaoxiao Long, Yuan-Chen Guo, Cheng Lin, Yuan Liu, Zhiyang Dou, Lingjie Liu, Yuexin Ma, Song-Hai Zhang, Marc Habermann, Christian Theobalt, et al. Wonder3d: Sin-gle image to 3d using cross-domain diffusion. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 9970–9980, 2024. 2 [23] Zhang Longwen, Wang Ziyu, Zhang Qixuan, Qiu Qiwei, Pang Anqi, Jiang Haoran, Yang Wei, Xu Lan, and Yu Jingyi. Clay: A controllable large-scale generative model for creat-
+
+9ing high-quality 3d assets. arXiv preprint arXiv:2406.13897 ,2024. 2 [24] Tiange Luo, Chris Rockwell, Honglak Lee, and Justin Johnson. Scalable 3d captioning with pretrained models. 
+
+Advances in Neural Information Processing Systems , 36: 75307–75337, 2023. 5 [25] Chuofan Ma, Yi Jiang, Junfeng Wu, Jihan Yang, Xin Yu, Ze-huan Yuan, Bingyue Peng, and Xiaojuan Qi. Unitok: A uni-fied tokenizer for visual generation and understanding. arXiv preprint arXiv:2502.20321 , 2025. 3, 5, 6 [26] Luke Melas-Kyriazi, Iro Laina, Christian Rupprecht, and Andrea Vedaldi. Realfusion: 360deg reconstruction of any object from a single image. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pages 8446–8455, 2023. 2 [27] Ben Mildenhall, Pratul P Srinivasan, Matthew Tancik, Jonathan T Barron, Ravi Ramamoorthi, and Ren Ng. Nerf: Representing scenes as neural radiance fields for view syn-thesis. Communications of the ACM , 65(1):99–106, 2021. 2[28] Charlie Nash, Yaroslav Ganin, SM Ali Eslami, and Peter Battaglia. Polygen: An autoregressive generative model of 3d meshes. In International conference on machine learning ,pages 7220–7229. PMLR, 2020. 3 [29] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas M¨ uller, Joe Penna, and Robin Rombach. Sdxl: Improving latent diffusion mod-els for high-resolution image synthesis. arXiv preprint arXiv:2307.01952 , 2023. 2 [30] Ben Poole, Ajay Jain, Jonathan T Barron, and Ben Milden-hall. Dreamfusion: Text-to-3d using 2d diffusion. arXiv preprint arXiv:2209.14988 , 2022. 1, 2 [31] Ben Poole, Ajay Jain, Jonathan T Barron, and Ben Milden-hall. Dreamfusion: Text-to-3d using 2d diffusion. arXiv preprint arXiv:2209.14988 , 2022. 2 [32] Guocheng Qian, Jinjie Mai, Abdullah Hamdi, Jian Ren, Aliaksandr Siarohin, Bing Li, Hsin-Ying Lee, Ivan Sko-rokhodov, Peter Wonka, Sergey Tulyakov, et al. Magic123: One image to high-quality 3d object generation using both 2d and 3d diffusion priors. arXiv preprint arXiv:2306.17843 ,2023. 2 [33] Yongming Rao, Wenliang Zhao, Benlin Liu, Jiwen Lu, Jie Zhou, and Cho-Jui Hsieh. Dynamicvit: Efficient vision transformers with dynamic token sparsification. Advances in neural information processing systems , 34:13937–13949, 2021. 5 [34] Jiawei Ren, Cheng Xie, Ashkan Mirzaei, Karsten Kreis, Zi-wei Liu, Antonio Torralba, Sanja Fidler, Seung Wook Kim, Huan Ling, et al. L4gm: Large 4d gaussian reconstruction model. Advances in Neural Information Processing Systems ,37:56828–56858, 2024. 1, 2, 6, 7 [35] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bj¨ orn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10684–10695, 2022. 2 [36] Qiuhong Shen, Xingyi Yang, and Xinchao Wang. Anything-3d: Towards single-view anything reconstruction in the wild. 
+
+arXiv preprint arXiv:2304.10261 , 2023. 2 [37] Ruoxi Shi, Hansheng Chen, Zhuoyang Zhang, Minghua Liu, Chao Xu, Xinyue Wei, Linghao Chen, Chong Zeng, and Hao Su. Zero123++: a single image to consistent multi-view dif-fusion base model. arXiv preprint arXiv:2310.15110 , 2023. 2[38] Yawar Siddiqui, Antonio Alliegro, Alexey Artemov, Ta-tiana Tommasi, Daniele Sirigatti, Vladislav Rosov, Angela Dai, and Matthias Nießner. Meshgpt: Generating triangle meshes with decoder-only transformers. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 19615–19625, 2024. 3 [39] Uriel Singer, Shelly Sheynin, Adam Polyak, Oron Ashual, Iurii Makarov, Filippos Kokkinos, Naman Goyal, Andrea Vedaldi, Devi Parikh, Justin Johnson, and Yaniv Taigman. Text-to-4d dynamic scene generation. arXiv:2301.11280 ,2023. 1, 2 [40] Uriel Singer, Shelly Sheynin, Adam Polyak, Oron Ashual, Iurii Makarov, Filippos Kokkinos, Naman Goyal, Andrea Vedaldi, Devi Parikh, Justin Johnson, et al. Text-to-4d dy-namic scene generation. arXiv preprint arXiv:2301.11280 ,2023. 1 [41] Peize Sun, Yi Jiang, Shoufa Chen, Shilong Zhang, Bingyue Peng, Ping Luo, and Zehuan Yuan. Autoregressive model beats diffusion: Llama for scalable image generation. arXiv preprint arXiv:2406.06525 , 2024. 3, 5, 6 [42] Stanislaw Szymanowicz, Chrisitian Rupprecht, and Andrea Vedaldi. Splatter image: Ultra-fast single-view 3d recon-struction. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10208– 10217, 2024. 2 [43] Junshu Tang, Tengfei Wang, Bo Zhang, Ting Zhang, Ran Yi, Lizhuang Ma, and Dong Chen. Make-it-3d: High-fidelity 3d creation from a single image with diffusion prior. In Pro-ceedings of the IEEE/CVF international conference on com-puter vision , pages 22819–22829, 2023. 2 [44] Tencent Hunyuan3D Team. Hunyuan3d 2.0: Scaling diffu-sion models for high resolution textured 3d assets generation, 2025. 2 [45] Keyu Tian, Yi Jiang, Zehuan Yuan, Bingyue Peng, and Li-wei Wang. Visual autoregressive modeling: Scalable image generation via next-scale prediction. Advances in neural in-formation processing systems , 37:84839–84865, 2025. 3 [46] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timoth´ ee Lacroix, Baptiste Rozi` ere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. 
+
+arXiv preprint arXiv:2302.13971 , 2023. 5 [47] Aaron Van den Oord, Nal Kalchbrenner, Lasse Espeholt, Oriol Vinyals, Alex Graves, et al. Conditional image genera-tion with pixelcnn decoders. Advances in neural information processing systems , 29, 2016. 3 [48] Aaron Van Den Oord, Oriol Vinyals, et al. Neural discrete representation learning. Advances in neural information pro-cessing systems , 30, 2017. 3 
+
+10 [49] Kailu Wu, Fangfu Liu, Zhihan Cai, Runjie Yan, Hanyang Wang, Yating Hu, Yueqi Duan, and Kaisheng Ma. Unique3d: High-quality and efficient 3d mesh generation from a single image. arXiv preprint arXiv:2405.20343 , 2024. 2 [50] Zijie Wu, Chaohui Yu, Yanqin Jiang, Chenjie Cao, Fan Wang, and Xiang Bai. Sc4d: Sparse-controlled video-to-4d generation and motion transfer. In European Conference on Computer Vision , pages 361–379. Springer, 2024. 1, 2 [51] Haozhe Xie, Hongxun Yao, Xiaoshuai Sun, Shangchen Zhou, and Shengping Zhang. Pix2vox: Context-aware 3d reconstruction from single and multi-view images. In Pro-ceedings of the IEEE/CVF international conference on com-puter vision , pages 2690–2698, 2019. 5 [52] Yiming Xie, Chun-Han Yao, Vikram Voleti, Huaizu Jiang, and Varun Jampani. Sv4d: Dynamic 3d content generation with multi-frame and multi-view consistency. arXiv preprint arXiv:2407.17470 , 2024. 2 [53] Yiming Xie, Chun-Han Yao, Vikram Voleti, Huaizu Jiang, and Varun Jampani. Sv4d: Dynamic 3d content generation with multi-frame and multi-view consistency. arXiv preprint arXiv:2407.17470 , 2024. 1 [54] Dejia Xu, Yifan Jiang, Peihao Wang, Zhiwen Fan, Yi Wang, and Zhangyang Wang. Neurallift-360: Lifting an in-the-wild 2d photo to a 3d object with 360deg views. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 4479–4489, 2023. 2 [55] Jiale Xu, Weihao Cheng, Yiming Gao, Xintao Wang, Shenghua Gao, and Ying Shan. Instantmesh: Efficient 3d mesh generation from a single image with sparse-view large reconstruction models. arXiv preprint arXiv:2404.07191 ,2024. 2 [56] Liying Yang, Chen Liu, Zhenwei Zhu, Ajian Liu, Hui Ma, Jian Nong, and Yanyan Liang. Not all frame features are equal: Video-to-4d generation via decoupling dynamic-static features. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 7494–7504, 2025. 1, 2 [57] Chun-Han Yao, Yiming Xie, Vikram Voleti, Huaizu Jiang, and Varun Jampani. Sv4d 2.0: Enhancing spatio-temporal consistency in multi-view video diffusion for high-quality 4d generation. arXiv preprint arXiv:2503.16396 , 2025. 1, 2, 6, 7[58] Yuyang Yin, Dejia Xu, Zhangyang Wang, Yao Zhao, and Yunchao Wei. 4dgen: Grounded 4d content gen-eration with spatial-temporal consistency. arXiv preprint arXiv:2312.17225 , 2023. 1 [59] Wang Zeng, Sheng Jin, Wentao Liu, Chen Qian, Ping Luo, Wanli Ouyang, and Xiaogang Wang. Not all tokens are equal: Human-centric visual analysis via token clustering transformer. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 11101– 11111, 2022. 5 [60] Yifei Zeng, Yanqin Jiang, Siyu Zhu, Yuanxun Lu, Youtian Lin, Hao Zhu, Weiming Hu, Xun Cao, and Yao Yao. Stag4d: Spatial-temporal anchored generative 4d gaussians. In Eu-ropean Conference on Computer Vision , pages 163–179. Springer, 2025. 1, 2, 5, 6, 7 [61] Biao Zhang, Jiapeng Tang, Matthias Niessner, and Peter Wonka. 3dshape2vecset: A 3d shape representation for neu-ral fields and generative diffusion models. ACM Transactions on Graphics (TOG) , 42(4):1–16, 2023. 2 [62] Bowen Zhang, Sicheng Xu, Chuxin Wang, Jiaolong Yang, Feng Zhao, Dong Chen, and Baining Guo. Gaussian varia-tion field diffusion for high-fidelity video-to-4d synthesis. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 12502–12513, 2025. 1, 2, 6, 7 [63] Haiyu Zhang, Xinyuan Chen, Yaohui Wang, Xihui Liu, Yunhong Wang, and Yu Qiao. 4diffusion: Multi-view video diffusion model for 4d generation. arXiv preprint arXiv:2405.20674 , 2024. 1, 2 [64] Zibo Zhao, Wen Liu, Xin Chen, Xianfang Zeng, Rui Wang, Pei Cheng, Bin Fu, Tao Chen, Gang Yu, and Shenghua Gao. Michelangelo: Conditional 3d shape generation based on shape-image-text aligned latent representation. Advances in Neural Information Processing Systems , 36, 2024. 2 [65] Zi-Xin Zou, Zhipeng Yu, Yuan-Chen Guo, Yangguang Li, Ding Liang, Yan-Pei Cao, and Song-Hai Zhang. Triplane meets gaussian splatting: Fast and generalizable single-view 3d reconstruction with transformers. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 10324–10335, 2024. 2 
+
+11
