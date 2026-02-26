@@ -1,0 +1,943 @@
+Title: D-Flow SGLD: Source-Space Posterior Sampling for Scientific Inverse Problems with Flow Matching
+
+URL Source: https://arxiv.org/pdf/2602.21469v1
+
+Published Time: Thu, 26 Feb 2026 01:21:03 GMT
+
+Number of Pages: 43
+
+Markdown Content:
+# D-Flow SGLD: Source-Space Posterior Sampling for Scientific Inverse Problems with Flow Matching 
+
+Meet Hemant Parikh a, Yaqin Chen b, Jian-Xun Wang a,b 
+
+> aSibley School of Mechanical and Aerospace Engineering, Cornell University, Ithaca, NY, USA
+> bDepartment of Aerospace and Mechanical Engineering, University of Notre Dame, Notre Dame, IN, USA
+
+Abstract 
+
+Data assimilation and scientific inverse problems require reconstructing high-dimensional physical states from sparse and noisy observations, ideally with uncertainty-aware posterior samples that remain faithful to learned priors and governing physics. While training-free conditional gener-ation is well developed for diffusion models, corresponding conditioning and posterior sampling strategies for Flow Matching (FM) priors remain comparatively under-explored, especially on sci-entific benchmarks where fidelity must be assessed beyond measurement misfit. In this work, we study training-free conditional generation for scientific inverse problems under FM priors and or-ganize existing inference-time strategies by where measurement information is injected: (i) guided transport dynamics that perturb sampling trajectories using likelihood information, and (ii) source-distribution inference that performs posterior inference over the source variable while keeping the learned transport fixed. Building on the latter, we propose D-Flow SGLD, a source-space poste-rior sampling method that augments differentiable source inference with preconditioned stochastic gradient Langevin dynamics, enabling scalable exploration of the source posterior induced by new measurement operators without retraining the prior or modifying the learned FM dynamics. We benchmark representative methods from both families on a hierarchy of problems: 2D toy pos-teriors, chaotic Kuramoto–Sivashinsky trajectories, and wall-bounded turbulence reconstruction. Across these settings, we quantify trade-offs among measurement assimilation, posterior diversity, and physics/statistics fidelity, and establish D-Flow SGLD as a practical FM-compatible posterior sampler for scientific inverse problems. 
+
+Keywords: Training-free conditional generation, Data assimilation, Turbulence reconstruction, Generative modeling, Scientific inverse problems 
+
+> arXiv:2602.21469v1 [cs.LG] 25 Feb 2026
+
+1. Introduction 
+
+Scientific inference tasks such as data assimilation and inverse problems seek to reconstruct an unknown high-dimensional physical state from indirect, sparse, and noisy observations. In many settings, the forward map is known (e.g., a measurement operator, a numerical solver, or a sensor model), but the posterior distribution over states remains highly non-Gaussian and multimodal, making uncertainty quantification (UQ) computationally challenging for classical sampling-based Bayesian workflows [1]. Recently, deep generative models have emerged as powerful data-driven priors that can represent complex distributions over scientific fields, trajectories, and turbulent fluc-tuations [2–4]. Beyond unconditional generation, practical scientific use often requires conditional 
+
+generation: sampling states that are simultaneously (i) consistent with observations or constraints and (ii) plausible under the learned prior and, when applicable, the governing physics [2, 5, 6]. Score-based diffusion models and related denoising-based generators have enabled compelling results across scientific surrogates and conditional reconstruction [7–12]. A key appeal in inverse problems is the ability to reuse an unconditional prior and impose new observation models at test time, thereby avoiding retraining for each forward operator or sensing configuration [5, 13]. This 
+
+training-free (or zero-shot ) conditioning paradigm is particularly attractive in scientific applications where paired training data for every measurement setup is unavailable and where one wishes to probe posterior uncertainty under changing experimental conditions [14–16]. Among recent generative paradigms, Flow Matching (FM) offers a simulation-free training ob-jective for continuous-time generative models by regressing a time-dependent vector field along a prescribed probability path between a simple source distribution and the data distribution [17]. FM subsumes diffusion-type probability paths as special cases and also supports alternative path families (e.g., optimal transport-inspired constructions), which can lead to favorable practical trade-offs in training robustness and sampling efficiency depending on the chosen path and numerical solver [18]. Despite this promise, FM remains less explored in scientific applications, with only a small but growing set of works on PDE-driven systems, physics-constrained sampling, and turbulence recon-struction [4, 19–22]. More importantly for inverse problems, training-free conditional generation, i.e., conditioning a fixed pretrained prior on new measurement operators without retraining, is well established for diffusion models [5] but comparatively under-developed for FM [4], especially under scientific fidelity requirements that go beyond measurement misfit. As a result, it is still unclear 2how existing FM-compatible conditioning strategies behave across operators and noise regimes, and which approaches best preserve physics-relevant structure and statistics. This gap motivates (i) a systematic benchmark of training-free conditioning methods within the FM framework and (ii) scalable FM-compatible posterior samplers tailored to scientific datasets. Existing training-free approaches can be organized by where measurement information is in-jected at inference time: (i) guided transport dynamics (trajectory-level conditioning) versus (ii) 
+
+source-distribution inference (source-space conditioning). Both families aim to sample from a pos-terior induced by the observation model; they differ in whether the conditioning modifies the trans-port dynamics during generation or instead performs inference over the source variable/distribu-tion while keeping the learned transport fixed. A first family conditions generation by perturbing the sampling dynamics using likelihood information, closely related to diffusion posterior sampling and guidance-based solvers [5, 13]. In practice, these methods modify the drift of the genera-tive ODE/SDE (or its discretized update) so that the evolving sample is continuously pulled to-ward measurement-consistent regions, yielding an integration-with-guidance procedure rather than retraining the prior [23–25]. Representative instantiations include plug-and-play style flow guid-ance [26] and annealing-based schedules that control the strength of likelihood injection along the trajectory [25]. Recent extensions also incorporate gradient-free or particle-based mechanisms to improve robustness and diversity [14, 27]. While effective in many imaging restoration problems, dynamics-level guidance can be delicate in scientific settings: aggressive enforcement of measurement consistency may drive intermediate states into regions poorly supported by the learned prior, and can complicate the preservation of physically meaningful structure across scales. A second family keeps the learned transport dynamics fixed and instead performs inference over the source field that initializes the transport map, seeking a source posterior whose pushforward yields measurement-consistent states [28–32]. Approaches such as D-Flow optimize the source by differentiating through the ODE solver [29], while related methods leverage consistency models for efficient source opti-mization [28]. More recent works have explored source guidance using stochastic dynamics [30] or gradient-free inference [32] to estimate the source posterior. Theoretically, this paradigm is at-tractive for scientific problems because conditional samples remain exact outputs of the pretrained transport, but it introduces practical trade-offs between the cost of repeated forward/adjoint solves and the need for well-mixed, diverse posterior ensembles. 3In this work, we study training-free conditional generation for scientific inverse problems in the FM framework and address the lack of scalable posterior sampling methods that preserve physics-relevant structure. Concretely, we (i) provide a systematic benchmark of representative training-free conditioning strategies for FM priors, covering both guided transport dynamics and source-distribution inference, and evaluate them under complementary criteria that distinguish measurement assimilation from prior/physics fidelity; and (ii) introduce D-Flow SGLD , a source-space posterior sampling approach that augments differentiable source inference with preconditioned 
+
+stochastic gradient Langevin dynamics (SGLD) [33], enabling efficient exploration of the source posterior induced by new measurement operators without modifying the learned FM dynamics or retraining the prior. We validate these ideas across a hierarchy of inverse problems, including 2D toy problems with a high-quality reference posterior, chaotic Kuramoto–Sivashinsky trajectories with PDE-residual fidelity, and wall-bounded turbulence reconstruction with spectral diagnostics, thereby clarifying when dynamics-level guidance versus source-space inference is more reliable and providing a practical FM-compatible posterior sampler for scientific inverse problems. 
+
+2. Methodology 
+
+We study training-free Bayesian inverse problems using a pretrained, unconditional flow match-ing prior. Given a generative transport map learned from representative data, our goal is to ap-proximate the posterior distribution induced by partial and noisy observations without retraining the generative model. We organize inference-time conditioning according to where measurement in-formation enters the generative procedure: (i) velocity-field guidance , which modifies the transport dynamics during sampling using likelihood-driven corrections; and (ii) source-space guidance , which keeps the learned transport unchanged and instead performs inference over the source variables, pushing inferred sources forward through the fixed map. Within the source-space family, existing approaches are typically deterministic (MAP) optimizers, such as D-Flow. We introduce a stochastic variant, D-Flow SGLD , which targets the source posterior via SGLD and returns posterior samples by a single pushforward. 
+
+2.1. Bayesian inverse problems with a flow-matching prior 
+
+Given a physical state x1 ∈ Rn (e.g., 2D/3D velocity fields) and noisy, partial measurements 
+
+y ∈ Rm with m ≪ n, we seek to reconstruct x1 in a manner that is both physically plausible and 4consistent with y. We assume a (possibly nonlinear) state-to-observable operator F : Rn → Rm
+
+with additive noise, 
+
+y = F(x1) + ϵ, ϵ ∼ pϵ, (1) which defines a likelihood p(y|x1). Common instances include masked or cropped observations, sparse sensors, linear projections, and nonlinear derived quantities (e.g., vorticity). For Gaussian noise ϵ ∼ N (0 , σ 2 
+
+> y
+
+I), − log p(y|x1) = (2 σ2 
+
+> y
+
+)−1∥y − F (x1)∥22 + const . The Bayesian inverse problem is to characterize the posterior, 
+
+p(x1|y) ∝ p(y|x1)p(x1). (2) where p1 = p(x1) is a learned prior over physically plausible states. In this work we consider both (i) point estimation via the maximum a posteriori (MAP) solution, 
+
+xMAP ∈ arg min 
+
+> x1
+
+  − log p(y|x1) − log p(x1), (3) and (ii) posterior sampling for uncertainty quantification and downstream statistics. 
+
+2.2. Flow matching prior: transport map learned by (OT-)CFM 
+
+We parameterize the learned prior p1 via a deterministic transport map Tθ defined by the ODE 
+
+dxτ
+
+dτ = νθ(τ, xτ ), x0 ∼ p0, x1 = Tθ(x0), τ ∈ [0 , 1] , (4) so that p1 = p(x1) is a prior approximation of data distribution. In all inverse problems considered below, Tθ (equivalently νθ) is pretrained once on representative unconditional data and then held fixed. We train νθ using CFM [17] and its mini-batch optimal-transport variant (OT-CFM) [18]. 
+
+Flow matching and conditionalization. Let {pτ }τ ∈[0 ,1] denote a (generally intractable) marginal path of densities connecting p0 and p1, with associated marginal velocity field ν(τ, x) satisfying the continuity equation. Flow matching learns νθ by matching this marginal velocity in mean square, 
+
+LFM (θ) = Eτ ∼U [0 ,1] , xτ ∼pτ
+
+h
+
+νθ(τ, xτ ) − ν(τ, xτ ) 22
+
+i
+
+. (5) The difficulty is that both sampling xτ ∼ pτ and evaluating the marginal velocity ν are intractable. CFM addresses this by representing the marginal path as a mixture of tractable conditional paths. Namely, an auxiliary variable z ∼ q(z) and conditional densities pτ (·| z) are introduced such that, 
+
+pτ (x) = 
+
+ˆ
+
+pτ (x|z)q(z)dz. (6) 5Each conditional path is equipped with a known conditional velocity ν(τ, x|z) (chosen by design). For mixtures of continuity-equation solutions, the induced marginal velocity satisfies the standard identity [17] 
+
+ν(τ, x) = Ez∼q(z|x,τ )
+
+ν(τ, x|z), q(z|x, τ ) = pτ (x|z)q(z)
+
+pτ (x) , (7) i.e., the marginal velocity is the posterior expectation of the conditional velocity under the mixing variable. CFM then replaces the intractable regression target ν(τ, x) in (5) with the tractable conditional target ν(τ, x|z) by sampling from the conditional paths: 
+
+LCFM (θ) = Eτ ∼U [0 ,1] , z∼q(z), xτ ∼pτ (·| z)
+
+h
+
+νθ(τ, xτ ) − ν(τ, xτ |z) 22
+
+i
+
+. (8) Under the regularity conditions in [17], ∇θLCFM matches ∇θLFM up to a constant, so minimizing (8) yields a consistent estimator of the marginal velocity field along {pτ } while avoiding likelihood evaluation and Jacobian-trace computation. 
+
+OT-CFM instantiation. CFM admits substantial flexibility in the choice of the auxiliary variable 
+
+z ∼ q(z) and the associated conditional path family {pτ (·| z), ν(τ, ·| z)}. In general, z can encode (i) independently sampled endpoint pairs (x0, x1), (ii) structured couplings between p0 and p1 (e.g., optimal-transport plans), or (iii) other latent constructions that yield tractable intermediate dis-tributions and known conditional velocities [18]. These choices affect the geometry of the learned transport; in particular, stronger endpoint couplings tend to bias training toward straighter trajec-tories and faster ODE sampling. In this work we use the mini-batch 2-Wasserstein OT coupling of Tong et al. [18]. Concretely, we set the auxiliary variable to the pair of endpoints z = ( x0, x1) sampled from a mini-batch OT plan π(x0, x1). For each mini-batch we form an approximate 2-Wasserstein coupling between source samples {x(i)0 }Bi=1 ∼ p0 and data samples {x(i)1 }Bi=1 ∼ p1, sample (x0, x1) ∼ π, and define a Gaussian bridge with linearly interpolated mean, 
+
+pτ (xτ |x0, x1) = N  (1 − τ )x0 + τ x1, σ 2I, (9a) 
+
+ν(τ, xτ |x0, x1) = x1 − x0. (9b) We optimize (8) by sampling xτ ∼ pτ (· | x0, x1). The OT pairing biases training toward low-cost couplings and empirically yields near-straight transport trajectories, which reduces the numerical stiffness of (4) and decreases the number of ODE function evaluations required to sample from the 6pretrained prior. Training details (mini-batch OT solver, σ, network architecture, and optimizer settings) are reported in Section Appendix D. 
+
+2.3. Training-free conditioning I: guided transport dynamics 
+
+Velocity-field guidance targets training-free conditional sampling from the posterior p(x1|y)
+
+by modifying the sampling dynamics of a fixed, pretrained OT-CFM prior at inference time. The guiding principle parallels posterior score guidance in diffusion models: when a sampler can be writ-ten as a probability-flow ODE, replacing the prior score by the posterior score ∇x1 log p(x1|y) = 
+
+∇x1 log p(x1) + ∇x1 log p(y|x1) introduces an additive likelihood-driven correction [5, 34, 35]. We adopt the same structure in the flow-matching setting by augmenting the OT-CFM transport ve-locity with an approximate likelihood-gradient term. A derivation of the score/flow connection and its relation to probability-flow dynamics is provided in Appendix A. 
+
+Guided transport ODE.. Let νθ(τ, x) denote the pretrained OT-CFM velocity field defining the unconditional prior transport (4). We define the guided dynamics 
+
+dxτ
+
+dτ = νθ(τ, xτ ) + λ(τ )g(τ, xτ ; y), τ ∈ [0 , 1] , (10) where λ(τ ) ≥ 0 is a guidance schedule and g is chosen to increase measurement consistency (like-lihood) while remaining compatible with the learned prior transport. The correction field g is not unique in general. We choose it to align with the likelihood score, since ∇x1 log p(y|x1) gives the steepest-ascent direction for increasing data likelihood, and it arises naturally as the additional term when inserting the posterior-score decomposition into probability-flow ODEs for diffusion models (see derivation in Appendix A). In practice, because F is defined on the clean state while xτ is an intermediate transport state, we evaluate the likelihood gradient at a denoised predictor bx1|τ
+
+constructed from xτ . Assuming Gaussian measurement noise, p(y|x1) = N (F(x1), σ 2 
+
+> y
+
+I), we have 
+
+∇x1 log p(y|x1) = − 1
+
+σ2
+
+> y
+
+∇x1 ∥y − F (x1)∥22. (11) For OT-CFM, we use a straight-path one-step predictor 
+
+bx1|τ = xτ + (1 − τ )νθ(τ, xτ ), (12) and define the correction direction by the plug-in gradient, 
+
+g(τ, xτ ; y) ∝ ∇xτ log p(y | bx1|τ ) = − 1
+
+σ2
+
+> y
+
+∇xτ y − F  bx1|τ
+
+ 22 . (13) Gradients are obtained by autodiff through F and (optionally) through the predictor (12). 7Grad-free vs. Grad implementations. Equation (13) may backpropagate through νθ inside bx1|τ . We report two implementations: (i) Grad-free , which stops gradients through νθ in (12) (lower cost, biased correction), and (ii) Grad , which differentiates through νθ (higher cost, typically sharper conditioning). 
+
+Normalized guidance and tuning. To stabilize tuning across inverse problems, we normalize the data-misfit gradient direction and scale it by a user-defined strength b and the magnitude of the unconditional velocity: 
+
+g(τ, xτ ; y) = −b∥νθ(τ, xτ )∥2
+
+∇xτ y − F  bx1|τ
+
+ 22
+
+∇xτ y − F  bx1|τ
+
+ 22 2 + ε, (14) with ε > 0 preventing division by zero. The λ(τ ) and b are reported in Section Appendix D. 
+
+2.4. Training-free conditioning II: source-space posterior sampling (D-Flow SGLD) 
+
+Velocity-field guidance (Section 2.3) enforces measurement consistency by perturbing the pre-trained transport dynamics. While effective and fully training-free, this strategy introduces practical trade-offs: conditional trajectories depend on the guidance schedule and strength, and the correction direction is typically constructed from plug-in likelihood gradients evaluated at a denoised predic-tor. As a result, aggressive guidance can bias the sampling path, increase path length (and hence numerical stiffness), and steer intermediate states toward regions that are less supported by the learned prior. These considerations motivate a complementary conditioning mechanism that keeps the pretrained transport map fixed and incorporates measurements only through inference over the source variables. 
+
+Source-space posterior induced by a fixed OT-CFM prior. Recall the pretrained transport represen-tation (4): x0 ∼ p0 and x1 = Tθ(x0), with p1 = ( Tθ)#p0. Conditioning on observations y with likelihood p(y | x1) induces a posterior over the source variable, 
+
+p(x0|y) ∝ p (y|T θ(x0)) p0(x0). (15) This source-space guidance preserves the learned transport geometry and generates conditional samples by pushforward, 
+
+x(s)1 = Tθ(x(s)0 ), x(s)0 ∼ p(x0|y). (16) 8Deterministic source inference: D-Flow. A deterministic instance of (15) is obtained by computing the MAP estimate in source space, 
+
+x⋆ 
+
+> 0
+
+∈ arg min 
+
+> x0
+
+h
+
+− log p (y|T θ(x0)) − log p0(x0)
+
+i
+
+, x⋆ 
+
+> 1
+
+= Tθ(x⋆
+
+> 0
+
+), (17) which corresponds to D-Flow [29]. The objective in (17) can be viewed as a data-misfit term (e.g., induced by F and the noise model) plus an explicit regularization in the source space given by the negative log source prior. For the common choice p0 = N (0, I), we have − log p0(x0) =  
+
+> 12
+
+∥x0∥22 + const , yielding an ℓ2 regularizer that keeps the inferred source sample within typical-set regions of the pretrained generator, but is ignored in practice as the authors demonstrate that D-Flow is implicitly regularized by minimizing the negative log-likelihood as a function of the source sample x0 [29]. More generally, one may include additional problem-dependent penalties (e.g., smoothness, sparsity, or physics-inspired constraints) either as an augmented source regularizer or as a penalty on the reconstructed state: 
+
+x⋆ 
+
+> 0
+
+∈ arg min 
+
+> x0
+
+h
+
+− log p (y|T θ(x0)) − log p0(x0) + αR0(x0) + βR1
+
+ Tθ(x0)i
+
+, (18) with weights α, β ≥ 0. In practice, (17) (or (18) when used) is solved by gradient-based optimization, requiring differentiation through the measurement operator F and the fixed transport map Tθ (i.e., through the ODE solve defined by νθ). D-Flow returns a single high-probability reconstruction (a posterior mode) and therefore does not provide posterior uncertainty. 
+
+D-Flow SGLD for posterior sampling. To move beyond the point estimator (17) and quantify pos-terior uncertainty, we propose D-Flow SGLD , a training-free MCMC method that targets the full source posterior (15) and produces state-space samples by a single pushforward through the fixed transport map Tθ.We define a source-space energy whose Boltzmann distribution equals the desired posterior: 
+
+U (x0; y) = − log p (y|T θ(x0)) − log p0(x0) + αR0(x0) + βR1
+
+ Tθ(x0), (19) so that p(x0|y) ∝ exp {− U (x0; y)}. For p0 = N (0, I), the prior contributes − log p0(x0) = 
+
+> 12
+
+∥x0∥22 + const , which regularizes inference toward typical-set regions of the pretrained generator and stabilizes optimization in high-dimensional source spaces. 9We sample from exp {− U (x0; y)} using preconditioned stochastic gradient Langevin dynamics (SGLD) [33]: 
+
+xk+1 0 = xk 
+
+> 0
+
+− ηk Pk∇x0 U (xk 
+
+> 0
+
+; y) + p2ηkP1/2 
+
+> k
+
+ξk, ξk ∼ N (0, I), (20) where {ηk} is a stepsize schedule and Pk ≻ 0 is a (diagonal) adaptive preconditioner computed from running second-moment statistics of ∇x0 log p(y|T θ(x0)) . The preconditioner is applied con-sistently to both the drift and diffusion terms to improve mixing when different source coordinates exhibit highly anisotropic curvature. Each evaluation of ∇x0 U differentiates through the measure-ment operator F and the fixed transport map Tθ (i.e., through the ODE solve defined by νθ), but no retraining of νθ is required. In this work, M i.i.d. samples from a standard Gaussian dis-tribution, x(j),00 ∼ N (0 , I), initialize M parallel chains for D-Flow SGLD. To reduce burn-in and improve robustness under multi-modal posteriors, SGLD can be warm-started from partially opti-mized deterministic source MAP solutions. Concretely, we run a few steps of M independent MAP optimizations with distinct random seeds to obtain a set of candidate modes, {x(j)0,MAP }Mj=1 . These modes initialize the M SGLD chains as: 
+
+x0(j),0 = x0, MAP (j), j = 1 , . . . , M. (21) Although it incurs a slightly higher computational cost, this “deep-ensemble” approach yields parallel chains that explore distinct high-density basins of multi-modal posteriors while retaining a shared target energy across all chains. After burn-in, we collect source samples {xk 
+
+> 0
+
+}k∈K (optionally thinned to reduce autocorrelation) and return conditional samples in state space by pushforward: 
+
+x(j),k  
+
+> 1
+
+= Tθ(x(j),k  
+
+> 0
+
+), j = 1 , · · · , M, k ∈ K . (22) We refer to (20)–(22) as D-Flow SGLD . Pseudocode and hyperparameter settings (burn-in, thinning, stepsize schedule, and preconditioner construction) are provided in Appendix B and Appendix D respectively. 
+
+3. Numerical results 
+
+3.1. Data generation 
+
+We evaluate training-free conditioning on three datasets spanning increasing dimensionality and physical complexity. In all cases, the generative prior is trained on an unconditional training set, 10 while conditional generation are performed on a held-out validation set from the same distribution. 
+
+Toy distributions. We consider two standard two-dimensional benchmarks: the S-curve and the 
+
+two-moons distribution. For each dataset, we draw 10 ,240 i.i.d. samples to train the flow-matching prior; conditional experiments use a held-out validation set. Unless otherwise noted, samples are perturbed by isotropic Gaussian noise ϵ ∼ N (0 , σ 2I). Complete sampling details (parameterizations and scaling) are provided in Appendix C. 
+
+Kuramoto–Sivashinsky (KS) dynamics. We generate spatio-temporal solution trajectories u(x, t ) of the one-dimensional KS equation on a periodic domain of length L = 20 π using the spectral solver in JAX-CFD [36]. Each trajectory is stored on a uniform grid of size Nx × Nt = 256 × 256 with time step ∆t = 0 .2. Initial conditions u(x, 0) are sampled as random linear combinations of sinusoidal modes with random phases and amplitudes. In total we generate 10 ,000 trajectories and split them into training/validation sets for prior learning and conditional evaluation, respectively. 
+
+Turbulent channel flow (DNS). We use an incompressible channel-flow DNS at friction Reynolds number Re τ = 180 computed with our in-house GPU CFD solver Diff-FlowFSI [37]. From the simulation we extract 21 ,900 snapshots of the velocity fluctuations u′ = [ u′, v ′, w ′] at wall-normal location y+ = 40 , sampled with non-dimensional interval ∆t+ = 0 .4. Each snapshot is downsampled from the original nx × nz = 320 × 200 grid to 128 × 128 using bicubic interpolation. Conditional generation is evaluated on held-out validation sets not used for training. 
+
+3.2. Evaluation Metrics 
+
+We evaluate conditional generation using two complementary criteria: (i) measurement assimi-lation , i.e., whether generated samples are consistent with the observed data under the measurement operator; and (ii) prior/physics fidelity , i.e., whether conditional samples remain plausible under the learned data distribution and (when available) the governing physics. The first criterion is com-mon across all datasets, while the second is case-specific because “fidelity” has different operational definitions for toy distributions, PDE trajectories, and turbulent fields. 
+
+Measurement assimilation (data misfit). For each validation instance with observation y, we gen-erate N conditional samples {ˆx(i)1 }Ni=1 and compute predicted measurements ˆy(i) = F(ˆ x(i)1 ). We 11 report the mean absolute error (MAE), 
+
+MAE( y) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+1
+
+m ˆy(i) − y 1 , (23) and average them across all validation instances. 
+
+Case-specific prior/physics fidelity. Measurement consistency alone is insufficient in scientific inverse problems: a conditional method may match measurements while producing samples that deviate from the learned manifold or violate physics. We therefore evaluate fidelity using metrics tailored to each dataset: For the 2D toy problems, we form a high-quality reference posterior p(· | y) (via importance resampling) and quantify distributional agreement using the 1-Wasserstein distance: 
+
+W1
+
+
+
+p(· | y), ˆp(· | y)
+
+
+
+= inf 
+
+> γ∈Π
+
+ p(·| y),ˆp(·| y)
+
+ E(x,ˆx)∼γ [∥x − ˆx∥2] , (24) where Π( ·, ·) denotes the set of all joint distributions, whose marginals are p(· | y) and ˆp(· | y). We complement W1 with with conditional-sample visualizations to diagnose manifold violations. For KS dynamics, we measure physics fidelity by the PDE residual computed on generated trajectories using finite differences: 
+
+Rnj = un+1  
+
+> j
+
+− un−1
+
+> j
+
+2∆ t + unj
+
+unj+1 − unj−1
+
+2∆ x + unj+1 − 2unj + unj−1
+
+(∆ x)2 + unj+2 − 4unj+1 + 6 unj − 4unj−1 + unj−2
+
+(∆ x)4 .
+
+(25) where unj ≈ u(j∆x, n ∆t) is the numerical solution on a discrete grid with spatial step ∆x and time step ∆t. We summarize physics consistency by the mean absolute residual 1
+
+> NxNt
+
+P 
+
+> j,n
+
+|Rnj |, averaged over conditional samples and validation instances. For turbulent channel flow dataset, the fidelity is assessed using one-dimensional turbulent ki-netic energy (TKE) spectra in the streamwise ( kx) and spanwise ( kz ) directions. Let ˆui(k) denote the discrete Fourier transform of the i-th velocity component along a homogeneous direction; we compute 
+
+Euiui (k) = k ˆui(k)ˆ u∗ 
+
+> i
+
+(k) , (26) where ⟨·⟩ denotes averaging over the orthogonal homogeneous direction and over ensemble members. Matching these spectra indicates that conditional samples preserve the characteristic multiscale energy distribution of turbulence beyond pointwise agreement with measurements. 12 3.3. Case 1: Toy inverse problems 
+
+We begin with two two-dimensional benchmarks (S-curve and two-moons) as controlled testbeds for conditional sampling. These cases allow (i) direct visualization of conditional distributions and (ii) quantitative comparison against a high-quality reference posterior, making them well suited for diagnosing trade-offs between measurement assimilation and prior fidelity. We consider two observation operators that induce qualitatively different posteriors: 
+
+F1(x) = 5 |x0 − x1|, p(y|x) = N (F1(x), 0.01) ,
+
+F2(x) = x0 + x1 − 1.5, p(y|x) = N (F2(x), 0.1) .
+
+Operator F1 yields a sharply concentrated posterior, resembling scenarios enforcing physical con-straints (e.g., conservation laws), whereas F2 produces a substantially broader posterior due to higher measurement noise. For each operator, we form an empirical reference posterior using im-portance resampling and compare it to conditional samples generated by four training-free methods: velocity-field guidance (Grad / Grad-Free) and source-space inference (D-Flow / D-Flow SGLD). Figures 1 and 2 show unconditional samples from the learned prior (gray) and conditional samples (orange) for representative observations. Across both datasets, the source-space methods (D-Flow Ground Truth D-Flow D-Flow SGLD (Ours) Grad Grad -Free    
+
+> Figure 1: S-curve toy inverse problem. Conditional posterior samples ( N= 1000 , orange) overlaid on unconditional OT-CFM samples (gray). For velocity-field guidance, the correction strength is b= 3 .
+
+and D-Flow SGLD) produce conditional samples that largely remain supported on the learned data manifold, i.e., the orange points mostly lie on or near the gray S-curve/two-moons geometry, with a notable exception for D-Flow when the target posterior occupies the extreme tails of the distribution 13 Ground Truth D-Flow D-Flow SGLD (Ours) Grad Grad -Free Figure 2: Moon-curve toy inverse problem. Conditional posterior samples ( N = 1000 , orange) overlaid on uncondi-tional OT-CFM samples (gray). For velocity-field guidance, the correction strength is b = 3 
+
+as seen in the bottom row of Figure 2. In contrast, velocity-field guidance (Grad and Grad-Free) tends to inject the likelihood signal directly into the sampling dynamics and can enforce measure-ment consistency at the expense of prior fidelity: a non-negligible fraction of conditional samples visibly depart from the gray manifold and populate off-manifold regions. This effect is particu-larly apparent when the guidance strength is increased (please refer Appendix E), indicating that dynamics-level guidance can become overly dominated by the likelihood term and thereby distort the learned distribution. A second qualitative distinction is diversity. D-Flow often yields sharper, more concentrated conditional samples, consistent with deterministic source optimization for each sample. D-Flow SGLD generates a more dispersed set of samples, reflecting stochastic exploration in source space; this can better preserve posterior diversity in broader-posterior settings, but may also introduce low-probability samples that appear as thicker support or weak extra modes relative to the reference. To quantify distributional accuracy, we compute the 1-Wasserstein distance W1 between the empirical conditional distribution and the empirical reference posterior (Table 1; lower is better). D-Flow achieves optimal performance when the posterior is sharply concentrated, as observed under the measurement likelihood F1(·), with D-Flow SGLD ranking second. Conversely, under the mea-surement likelihood F2(·), which induces a more diffuse posterior, alternative approaches exhibit sharp performance degradation. Specifically, guided transport methods (Grad and Grad-Free) and deterministic D-Flow yield substantially higher 1-Wasserstein distances. In these broader posterior 14 S-Curve Two-moon Method F1(·) F2(·) F1(·) F2(·)
+
+D-Flow 0.189 0.449 0.056 0.251 D-Flow SGLD (Ours) 0.234 0.171 0.073 0.160 
+
+Grad (b=3) 0.357 0.625 0.129 0.603 Grad-Free (b=3) 0.442 0.596 0.132 0.559     
+
+> Table 1: 1-Wasserstein distance W1between the empirical reference posterior (importance resampling) and the empirical conditional distribution for the toy inverse problems (lower is better). Best and second-best results are highlighted in bold and underlined, respectively.
+
+regimes, D-Flow SGLD attains the lowest W1, confirming that stochastic source-space inference provides superior robustness. Finally, Grad and Grad-Free are sensitive to the guidance strength b: as b increases, condi-tional samples can become progressively more influenced by the likelihood, which may reduce data misfit but also increases off-manifold behavior. We provide a controlled comparison over b in Ap-pendix E (Figure E.11), illustrating that guidance-based methods require task-specific tuning to balance assimilation and prior fidelity. 
+
+3.4. Case 2: Kuramoto-Sivashinsky dynamics 
+
+We next evaluate training-free conditioning on solving inverse problems for the one-dimensional KS system, where each sample is a spatiotemporal field x ≡ u(x, t ) ∈ RNx×Nt . We train an OT-CFM prior using a U-Net velocity model νθ(τ, x) (architecture details in Appendix D). At test time, we condition on partial observations without retraining νθ and compare four training-free methods: Grad, Grad-Free, D-Flow, and our D-Flow SGLD. We consider two canonical conditional sampling tasks for chaotic dynamics. The first is one-shot temporal forecasting: given the first r time frames, we sample the future segment t > r , i.e., from 
+
+p u(x, t ) | u(x, t ≤ r). The associated measurement operator extracts the observed prefix, 
+
+y = F1(u) ≡ u(x, t ≤ r). (27) The second case is to reconstruct the full spatiotemporal field from pointwise measurements at a set of sensor locations, S = {(ˆ xℓ, ˆtℓ)}|S| 
+
+> ℓ=1
+
+, scattered randomly within the space-time domain. The 15 measurement operator, F2, extracts the sensor measurements from the full field: 
+
+y = F2(u) ≡ { u(ˆ xℓ, ˆtℓ)}|S| 
+
+> ℓ=1
+
+. (28) To probe robustness, we evaluate both noise-free observations and observations corrupted by 10% 
+
+additive noise (relative to the signal scale used in normalization). Following Section 3.2, we separate measurement assimilation (MAE in the observed region) from prior/physics fidelity (KS PDE residual). Figures 3 and 4 visualize temporal forecasting under noise-free and noisy measurements, respectively. The top row shows the measurement (first column) and one representative conditional sample from each method; the white line marks the conditioning boundary t = r, and the region t > r is the forecast window. For each method we generate an ensemble of conditional samples given y and display one randomly selected realization; we generate 
+
+100 samples for Grad, Grad-Free, and D-Flow SGLD, and 20 samples for D-Flow due to its substan-tially higher inference cost (Table 2). In the noise-free case (Figure 3), all methods produce visually D-Flow D-Flow SGLD Grad Grad -Free          
+
+> 𝑅 !
+> " MAE( y, y$) x$
+> y
+> Figure 3: KS temporal forecasting with noise-free measurements. (top row) The ground truth measurement is shown in the first column, followed by a conditionally generated sample from each method. The region below the white line ( t > r ) is the forecasting portion. (middle row) Pointwise data assimilation error (MAE). (bottom row) The PDE residual, Rnj, computed over the entire generated field to assess physical plausibility.
+
+coherent continuations of the observed prefix without obvious seams at the conditioning boundary. Under 10% measurement noise (Figure 4), differences are more pronounced: Grad-Free exhibits a 16 D-Flow D-Flow SGLD Grad Grad -Free          
+
+> 𝑅 !
+> " MAE( y, y$) x$
+> yFigure 4: KS temporal forecasting with 10% noise corruption. (top row) The ground truth measurement is shown in the first column, followed by a conditionally generated sample from each method. The region below the white line ( t > r ) is the forecasting portion. (middle row) Pointwise data assimilation error (MAE). (bottom row) The PDE residual, Rnj, computed over the entire generated field to assess physical plausibility.
+
+sharp interface near t = r, indicating sensitivity to corrupted observations. In contrast, D-Flow and D-Flow SGLD produce smoother continuations that remain visually consistent with the spatiotem-poral structures learned by the prior. The middle rows in Figures 3-4 visualize pointwise MAE on the observed region. As expected for dynamics-level guidance, Grad and (when stable) Grad-Free attain lower MAE than the source-space methods by injecting likelihood information directly into the sampling dynamics, with especially small errors in the noise-free case. The bottom rows assess physics fidelity via the KS residual Rnj : large residual values indicate violation of the governing KS equation . In the noise-free setting, all methods yield relatively small residuals, suggesting that the generated trajectories remain close to KS-consistent dynamics. Under noisy measurements, however, Grad and Grad-Free produce markedly larger residuals across the field. Importantly, the residual increase is not confined to the forecast window t > r ; it is especially elevated in the ob-served region t ≤ r, indicating that the guidance can overfit noise in the measurements in a way that breaks KS consistency even where data are enforced. By contrast, D-Flow and D-Flow SGLD maintain substantially lower residuals in the noisy case, suggesting that source-space inference is 17 Noise=0% Noise=10% 
+
+> Inpainting Sparse sensors
+> 𝑅 !
+> " 𝑅 !
+> "
+
+a) b) 
+
+c) d) Figure 5: Mean absolute PDE residual, R, for the different guidance methods applied in KS system. The results are shown for two inverse problems: temporal forecasting (a-b) and reconstruction from sparse sensors (c-d). Each problem is tested with both noise-free measurements (a, c) and measurements corrupted by 10% noise (b, d). Bar heights represent the mean residual, and error bars denote the standard deviation across generated samples. 
+
+more robust to corrupted observations: it avoids forcing the trajectory to match noise. We observe the same qualitative trend in the sparse-sensor reconstruction task; additional results are provided in Section Appendix F. Figure 5 summarizes physics fidelity across validation instances using the mean absolute KS residual, R = 1
+
+> NtNx
+
+PNt
+
+> n=1
+
+PNx 
+
+> j=1
+
+|Rnj |, reported as mean (bar height) and standard deviation (error bar) over generated conditional samples for each validation instance and scenario. Across both inverse problems (temporal forecasting and sparse-sensor reconstruction) and both noise levels, D-Flow SGLD achieves consistently lowest residuals, indicating robust adherence to the governing KS dynamics even when observations are corrupted. D-Flow achieves comparable mean residuals in several settings but exhibits substantially larger variability in some cases, consistent with sensitiv-ity of deterministic source optimization to the conditioning instance and optimization landscape; moreover, its high inference cost limits practical ensemble generation. Grad and Grad-Free yield moderate residuals for noise-free measurements but degrade sharply under 10% noise, with orders-18 of-magnitude increases in R and, for Grad, pronounced variability (large STD). This behavior is consistent with dynamics-level guidance over-assimilating noisy observations, thereby sacrificing KS consistency and reducing reliability of the resulting conditional samples. 
+
+3.5. Case 3: Wall-bounded Turbulent Flow 
+
+For the final case, we learn an unconditional OT-CFM prior over near-wall velocity fluctuations 
+
+x ≡ u′ from a turbulent channel flow at wall-normal location y+ = 40 . Near-wall fluctuations play a central role in the self-sustaining mechanisms of wall-bounded turbulence. Although high-fidelity DNS/LES solvers for wall-bounded turbulence are mature, incorporating sparse and noisy experimental measurements into such simulations remains challenging in practice, especially when one seeks uncertainty-aware reconstructions rather than a single best-fit field. In this case study, we show that a learned OT-CFM prior νθ(τ, x), combined with training-free conditioning, provides a practical route to measurement-consistent reconstruction while preserving turbulence-relevant multiscale structure. To this end, we consider an damaged-data inpainting scenario: a contiguous portion of the spatial field is unobserved and must be imputed with samples that are consistent with the available measurements and remain faithful to turbulent statistics. Since turbulence applications typically require large ensembles for converged statistics, we exclude D-Flow in this case due to its prohibitively high inference cost. Let F denote the measurement operator that extracts the observed region of the fluctuation field, 
+
+u′(al ≤ x ≤ au, b l ≤ z ≤ bu) = F(u′), (29) where al, a u and bl, b u represent the lower and upper bounds of the available data in the streamwise (x) and spanwise ( z) directions, respectively. This form of partial observation is common in both experiments and simulations. For example, experimental diagnostics often provide measurements only over limited spatial windows or along selected planes, whereas high-fidelity simulation data can be missing due to subsampling, I/O constraints, or data corruption during storage and post-processing. We evaluate both noise-free measurements and measurements corrupted with 10% 
+
+additive noise (relative), using the same conditioning protocol as in the previous cases. Figures 6 and 7 show representative conditional samples (top row) together with pointwise MAE on the observed region (bottom row), for noise-free and noisy measurements, respectively. In the noise-free setting, Grad and Grad-Free achieve near-zero MAE on the observed region, indicating 19 D-Flow SGLD Grad Grad -Free 
+
+> MAE( y, y#) x#
+> y
+
+Figure 6: Turbulence inpainting ( u1) with noise-free measurements. Top: the observed field (first column) and one representative conditional sample from each method; the hatched region ( x > 2π) indicates the missing/inpainted portion. Bottom: pointwise MAE on the observed region. D-Flow SGLD Grad Grad -Free 
+
+> MAE( y, y#) x#
+> y
+
+Figure 7: Turbulence inpainting ( u1) with noisy measurements ( 10% ). Top: the observed field (first column) and one representative conditional sample from each method; the hatched region ( x > 2π) indicates the missing/inpainted portion. Bottom: pointwise MAE on the observed region. 
+
+20 very strong measurement assimilation. D-Flow SGLD yields a slightly larger MAE, consistent with stochastic posterior sampling that does not exclusively concentrate mass at the minimum-misfit solutions. Visually, all methods produce inpainted fields that resemble realistic near-wall streaky structures, and the inpainted region does not exhibit an obvious discontinuity at the measurement boundary in the displayed samples. With 10% noise corruption (Figure 7), the trade-off between assimilation and fidelity becomes apparent. Grad and Grad-Free continue to drive the observed-region MAE close to zero, but the reconstructed fields visibly inherit high-frequency artifacts present in the noisy measurements, suggesting that the guidance can imprint measurement noise into the conditional samples. In contrast, D-Flow SGLD maintains a comparable MAE level to the noise-free case and produces reconstructions that appear less contaminated by noise, indicating improved robustness when the observations are unreliable. Pointwise data misfit does not diagnose whether the reconstruction preserves turbulence physic-s/statistics across scales. We therefore evaluate physical fidelity using one-dimensional energy spectra in the streamwise kx and spanwise ( kz ) directions (Section 3.2). Figure 8 compares the spectra of the streamwise component ( u1) against the ground-truth spectra (additional compo-nents, ui, i ∈ { 2, 3}, are reported in Section Appendix G). In the noise-free regime (Figure 8a), all methods match the ground truth well at low wavenumbers, capturing the large, energy-containing structures. Differences emerge at higher wavenumbers: Grad and Grad-Free exhibit a systematic deficit in high-k energy, indicating loss of small-scale content in the conditional samples, whereas D-Flow SGLD tracks the ground-truth spectrum more closely over the entire wavenumber ranges. In the noisy measurement scenario (Figure 8b), the spectral discrepancies for velocity-field guidance are amplified. The Grad method exhibits a pronounced decay at moderate-to-high wavenumbers, yielding an overly smoothed reconstruction. Grad shows an accelerated roll-off at moderate-to-high wavenumbers, yielding overly smooth reconstructions that underrepresent small-scale fluctuations. Grad-Free exhibits the opposite tendency at the highest wavenumbers, injecting excess high-k energy consistent with incorporating measurement noise as spurious small-scale content. D-Flow SGLD remains closest to the ground-truth spectrum across both kx and kz , suggesting that stochastic source-space inference better balances measurement information with the learned turbulence prior: it suppresses incoherent noise while retaining coherent multiscale structure. Overall, the turbulence experiments reinforce the central pattern observed in the KS case: 21 𝑘 ! 𝑘 "
+
+𝐸 
+
+> Ground Truth
+> D-Flow SGLD
+> Grad
+> Grad -Free
+
+(a) Noise-free case 𝑘 ! 𝑘 "
+
+𝐸 
+
+> Ground Truth
+> D-Flow SGLD
+> Grad
+> Grad -Free
+
+(b) Noisy, corrupted case Figure 8: Comparison of the streamwise (right) and spanwise (left) one-dimensional energy spectrum for the stream-wise velocity component u1 at wall-normal location of y+ = 40 .
+
+22 velocity-field guidance (Grad/Grad-Free) can achieve very small data assimilation error but is sensi-tive to measurement noise and can distort multiscale statistics, while D-Flow SGLD produces more robust conditional samples that better preserve physically relevant spectral structure. 
+
+4. Discussion 
+
+This section provides mechanistic insight into why D-Flow SGLD yields robust conditional sam-ples while remaining computationally scalable. Using a toy problem, we first leverage the reversibil-ity of OT-CFM to visualize how conditional solutions are represented in the source distribution. This perspective reveals a failure mode of deterministic source-space optimization (D-Flow): aggres-sively enforcing measurement consistency can push solutions into low-density regions of the source prior, which in turn produces off-manifold artifacts after transport to the target space. We then explain how the stochastic source-space sampling dynamics in D-Flow SGLD, together with the source-space prior term defined in our method, mitigates this issue by promoting better-calibrated posterior exploration. Finally, we discuss computational costs and show that D-Flow SGLD sub-stantially reduces the amortized cost of generating large ensembles. 
+
+4.1. Posterior geometry in source space: deterministic optimization vs. stochastic sampling 
+
+A key characteristic of flow-based models is reversibility. By integrating the negative velocity field, −νθ(τ, x), samples from the target distribution x1 ∼ p1(x) can be mapped back to the source distribution x0 ∼ p0(x). This enables visualization of conditional solutions in the source space: given posterior samples x1 ∼ p1(x | y), we compute 
+
+x0 = x1 +
+
+ˆ 01
+
+(−νθ(τ, xτ )) dτ. (30) Because OT-CFM learns approximately straight transport paths between p0 and p1, we expect that posterior geometry (e.g., mode separation) is preserved under this inverse mapping. Figure 9 supports this hypothesis: distinct modes in the conditional distribution remain sepa-rated when mapped back to the source. At the same time, Figure 9 reveals an important limitation of deterministic source-space optimization (D-Flow). Although D-Flow can produce diverse condi-tional outputs by initializing from different random seeds (yielding a set of independently optimized source points), each sample is obtained via a deterministic optimization trajectory that strongly prioritizes measurement satisfaction. As a result, some optimized source points are driven into 23 Figure 9: 1000 source distribution samples obtained after performing optimization using the D-Flow algorithm for S-curve toy problem for the measurement functions F1(·) (left) and F2(·) (right) respectively. The gray dots represent the samples for the unconditional Gaussian distribution, while the orange samples represents the samples generated after optimizing the source terms using the D-Flow Algorithm. 
+
+low-probability regions under the source prior (i.e., far from the central Gaussian). After forward transport, these low-density source configurations can manifest as off-manifold or degraded samples in the target space, consistent with the failure modes observed in Figures 1 and 2. This source-space view therefore provides a concrete geometric explanation for why deterministic optimization can be brittle under noisy or partially informative measurements: measurement overfitting may be achieved by leaving the high-density region of the learned prior. This observation also clarifies the role of the source-space prior term used in our D-Flow SGLD. Specifically, D-Flow SGLD targets a regularized objective that balances measurement consistency with source prior plausibility: 
+
+min 
+
+> x0
+
+∥y − F (x1(x0)) ∥22 + λ∥x0∥22, (31) where x1(x0) denotes the forward transport of x0 under the learned velocity field νθ, and λ con-trols the strength of the source-space prior penalty. Importantly, unlike multi-start deterministic optimization, D-Flow SGLD introduces stochastic source-space dynamics (via Langevin updates) that enable exploration of a neighborhood of high-probability source configurations rather than committing to a single optimized point per run. Figure 10 illustrates the effect of this mechanism. Without enforcing source-space plausibility, optimization can push conditional solutions far outside the typical set of p0. With the source prior term and stochastic exploration, conditional samples remain largely within the high-density region 24 a) b) Figure 10: 1000 source distribution samples obtained after performing optimization using the D-Flow SGLD algorithm for S-curve toy problem for the measurement functions F1(·) (left) and F2(·) (right) respectively. The gray dots represent the samples for the unconditional Gaussian distribution. The orange dots represents the samples generated after optimization using the D-Flow Algorithm. The cyan dots represents the samples generated with source term regularization using the D-Flow SGLD Algorithm. 
+
+of the source while still reflecting the posterior structure induced by the measurements. This yields better-calibrated posterior exploration and mitigates off-manifold generations, providing a direct explanation for the robustness of D-Flow SGLD under adverse conditions. 
+
+4.2. Computational Costs 
+
+Most training-free guidance methods map a set of initial source points to the same number of target samples, making the cost scale linearly with the desired ensemble size. This becomes prohibitive when large ensembles are needed to estimate converged posterior statistics, as in turbu-lent flows. Deterministic source-space optimization (D-Flow) is especially expensive in this regime because each posterior sample requires a separate optimization solve. D-Flow SGLD offers a more cost-effective alternative. As an MCMC-based approach, once burn-in is reached, a single chain can generate many correlated samples at low incremental cost, reducing the amortized cost per posterior sample relative to independent optimization-based sampling. Gem-ini said Table 2 summarizes the wall-clock inference costs, utilizing a single NVIDIA L40 GPU for the toy problems and a single NVIDIA A100 GPU for the higher-dimensional KS and turbulence cases. These metrics explicitly highlight the operational trade-off between computational speed and methodological robustness. Grad-Free is the fastest but is less accurate and more sensitive to measurement noise. D-Flow is accurate but incurs prohibitive costs for large-scale problems. Grad 25 Case D-Flow D-Flow SGLD Grad Grad-Free Toy ( N = 1000 ) 65 8 8 5KS ( N = 100 ) 12000 ∗ 578 1114 363 Turb ( N = 1000 ) 200500 † 928 1841 840      
+
+> Table 2: Wall-clock inference time (seconds) for training-free conditional generation methods on a single NVIDIA L40 GPU for the toy case and a single NVIDIA A100 80GB GPU for the rest of the cases. Ndenotes the number of posterior samples generated. and †denotes extrapolation of the cost by generating 20 and 1 sample(s) respectively.
+
+remains accurate but can still be expensive. D-Flow SGLD strikes a favorable balance by produc-ing robust and physically plausible conditional samples at a cost that is substantially lower than D-Flow and competitive ( ∼ 2× speedup) to gradient-based guidance, making it a practical strategy for large-ensemble conditional generation in complex scientific and engineering settings. 
+
+5. Conclusion 
+
+We studied training-free conditional generation for scientific inverse problems using pretrained FM priors, with emphasis on posterior sampling that remains faithful to learned physical structure under partial and noisy observations. We organized inference-time conditioning strategies into two families: (i) velocity-field guidance, which injects likelihood information by perturbing the transport dynamics during sampling, and (ii) source-space inference, which keeps the learned transport map fixed and instead performs posterior inference over the source variable whose pushforward yields measurement-consistent states. Building on the source-space perspective, we introduced D-Flow SGLD, a preconditioned SGLD sampler targeting the induced source posterior, enabling uncertainty-aware conditional sampling without retraining the FM prior. Across a hierarchy of benchmarks, including 2D toy posteriors, chaotic KS dynamics, and wall-bounded turbulent flow reconstruction, we observed a consistent assimilation-fidelity trade-off. Dynamics-level guidance methods can achieve very small assimilation error but are sensitive to guidance strength and can overfit corrupted observations, leading to degraded physics consistency (e.g., elevated KS residuals) and distorted multiscale turbulence statistics (e.g., spectral bias at high wavenumbers). Deterministic source optimization (D-Flow) can yield accurate conditional recon-structions but is computationally expensive for large ensembles and can exhibit instance-dependent 26 variability. In contrast, D-Flow SGLD provides a robust compromise: by sampling in source space under an explicit prior term, it better avoids tail-seeking behavior that produces off-manifold arti-facts, maintains physics/statistics fidelity under noise, and reduces the amortized cost of producing the large conditional ensembles needed for scientific uncertainty quantification. These results highlight source-space posterior sampling as a practical and scalable conditioning mechanism for FM priors in scientific inverse problems, and motivate future work on improved mixing diagnostics (e.g., effective sample size), richer source-space regularization, and extensions to more complex observation operators and higher-Reynolds-number turbulent flows. 
+
+Acknowledgment 
+
+The authors would like to acknowledge the funds from the Office of Naval Research (Award No. N00014-23-1-2071) and National Science Foundation (Award No. OAC-2047127). 
+
+Declaration of Generative AI use 
+
+During the preparation of this work, the authors used Large Language Models like ChatGPT etc., to polish the grammar and improve the readability of the manuscript. 27 Appendix A. Connection to score-based posterior guidance 
+
+This appendix provides the derivation underlying the velocity-field guidance used in Section 2.3. We first recall the probability-flow ODE formulation of score-based diffusion models [34], then show how Bayes’ rule induces an additive likelihood-driven correction when targeting a posterior p(x1|y).Finally, we summarize the DPS approximation [5, 35] and explain how it connects to the plug-in likelihood-gradient proxy used in our OT-CFM guided transport. Consider a forward diffusion process that transforms clean data x1 ∼ p1 into a noisy variable 
+
+xτ by the Itô SDE 
+
+dx = f (τ, xτ )dτ + g(τ )dwτ , (A.1) where wτ is standard Brownian motion. Under standard regularity conditions, the time-reversed process is also an SDE with drift involving the score ∇x log pτ (xτ ) [34]: 
+
+dx = f (τ, xτ ) − g(τ )2∇x log pτ (xτ )dτ + g(τ )d bwτ , (A.2) where bwτ denotes reverse-time Brownian motion. A deterministic sampler with the same marginal densities {pτ }τ ∈[0 ,1] is given by the probability-flow ODE (PF-ODE) [34] 
+
+dxτ
+
+dτ = f (τ, xτ ) − 12 g(τ )2∇x log pτ (xτ ). (A.3) It is clear that the modified drift term (RHS) of PF-ODE is the transport velocity in CFM. Let y denote observations generated by a likelihood model p(y|x1) (e.g., the measurement equation in Section 2.1). Bayes’ rule implies p(x1|y) ∝ p(x1)p(y|x1), hence 
+
+∇x1 log p(x1|y) = ∇x1 log p(x1) + ∇x1 log p(y|x1). (A.4) In diffusion posterior sampling, an analogous identity holds at intermediate times, yielding a pos-terior score at τ of the form ∇xτ log pτ (xτ |y) = ∇xτ log pτ (xτ ) + ∇xτ log pτ (y|xτ ).Substituting the posterior score decomposition into the PF-ODE yields a posterior probability-flow ODE: 
+
+dxτ
+
+dτ = f (τ, xτ ) − 12 g(τ )2∇x log pτ (xτ |y)=
+
+h
+
+f (τ, xτ ) − 12 g(τ )2∇x log pτ (xτ )
+
+i| {z }
+
+> prior PF-ODE drift (velocity)
+
+− 12 g(τ )2∇x log pτ (y|xτ )
+
+| {z }
+
+> likelihood-driven correction
+
+. (A.5) 28 Thus, relative to the unconditional (prior) sampler, conditioning on y introduces an additive cor-rection term proportional to the likelihood score. This is the conceptual basis for posterior score guidance in diffusion models [5, 34, 35], as well as the velocity-field guidance in CFM models. 
+
+Appendix A.1. DPS approximation and plug-in likelihood gradients 
+
+A key practical challenge is that ∇x log pτ (y | xτ ) is typically intractable because xτ is a noisy/intermediate variable whereas the measurement operator F is defined on the clean state x1.Diffusion posterior sampling (DPS) [5, 35] approximates the likelihood score by (i) constructing a denoised predictor bx1|τ from xτ , and (ii) using a plug-in gradient: 
+
+∇xτ log pτ (y | xτ ) ≈ ∇ xτ log p(y | bx1|τ ). (A.6) For Gaussian measurement noise p(y | x1) = N (F(x1), σ 2 
+
+> y
+
+I), the plug-in gradient becomes 
+
+∇xτ log p(y | bx1|τ ) = − 1
+
+σ2
+
+> y
+
+∇xτ y − F  bx1|τ
+
+ 22 , (A.7) where gradients are computed by AD through F and through the predictor bx1|τ .
+
+Appendix A.2. From diffusion guidance to flow-matching guided transport 
+
+Flow matching learns a transport velocity field νθ(τ, x) that maps p0 to p1 via the ODE (4) without specifying (f, g ) explicitly. Nevertheless, motivated by the additive correction structure in (A.5), we adopt the guided transport form 
+
+dxτ
+
+dτ = νθ(τ, xτ ) + λ(τ )g(τ, xτ ; y), (A.8) where g is chosen to align with the DPS plug-in likelihood gradient (A.7). For OT-CFM, the bridge construction (9) implies near-straight trajectories, motivating the straight-path predictor used in the main text: 
+
+bx1|τ = xτ + (1 − τ )νθ(τ, xτ ). (A.9) Substituting (A.9) into (A.7) yields the proxy gradient used in Section 2.3. 29 Appendix B. Algorithm for Preconditioned D-Flow SGLD 
+
+The D-Flow SGLD method, summarized in Algorithm 1, is a parallel MCMC-based approach for sampling from the posterior distribution by iteratively updating a sample in the source (latent) space, x0. Each iteration consists of four main steps. 
+
+Algorithm 1: D-Flow SGLD  
+
+> 1
+
+Require: νθ , Nparallel , Nsteps , burn , x(0) 0 , y, F, R, λ, ω, η, δ, s 
+
+> 2
+
+collect = [ ]  
+
+> 3
+
+do in parallel for 1 : N parallel  
+
+> 4
+
+for i ← 1 : N steps do  
+
+> 5
+
+x(i−1) 1 ← x(i−1) 0 + ´ 1  
+
+> τ=0
+
+νθ (τ, x(i−1)  
+
+> τ
+
+)dτ  
+
+> 6
+
+L1 ← ∥ y − F (x (i−1) 1 )∥22 
+
+> 7
+
+if use regularizer then  
+
+> 8
+
+L2 ← λR(x (i−1) 0 ) 
+
+> 9
+
+L = L 1 + L 2 
+
+> 10
+
+else  
+
+> 11
+
+L = L 1 
+
+> 12
+
+end if  
+
+> 13
+
+if use preconditioner then  
+
+> 14
+
+V ← ωV + (1 − ω)∇x(i−1) 0
+
+L1 ⊙ ∇ x(i−1) 0
+
+L1 
+
+> 15
+
+Pk ← diag (1 ⊘ (√V + δ(i)))  
+
+> 16
+
+else  
+
+> 17
+
+Pk ← I 
+
+> 18
+
+end if  
+
+> 19
+
+x(i)0 ← x(i−1) 0 − η(i) Pk ∇x(i−1) 0
+
+L + N (0 , 2η(i)s(i)Pk) 
+
+> 20
+
+if i ≥ burn then  
+
+> 21
+
+collect.append( x(i)0 ) 
+
+> 22
+
+end for  
+
+> 23
+
+end  
+
+> 24
+
+return collect 
+
+First, a forward pass maps the current latent sample x(i−1) 0 to the target-space sample x(i−1) 1
+
+using the pre-trained flow model νθ. Second, a loss function, L, is computed, which includes a data-consistency term based on the measurement y and an optional source-space regularization 30 term, R(x 0). Third, an optional adaptive preconditioner, Pk, is calculated to scale the gradients for high-dimensional problems. Finally, the latent sample is updated using a preconditioned Langevin Dynamics step, which follows the gradient of the loss and incorporates annealed noise to guide the exploration. Samples of x0 are collected after a specified burn-in period to ensure they represent the target posterior distribution. 
+
+Appendix C. Toy data generation details 
+
+This appendix specifies the exact sampling procedures used to generate the 2D toy datasets. 
+
+S-curve. We sample a latent parameter t ∼ Unif  − 3π 
+
+> 2
+
+, 3π
+
+> 2
+
+ and define 
+
+x =
+
+ sin( t)0.5 sgn( t) (cos( t) − 1) 
+
+ + ϵ, ϵ ∼ N (0 , σ 2I). (C.1) 
+
+Two-moons. Given a requested batch size B, we split samples into two semicircles: Nout = ⌊B/ 2⌋
+
+and Nin = B − Nout . For each subset we draw ϕ ∼ Unif(0 , π ) and set 
+
+xbase =
+
+
+
+cos( ϕ)sin( ϕ)
+
+ , for Nout samples ,
+
+
+
+1 − cos( ϕ)0.5 − sin( ϕ)
+
+ , for Nin samples .
+
+(C.2) We then apply isotropic noise and an affine rescaling: 
+
+x = 11.5
+
+xbase + ϵ +
+
+ −0.5
+
+−0.25 
+
+ , ϵ ∼ N (0 , σ 2I). (C.3) 
+
+Appendix D. Details about architecture, training, and inference hyperparameters 
+
+For the KS equation and wall-bounded turbulence cases, we parameterize the flow-matching velocity field νθ(τ, xτ ) using a modernized U-Net [38]. The architecture follows a hierarchical multi-resolution design with residual blocks in both the downsampling and upsampling paths. Each block uses SiLU activations and convolutional layers; self-attention is included at selected resolu-tions when enabled. The transport time τ is mapped to a high-dimensional positional embedding, 31 processed by an MLP, and injected into the network via feature-wise linear modulation (FiLM) [39] to condition the velocity prediction on τ . We train νθ using the OT-CFM objective. Mini-batch optimal transport is used to construct source–target sample couplings during training, using the OT solver implementation provided by the torchcfm repository. The OT-CFM path parameter σ
+
+is set to 10 −3. Model parameters are optimized with Adam using a fixed learning rate of 10 −4.Training-free conditional generation additionally depends on inference-time hyperparameters (e.g., guidance strength, step sizes, and sampler settings). Table D.3 summarizes the hyperparam-eters used for each method and dataset in the main experiments. 
+
+Table D.3: Hyperparameters for Training-Free Guidance Methods Across Different Cases. 
+
+Case D-Flow D-Flow SGLD Grad/Grad-Free Toy Noptim = 10 (S-curve) , 20 (Two-moon) ODE solver = midpoint, 6 steps optimizer = LBFGS 
+
+α = 0 , β = 0 
+
+Nparallel = 10 
+
+Nsteps = 500 , burn= 100 
+
+η(i) = 5 e−2
+
+s(i) = 1 e−2, λ = 0 .1 (S-curve), 0.05 (Two-moon) 
+
+ω = 0 .99 
+
+δ(i) = 1 e−3
+
+ODE solver = midpoint, 6 steps 
+
+α = 0 , β = 0 
+
+λ(τ ) = 1 
+
+b = {1, 3, 10 }
+
+ODE solver = euler, 300 steps 
+
+KS Noptim = 10 
+
+ODE solver = midpoint, 6 steps optimizer = LBFGS 
+
+α = 0 , β = 0 
+
+Nparallel = 2 
+
+Nsteps = 300 , burn= 100 
+
+η(i) = 1 e−2
+
+s(i) = 1 e−3, λ = 1 e−3
+
+ω = 0 .99 
+
+δ(i) = 1 e−3
+
+ODE solver = midpoint, 6 steps 
+
+α = 0 , β = 0 
+
+λ(τ ) = 1 
+
+b = 1 
+
+ODE solver = euler, 300 steps 
+
+Turb Noptim = 100 
+
+ODE solver = midpoint, 6 steps optimizer = LBFGS 
+
+α = 0 , β = 0 
+
+Nparallel = 20 
+
+Nsteps = 600 , burn= 100 
+
+η(i) = 5 e−2
+
+s(i) = 1 e−3, λ = 5 e−6
+
+ω = 0 .99 
+
+δ(i) = 1 e−3
+
+ODE solver = midpoint, 6 steps 
+
+α = 0 , β = 0 
+
+λ(τ ) = 1 
+
+b = 1 
+
+ODE solver = euler, 300 steps 
+
+32 Appendix E. Effect of the conditioning scale on Grad and Grad-Free methods 
+
+We examine the sensitivity of guided-transport conditioning to the guidance scale b for the Grad and Grad-Free methods. We use the S-curve toy distribution with measurement operator F1(·) as a controlled setting where posterior geometry can be directly visualized. As shown in Figure E.11, Ground Truth Scale=1 Scale=3 Scale=10     
+
+> Grad
+> Grad -Free
+> Figure E.11: Effect of the guidance scale bon conditional samples for the S-curve toy problem with measurement operator F1(·)measurement function
+
+the guidance scale b controls a clear trade-off between measurement assimilation and prior fidelity. For small b, the conditional samples remain close to the learned manifold (gray prior support) but exhibit weak conditioning, with many samples behaving similarly to unconditional generation. As b increases, the likelihood injection becomes stronger and measurement assimilation improves; however, this comes at the cost of prior fidelity. In particular, at moderate to large b, an increasing fraction of samples depart from the learned manifold, indicating that the guided dynamics can be driven into regions poorly supported by the pretrained prior. This effect is most pronounced for Grad-Free, and Grad exhibits the same trend but with fewer extreme outliers. Overall, the ablation shows that guidance-based conditioning is not robust, and its performance depends critically on tuning b, and large b can improve measurement fit while degrading prior plausibility, which is problematic in scientific inverse problems. 33 Appendix F. Reconstruction from sparse sensors for KS equation 
+
+For the sparse-sensor setting, we condition on 1000 pointwise measurements sampled uniformly at random from the space–time domain. Given a pretrained prior that captures the KS solution manifold, these sparse observations can strongly constrain the conditional distribution around the underlying trajectory. Figures F.12 and F.13 show that all guidance methods except the Grad-free can recover visually plausible reconstructions consistent with the sensor data. A closer comparison reveals important differences in assimilation and physics fidelity. D-Flow SGLD produces accurate reconstructions in both the noise-free and noisy cases and achieves the lowest PDE residual, indicating the best preservation of KS consistency. D-Flow also yields visually accurate reconstructions, but with higher residuals in some instances, consistent with sensitivity of deterministic source optimization to the conditioning instance and optimization landscape. Grad attains low MAE, indicating strong data assimilation, but its residual increases substantially under noisy measurements, suggesting overfitting to corrupted observations at the expense of the governing PDE. Grad-Free performs worst: it exhibits high MAE even in the noise-free case and deteriorates further with noise, producing visibly corrupted reconstructions and very large residuals, highlighting limited robustness in this sparse-sensor regime. 34 D-Flow D-Flow SGLD Grad Grad -Free 
+
+> 𝑅 !
+> " MAE( x, x$) x$
+> y
+
+Figure F.12: KS sparse sensor reconstruction with noise-free measurements. (top row) The ground truth measure-ment is shown in the first column, followed by a conditionally generated sample from each method. The region below the white line ( t > r ) is the forecasting portion. (middle row) Pointwise data assimilation error (MAE). (bottom row) The PDE residual, Rnj , computed over the entire generated field to assess physical plausibility. D-Flow D-Flow SGLD Grad Grad -Free 
+
+> 𝑅 !
+> " MAE( x, x$) x$
+> y
+
+Figure F.13: KS sparse sensor reconstruction with noisy measurements ( 10% ). (top row) The ground truth mea-surement is shown in the first column, followed by a conditionally generated sample from each method. The region below the white line ( t > r ) is the forecasting portion. (middle row) Pointwise data assimilation error (MAE). 
+
+(bottom row) The PDE residual, Rnj , computed over the entire generated field to assess physical plausibility. 
+
+35 Appendix G. Additional results for wall-bounded turbulence case 
+
+For completeness, the results for the wall-normal ( u2) and spanwise ( u3) velocity components are presented in Figures G.14 through G.19, which show identical trends observed for u1.D-Flow SGLD Grad Grad -Free 
+
+> MAE( y, y#)
+> y
+> x#
+
+Figure G.14: Turbulence inpainting ( u2) with noise-free measurements. Top: the observed field (first column) and one representative conditional sample from each method; the hatched region ( x > 2π) indicates the missing/inpainted portion. Bottom: pointwise MAE on the observed region. D-Flow SGLD Grad Grad -Free 
+
+> MAE( y, y#)
+> y
+> x#
+
+Figure G.15: Turbulence inpainting ( u3) with noise-free measurements. Top: the observed field (first column) and one representative conditional sample from each method; the hatched region ( x > 2π) indicates the missing/inpainted portion. Bottom: pointwise MAE on the observed region. 
+
+36 D-Flow SGLD Grad Grad -Free 
+
+> MAE( y, y#)
+> y
+> x#
+
+Figure G.16: Turbulence inpainting ( u2) with noisy measurements ( 10% ). Top: the observed field (first column) and one representative conditional sample from each method; the hatched region ( x > 2π) indicates the missing/inpainted portion. Bottom: pointwise MAE on the observed region. D-Flow SGLD Grad Grad -Free 
+
+> MAE( y, y#)
+> y
+> x#
+
+Figure G.17: Turbulence inpainting ( u3) with noisy measurements ( 10% ). Top: the observed field (first column) and one representative conditional sample from each method; the hatched region ( x > 2π) indicates the missing/inpainted portion. Bottom: pointwise MAE on the observed region. 
+
+37 𝑘 !
+
+𝑘 "
+
+𝐸 
+
+> Ground Truth
+> D-Flow SGLD
+> Grad
+> Grad -Free
+
+(a) Noise-free case 𝑘 !𝑘 "
+
+𝐸 
+
+> Ground Truth
+> D-Flow SGLD
+> Grad
+> Grad -Free
+
+(b) Noise corrupted case Figure G.18: Comparison of the streamwise (right) and spanwise (left) one-dimensional energy spectrum for the wall-normal velocity component u2 at wall-normal location of y+ = 40 .
+
+38 𝑘 !𝑘 "
+
+𝐸 
+
+> Ground Truth
+> D-Flow SGLD
+> Grad
+> Grad -Free
+
+(a) Noise-free case 𝑘 !
+
+> 𝑘 "
+
+𝐸 
+
+> Ground Truth
+> D-Flow SGLD
+> Grad
+> Grad -Free
+
+(b) Noise corrupted case Figure G.19: Comparison of the streamwise (right) and spanwise (left) one-dimensional energy spectrum for the spanwise velocity component u3 at wall-normal location of y+ = 40 .
+
+References 
+
+[1] L. Biegler, G. Biros, O. Ghattas, M. Heinkenschloss, D. Keyes, B. Mallick, L. Tenorio, B. van Bloemen Waanders, K. Willcox, Y. Marzouk, Large-scale inverse problems and quantification of uncertainty, Vol. 712, Wiley Online Library, 2010. [2] P. Du, M. H. Parikh, X. Fan, X.-Y. Liu, J.-X. Wang, Conditional neural field latent diffusion model for generating spatiotemporal turbulence, Nature Communications 15 (1) (2024) 10416. [3] C. Drygala, B. Winhart, F. di Mare, H. Gottschalk, Generative modeling of turbulence, Physics of Fluids 34 (3) (2022). 39 [4] M. H. Parikh, X. Fan, J.-X. Wang, Conditional flow matching for generative modelling of near-wall turbulence with quantified uncertainty, Journal of Fluid Mechanics 1029 (2026) A32. 
+
+doi:10.1017/jfm.2026.11193 .[5] H. Chung, J. Kim, M. T. Mccann, M. L. Klasky, J. C. Ye, Diffusion posterior sampling for general noisy inverse problems, arXiv preprint arXiv:2209.14687 (2022). [6] A. Dasgupta, A. M. da Cunha, A. Fardisi, M. Aminy, B. Binder, B. Shaddy, A. A. Oberai, Unifying and extending diffusion models through pdes for solving inverse problems, Computer Methods in Applied Mechanics and Engineering 448 (2026) 118431. [7] D. Shu, Z. Li, A. B. Farimani, A physics-informed diffusion model for high-fidelity flow field reconstruction, Journal of Computational Physics 478 (2023) 111972. [8] C. Jacobsen, Y. Zhuang, K. Duraisamy, Cocogen: Physically consistent and conditioned score-based generative models for forward and inverse problems, SIAM Journal on Scientific Com-puting 47 (2) (2025) C399–C425. [9] S. Shan, M. Zhu, Y. Lin, L. Lu, Red-diffeq: Regularization by denoising diffusion models for solving inverse pde problems with application to full waveform inversion, arXiv preprint arXiv:2509.21659 (2025). [10] X. Dong, C. Chen, J.-L. Wu, Data-driven stochastic closure modeling via conditional diffusion model and neural operator, Journal of Computational Physics 534 (2025) 114005. [11] X.-Y. Liu, M. H. Parikh, X. Fan, P. Du, Q. Wang, Y.-F. Chen, J.-X. Wang, Confild-inlet: Synthetic turbulence inflow using generative latent diffusion models with neural fields, Physical Review Fluids 10 (5) (2025) 054901. [12] H. Gao, X. Han, X. Fan, L. Sun, L.-P. Liu, L. Duan, J.-X. Wang, Bayesian conditional diffu-sion models for versatile spatiotemporal turbulence generation, Computer Methods in Applied Mechanics and Engineering 427 (2024) 117023. [13] M. Mardani, J. Song, J. Kautz, A. Vahdat, A variational perspective on solving inverse problems with diffusion models, arXiv preprint arXiv:2305.04391 (2023). 40 [14] F. Rozet, G. Andry, F. Lanusse, G. Louppe, Learning diffusion priors from observations by ex-pectation maximization, Advances in Neural Information Processing Systems 37 (2024) 87647– 87682. [15] X. Fan, D. Akhare, J.-X. Wang, Neural differentiable modeling with diffusion-based super-resolution for two-dimensional spatiotemporal turbulence, Computer Methods in Applied Me-chanics and Engineering 433 (2025) 117478. [16] P. Du, M. Xu, X. Zhu, J.-x. Wang, Hug-vas: A hierarchical nurbs-based generative model for aortic geometry synthesis and controllable editing, arXiv preprint arXiv:2507.11474 (2025). [17] Y. Lipman, R. T. Chen, H. Ben-Hamu, M. Nickel, M. Le, Flow matching for generative mod-eling, arXiv preprint arXiv:2210.02747 (2022). [18] A. Tong, K. Fatras, N. Malkin, G. Huguet, Y. Zhang, J. Rector-Brooks, G. Wolf, Y. Bengio, Improving and generalizing flow-based generative models with minibatch optimal transport, arXiv preprint arXiv:2302.00482 (2023). [19] Z. Li, A. Zhou, A. B. Farimani, Generative latent neural pde solver using flow matching, arXiv preprint arXiv:2503.22600 (2025). [20] G. Baldan, Q. Liu, A. Guardone, N. Thuerey, Flow matching meets pdes: A unified framework for physics-constrained generation, arXiv preprint arXiv:2506.08604 (2025). [21] U. Utkarsh, P. Cai, A. Edelman, R. Gomez-Bombarelli, C. V. Rackauckas, Physics-constrained flow matching: Sampling generative models with hard constraints, arXiv preprint arXiv:2506.04171 (2025). [22] S. Wang, Z. Wu, D. van Dijk, L. Lu, Geofunflow: Geometric function flow matching for inverse operator learning over complex geometries, arXiv preprint arXiv:2509.24117 (2025). [23] A. Pokle, M. J. Muckley, R. T. Chen, B. Karrer, Training-free linear image inverses via flows, arXiv preprint arXiv:2310.04432 (2023). [24] J. Kim, B. S. Kim, J. C. Ye, Flowdps: Flow-driven posterior sampling for inverse problems, arXiv preprint arXiv:2503.08136 (2025). 41 [25] B. Zhang, W. Chu, J. Berner, C. Meng, A. Anandkumar, Y. Song, Improving diffusion inverse problem solving with decoupled noise annealing, in: Proceedings of the Computer Vision and Pattern Recognition Conference, 2025, pp. 20895–20905. [26] S. Martin, A. Gagneux, P. Hagemann, G. Steidl, Pnp-flow: Plug-and-play image restoration with flow matching, arXiv preprint arXiv:2410.02423 (2024). [27] F. E. Kelvinius, Z. Zhao, F. Lindsten, Solving linear-gaussian bayesian inverse problems with decoupled diffusion sequential monte carlo, arXiv preprint arXiv:2502.06379 (2025). [28] H. Wang, X. Zhang, T. Li, Y. Wan, T. Chen, J. Sun, Dmplug: A plug-in method for solving inverse problems with diffusion models, Advances in Neural Information Processing Systems 37 (2024) 117881–117916. [29] H. Ben-Hamu, O. Puny, I. Gat, B. Karrer, U. Singer, Y. Lipman, D-flow: Differentiating through flows for controlled generation, arXiv preprint arXiv:2402.14017 (2024). [30] V. Purohit, M. Repasky, J. Lu, Q. Qiu, Y. Xie, X. Cheng, Consistency posterior sampling for diverse image synthesis, in: Proceedings of the Computer Vision and Pattern Recognition Conference, 2025, pp. 28327–28336. [31] Z. Wang, A. Harting, M. Barreau, M. M. Zavlanos, K. H. Johansson, Source-guided flow matching, arXiv preprint arXiv:2508.14807 (2025). [32] A. Kalaivanan, Z. Zhao, J. Sjölund, F. Lindsten, Ess-flow: Training-free guidance of flow-based models as inference in source space, arXiv preprint arXiv:2510.05849 (2025). [33] C. Li, C. Chen, D. Carlson, L. Carin, Preconditioned stochastic gradient langevin dynamics for deep neural networks, in: Proceedings of the AAAI conference on artificial intelligence, Vol. 30, 2016. [34] Y. Song, J. Sohl-Dickstein, D. P. Kingma, A. Kumar, S. Ermon, B. Poole, Score-based gen-erative modeling through stochastic differential equations, arXiv preprint arXiv:2011.13456 (2020). [35] H. Chung, J. Kim, J. C. Ye, Diffusion models for inverse problems, arXiv preprint arXiv:2508.01975 (2025). 42 [36] G. Dresdner, D. Kochkov, P. Norgaard, L. Zepeda-Núñez, J. A. Smith, M. P. Brenner, S. Hoyer, Learning to correct spectral methods for simulating turbulent flows (2022). doi:10.48550/ ARXIV.2207.00556 .URL https://arxiv.org/abs/2207.00556 
+
+[37] X. Fan, X.-Y. Liu, M. Wang, J.-X. Wang, Diff-flowfsi: A gpu-optimized differentiable cfd plat-form for high-fidelity turbulence and fsi simulations, Computer Methods in Applied Mechanics and Engineering 448 (2026) 118455. [38] O. Ronneberger, P. Fischer, T. Brox, U-net: Convolutional networks for biomedical image segmentation, in: International Conference on Medical image computing and computer-assisted intervention, Springer, 2015, pp. 234–241. [39] E. Perez, F. Strub, H. De Vries, V. Dumoulin, A. Courville, Film: Visual reasoning with a general conditioning layer, in: Proceedings of the AAAI conference on artificial intelligence, Vol. 32, 2018. 43

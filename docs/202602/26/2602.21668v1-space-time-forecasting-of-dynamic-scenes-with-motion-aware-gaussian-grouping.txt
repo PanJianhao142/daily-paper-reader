@@ -1,0 +1,1143 @@
+Title: Space-Time Forecasting of Dynamic Scenes with Motion-aware Gaussian Grouping
+
+URL Source: https://arxiv.org/pdf/2602.21668v1
+
+Published Time: Thu, 26 Feb 2026 01:39:29 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# Space-Time Forecasting of Dynamic Scenes with Motion-aware Gaussian Grouping 
+
+## Junmyeong Lee 1* Hoseung Choi 1* Minsu Cho 1,2 
+
+{junmyeong.lee, hs.choi, mscho }@postech.ac.kr  
+
+> 1
+
+## Pohang University of Science and Technology (POSTECH) 2 RLWRLD Motion Group -aware Gaussian Forecasting ( MoGaF )
+
+Observation 
+
+…
+
+Short -Term Future  Long -Term Future 
+
+Figure 1. MoGaF forecasts future frames of dynamic-scene input videos by reconstructing object-level components with distinct motion patterns. Our approach delivers long-term, high-fidelity predictions even on real-world videos with complex dynamics. 
+
+## Abstract 
+
+Forecasting dynamic scenes remains a fundamental chal-lenge in computer vision, as limited observations make it difficult to capture coherent object-level motion and long-term temporal evolution. We present Motion Group-aware Gaussian Forecasting (MoGaF) , a framework for long-term scene extrapolation built upon the 4D Gaussian Splatting representation. MoGaF introduces motion-aware Gaussian grouping and group-wise optimization to enforce physically consistent motion across both rigid and non-rigid regions, yielding spatially coherent dynamic represen-tations. Leveraging this structured space-time representa-tion, a lightweight forecasting module predicts future mo-tion, enabling realistic and temporally stable scene evo-lution. Experiments on synthetic and real-world datasets demonstrate that MoGaF consistently outperforms exist-ing baselines in rendering quality, motion plausibility, and long-term forecasting stability. Our project page is avail-able at https://slime0519.github.io/mogaf 
+
+## 1. Introduction 
+
+Reconstructing dynamic environments from limited obser-vations is a fundamental challenge in computer vision. Re-cent advances such as 3D Gaussian Splatting [15] have en-abled dynamic scene reconstruction from everyday videos 
+
+> *Equal contribution.
+
+and multi-view captures. However, most existing methods still focus on interpolation of observed dynamics, while 
+
+extrapolation remains largely unexplored. The ability to extrapolate scene dynamics is increasingly important for emerging applications such as robotic behavior planning and autonomous driving, where anticipating unobserved fu-ture motion is critical for decision making. To bridge this gap, we aim to forecast future scene dynamics by leveraging optimized scene representation from available observations. Earlier approaches to dynamic scene extrapolation [11, 19, 23, 41, 42] formulate it as video prediction, generat-ing future frames from past observations. Robotic planning models [1, 13, 40] adopt a similar idea, using generative models to predict future visual states from current inputs. However, these 2D-based methods are restricted to fixed-view generation and often produce geometrically inconsis-tent results in complex scenes [28]. In contrast, 3D re-construction–based methods [15, 27] model time-dependent motion within explicit 3D scene representation. However, these approaches remain fundamentally interpolative , of-fering little extrapolative capability beyond the observed timestamps. As a result, their predicted dynamics often de-grade when extended outside the training range. [50] in-corporates explicit motion modeling to improve short-term prediction but still struggles with long-term forecasting. Forecasting long-term dynamics remains challenging due to limitations in both representation and architecture. At the representation level, prior methods [20, 37] shows 
+
+> arXiv:2602.21668v1 [cs.CV] 25 Feb 2026
+
+that Gaussian primitives often move independently, caus-ing spatially incoherent motion that accumulates over time. At the architectural level, existing extrapolation model [50] are typically short-term predictors that produce frozen or collapsing trajectories during long rollouts. To address these issues, we propose Motion Group-aware Gaussian Forecasting (MoGaF) , a unified frame-work for physically consistent long-term extrapolation based on 4D Gaussian Splatting (4DGS). MoGaF intro-duces (1) motion-aware Gaussian grouping that identifies coherent motion groups, (2) group-wise optimization that enforces consistent motion for rigid and non-rigid regions, and (3) lightweight future forecasting that extrapolates fu-ture dynamics from the 4DGS representation. Integrating these components into a single pipeline yields spatially co-herent and temporally stable scene evolution, enabling real-istic long-term forecasting that surpasses baselines in both visual quality and motion plausibility. Our contributions are summarized as follows: • We present MoGaF , a framework that integrates object-level motion modeling into dynamic Gaussian Splatting for long-term scene extrapolation. • Motion-aware Gaussian grouping, group-wise optimiza-tion, and a lightweight forecaster that jointly yield physi-cally consistent and temporally coherent scene evolution. • Extensive experiments on synthetic and real-world datasets demonstrate that MoGaF surpasses existing base-lines in the visual quality of future frame synthesis. 
+
+## 2. Related work 
+
+2.1. Dynamic Scene Reconstruction 
+
+Dynamic scene reconstruction aims to recover time-varying 3D structures and appearance from observations. Early ap-proaches represent deformable geometry with explicit prim-itives such as meshes, point clouds, or parametric models. Inspired by the success of NeRF [27], neural field–based methods [29–31] extend implicit representation to model temporal deformation fields. Another line of work [2, 9, 21] encode dynamics implicitly within feature spaces. 3D Gaussian Splatting (3DGS) [15] offers an explicit repsentation, enabling real-time rendering through volu-metric Gaussian primitives and an efficient rasterization pipeline. Building on 3DGS, several methods learn per-Gaussian trajectories or factorized motion bases to obtain 4D representation [18, 24, 39, 46, 47]. However, many of these approaches assume limited object and camera mo-tion, often leading to reconstruction failures and artifacts in highly dynamic scenes. Recent efforts [20, 25, 37] miti-gate these issues by introducing improved initialization and optimization strategies that leverage data-driven priors such as dynamic masks [44], dense point tracking [7, 14], and depth estimation [45]. Building on this direction, MoGaF groups Gaussians into coherent motion units and enforces group-wise motion consistency during optimization. 
+
+2.2. 3D Gaussian Segmentation 
+
+With the emergence of reliable 2D foundation models for segmentation [3, 17, 32], recent work has explored extend-ing their prior knowledge to obtain 3D-consistent segmenta-tion. Some methods [4, 16, 51] distill 2D foundation-model features into neural-field representation. Another stream of research lifts 2D mask predictions into 3D for multi-view segmentation without retraining. However, models such as SAM [32] do not preserve instance identities across views. This limitation has led to approaches [3, 8, 48] that asso-ciate identities via cross-view cues such as user interaction or video object tracking [5]. Gaga [26] further proposes a 3D-aware mask association pipeline using a Gaussian mem-ory bank and IoU-based merging. Although effective for static scenes, these methods remain difficult to extend to dynamic settings due to temporal object motion. In this work, we propose a segmentation method for 4DGS representation by extending the 3DGS-based seg-mentation pipeline [26] to dynamic scenes. This exten-sion yields spatiotemporally coherent Gaussian groups. Our grouping strategy relies on alternating spatiotemporal re-gion growing and keyframe-based Gaussian registration. This procedure is simple yet effective, enabling reliable grouping on an optimized 4DGS representation. 
+
+2.3. Dynamic Scene Forecasting 
+
+To extrapolate scene dynamics, several prior studies [22, 38] focused on pixel-space video prediction using convo-lutional or recurrent architectures, where future frames are generated directly in the image domain. Following this di-rection, generative models [43, 49] leverage transformer-based architectures for scalable video forecasting, and sub-sequent work [12, 35] further incorporates masked video modeling and self-supervised pretraining. Building on recent progress in 3D reconstruction, an-other line of work predicts future dynamics directly in 3D space. This direction has recently been explored in the 4DGS setting as well, including GaussianPrediction (GSPred) [50], which forecasts keypoint motion using a graph-based network and propagates it to all Gaussians, and a concurrent work [36] that models continuous Gaus-sian motion via neural differential equations. Despite these advances, existing 3D-based models remain effective only for short-term prediction and often degrade significantly when extended to longer horizons. To address this limita-tion, our method performs object-wise forecasting and pre-serves both rigid and non-rigid geometry, enabling struc-turally consistent and high-fidelity rendering. 3. Preliminary 
+
+Gaussian Splatting. 3DGS [15] represents scene geom-etry using a set of Gaussian primitives and achieves real-time, high-fidelity rendering through efficient tile-based ras-terization. Following [37], each Gaussian g ∈ G is pa-rameterized in a canonical space by {μ, R, s, o, c}, which specify its mean, rotation, scale, opacity, and color. Here, 
+
+μ ∈ R3 and R ∈ SO (3) denote the 3D mean and rota-tion, while s ∈ R3, o ∈ R, and c ∈ R3 represent its scale, opacity, and color. According to [52], Gaussians are projected onto the im-age plane by approximating their 2D means and covariances as follows: 
+
+μ2D = Π(KEμ ), Σ2D = JEΣE ⊤J⊤, (1) where Σ and Σ2D denote the 3D and 2D covariance ma-trices, respectively. J is the Jacobian of the affine approx-imation of the projective transformation, and K and E are the intrinsic and extrinsic matrices of the camera. Π de-notes the perspective projection from 3D points to the im-age plane. Each covariance matrix is decomposed into a rotation matrix R and a scaling matrix S such that 
+
+Σ = RSS ⊤R⊤.
+
+In addition, each Gaussian includes an opacity α ∈ R and spherical harmonics (SH) coefficients c ∈ R(L+1) 2
+
+to rep-resent view-dependent color. Thus, the final color of pixel 
+
+xp is computed as: 
+
+Cp =
+
+> N
+
+X
+
+> i=1
+
+ciαiTiN  xp|μ2D , Σ2D  , (2) where Ti = Qi−1
+
+> j=1
+
+ 1 − αnN  xp|μ2D , Σ2D  , and ci and 
+
+αi represent color and opacity associated with each 3D Gaussian, respectively. 
+
+Extension for Dynamic Scene. Then, the time-dependent motion parameters μt and Rt are obtained by composing the canonical Gaussian parameters—mean 
+
+μc, rotation Rc—with the motion transformation 
+
+Tc→t = [ Rc→t | tc→t] ∈ SE (3) , defined as: 
+
+μt = Rc→tμc + tc→t, Rt = Rc→tRc. (3) For each timestep t, we represent Gaussian motion us-ing a set of B motion bases {T(b)
+
+> c→t
+
+}Bb=1 shared across all timesteps t = 0 , 1, . . . , T . Each Gaussian is assigned a blend weight (i.e., motion coefficient) w ∈ RB to combine these bases and represent its motion. At timestep t, the com-posed motion transformation is computed as: 
+
+Tc→t =
+
+> B
+
+X
+
+> b=1
+
+w(b)T(b)
+
+> c→t
+
+, (4) where ∥w∥ = 1 . During optimization, both the motion bases {T(b)
+
+> c→t
+
+}Bb=1 and the motion coefficient wb are jointly optimized with the other Gaussian properties. The remain-ing rendering process follows the 3DGS formulation, using the deformed rotation Rt and mean vector μt.
+
+## 4. Methods 
+
+Our method, MoGaF, takes as input a casually captured dy-namic video {It ∈ RH×W ×3}Tt=1 and forecasts scene dy-namics by rendering novel frames for unseen timesteps 
+
+(t > T ). Unlike previous methods [36, 50], our goal is to achieve realistic and physically consistent long-term fore-casting at the scene level. We address the limitations of dynamic 3D representation by reconstructing scene dynamics through a constrained op-timization process that enforces physically consistent mo-tion across time. MoGaF models object-level motion ex-plicitly within the dynamic Gaussian splatting framework. The overall pipeline consists of three stages: (i) motion-aware Gaussian grouping, which identifies coherent motion groups and labels each group as either rigid or non-rigid (Section 4.1); (ii) group-wise constrained optimization, which applies type-specific motion regularization to pro-duce a physically structured 4D representation with object-level consistency (Section 4.2); and (iii) long-term fore-casting, where a temporal prediction module extrapolates future motion trajectories and renders temporally coherent scene evolution (Section 4.3). An overview of the proposed framework is illustrated in Figure 2. 
+
+4.1. Motion-aware Gaussian Grouping 
+
+Given the frames {It}Tt=1 and the reconstructed 4DGS rep-resentation, we group Gaussians into distinct groups with coherent motion and label each group as rigid or non-rigid 
+
+to support subsequent motion-constrained optimization and forecasting. Inspired by [26], we design a memory-bank mechanism adapted to the optimized 4DGS representation. Unlike prior 3DGS-based grouping methods, our module handles dynamic representation and explicitly distinguishes motion types of groups. Given K object groups, we repre-sent them as M(k) = ( G(k), τ (k)), where G(k) is the set of Gaussians in the k-th group and τ (k) ∈ { 0, 1} indicates its motion type ( 0 for non-rigid and 1 for rigid ). An overview of the grouping algorithm is shown in Algorithm 3. 
+
+Leverage 2D Segmentation Prior. Similar to previous methods [26, 48], we first obtain 2D masks for the in-put video. In particular, we use a grounded segmentation model [33] to simultaneously produce K object masks and their corresponding rigidity labels τ (k). Following [26], we then identify Gaussians that contribute to rendering each masked region and extract these front Gaussians along the viewing direction. Group 1                                
+
+> (𝜏 !=0)
+> Group 2
+> (𝜏 !=1)
+> (Section 4.1)
+> Gaussian Grouping
+> 𝑀 !,𝜏 !
+> ①(𝝉 𝒌 =𝟎 ): Non -Rigid Motion
+> ②(𝝉 𝒌 =𝟏 ): Rigid Motion
+> ℒ#$%$&
+> (!)=*
+> )
+> *
+> %∈+(#)
+> 𝝁 ),%−𝚽 -
+> .𝑔 /
+> /
+> ℒ0#
+> (!)=*
+> %∈+(#)
+> *
+> %%∈11 %
+> 𝝎 %−𝝎 %2 /
+> /
+> (Section 4.3)
+> Group -wise Forecasting
+> (Section 4.2)
+> Group -wise Optimization
+> Detect objects
+> with rigid or
+> non -rigid motion.
+> Observed
+> …
+> …
+> …
+
+①
+
+② 
+
+> 2D Segments
+> 3D Segments Unobserved
+> Group 1 Group 2
+> Input Views
+> … …
+> Output
+
+Figure 2. Overall pipeline of MoGaF. Given a video, MoGaF generates future frames of the scene. To achieve realistic forecasting, our method builds on 4DGS representation and proceeds as follows: (1) Gaussian Grouping: Gaussians are clustered into motion-consistent object groups, with each group labeled as rigid or non-rigid using grounded 2D segmentation. (2) Group-wise Optimization: Grouped Gaussians are refined with rigidity-aware motion constraints: rigid groups are guided by a shared SE (3) transform, while non-rigid groups are regularized with local motion smoothness. (3) Group-wise Forecasting: For each group, a lightweight Transformer-based forecaster extrapolates Gaussian trajectories beyond the observed frames, enabling rendering at novel viewpoints for future timesteps. (a) Gaga -4D  (b) Region growing  (c) Ours 
+
+Figure 3. Result of Gaussian grouping. Compared to a (a) simple extension of 3DGS grouping [26] and (b) single-frame mask–based region growing, our hybrid approach produces com-plete and reliable motion-aware Gaussian groups. 
+
+Simple Extension of Static Gaussian Grouping. Astraightforward way to extend static Gaussian grouping [26] to dynamic scenes is to associate each 2D mask M (k) 
+
+> t
+
+with the set of deformed Gaussians whose projected positions fall inside the mask: 
+
+G(k) 
+
+> t
+
+= { g ∈ G | Proj (gt) ∈ M (k) 
+
+> t
+
+}, (5) where gt denotes the deformed Gaussian state at timestep t.We then update each Gaussian group G(k) ∈ M (k) in the memory bank by merging G(k) 
+
+> t
+
+when sufficient spatial over-lap is observed. However, because this association relies solely on deformed spatial positions of Gaussians, it often leads to misgrouping (Figure 3a), especially under occlu-sion or when Gaussians from different objects overlap. 
+
+Gaussian Grouping via Iterative Region Growing. To overcome the limitations of this simple algorithm, we adopt an iterative region-growing strategy that alternates between keyframe-based seeding and feature-space expansion. At each keyframe, we project the deformed Gaussians and se-lect the front-most ones that contribute to rendering each mask as reliable seeds G(k) 
+
+> t
+
+. These seeds are merged into their corresponding motion groups G(k) in the memory bank, which then serve as the starting points for region growing. During region growing, each Gaussian g ∈ G 
+
+is represented by a compact spatiotemporal feature fg =[μc,g , w′ 
+
+> g
+
+, ], where μc,g denotes its canonical-space mean and w′ 
+
+> g
+
+encodes its PCA-reduced motion coefficient. Using these features, each group G(k) is expanded by aggregating nearby Gaussians that satisfy |fg − fg′ | < ϵ r . The updated groups are stored in the memory bank, and the process con-tinues at the next keyframe. Through this alternating loop of front-Gaussian seeding and feature-space region growing, our method effectively captures the spatiotemporal characteristics of the dynamic Gaussian representation, resulting in robust and accurate motion grouping. As shown in Figure 3, our approach produces complete and reliable object-level motion groups with highly accurate assignments, consistently outperform-ing competing methods. 
+
+4.2. Group-wise Gaussian Motion Optimization 
+
+After grouping, we further optimize the 4DGS representa-tion by incorporating the object group information. We in-troduce group-wise motion constraints guided by the rigid-ity flag τ (k), which adaptively applies distinct motion reg-ularization strategies to rigid and non-rigid object groups. 
+
+Rigid Motion Anchoring Loss. We perform constrained optimization to refine the grouped 4DGS representation by adaptively applying motion constraints to each Gaus-sian g ∈ G(k) according to the group motion type. For a group labeled as rigid ( τ (k) = 1 ), all Gaussians within the group are constrained to share a single SE (3) trans-Algorithm 1: Motion-aware Gaussian Grouping 
+
+Input: Video frames {It}Tt=1 , segmentation model 
+
+S, dynamic Gaussian set G with deformed Gaussian states {gt}Tt=1 
+
+Output: Motion groups {M (k) = ( G(k), τ (k))}Kk=1 
+
+Stage 1: Init at the First Keyframe 
+
+Obtain {M (k) 
+
+> t
+
+, τ (k)
+
+> mask
+
+} ← S ({It})
+
+Select first keyframe tk,
+
+foreach k = 1 , . . . , K do 
+
+G(k) ← { g ∈ G | Proj (gtk ) ∈ M (k) 
+
+> tk
+
+}
+
+τ (k) ← τ (k)
+
+> mask
+
+Define features for all g: fg = [ μc,g , w′ 
+
+> g
+
+]
+
+Stage 2: Iterative Region Growing foreach keyframe t in stride order do 
+
+// (A) Feature-space region growing 
+
+repeat 
+
+U ← G \   S  
+
+> k
+
+G(k)
+
+foreach k = 1 , . . . , K do 
+
+ϵk ← α · mean 
+
+> g∈G(k)
+
+KNN K (fg )
+
+Nk ← { g′ ∈ U | min 
+
+> g′∈G(k)
+
+∥fg − fg′ ∥ < ϵ k }
+
+G(k) ← G(k) ∪ Nk
+
+U ← U \ Nk
+
+until no group changes ;
+
+// (B) Seeding & merge at keyframe t
+
+foreach k = 1 , . . . , K do 
+
+G(k) 
+
+> t
+
+← { g | Proj (gt) ∈ M (k) 
+
+> t
+
+}
+
+G(k) ← G(k) ∪ G(k)
+
+> t
+
+formation Φ(k) 
+
+> t
+
+= [ R(k) 
+
+> c→t
+
+| t(k) 
+
+> c→t
+
+]. We define the group-level rigid transformation as a function acting on a Gaussian 
+
+g ∈ Gk that maps its canonical-space mean to the deformed space at time t:
+
+Φ(k) 
+
+> t
+
+(g) = R(k)
+
+> c→t
+
+μc,g + t(k)
+
+> c→t
+
+. (6) This operator ensures that all Gaussians within the same rigid group undergo a consistent SE (3) motion, preserving intra-group spatial structure during optimization. The rigid-body loss then measures the deviation between the learned per-Gaussian deformation and the group-level rigid trans-form: 
+
+L(k) 
+
+> rigid
+
+= X
+
+> t
+
+X
+
+> g∈G(k)
+
+μt,g − Φ(k) 
+
+> t
+
+(g) 22. (7) 
+
+Non-Rigid Motion Smoothness Loss. For non-rigid groups ( τ (k) = 0 ), each Gaussian g ∈ G is assigned a learn-able motion coefficient wg ∈ RB that governs its deforma-tion behavior over time. Following [37], we promote locally coherent motion in the canonical space by applying a spatial smoothness regularization defined as 
+
+L(k) 
+
+> nr
+
+= X
+
+> g∈G(k)
+
+X
+
+> g′∈NN (g)
+
+∥wg − wg′ ∥22, (8) where NN (g) denotes the spatial neighbors of Gaussian g,typically selected within a fixed-radius region in the canoni-cal space. This regularization encourages spatially adjacent Gaussians to share consistent motion coefficients and pre-serves locally smooth motion patterns across the canonical space. Finally, the overall motion objective integrates both terms under the rigidity flag: 
+
+Lmotion =
+
+> K
+
+X
+
+> k=1
+
+h
+
+τ (k) L(k) 
+
+> rigid
+
++ (1 − τ (k)) L(k)
+
+> nr
+
+i
+
+. (9) Additional optimization objectives are described in the sup-plementary material. With the object motion-aware opti-mization stage, we obtain a refined 4D Gaussian representa-tion where rigid groups follow coherent SE (3) motion and non-rigid groups exhibit locally smooth deformation. This reduces per-Gaussian drift and improves temporal consis-tency of the reconstructed motion. 
+
+4.3. Group-wise Motion Forecasting 
+
+After obtaining motion-consistent 4DGS representation, we aim to forecast the future evolution of Gaussian motion beyond the observed frames. At time t, the motion of a Gaussian g ∈ G is represented by its SE (3) transformation 
+
+Tt,g = [ Rt,g | μt,g ]. Similar to [36, 50], our forecaster takes the optimized motion sequence from 4DGS represen-tation, {Tt,g }Tt=0 , as input and predicts its future continu-ation { ˆTt,g }t>T . The forecasting is performed in an au-toregressive rollout, iteratively using the latest T −1 frames including predictions to generate subsequent timesteps. 
+
+Masked Input Training. The motion forecaster adopts a shallow Transformer encoder [34], which effectively mod-els temporal dependencies but tends to overfit when trained on fully observed sequences. To enhance generalization and temporal reasoning, we introduce a masked motion mod-eling strategy inspired by masked language modeling in NLP [6]. This segment-level masking encourages the model to infer missing temporal dynamics from surrounding mo-tion context, resulting in better temporal understanding. It further improves long-horizon prediction and robustness to noisy inputs. The masking ratio is gradually annealed dur-ing training to match the inference condition. 
+
+Group-wise Forecasting. We train a lightweight motion forecaster to each motion group G(k) obtained from the group-wise optimization in Section 4.2, enabling the model to learn group-specific temporal dynamics. This group-wise formulation enhances both stability and accuracy of motion Table 1. Forecasting results on the iPhone dataset. We forecast frames beyond the observed time window and evaluate the predicted frames rendered from held-out test viewpoints. The leftmost column ( Obs. ratio ) indicates the fraction of input training frames used by each model; 80% and 60% correspond to forecasting the remaining 20% and 40% of frames, respectively. † denotes methods that are re-implemented for the SoM-based 4DGS representation and retain their original forecasting scheme.                                                                                                                                                                   
+
+> Obs. ratio Scene GSPred [50] GSPred-SoM †[50] ODE-GS-SoM †[36] MoGaF (Ours) mPSNR ↑mSSIM ↑mLPIPS ↓mPSNR ↑mSSIM ↑mLPIPS ↓mPSNR ↑mSSIM ↑mLPIPS ↓mPSNR ↑mSSIM ↑mLPIPS ↓
+> 80% apple 15.75 0.5589 0.4338 17.22 0.8122 0.4806 16.35 0.8135 0.4803 17.97 0.8199 0.4341 block 12.61 0.5220 0.5363 12.20 0.5807 0.5352 12.07 0.5717 0.5583 12.62 0.5875 0.5352
+> paper-windmill 14.76 0.2244 0.4329 19.16 0.5573 0.2142 19.13 0.5512 0.2154 19.34 0.5552 0.2052
+> spin 14.54 0.4652 0.4002 15.12 0.6701 0.3166 15.69 0.6593 0.3354 15.96 0.6740 0.3236 teddy 11.15 0.5790 0.5752 11.26 0.5823 0.6942 10.06 0.5821 0.7093 11.99 0.5607 0.6157 Average 13.76 0.4699 0.4757 14.99 0.6405 0.4482 14.66 0.6355 0.4597 15.58 0.6395 0.4227
+> 60% apple 14.44 0.5682 0.6108 16.96 0.7460 0.4491 15.48 0.7333 0.5035 16.57 0.7409 0.4660 block 13.61 0.5494 0.5242 13.02 0.6022 0.5231 13.94 0.6101 0.5314 14.06 0.6134 0.5055
+> paper-windmill 14.96 0.2254 0.4651 18.30 0.4888 0.2345 17.94 0.4745 0.2566 18.34 0.4858 0.2308
+> spin 14.52 0.4564 0.4203 15.79 0.6719 0.3192 14.89 0.6490 0.3508 16.47 0.6838 0.3159
+> teddy 11.49 0.5828 0.5753 11.63 0.5447 0.6020 11.96 0.5526 0.6010 12.12 0.5478 0.6045 Average 13.80 0.4764 0.5192 15.14 0.6107 0.4256 14.84 0.6039 0.4487 15.51 0.6143 0.4245
+
+forecasting by decoupling heterogeneous motion dynamics across objects. Within each group, the forecaster captures consistent temporal patterns shared among Gaussians ex-hibiting similar motion behavior, leading to smoother and more coherent predictions. 
+
+Training Objectives. For each motion group G(k), the forecaster takes the Gaussian motion up to time T − 1 as input and is trained to minimize the discrepancy between the predicted and observed motion at time T . The motion reconstruction loss is defined as 
+
+L(k) 
+
+> pred
+
+= 1
+
+|G(k)|
+
+X
+
+> g∈G(k)
+
+TT,g − ˆTT,g 
+
+> 22
+
+. (10) To enforce physically smooth motion, we apply an acceler-ation regularization term: 
+
+L(k) 
+
+> acc
+
+= 1
+
+|G(k)|
+
+X
+
+> g∈G(k)
+
+ˆμT,g − 2μT −1,g + μT −2,g 
+
+> 22
+
+, (11) where ˆμt,g denotes the predicted mean of Gaussian g at time t. The overall training objective for G(k) is given by: 
+
+L(k) 
+
+> group
+
+= L(k) 
+
+> pred
+
++ λacc L(k) 
+
+> acc
+
+, (12) and each forecaster is trained independently using L(k)
+
+> group
+
+.
+
+## 5. Experiments 
+
+5.1. Implementation Details 
+
+We build our dynamic reconstruction pipeline upon Shape-of-Motion (SoM) [37], which serves as the backbone for canonical space and motion parameterization. For Gaus-sian grouping, we extend the official implementation of Gaga [26] and integrate it into our framework. For mo-tion forecasting, we design a lightweight transformer-based forecaster consisting of a single-layer encoder with eight attention heads, a 32-dimensional feature embedding, and a 64-dimensional feed-forward expansion. A final prediction head maps the encoded features to future motion parame-ters. Additional architectural and optimization details are provided in the Supplementary Material. 
+
+5.2. Future View Synthesis 
+
+We evaluate future view synthesis performance following the protocol of GSPred [50]. Specifically, we use a sub-set of the original training frames as input observations and measure forecasting performance on the remaining unseen frames. We consider two observation ratios: 80% (as in GSPred) and a more challenging 60% setting to assess long-term prediction capability. 
+
+Evaluation on iPhone dataset. We first evaluate our method on iPhone dataset [10], which contains hundreds of frames of dynamic scenes captured from multiple hand-held cameras. Since GSPred [50] is built on [39], it does not leverage data-driven priors such as depth estimation [45] or dense point tracking [7, 14], and thus often underperforms on highly dynamic monocular captures. For a fair compari-son, we adopt the GCN-based forecasting architecture from GSPred and train it on top of SoM, denoted as GSPred-SoM . Additionally, following [36], we reproduce a latent neural ODE forecaster on the SoM representation, denoted as ODE-GS-SoM .As shown in Table 1, MoGaF consistently achieves higher photometric fidelity than the baselines. Figure 4 shows that MoGaF preserves the geometry of both rigid and non-rigid dynamic objects, producing realistic future renderings by accurately extrapolating the observed motion. In contrast, baselines often exhibit geometric inconsistency and unrealistic dynamics in scenes involving large or rapid motion. To further assess long-term behavior, we examine the forecasting results for apple in Figure 6. GSPred ren-ders the hand as nearly static in the future frames despite its highly dynamic motion in the observations, while GSPred-SoM and ODE-GS-SoM fail to maintain object geometry. In comparison, MoGaF accurately preserves object geome-(b) 60% Observed / 40%  Forecasted (a) 80% Observed / 20%  Forecasted      
+
+> GT MoGaF (Ours) GSPred -SoM †GSPred MoGaF (Ours) GT GSPred -SoM †GSPred ODE -GS -SoM †ODE -GS -SoM †
+
+Figure 4. Qualitative results on iPhone dataset. We present forecasted frames from test camera views. (a) and (b) correspond to settings where the first 80% and 60% of frames are used for training, and the remaining 20% and 40% are forecasted, respectively. Table 2. Forecasting results on D-NeRF dataset. We use 60% of the frames as training and predict the remaining 40%.                                                              
+
+> Scene GSPred [50] Ours PSNR ↑SSIM ↑LPIPS ↓PSNR ↑SSIM ↑LPIPS ↓
+> Trex 20.63 0.9271 0.0627 20.80 0.9379 0.0551
+> Mutant 25.14 0.9375 0.0415 25.69 0.9246 0.0482 Jumpingjacks 19.84 0.9087 0.0924 19.86 0.9090 0.0920
+> Standup 21.99 0.9170 0.0796 22.32 0.9201 0.0756
+> Bouncingballs 23.68 0.9603 0.0540 25.03 0.9623 0.0436
+> Hook 21.18 0.8855 0.0851 22.41 0.8929 0.0784
+> Hellwarrior 29.11 0.9056 0.0957 29.23 0.9075 0.0894
+> Lego 12.65 0.7667 0.2244 21.61 0.8631 0.1142 Average 21.78 0.9011 0.0919 23.37 0.9147 0.0746
+
+try and predicts the hand’s complex motion, demonstrating its effectiveness in extrapolating coherent dynamics. Addi-tional results are included in the Supplementary Material. 
+
+Evaluation on D-NeRF dataset. We also evaluate fore-casting performance on D-NeRF dataset [31], which con-sists of synthetic frames capturing dynamic objects ren-dered from randomly sampled viewpoints on a hemisphere at each timestep. Since D-NeRF dataset consists solely of object-level scenes, we follow the same 4DGS train-ing procedure as GSPred [50] to enable a fair compari-son of the forecasting module in MoGaF. As shown in Ta-ble 2, MoGaF achieves higher performance across most scenes, demonstrating stronger temporal coherence and long-range motion modeling under the 60%–40% forecast-ing setting. Figure 5 further presents qualitative results un-der the 80%–20% split. In Standup , MoGaF captures the global motion trend and produces realistic long-term fore-casts. In Lego , it preserves object structure and motion, whereas GSPred often loses shape consistency. Additional results are provided in the Supplementary Material. Obs. Timesteps 
+
+> t = 0
+> t = 0
+> t = 119
+> t = 39
+
+GSPred   
+
+> t = 139 t = 239
+> t = 40 t = 59
+
+Ours   
+
+> t = 139 t = 239
+> t = 40 t = 59
+
+Figure 5. Forecasting results on D-NeRF dataset. We render extrapolated future frames. Note that in Obs. Timesteps , the first and second columns show renderings reconstructed from training views at the first and last observed timesteps, respectively. 
+
+5.3. Ablation Studies 
+
+Group-wise Optimization and Forecasting. We analyze the effectiveness of our group-wise optimization and fore-casting. To this end, we remove the group-wise optimiza-tion stages and forecast the future motion of all dynamic Gaussians jointly with a single forecaster (i.e., without object-wise forecasters). We evaluate forecasting quality using 2D and 3D point-tracking metrics following the pro-tocol of [37]. As shown in Table 3a, performance consis-tently degrades without the group-aware design. These re-sults indicate that object-level structure is crucial for phys-ically plausible, temporally coherent long-term forecasts. More detailed ablations of the group-wise modules are re-ported in the Supplementary Material C.3 (Table 6). 
+
+Masked Motion Forecaster Training. We assess the ef-fect of our motion-masking strategy on D-NeRF dataset by comparing the forecaster against a variant trained without masking. As shown in Table 3b and Figure 7, removing the GSPred -SoM †
+
+t + 80  t + 90  t + 100  t + 110  t + 120  t + 130  t + 140 
+
+> GSPred MoGaF  (Ours)
+
+(a) Observed  (b) Forecasted frames 
+
+> ODE -GS -SoM †
+
+Figure 6. Long-term forecasting results on iPhone dataset. (a) shows GT views from test cameras at the observed timesteps, and (b) presents the forecasted renderings for timesteps beyond the observations. Note that t denotes the timestep of the last observed frame. GT  Ours w/o masking  Ours 
+
+Figure 7. Effect of masking. Applying contiguous-span masking during training enhances the robustness of motion forecasting. 
+
+masking strategy leads to noticeable performance degrada-tion. This gap indicates that masking helps the encoder at-tend to intrinsic motion cues, resulting in more stable long-term predictions and improved robustness under extended forecasting horizons. 
+
+## 6. Conclusion 
+
+We introduced Motion Group-aware Gaussian Forecasting (MoGaF), a unified framework for dynamic scene long-term extrapolation leveraging structured 4D representation. MoGaF explicitly models object-level dynamics through motion-aware Gaussian grouping, group-wise optimization, 
+
+Table 3. Ablation results. (Top) Tracking performance on iPhone dataset. (Bottom) Masking performance on D-NeRF dataset.                               
+
+> (a) We evaluate point-tracking metrics on the forecasted 40% future frames with and without both group-wise optimization and forecasting.
+> Method 3D tracking 2D tracking EPE ↓δ.10 3D↑δ.05 3D↑AJ ↑δavg ↑OA ↑
+> Ours w/o grouping 0.250 44.9 24.8 23.9 15.5 74.2 MoGaF (Ours) 0.220 52.7 31.4 27.3 16.0 79.0
+> (b) We evaluate 20% future frame forecasting using forecasters trained with and without masking.
+> Method PSNR ↑SSIM ↑LPIPS ↓
+> Ours w/o masking 24.68 0.9283 0.0551 Ours 25.87 0.9357 0.0491
+
+and a lightweight forecasting module. By enforcing physi-cally consistent rigid and non-rigid motion within a struc-tured space-time representation, MoGaF produces 4DGS models that are both spatially coherent and temporally sta-ble, enabling realistic scene evolution beyond the observed frames. Extensive experiments on synthetic and real-world datasets show that MoGaF significantly improves long-term forecasting accuracy over existing baselines, and ab-lation studies confirm the contribution of each component to achieving spatial consistency and stable predictions. 
+
+Limitations and Future Work. Despite its robustness, our framework relies on per-scene optimization, which in-troduces a limitation. When the input viewpoints provide limited coverage, the model cannot reliably reconstruct un-seen or insufficiently observed geometry. As a result, er-rors in the optimized spatiotemporal representation directly propagate to subsequent forecasting stages. Moreover, our approach does not explicitly model interactions between ob-ject groups during forecasting. Since Gaussians are not physical primitives, our method cannot reason about ob-ject interactions such as collisions, which limits its ability to produce physically plausible group-level dynamics. Incor-porating physical constraints, such as preventing interpen-etration and friction-based contact modeling, could enable more realistic, interaction-aware forecasting in future work. 
+
+## References 
+
+[1] Mido Assran, Adrien Bardes, David Fan, Quentin Garrido, Russell Howes, Matthew Muckley, Ammar Rizvi, Claire Roberts, Koustuv Sinha, Artem Zholus, et al. V-jepa 2: Self-supervised video models enable understanding, prediction and planning. arXiv preprint arXiv:2506.09985 , 2025. 1 [2] Ang Cao and Justin Johnson. Hexplane: A fast representa-tion for dynamic scenes. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 130–141, 2023. 2 [3] Jiazhong Cen, Jiemin Fang, Zanwei Zhou, Chen Yang, Lingxi Xie, Xiaopeng Zhang, Wei Shen, and Qi Tian. Seg-ment anything in 3d with radiance fields. International Jour-nal of Computer Vision , pages 1–23, 2025. 2 [4] Xiaokang Chen, Jiaxiang Tang, Diwen Wan, Jingbo Wang, and Gang Zeng. Interactive segment anything nerf with fea-ture imitation. arXiv preprint arXiv:2305.16233 , 2023. 2 [5] Ho Kei Cheng, Seoung Wug Oh, Brian Price, Alexan-der Schwing, and Joon-Young Lee. Tracking anything with decoupled video segmentation. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 1316–1326, 2023. 2 [6] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: Pre-training of deep bidirectional trans-formers for language understanding. In Proceedings of the 2019 conference of the North American chapter of the asso-ciation for computational linguistics: human language tech-nologies, volume 1 (long and short papers) , pages 4171– 4186, 2019. 5 [7] Carl Doersch, Yi Yang, Mel Vecerik, Dilara Gokay, Ankush Gupta, Yusuf Aytar, Joao Carreira, and Andrew Zisserman. Tapir: Tracking any point with per-frame initialization and temporal refinement. In Proceedings of the IEEE/CVF In-ternational Conference on Computer Vision , pages 10061– 10072, 2023. 2, 6 [8] Bin Dou, Tianyu Zhang, Zhaohui Wang, Yongjia Ma, Zejian Yuan, and Nanning Zheng. Learning segmented 3d gaus-sians via efficient feature unprojection for zero-shot neural scene segmentation. In International Conference on Neural Information Processing , pages 398–412. Springer, 2024. 2 [9] Sara Fridovich-Keil, Giacomo Meanti, Frederik Rahbæk Warburg, Benjamin Recht, and Angjoo Kanazawa. K-planes: Explicit radiance fields in space, time, and appearance. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pages 12479–12488, 2023. 2 [10] Hang Gao, Ruilong Li, Shubham Tulsiani, Bryan Russell, and Angjoo Kanazawa. Monocular dynamic view synthesis: A reality check. Advances in Neural Information Processing Systems , 35:33768–33780, 2022. 6, 2, 5, 7 [11] Rohit Girdhar and Kristen Grauman. Anticipative video transformer. In Proceedings of the IEEE/CVF international conference on computer vision , pages 13505–13515, 2021. 1 [12] Agrim Gupta, Stephen Tian, Yunzhi Zhang, Jiajun Wu, Roberto Mart´ ın-Mart´ ın, and Li Fei-Fei. Maskvit: Masked visual pre-training for video prediction. arXiv preprint arXiv:2206.11894 , 2022. 2 [13] Danijar Hafner, Timothy Lillicrap, Jimmy Ba, and Moham-mad Norouzi. Dream to control: Learning behaviors by la-tent imagination. arXiv preprint arXiv:1912.01603 , 2019. 1 [14] Nikita Karaev, Ignacio Rocco, Benjamin Graham, Natalia Neverova, Andrea Vedaldi, and Christian Rupprecht. Co-tracker: It is better to track together. In European conference on computer vision , pages 18–35. Springer, 2024. 2, 6 [15] Bernhard Kerbl, Georgios Kopanas, Thomas Leimk¨ uhler, and George Drettakis. 3d gaussian splatting for real-time radiance field rendering. ACM Trans. Graph. , 42(4):139–1, 2023. 1, 2, 3 [16] Chung Min Kim, Mingxuan Wu, Justin Kerr, Ken Gold-berg, Matthew Tancik, and Angjoo Kanazawa. Garfield: Group anything with radiance fields. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 21530–21539, 2024. 2 [17] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer White-head, Alexander C Berg, Wan-Yen Lo, et al. Segment any-thing. In Proceedings of the IEEE/CVF international confer-ence on computer vision , pages 4015–4026, 2023. 2 [18] Agelos Kratimenos, Jiahui Lei, and Kostas Daniilidis. Dynmf: Neural motion factorization for real-time dynamic view synthesis with 3d gaussian splatting. In European Con-ference on Computer Vision , pages 252–269. Springer, 2024. 2[19] Yong-Hoon Kwon and Min-Gyu Park. Predicting future frames using retrospective cycle gan. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1811–1820, 2019. 1 [20] Jiahui Lei, Yijia Weng, Adam W Harley, Leonidas Guibas, and Kostas Daniilidis. Mosca: Dynamic gaussian fusion from casual videos via 4d motion scaffolds. In Proceedings of the Computer Vision and Pattern Recognition Conference ,pages 6165–6177, 2025. 1, 2 [21] Tianye Li, Mira Slavcheva, Michael Zollhoefer, Simon Green, Christoph Lassner, Changil Kim, Tanner Schmidt, Steven Lovegrove, Michael Goesele, Richard Newcombe, et al. Neural 3d video synthesis from multi-view video. In 
+
+Proceedings of the IEEE/CVF conference on computer vi-sion and pattern recognition , pages 5521–5531, 2022. 2 [22] Wenqian Liu, Abhishek Sharma, Octavia Camps, and Mario Sznaier. Dyan: A dynamical atoms-based network for video prediction. In Proceedings of the European Conference on Computer Vision (ECCV) , pages 170–185, 2018. 2 [23] Chaochao Lu, Michael Hirsch, and Bernhard Scholkopf. Flexible spatio-temporal networks for video prediction. In 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pages 6523–6531, 2017. 1 [24] Jonathon Luiten, Georgios Kopanas, Bastian Leibe, and Deva Ramanan. Dynamic 3d gaussians: Tracking by per-sistent dynamic view synthesis. In 2024 International Con-ference on 3D Vision (3DV) , pages 800–809. IEEE, 2024. 2 [25] Zhanpeng Luo, Haoxi Ran, and Li Lu. Instant4d: 4d gaus-sian splatting in minutes, 2025. 2 [26] Weijie Lyu, Xueting Li, Abhijit Kundu, Yi-Hsuan Tsai, and Ming-Hsuan Yang. Gaga: Group any gaussians via 3d-aware memory bank. arXiv preprint arXiv:2404.07977 , 2024. 2, 3, 4, 6, 1 [27] Ben Mildenhall, Pratul P Srinivasan, Matthew Tancik, Jonathan T Barron, Ravi Ramamoorthi, and Ren Ng. Nerf: Representing scenes as neural radiance fields for view syn-thesis. Communications of the ACM , 65(1):99–106, 2021. 1, 2[28] Ruibo Ming, Zhewei Huang, Zhuoxuan Ju, Jianming Hu, Li-hui Peng, and Shuchang Zhou. A survey on future frame synthesis: Bridging deterministic and generative approaches. 
+
+arXiv preprint arXiv:2401.14718 , 2024. 1 [29] Keunhong Park, Utkarsh Sinha, Jonathan T Barron, Sofien Bouaziz, Dan B Goldman, Steven M Seitz, and Ricardo Martin-Brualla. Nerfies: Deformable neural radiance fields. In Proceedings of the IEEE/CVF international conference on computer vision , pages 5865–5874, 2021. 2 [30] Keunhong Park, Utkarsh Sinha, Peter Hedman, Jonathan T Barron, Sofien Bouaziz, Dan B Goldman, Ricardo Martin-Brualla, and Steven M Seitz. Hypernerf: A higher-dimensional representation for topologically varying neural radiance fields. arXiv preprint arXiv:2106.13228 , 2021. [31] Albert Pumarola, Enric Corona, Gerard Pons-Moll, and Francesc Moreno-Noguer. D-nerf: Neural radiance fields for dynamic scenes. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pages 10318–10327, 2021. 2, 7, 5 [32] Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman R¨ adle, Chloe Rolland, Laura Gustafson, et al. Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 , 2024. 2 [33] Tianhe Ren, Qing Jiang, Shilong Liu, Zhaoyang Zeng, Wen-long Liu, Han Gao, Hongjie Huang, Zhengyu Ma, Xiaoke Jiang, Yihao Chen, Yuda Xiong, Hao Zhang, Feng Li, Peijun Tang, Kent Yu, and Lei Zhang. Grounding dino 1.5: Ad-vance the ”edge” of open-set object detection, 2024. 3, 2 [34] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-reit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems , 30, 2017. 5 [35] Angel Villar-Corrales, Ismail Wahdan, and Sven Behnke. Object-centric video prediction via decoupling of object dy-namics and interactions. In 2023 IEEE International Con-ference on Image Processing (ICIP) , pages 570–574. IEEE, 2023. 2 [36] Daniel Wang, Patrick Rim, Tian Tian, Dong Lao, Alex Wong, and Ganesh Sundaramoorthi. Ode-gs: Latent odes for dynamic scene extrapolation with 3d gaussian splatting. 
+
+arXiv preprint arXiv:2506.05480 , 2025. 2, 3, 5, 6 [37] Qianqian Wang, Vickie Ye, Hang Gao, Weijia Zeng, Jake Austin, Zhengqi Li, and Angjoo Kanazawa. Shape of mo-tion: 4d reconstruction from a single video. In Proceedings of the IEEE/CVF International Conference on Computer Vi-sion , pages 9660–9672, 2025. 1, 2, 3, 5, 6, 7, 4 [38] Yunbo Wang, Lu Jiang, Ming-Hsuan Yang, Li-Jia Li, Ming-sheng Long, and Li Fei-Fei. Eidetic 3d LSTM: A model for video prediction and beyond. In International Conference on Learning Representations , 2019. 2 [39] Guanjun Wu, Taoran Yi, Jiemin Fang, Lingxi Xie, Xiaopeng Zhang, Wei Wei, Wenyu Liu, Qi Tian, and Xinggang Wang. 4d gaussian splatting for real-time dynamic scene rendering. In Proceedings of the IEEE/CVF conference on computer vi-sion and pattern recognition , pages 20310–20320, 2024. 2, 6[40] Jialong Wu, Shaofeng Yin, Ningya Feng, Xu He, Dong Li, Jianye Hao, and Mingsheng Long. ivideogpt: Interactive videogpts are scalable world models. Advances in Neural Information Processing Systems , 37:68082–68119, 2024. 1 [41] Yue Wu, Rongrong Gao, Jaesik Park, and Qifeng Chen. Fu-ture video synthesis with object motion prediction. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 5539–5548, 2020. 1 [42] Yue Wu, Qiang Wen, and Qifeng Chen. Optimizing video prediction via video frame interpolation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 17814–17823, 2022. 1 [43] Wilson Yan, Yunzhi Zhang, Pieter Abbeel, and Aravind Srinivas. Videogpt: Video generation using vq-vae and trans-formers. arXiv preprint arXiv:2104.10157 , 2021. 2 [44] Jinyu Yang, Mingqi Gao, Zhe Li, Shang Gao, Fangjing Wang, and Feng Zheng. Track anything: Segment anything meets videos. arXiv preprint arXiv:2304.11968 , 2023. 2 [45] Lihe Yang, Bingyi Kang, Zilong Huang, Xiaogang Xu, Jiashi Feng, and Hengshuang Zhao. Depth anything: Unleashing the power of large-scale unlabeled data. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10371–10381, 2024. 2, 6 [46] Zeyu Yang, Hongye Yang, Zijie Pan, and Li Zhang. Real-time photorealistic dynamic scene representation and rendering with 4d gaussian splatting. arXiv preprint arXiv:2310.10642 , 2023. 2 [47] Ziyi Yang, Xinyu Gao, Wen Zhou, Shaohui Jiao, Yuqing Zhang, and Xiaogang Jin. Deformable 3d gaussians for high-fidelity monocular dynamic scene reconstruction. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 20331–20341, 2024. 2 [48] Mingqiao Ye, Martin Danelljan, Fisher Yu, and Lei Ke. Gaussian grouping: Segment and edit anything in 3d scenes. In European conference on computer vision , pages 162–179. Springer, 2024. 2, 3 [49] Xi Ye and Guillaume-Alexandre Bilodeau. Vptr: Efficient transformers for video prediction. In 2022 26th International conference on pattern recognition (ICPR) , pages 3492–3499. IEEE, 2022. 2 [50] Boming Zhao, Yuan Li, Ziyu Sun, Lin Zeng, Yujun Shen, Rui Ma, Yinda Zhang, Hujun Bao, and Zhaopeng Cui. Gaus-sianprediction: Dynamic 3d gaussian prediction for motion extrapolation and free view synthesis. In ACM SIGGRAPH 2024 Conference Papers , pages 1–12, 2024. 1, 2, 3, 5, 6, 7 [51] Shijie Zhou, Haoran Chang, Sicheng Jiang, Zhiwen Fan, Ze-hao Zhu, Dejia Xu, Pradyumna Chari, Suya You, Zhangyang Wang, and Achuta Kadambi. Feature 3dgs: Supercharging 3d gaussian splatting to enable distilled feature fields. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 21676–21685, 2024. 2 [52] M. Zwicker, H. Pfister, J. van Baar, and M. Gross. Ewa splatting. IEEE Transactions on Visualization and Computer Graphics , 8(3):223–238, 2002. 3 Space-Time Forecasting of Dynamic Scenes with Motion-aware Gaussian Grouping 
+
+# Supplementary Material 
+
+## Contents 
+
+A. Details of Gaussian Grouping 1
+
+A.1. Preliminary: Static Gaussian Grouping . . . 1A.2. Naive Extension of Static Gaussian Grouping 1A.3. Motion-aware Gaussian Grouping . . . . . . 2
+
+B. Implementation Details 4
+
+B.1. 4DGS Initialization via SoM . . . . . . . . . 4B.2. Motion-aware Gaussian Grouping . . . . . . 4B.3. Group-wise Optimization . . . . . . . . . . 4B.4. Group-wise Motion Forecasting . . . . . . . 4
+
+C. Additional Experimental Results 5
+
+C.1. Future View Synthesis . . . . . . . . . . . . 5C.2. Novel View Synthesis . . . . . . . . . . . . 5C.3. Component Analysis of MoGaF . . . . . . . 6
+
+## A. Details of Gaussian Grouping 
+
+In this section, we provide the detailed algorithms used in our Gaussian grouping pipeline, complementing the de-scription in Section 4.1 of the main paper. We first sum-marize the static Gaussian grouping mechanism used in Gaga [26] (Section A.1), then describe its naive 4D exten-sion (Section A.2), and finally introduce our motion-aware grouping algorithm that incorporates spatiotemporal cues (Section A.3). 
+
+A.1. Preliminary: Static Gaussian Grouping 
+
+Gaga [26] formulates static 3D Gaussian grouping as the problem of assigning each 3D Gaussian to group label us-ing multi-view 2D instance masks. Given a set of static 3D Gaussians G reconstructed from a scene and multi-view images with segmentation masks, each 2D mask M is first associated with Gaussians those projections fall inside the mask region: 
+
+G(M (k) 
+
+> i
+
+) = g ∈ G Proj( g) ∈ M (k) 
+
+> i
+
+, (13) where M (k) 
+
+> i
+
+is k-th mask detected in i-th image. 
+
+3D-aware memory bank. To enforce cross-view con-sistency, Gaga employs memory banks storing Gaussian groups {G (k)}, where each group represents an object-level region in 3D space. At initialization, the masks from the first view are each inserted into the memory bank as sep-arate groups by setting G(k) ← G (M (k)0 ) for every mask 
+
+M (k)0 in the initial view. For subsequent views, new masks are either merged into one of these existing groups or used to create additional groups, depending on their overlap with the current memory contents. 
+
+Group ID assignment. For a new mask m = M (j) 
+
+> i
+
+ex-tracted from i-th input image, the similarity between its associated Gaussians G(m) and an existing group G(k) is computed using the shared-Gaussian overlap: 
+
+Overlap( m, k ) = # G(k) ∩ G (m)
+
+# G(m) . (14) This formulation depends only on the newly observed set 
+
+G(m), so the threshold is independent of how many Gaus-sians have already been accumulated in G(k), avoiding the need to continually retune it as the memory bank grows. Let k⋆ = arg max  
+
+> k
+
+Overlap( m, k ) be the group with the highest overlap score. If Overlap( m, k ⋆) exceeds a fixed threshold θov , Gaussians in G(m) are merged into group 
+
+G(k⋆):
+
+G(k⋆) ← G (k⋆) ∪ G (m). (15) Otherwise, a new group is created in the memory bank with 
+
+G(m) as its initial Gaussian set. In practice, each Gaussian is assigned to at most one group by tracking canonical in-dices, so once a Gaussian has been inserted into a group, it is not duplicated elsewhere. 
+
+Static setting. Because Gaga operates on static scenes, each Gaussian maintains a fixed 3D position, making 2D projection overlap a reliable cue for multi-view object grouping. The method produces coherent object-part seg-mentation and provides the foundation for extending group-ing to dynamic scenes in our work. 
+
+A.2. Naive Extension of Static Gaussian Grouping 
+
+4D-aware Memory Bank. Given a 2D mask M (k) 
+
+> t
+
+at timestep t, we extract deformed Gaussians contributing to the mask: 
+
+G(k) 
+
+> t
+
+= g ∈ G Proj( gt) ∈ M (k) 
+
+> t
+
+, (16) where gt denotes the deformed state of g. We extend the static memory bank to maintain motion groups over time. At the first frame, the k-th memory bank is initialized as 
+
+M(k) =
+
+
+
+G(k) 
+
+> t
+
+, τ (k)mask 
+
+
+
+, (17) Ours  Gaga -4D Figure 8. Gaussian grouping results. We present Gaussian grouping results of our method and Gaga-4D on iPhone dataset [10], trained on the full sequence. 
+
+Algorithm 2: Naive 4D Gaussian Grouping 
+
+Input: Frames {It}, segmentation model S,Gaussians G, deformed states {gt}, overlap threshold θov 
+
+Output: Groups {M (k) = ( G(k), τ (k))}
+
+Init (first keyframe): Obtain 
+
+{M (k) 
+
+> t0
+
+, τ (k)mask } = S(It0 ); for k = 1 ..K do 
+
+G(k) ← { g ∈ G | Proj( gt0 ) ∈ M (k) 
+
+> t0
+
+};
+
+τ (k) ← τ (k)mask ;Define canonical ID id( g) for all g.
+
+Iterative grouping across frames: for t = 1 ..T do 
+
+Obtain {M (k) 
+
+> t
+
+, τ (k)mask };
+
+for k = 1 ..K do 
+
+G(k) 
+
+> t
+
+← { g ∈ G | Proj( gt) ∈ M (k) 
+
+> t
+
+};Compute Overlap( t, k ) for all k using canonical IDs; 
+
+if Overlap( t, k ) ≥ θov then 
+
+G(k) ← G(k) ∪ G(k) 
+
+> t
+
+;where τ (k)mask denotes the rigidity type of the segmented re-gion. 
+
+Group ID Assignment. Different from Gaga [26], we have access to consistent mask identities provided by video segmentation models [32, 33], which serve as a temporal cue for associating G(k) 
+
+> t
+
+with the same object across frames. Therefore, we do not apply the max-IoU–based merging strategy used for label-agnostic matching in static Gaussian segmentation. However, dynamic deformation and occlu-sions may produce unreliable matches, so we verify consis-tency using the shared-Gaussian overlap: 
+
+Overlap( t, k ) = #
+
+
+
+G(k) ∩ G(k)
+
+> t
+
+
+
+#
+
+
+
+G(k)
+
+> t
+
+ . (18) The intersection is defined through canonical identity: 
+
+G(k) ∩ G(k) 
+
+> t
+
+=
+
+n
+
+g ∈ G(k) 
+
+> t
+
+∃ g′ ∈ G(k), id( g) = id( g′)
+
+o
+
+.
+
+(19) 
+
+If Overlap( t, k ) ≥ θov , we merge: 
+
+G(k) ← G(k) ∪ G(k) 
+
+> t
+
+. (20) 
+
+Limitation of naive 4D extension. Because this naive ex-tension relies solely on instantaneous 2D projection over-lap, Gaussian deformation from motion optimization (e.g., occlusions, drift, partial visibility) can cause inconsistent overlap patterns. As a result, Gaussians belonging to the same object may fail to merge, fragmenting a single object into multiple groups, while unrelated objects may be mis-takenly merged due to projected overlap. This makes the naive extension fragile under ambiguous projections (Fig-ure 3a of the main paper), highlighting the need for motion-aware grouping that leverages temporal and motion cues be-yond simple projection overlap. 
+
+A.3. Motion-aware Gaussian Grouping 
+
+To address the limitations of the naive 4D extension, we propose a spatiotemporal Gaussian grouping algorithm tai-lored for pre-optimized 4DGS representations. Our method follows an alternating strategy composed of (i) keyframe-based seeding and (ii) feature-space region growing. We first sample Tkey keyframes from the input video, forming the keyframe set {It}Tkey 
+
+> t=1
+
+, and extract Gaussians that con-tribute to the mask rendering at these frames. Algorithm 3: Complete Procedure of Motion-aware Gaussian Grouping 
+
+Input: Video frames {It}Tt=1 , segmentation model 
+
+S, dynamic Gaussian set G with deformed states {gt}Tt=1 
+
+Output: Motion groups {M (k) = ( G(k), τ (k))}Kk=1 
+
+Stage 1: Init at the First Keyframe 
+
+Obtain {M (k) 
+
+> t
+
+, τ (k)
+
+> mask
+
+} ← S ({It})
+
+Select first keyframe tk
+
+foreach k = 1 , . . . , K do 
+
+G(k) ← { g ∈ G | Proj (gtk ) ∈ M (k) 
+
+> tk
+
+}
+
+τ (k) ← τ (k)
+
+> mask
+
+Define features for all g: fg = [ μc,g , w′ 
+
+> g
+
+]
+
+Stage 2: Iterative Region Growing foreach 
+
+keyframe t in stride order do 
+
+// (A) Feature-space region growing 
+
+repeat 
+
+U ← G \ S 
+
+> k
+
+G(k)
+
+foreach k = 1 , . . . , K do 
+
+ϵk ← α · mean g∈G(k) [KNN K (fg )] 
+
+Nk ← { g′ ∈ U |
+
+min g∈G(k) ∥fg − fg′ ∥ < ϵ k }
+
+G(k) ← G(k) ∪ Nk
+
+U ← U \ Nk
+
+until no group changes ;
+
+// (B) Seeding & merge at keyframe t
+
+foreach k = 1 , . . . , K do 
+
+G(k) 
+
+> t
+
+← { g | Proj (gt) ∈ M (k) 
+
+> t
+
+}
+
+G(k) ← G(k) ∪ G(k)
+
+> t
+
+Stage 3: Reassign Unassigned Gaussians (KNN Voting) 
+
+Glabeled ← S 
+
+> k
+
+G(k), U ← G \ Glabeled 
+
+foreach gu ∈ U do 
+
+N (gu) ← KNN K (fgu , G labeled )
+
+foreach k = 1 , . . . , K do 
+
+vk(gu) ← P  
+
+> g′∈N (gu)
+
+I[ g′ ∈ G(k) ]
+
+k⋆(gu) = arg max k vk(gu)
+
+G(k⋆(gu)) ← G(k⋆(gu)) ∪ { gu}
+
+Iterative Region Growing Strategy. We initialize mo-tion groups M(k) = {(G(k), τ (k))} by extracting the front Gaussians at a set of keyframes following Equation (16). After initialization, we propagate group assignments to neighboring Gaussians via a spatiotemporal region-growing process. Each Gaussian g ∈ G is represented by a spatiotemporal feature vector 
+
+fg = μc,g , w′
+
+> g
+
+, (21) where μc,g is the canonical-space mean of g, and w′ 
+
+> g
+
+de-notes its PCA-reduced motion coefficient. Given these features, each group G(k) is expanded by ag-gregating Gaussians in its feature-space neighborhood. For every g ∈ G(k), we consider its nearest neighbors and in-clude any candidate g′ if 
+
+∥fg − fg′ ∥ < ϵ r , g′ /∈ G(k). (22) This update is repeated until convergence. We then perform a new seeding step at the next keyframe and apply region growing again. By alternating between these two stages, the grouping progressively stabilizes and captures coherent spatiotemporal structure across the sequence. 
+
+Handling Unassigned Gaussians. After the alternating seeding–region-growing stages, a small number of Gaus-sians may remain unassigned because they were not in-cluded in any feature-space neighborhood expansion. To relabel these remaining Gaussians, we perform a feature-space voting procedure using only group-labeled Gaussians. For each unassigned Gaussian gu, we retrieve its K near-est labeled neighbors in feature space: 
+
+N (gu) = KNN K (fgu , Glabeled ), (23) where fgu is the spatiotemporal feature of gu and Glabeled =S 
+
+> k
+
+G(k) denotes the set of Gaussians with assigned group labels. Among these labeled neighbors, we count how many belong to each motion group. Let I[g′ ∈ G(k)] denote an in-dicator function that evaluates to 1 if g′ belongs to group k,and 0 otherwise. The voting score for group k is computed as 
+
+vk(gu) = X 
+
+> g′∈N (gu)
+
+I[g′ ∈ G(k)]. (24) The final group assignment for gu is then obtained by ma-jority voting: 
+
+k⋆(gu) = arg max  
+
+> k
+
+vk(gu). (25) We then update the motion group as 
+
+G(k⋆) ← G(k⋆) ∪ { gu}. (26) This voting-based reassignment ensures that isolated or boundary Gaussians are consistently grouped according to their local spatiotemporal context. As shown in Figure 8, our grouping algorithm works ro-bustly across multiple objects. It produces clear and stable group assignments even in scenes where distinct objects ex-hibit significant spatial overlap in the input video. B. Implementation Details 
+
+B.1. 4DGS Initialization via SoM 
+
+Our method builds on pre-optimized 4DGS representation following Shape-of-Motion (SoM) [37], trained for 300 epochs. We use the same optimization hyperparameters for all benchmark datasets, following the official SoM imple-mentation. For the future view synthesis experiments, we use only the first 60% or 80% of the input sequence to eval-uate extrapolation performance. 
+
+B.2. Motion-aware Gaussian Grouping 
+
+Iterative Region Growing. We implement our grouping strategy by modifying the official Gaga [26] implementa-tion. During initialization and keyframe-based seeding, we extract the closest 40% front Gaussians with respect to the camera view. For the region-growing stage, each Gaussian is represented as a spatiotemporal feature vector [μc,g , w′ 
+
+> g
+
+],composed of its canonical-space mean and a PCA-reduced motion coefficient. We apply PCA to the motion coeffi-cients of all dynamic Gaussians in 4DGS representation, scale the resulting PCA components by 0.3, and concate-nate them with the Gaussian means. Before performing re-gion growing for each group, we determine the growing ra-dius ϵr by computing the average neighbor distance among Gaussians belonging to the same group, ensuring that the expansion scale reflects the underlying local density. 
+
+Reassignment Strategy. In addition, during the Gaussian relabeling step for unassigned Gaussians, each Gaussian up-dates its group label by voting among the 8 nearest group-assigned neighbors. To further enforce reliable and spatially consistent grouping, we then reassign only the closest 50% of unassigned Gaussians, determined by their average dis-tance to the neighboring group-assigned Gaussians. 
+
+B.3. Group-wise Optimization 
+
+Our group-wise optimization consists of two main stages: (i) rigid motion initialization, and (ii) group-wise refine-ment. In the first stage, we initialize rigid group motion pa-rameters to enable our motion-aware objective. In the sec-ond stage, using the initialized motion information, we re-fine pre-optimized 4DGS representation to enforce stronger spatiotemporal consistency. 
+
+Rigid Motion Initialization. Before refining 4DGS rep-resentation, we first estimate the rigid body transformation parameters for rigid groups (i.e., groups with τ (k) = 1 ) to implement our rigid motion anchoring loss. Specifically, for each rigid motion group, we compute a sequence of rigid transformations {Φ(k) 
+
+> t
+
+= [ R(k) 
+
+> c→t
+
+| t(k)
+
+> c→t
+
+]}Tt=1 by solving a Procrustes alignment problem. The alignment at timestep t
+
+is given by 
+
+Φ(k) 
+
+> t
+
+= arg min  
+
+> R(k)
+> c→t,t(k)
+> c→t
+
+X
+
+> g∈G(k)
+
+R(k) 
+
+> c→t
+
+μc,g + t(k) 
+
+> c→t
+
+− μt,g 
+
+> 22
+
+,
+
+(27) where R(k) 
+
+> c→t
+
+∈ SO(3) and t(k) 
+
+> c→t
+
+∈ R3. Here, μc,g and μt,g 
+
+denote the canonical and deformed Gaussian centers. 
+
+Refinement of 4DGS Representation. Similar to the pre-optimization stage (Section B.1), our refinement is also implemented on top of SoM. We incorporate our group-wise motion optimization objective Lmotion into the original training loss. For optimization stability, we apply scaling weights and reformulate the objective as: 
+
+Lmotion =
+
+> K
+
+X
+
+> k=1
+
+h
+
+τ (k) · λrigid L(k) 
+
+> rigid
+
++ (1 − τ (k)) · λnr L(k)
+
+> nr
+
+i
+
+,
+
+(28) where we set λrigid = 0 .1 and λnr = 0 .02 in all experiments. We apply our constraint optimization objective together with the original reconstruction loss of SoM [37], defined as 
+
+Lrecon = ∥ˆI − I∥1 + λdepth ∥ ˆD − D∥1 + λmask ∥ ˆM − M∥1,
+
+(29) where ˆI, ˆD, ˆM denote the rendered RGB, depth, and mask predictions from current 4DGS representation. We follow the loss-weight configuration provided in the official SoM implementation. Our final optimization objective is then formulated as 
+
+Ltotal = Lrecon + Lmotion . (30) This combined objective ensures that the 4DGS representa-tion remains photometrically faithful while also enforcing coherent group-wise rigid and non-rigid motion behavior. 
+
+B.4. Group-wise Motion Forecasting 
+
+Architecture Details. We illustrate the architecture of our forecaster in Figure 9. The model uses a single-layer Trans-former encoder with a 32-dimensional hidden state, eight attention heads, and a 64-dimensional feedforward layer, followed by a flatten-head decoder. We apply a dropout rate of 0.2 and use instance normalization for each sequence. For both training and inference, we represent each Gaus-sian motion xt at time t as 
+
+xt = [ μt, qt ] ∈ R7, (31) where μt ∈ R3 denotes the 3D translation vector and 
+
+qt ∈ R4 denotes the unit quaternion that parameterizes the rotation. (a) Training stage 
+
+(b) Inference stage 
+
+1 TT-1 T+1 
+
+Forecaster 
+
+2 T+1 T T+2 
+
+Forecaster 
+
+3 T+2 T+1  T+3 
+
+Forecaster 
+
+0 1 2 3 T - 3 T - 2 T - 1 T
+
+Forecaster 
+
+t
+
+Transformer encoder 
+
+Prediction head 
+
+> observation
+> masked obs.
+> prediction
+
+Figure 9. Overview of the forecaster. (a) Training stage: The forecaster is trained for each Gaussian group G(k) by minimizing the loss L(k) 
+
+> group
+
+between the predicted ˆxt and the observed xt at time T . We randomly apply contiguous masking to the inputs and gradually reduce the masking ratio later in training. (b) Inference stage: Future motion is generated via autoregressive rollout for each G(k), where the input sequence is iteratively updated with each newly predicted frame. Note that the input length is always T−1, the same as in training. 
+
+Training Procedure and Inference Scheme. During training, we employ variable observation masking, where a contiguous span covering 40–0% of the sequence is masked, and the masking ratio is gradually annealed over the course of training. To encourage physically plausible and temporally smooth motion, we apply an acceleration regularization term with λacc = 1 .0 for all experiments. We further adopt a group-wise forecasting scheme in which one forecaster is trained per motion group, and each forecaster is responsible for training and predicting only the trajectories associated with its assigned group. 
+
+Table 4. Forecasting results on D-NeRF dataset. We use 80% of the frames as input and predict the remaining 20%.                                                              
+
+> Scene GSPred [50] Ours PSNR ↑SSIM ↑LPIPS ↓PSNR ↑SSIM ↑LPIPS ↓
+> Trex 21.09 0.9406 0.0461 20.60 0.9405 0.0499 Mutant 28.16 0.9560 0.0256 28.72 0.9552 0.0218
+> Jumpingjacks 20.51 0.9184 0.0760 20.12 0.9220 0.0734
+> Standup 25.96 0.9403 0.0481 30.38 0.9544 0.0335
+> Bouncingballs 26.63 0.9714 0.0361 26.82 0.9728 0.0367 Hook 23.42 0.9089 0.0573 24.13 0.9081 0.0562
+> Hellwarrior 30.75 0.9281 0.0729 31.29 0.9323 0.0680
+> Lego 11.99 0.7562 0.2338 24.88 0.9005 0.0532 Average 23.56 0.9150 0.0745 25.87 0.9357 0.0491
+
+## C. Additional Experimental Results 
+
+C.1. Future View Synthesis 
+
+Evaluation on iPhone Dataset. We provide additional qualitative results on iPhone dataset [10]. Following the main paper, we include comparison results in Figures 11 and 12. 
+
+Evaluation on D-NeRF dataset. We further report evalu-ation results on D-NeRF dataset [31]. Using the same setup as GSPred [50], we use an 80% observation ratio and a 20% test split. In this setting, Gaussian motion are forecasted and all trajectories are extrapolated using a weighted sum of the predicted motion. Additionally, qualitative compar-isons against GSPred are presented. 
+
+C.2. Novel View Synthesis 
+
+To analyze the effect of our group-wise optimization on scene interpolation, we evaluate novel view synthesis (NVS) results and point-tracking performance on iPhone dataset. The experiment is conducted using the full training set (100% observation ratio) so that the evaluation reflects pure interpolation performance. As reported in Table 5, our constrained optimization yields slight improvements in both point-tracking accuracy and photometric metrics. Qualitatively, Figure 10 shows Table 5. Quantitative evaluation results on scene interpolation. We compare tracking and photometric performance against SoM [37] on iPhone dataset [10]. 
+
+Methods 3D tracking 2D tracking Photometric EPE ↓ δ.10 3D↑ δ.05 3D ↑ AJ ↑ δavg ↑ OA ↑ MPSNR ↑ mSSIM ↑ mLPIPS ↓
+
+SoM [37] 0.1016 70.62 46.59 37.61 49.17 86.99 16.72 0.6462 0.3914 MoGaF (Ours) 0.0989 70.63 47.64 38.54 49.93 86.85 16.75 0.6462 0.3887 
+
+Table 6. Component analysis of group-wise optimization and forecasting. We evaluate the effect of group-wise optimization, group-wise forecasting, and forecaster capacity on future Gaussian motion prediction.                                                                     
+
+> Encoder Group-wise 3D tracking 2D tracking Opt. Forecast EPE ↓δ.10 3D↑δ.05 3D↑AJ ↑δavg ↑OA ↑
+> 5-Layer (HC) ––0.250 44.9 24.8 23.9 15.5 74.2
+> ✓–0.255 43.3 25.3 23.8 14.8 70.2 –✓0.234 49.2 26.0 24.3 15.0 74.9
+> ✓✓0.230 50.4 29.3 26.7 16.0 74.3 1-Layer (LW) ––0.250 44.9 24.8 23.9 15.5 74.2
+> ✓–0.261 46.0 26.9 25.1 15.5 71.2 –✓0.227 48.8 26.1 23.8 14.8 75.6
+> ✓✓0.220 52.7 31.4 27.3 16.0 79.0
+
+that our method enhances the geometric consistency of re-sulting 4DGS representation. These results confirm that our Gaussian grouping and group-wise constrained optimiza-tion help obtain more physically plausible dynamic Gaus-sian representation. 
+
+C.3. Component Analysis of MoGaF 
+
+For a deeper analysis of our pipeline, we conduct a com-ponent analysis of MoGaF. Our study examines the ef-fect of three major axes: (1) group-wise optimization, (2) the group-wise forecasting scheme, and (3) the capacity of the motion forecaster. To isolate the impact of each component, we disable the group-wise optimization and group-wise forecasting modules individually, and addition-ally evaluate a higher-capacity motion forecaster—5-layer transformer encoder (HC)—in comparison to our default 1-layer transformer (LW) encoder design. All experiments are conducted with a 60% observation ratio, forecasting the re-maining 40% of each sequence as future frames on iPhone dataset. 
+
+Effect of Group-wise Optimization. Table 6 summarizes the results of our component analysis. For both HC and LW forecasters, enabling group-wise optimization consistently improves 3D tracking accuracy. This suggests that object-level motion constraints help preserve coherent and stable spatiotemporal trajectories within 4DGS representation. 
+
+Contribution of Group-wise Forecasting. Group-wise forecasting further improves performance across all met-rics. By learning motion patterns within each object in-dependently, the forecaster produces more stable long-term predictions and higher 2D tracking accuracy. When com-bined with group-wise optimization, it yields the best re-sults for both HC and LW settings, highlighting the com-plementary roles of the two modules. 
+
+Effect of Forecaster Capacity. Interestingly, the HC forecaster does not provide noticeable improvement over the LW version. We hypothesize that larger models may be more sensitive to noisy or frame-specific motion vari-ations in 4DGS, tend to introduce instability in long-term predictions. In contrast, the lightweight forecaster appears to leverage the structured, object-level motion units more effectively, suggesting that strong forecasting performance is achievable without large model capacity. GT  MoGaF  (Ours)  SoM Figure 10. Qualitative evaluation results on scene interpolation. We report NVS performance of SoM [37] and MoGaF on iPhone dataset [10], evaluated on test camera viewpoints over the full training sequence. t + 80  t + 90  t + 100  t + 110  t + 120  t + 130  t + 140 
+
+(a) Observed  (b) Forecasted frames 
+
+> GSPred MoGaF  (Ours)  GSPred -SoM †ODE -GS -SoM †
+
+Figure 11. Long-term forecasting results on iPhone dataset. (a) shows GT views from test cameras at the observed timesteps, and (b) presents the forecasted renderings for timesteps beyond the observations. Note that t denotes the timestep of the last observed frame. (a) 80% Observed / 20% Forecasted    
+
+> GSPred -SoM †GSPred MoGaF (Ours) GT ODE -GS -SoM †
+
+(b) 60% Observed / 40% Forecasted    
+
+> MoGaF (Ours) GT GSPred -SoM †GSPred ODE -GS -SoM †
+
+Figure 12. Qualitative results on iPhone dataset. We present forecasted frames from test camera views. (a) and (b) correspond to settings where the first 80% and 60% of frames are used for training, and the remaining 20% and 40% are forecasted, respectively. (b) 60% Observed / 40% Forecasted (a) 80% Observed / 20% Forecasted    
+
+> Ours GT GSPred Ours GT GSPred
+
+Figure 13. Qualitative results on D-NeRF dataset. We present forecasted frames from test camera views. (a) and (b) correspond to settings where the first 80% and 60% of frames are used for training, and the remaining 20% and 40% are forecasted, respectively.

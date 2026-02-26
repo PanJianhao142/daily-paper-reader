@@ -1,0 +1,612 @@
+Title: VLA Knows Its Limits
+
+URL Source: https://arxiv.org/pdf/2602.21445v1
+
+Published Time: Thu, 26 Feb 2026 01:22:25 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# VLA Knows Its Limits 
+
+## Haoxuan Wang 1,2, Gengyu Zhang 1,2,
+
+## Yan Yan 1, Ramana Rao Kompella 2, Gaowen Liu 2,†
+
+> 1
+
+## University of Illinois Chicago 2Cisco Research 
+
+## Abstract 
+
+Action chunking has recently emerged as a standard prac-tice in flow-based Vision-Language-Action (VLA) models. However, the effect and choice of the execution horizon—the number of actions to be executed from each predicted chunk—remains underexplored. In this work, we first show that varying the execution horizon leads to substantial per-formance deviations, with performance initially improving and then declining as the horizon increases. To uncover the reasons, we analyze the cross- and self-attention weights in flow-based VLAs and reveal two key phenomena: (i) intra-chunk actions attend invariantly to vision–language tokens, limiting adaptability to environmental changes; and (ii) the initial and terminal action tokens serve as stable anchors, forming latent centers around which intermediate actions are organized. Motivated by these insights, we interpret ac-tion self-attention weights as a proxy for the model’s pre-dictive limit and propose AutoHorizon , the first test-time method that dynamically estimates the execution horizon for each predicted action chunk to adapt to changing percep-tual conditions. Across simulated and real-world robotic manipulation tasks, AutoHorizon is performant, incurs neg-ligible computational overhead, and generalizes across di-verse tasks and flow-based models. Video demos are avail-able at this project page. 
+
+## 1. Introduction 
+
+As a key milestone toward artificial general intelligence, embodied AI seeks to endow agents with the ability to perceive, reason, and act within the physical world [14, 22]. Recent advances in machine-learning–based control have enabled these agents to directly interact with real-world environments through learned representations [8, 35, 39]. Within this paradigm, Vision-Language-Action (VLA) models [3, 12, 16, 19, 26, 27, 40] have emerged as a promising direction for their ability to ground visual per-ception and linguistic instruction into executable actions, demonstrating strong performance across diverse language-conditioned robot manipulation tasks. 1 5 10 15 20 30 40 50 
+
+> Execution Horizon
+> 60
+> 65
+> 70
+> 75
+> 80
+> 85
+> 90
+> 95
+> 100
+> Success Rate (%)
+> LIBERO-Spatial
+> LIBERO-Object
+> LIBERO-Goal
+> LIBERO-10
+
+Figure 1. Illustration of the average success rates on the LIBERO benchmark using π0.5. Varying the execution horizon leads to substantial success rate fluctuations, and the policy per-formance exhibits a peaked pattern, initially improving and then declining as the execution horizon increases. 
+
+To better capture multimodal action distributions and en-force temporal consistency, action chunking [8, 17, 39] has become a standard practice for VLAs trained via imitation learning [1, 34]. Instead of predicting a single action at each step, the policy outputs a sequence of actions—an action chunk. During policy rollout, the robot executes the initial portion (and only rarely the entirety) of the predicted chunk before re-planning, discarding the remaining actions [3, 8]. The total chunk length is termed the prediction horizon , and the executed prefix is the execution horizon [4]. This for-mulation establishes a closed-loop prediction mechanism, sacrificing long-term consistency for reactivity [21]. Empirically, we observed that the policy’s behavior is inherently tied to the length of its executed prefix. As il-lustrated in Fig. 1, varying the execution horizon leads to substantial performance fluctuations—ranging from consis-tent successes to frequent failures. Interestingly, the per-formance also exhibits a characteristic trend: it initially im-proves and then declines as the execution horizon increases. These findings underscore the importance of selecting an appropriate execution horizon and motivate a fundamen-tal yet underexplored question in action chunking: How should the execution horizon be determined? 
+
+Prior works [3, 8, 12, 24, 39] typically set a fixed execu-1
+
+> arXiv:2602.21445v1 [cs.RO] 24 Feb 2026
+
+tion horizon, chosen either by human heuristics or through exhaustive evaluation across multiple configurations. Such brute-force tuning quickly becomes time- and compute-intensive as the prediction horizon and task complexity in-creases. Furthermore, we argue that a fixed execution hori-zon is inherently suboptimal. Liu et al. [21] showed that short horizons improve reactivity but induce instability due to frequent cross-chunk transitions, whereas long horizons enhance temporal smoothness at the expense of responsive-ness. Since the balance between consistency and reactiv-ity naturally varies across different phases of policy rollout, the optimal execution horizon should likewise adapt over time. For instance, reaching toward a coffee carafe favors a longer horizon for smooth motion, whereas pouring into a cup requires shorter horizons for heightened responsive-ness. These insights emphasize the need of determining the execution horizon adaptively on a per-chunk basis. In this paper, we aim to automatically and efficiently de-termine the execution horizon for each action chunk within flow-based VLAs [12, 24]. To explain why the policy per-formance exhibits the characteristic trend shown in Fig. 1, we analyze how action generation integrates linguistic and visual information through the attention mechanism [30]. Our analysis reveals two key phenomena: ❶ Intra-chunk actions consistently attend to the same vision–language to-kens, indicating that they rely on fixed perceptual contexts. These contexts provide useful guidance for early actions but become increasingly outdated for later ones as the environ-ment changes, revealing the limited adaptability of the pre-dicted chunks. ❷ Predicted actions exhibit strong attention to the initial and terminal action tokens, with correspon-dence strength remaining high before sharply decaying as temporal distance increases. We refer to these boundary to-kens as radial action sinks , which serve as stable anchors around which intermediate actions are organized. Building on the observations of the limited adaptability of intra-chunk actions and their reliance on radial action sinks, we formulate execution horizon determination as es-timating the predictive limit of VLAs . We interpret the action self-attention weights as implicit indicators of the model’s prediction confidence and propose AutoHorizon ,a dynamic execution horizon estimation strategy for flow-based VLAs trained with action chunking. Our approach leverages the intrinsic structure of attention weights to infer the temporal limit of the model’s reliable forecasting capa-bility. Specifically, we introduce a bidirectional soft-pointer mechanism that locates the first turning points where the at-tention mass ceases to advance and begins to plateau. These turning points, identified for both initial and terminal radial action sinks, define the estimated execution horizon. Our contributions are threefold. (1) We focus on flow-based VLAs trained with action chunking, and provide both theoretical and empirical analyses of their performance pat-tern with respect to the execution horizon. We further un-cover its underlying causes through two key observations linking attention correspondences to the model’s predictive limit. (2) Building on these insights, we propose AutoHori-zon, a novel attention-guided strategy that dynamically es-timates the execution horizon for each action chunk, allow-ing the policy to adapt to varying perceptual conditions. (3) 
+
+Extensive experiments on simulated and real-world robot manipulation tasks demonstrate that our method generalizes across different flow-based policies, incurs negligible com-putational overhead, and outperforms strong baselines that rely on exhaustive fixed-horizon tuning. 
+
+## 2. Related Work 
+
+2.1. Vision-Language-Action Models 
+
+The remarkable progress of large language models (LLMs) [25, 29, 33] and vision-language models (VLMs) [2, 6, 41] has sparked growing interest in AI systems capable of acting within the physical world. Among these advances, Vision-Language-Action (VLA) models [3, 5, 11, 12, 16, 18, 19, 24, 31, 36, 38, 40, 42] have emerged as a unifying paradigm that integrates perception, reasoning, and control. By jointly training on large-scale datasets of robotic and human demonstrations, VLAs enable end-to-end learning from visual and linguistic inputs to motor actions, demonstrating strong general-ization across diverse language-conditioned manipulation tasks. Within this paradigm, diffusion- and flow-based VLAs [3, 12, 24, 27] have received particular attention for their sample-efficient generation process and high-quality action synthesis. Conditioned on the visual and linguistic embeddings extracted from the backbone VLMs [2, 6], these models iteratively sample from an action distribution to produce low-level motor commands for robotic control, achieving fine-grained temporal consistency and robust performance across complex environments. 
+
+2.2. Action Chunking 
+
+Action chunking policies [3, 8, 12, 35, 39] generate short se-quences of consecutive actions for a given state. ACT [39] first introduced the idea of action chunking using Trans-formers [30] and demonstrated that modeling temporally consistent action sequences enables the learning of fine-grained behaviors, outperforming policies that predict sin-gle actions. Subsequent works have extended this concept in several directions. ACT further applied weighted aver-aging to overlapping actions between chunks to enhance policy smoothness. BID [21] provided a theoretical anal-ysis from a policy learning perspective, showing that ac-tion chunking promotes long-term temporal consistency but sacrifices short-term reactivity. They also proposed a rejec-tion sampling strategy to select the best-performing chunk 2Heuristic:    
+
+> VLA Predictions
+> (a) Conventional Action Chunking
+> Executable:
+> Attention Weight
+> Predict
+> (b) AutoHorizon (ours)
+> Initial State
+> Estimate
+> VLA Model
+> Grasping Cube
+> Reaching Cube Toward Bowl Placing Cube End State
+
+Figure 2. Left: (a) In conventional action chunking, the execution horizon e is heuristically chosen by humans and remains fixed across chunks. (b) In contrast, AutoHorizon (our method) dynamically estimates the execution horizon for each predicted chunk based on the attention weights from the VLA model. Right: Real-world demonstration of showing how the estimated execution horizons evolve during policy rollout. When the environment is stable and reactivity is less critical ( e.g ., reaching the cube or moving toward the bowl), the estimated horizon increases to promote smooth, stable motion. Conversely, during physical interaction ( e.g ., grasping or placing the cube), the execution horizon shortens to enhance reactivity and adaptability. 
+
+to address this trade-off. RTC [4] explored action chunk-ing under asynchronous execution [27], formulating chunk prediction as an image inpainting problem [28]. Despite these advances, the choice of the execution hori-zon remains largely unexplored. Existing works [3, 8, 39] typically set this value using human heuristics, determined by the robot’s control frequency and the desired duration of each motion segment. This practice has left the influence of the execution horizon on VLA performance largely unex-plored, prompting a fundamental question: are there better ways to determine the execution horizon? 
+
+2.3. Attention Weights 
+
+Attention weights [9, 13, 32, 37] serve as interpretable indi-cators of information flow between tokens in Transformer-based models [30]. By examining self-attention patterns in large language models, StreamingLLM [32] observed that LLMs tend to focus disproportionately on initial to-kens—a phenomenon termed the attention sink . Preserving the corresponding key–value pairs was shown to enable effi-cient, infinite-length text processing without additional fine-tuning. Extending this concept to multimodal architectures, Kang et al. [13] found that large vision-language models often assign high attention weights to visually salient but semantically irrelevant tokens. To mitigate this, they pro-posed redistributing attention away from such tokens to im-prove cross-modal alignment and visual grounding. In this work, we analyze the attention weights within flow-based VLAs [12, 24], uncovering key insights into how actions attend to other modalities and therefore pro-pose to interpret action self-attention weights as informative cues for estimating the execution horizon. 
+
+## 3. Methodology 
+
+3.1. Preliminary 
+
+Denote the pretrained diffusion-/flow-based Vision-Language-Action (VLA) model as π(At|ot, c), where 
+
+ot represents the input visual observations at time step t,and c denotes the corresponding language command. The policy is trained to predict a sequence of p continuous actions, At = [ at, at+1 , . . . , at+p−1 ], referred to as an action chunk . Here, the parameter p ∈ N specifies the prediction horizon , i.e ., the temporal window over which the model forecasts future actions conditioned on the current perceptual-linguistic context (ot, c). During execution, the agent typically performs the first e actions from the predicted chunk before re-sampling new input observations and generating the next action chunk, where 
+
+e ∈ N defines the execution horizon .Attention weights are widely employed to quantify the correspondence between different tokens. Let Tv , Tl, and 
+
+Ta denote the number of encoded vision, language, and ac-tion tokens within the VLA respectively. Within a stan-dard transformer-based attention mechanism, the attention weight matrix S is defined as the post-softmax similarity between the query and key embeddings: 
+
+S = softmax 
+
+ QK ⊤
+
+√d
+
+
+
+, (1) where Q ∈ RTa×d represents the queries derived from ac-tion tokens, K ∈ R(Tv +Tl+Ta)×d denotes the concatenated keys from vision, language, and action tokens, and d is the shared token feature dimension. Each entry Sij captures the relative attention weight between the i-th action query and the j-th key token, thus encoding how strongly the policy attends to specific visual regions, linguistic cues, or consec-utive actions when generating its action sequence. In the following, we first show that flow-matching pol-icy performance exhibits a peaked trend with respect to the execution horizon, underscoring the need and feasibility to identify an optimal value. To explain this phenomenon, we analyze the attention weights and reveal two key phenom-ena that shape predicted chunk behavior. Building on these insights, we introduce an efficient strategy for execution 3Step 0        
+
+> Language tokens
+> Vision tokens
+> Action tokens
+> Step 3 Step 6
+> Step 12
+> Generated Actions
+> Step 8 Step 10
+> Step 14 Step 17 Step 16 Figure 3. Visualization of average attention weights in π0.5across different stages of task execution. Intra-chunk actions consistently attend to the same vision and language tokens across predicted chunks throughout the rollout. This invariance is consistently observed across different sampling steps, task rollouts, and pretrained models. The x-axis is rescaled for clarity of visualization.
+
+horizon estimation. Unless otherwise specified, all analyses are conducted using the state-of-the-art π0.5 [12] model. 
+
+3.2. Existence of Optimal Execution Horizon 
+
+Consider an action chunking policy that employs a fixed ex-ecution horizon of length e throughout its rollout. Assume the policy executes a total of L low-level actions before task termination. Let δc denote the loss in final task reward in-curred at each chunk transition, assumed to be independent of e. Let δdj (e) represent the total divergence loss between the j-th executed action chunk and its corresponding expert trajectory segment. With m = ⌈L/e ⌉ executed chunks in total, the expected error accumulated over the rollout can be expressed as: 
+
+L(e) = 
+
+> m−1
+
+X
+
+> i=0
+
+δc +
+
+> m
+
+X
+
+> j=0
+
+δdj (e). (2) 
+
+Proposition 1 (Unique Error Minimizer ). Suppose δdj (e) is a monotonically increasing function with respect to e and can be modeled as δdj (e) = ke log e, where k > 0 is a scal-ing factor. Denote p as the prediction horizon. Assuming L
+
+is divisible by e, there exists a unique minimizer of L(e):
+
+e∗ = clamp 
+
+l δc
+
+> k
+
+m
+
+or 
+
+l δc
+
+> k
+
+m
+
+− 1, 1, p 
+
+
+
+, (3) 
+
+such that L(e) is strictly decreasing on (0 , e ∗) and strictly increasing on (e∗, ∞).
+
+Proof is provided in Sec. 6. Eq. (3) indicates that when the policy is trained on a diverse set of the underlying ac-tion distributions and the chunk transition loss δc is large, a longer execution horizon is preferred to promote tempo-rally consistent action sequences. Conversely, when the pol-icy struggles to accurately model the implicit environment dynamics and the intra-chunk divergence loss δd(e) domi-nates, a shorter execution horizon becomes more favorable, enhancing reactivity to environmental changes. Our anal-ysis can be viewed as an extension of Liu et al. [21]. By modeling the total policy rollout error, we demonstrate that an optimal execution horizon exists and that performance monotonically decreases as the horizon deviates from this optimum, thereby establishing an explicit trade-off between long-term consistency and short-term reactivity. Note that Eq. 3 serves only as a theoretical proof of existence and does not directly guide method design. Empirically, we also observe the characteristic relation-ship between policy performance and execution horizon. As shown in Fig. 1, varying the execution horizon leads to substantial performance deviations, underscoring the im-portance of selecting an appropriate value of e. Across all evaluated tasks, the behavior of the policy performance aligns with our theoretical findings: the success rate initially increases and then declines as e grows, peaking at an in-termediate value. This indicates that optimal performance arises from balancing consistency with reactivity. Fig. 7 further illustrates the case with a smaller prediction horizon (p = 10 ). In this constrained setting, the best performance typically occurs at the horizon boundary, i.e., e∗ = p. This behavior arises because the policy is well-trained under a small p, allowing it to accurately capture the implicit en-vironment dynamics. As a result, the predicted trajectories closely match the expert demonstrations, leading to k → 0.However, once the execution horizon exceeds the prediction horizon ( e > p ), a pronounced performance drop emerges. We attribute this to a train–test mismatch, since the model has not been trained on trajectories longer than p.
+
+3.3. VLA Knows Its Limits 
+
+To uncover the underlying causes of the observed perfor-mance pattern, we analyze the model’s attention weights to examine how the VLA allocates focus across vision, lan-guage, and action tokens during action generation. By in-terpreting these attention distributions, we identify two key phenomena that jointly explain the empirical patterns re-ported in Sec. 3.2 and shed light on how attention dynamics reflect the VLA’s intrinsic predictive limits. 
+
+❶ Intra-chunk actions attend invariantly to vi-
+
+4P = 10 P = 50 Figure 4. Visualization of normalized action self-attention weights. Across different prediction horizons, the predicted ac-tions exhibit strong attention to the initial and terminal action to-kens, with correspondence strength remaining high before sharply decaying as temporal distance increases. These boundary tokens (encircled in black) are referred to as radial action sinks .
+
+sion–language tokens. We visualize the cross-attention maps of the last sampling step from the π0.5 model ( p = 50 )in Fig. 3. Each row in the heatmap represents the attention distribution between action queries and the concatenated se-quence of vision, language, and action keys. The first 768 tokens correspond to visual input, followed by 200 language tokens, and the remaining correspond to action tokens. Col-umn widths are rescaled for improved clarity. From the figure, we observe a striking invariance: ac-tions within the same chunk consistently attend to the same vision–language tokens with nearly identical importance. This suggests that, although the model predicts a tempo-rally extended sequence of future actions, later actions fail to adaptively adjust to environmental changes. Instead, they repeatedly rely on static visual–linguistic features that are informative for early actions but increasingly outdated or misleading for later ones. Consequently, executing these later actions may become redundant or even detrimental, contributing little new contextual information and correc-tive flexibility. This property manifests as overconfident policy rollouts with reduced reactivity and adaptability. We also observe an unusually high concentration of at-tention on the first language token , a phenomenon that per-sists across all transformer blocks and sampling steps. This pattern resembles the attention sink effect reported in large language models [32]. However, unlike in LLMs, where sink tokens often encode structural or positional informa-tion, the language attention sink in VLAs appears largely redundant and carries minimal semantic value. Empiri-cally, masking all language tokens (by setting their atten-tion weights to zero) may results in only a marginal drop in task success rate (Sec. 8.5). We infer that, due to the strong vision–language pretraining of the backbone model, most linguistic semantics are already embedded within the visual representations during action generation, making ex-plicit linguistic attention largely superfluous. 
+
+❷ Radial action sinks emerge at the sequence bound-aries. In Fig. 4, we visualize the normalized self-attention maps among action tokens under varying prediction hori-zons. A consistent pattern emerges: strong attention is con-centrated on both the initial and terminal action tokens. The correspondence strength remains high for a short span, then rapidly decays over a few actions before stabilizing into a low-attention plateau. We refer to these highly attended boundary tokens as radial action sinks .Why do flow-based VLAs consistently concentrate at-tention at the beginning and end of each predicted chunk? We infer two underlying reasons. First, the initial action tends to exhibit the lowest cumulative error and thus serves as a stable anchor for subsequent actions. Later actions fol-low this anchor’s guidance while gradually attending more to adjacent tokens, resulting in smooth and temporally con-sistent trajectories. Second, because the policies are trained on expert demonstrations with randomly sampled starting timestamps, both the initial and terminal actions play a role in preserving inter-chunk continuity, reflecting the model’s implicit objective to ensure smooth transitions across chunk boundaries. Together, these radial action sinks establish an attention structure in which the initial and terminal tokens define latent centers around which intermediate actions are organized, revealing an intrinsic bias in the model’s tempo-ral reasoning process. 
+
+Action self-attention as an indicator of predictive limit. 
+
+Building on these two observations, we conclude that intra-chunk actions exhibit limited adaptability and attend strongly to radial action sinks. Therefore, we pose to inter-pret the action self-attention weights as implicit indicators of the model’s predictive limit . Specifically, when the self-attention weights associated with the radial action sinks re-main high, the model is confident that its predicted actions are still aligned with the guiding anchors and thus valid un-der the current observation. In contrast, as these attention weights decline, the model increasingly conditions on its own previously generated actions rather than grounded sen-sory inputs. This shift toward self-referential dependence amplifies compounding errors and ultimately degrades re-activity and performance during extended rollouts. 
+
+3.4. AutoHorizon 
+
+Motivated by the above analysis, we propose leveraging at-tention weights as a proxy to estimate the execution horizon for each action chunk. Adopting a per-chunk horizon is in-tuitive: as task difficulty and environmental dynamics fluc-tuate throughout the policy rollout, the optimal execution horizon should adapt correspondingly to maintain an effec-tive balance between temporal consistency and reactivity. To this end, we introduce AutoHorizon —a data-adaptive approach that estimates execution horizons di-rectly from the model’s intrinsic attention dynamics. Given the attention weights obtained at each sampling step t, we first extract the action self-attention maps and average them across all transformer blocks and attention heads, followed by row-wise normalization to ensure that each query–key 5Table 1. Performance comparison of π0.5 on LIBERO benchmark under different prediction horizons. Best results are in bold .Setting p = 10 p = 50                                                                                                                                                                                                              
+
+> Task Suite LIB-Spatial LIB-Object LIB-Goal LIB-10 LIB-Spatial LIB-Object LIB-Goal LIB-10 Static Oracle
+> e= 0 .2p98.5 ±0.5 94.1 ±1.0 90.4 ±0.0 76.0 ±1.2 94.9 ±0.2 97.1 ±0.2 92.7 ±1.0 91.2 ±2.3
+> e= 0 .4p98.9 ±0.4 98.1 ±0.5 94.8 ±0.9 82.8 ±1.5 92.4 ±0.3 94.1 ±1.9 90.9 ±0.7 88.7 ±0.8
+> e= 0 .6p98.8 ±0.3 98.7 ±0.7 95.2 ±0.7 85.9 ±0.8 87.1 ±1.9 91.5 ±2.5 86.0 ±3.3 82.4 ±2.0
+> e= 0 .8p98.9 ±0.4 99.1 ±0.5 95.1 ±1.1 88.5 ±1.5 81.2 ±2.7 88.9 ±1.6 78.4 ±2.0 76.3 ±2.5
+> e= 1 .0p99.1 ±0.5 98.8 ±0.9 97.2 ±1.0 90.4 ±0.6 71.5 ±1.3 67.9 ±0.9 74.5 ±2.7 68.6 ±1.2 Static Oracle+ 99.1 ±0.5 99.1 ±0.5 97.2 ±1.0 90.4 ±0.6 96.4 ±0.3 97.6 ±0.6 93.9 ±0.5 91.9 ±0.4 Random 98.4 ±1.2 98.4 ±0.7 96.3 ±0.7 86.3 ±1.5 82.8 ±1.5 90.3 ±1.6 85.3 ±2.3 83.3 ±0.7
+> AutoHorizon 99.1 ±0.2 99.2 ±0.3 97.5 ±0.2 91.6 ±0.7 96.5 ±0.9 98.0 ±0.6 94.4 ±1.0 92.1 ±1.0
+
+distribution sums to one. The resulting normalized atten-tion matrix is denoted as St ∈ Rp×p, where p is the pre-diction horizon, and notations are reused from Eq. (1) for simplicity. Intuitively, St[i, j ] quantifies how strongly the 
+
+i-th query action attends to the j-th key action, revealing how far the model effectively “looks ahead.” Our objective is to identify the first turning point in the attention trajec-tory—where the attention mass stops advancing and begins to plateau—which marks the natural boundary of the VLA’s predictive limit, ensuring that all executed actions remain reliable while maximizing temporal consistency. To estimate this turning point, we first retain only the rows of St that exhibit low entropy, defined as 
+
+Rt = { i | Ht[i] ≤ Qq (Ht) }, (4) where 
+
+Ht[i] = − 1log p
+
+X
+
+> j
+
+St[i, j ] log St[i, j ], (5) and Qq denotes the q-quantile of the entropy distribution across rows. This filtering step removes actions with uni-formly diffused attention, preserving those with sharper, more confident patterns that provide reliable structural cues. Next, we employ a bidirectional soft-pointer mechanism to locate the plateau. Two pointers, qs = 0 and qe = p − 1,are initialized at the start and end of the chunk, respectively. For the forward pointer qs, the expected predictive horizon for each row i is computed as 
+
+μt[i] = max 
+
+
+
+> p−1
+
+X
+
+> j=0
+
+j St[i, j ], max  
+
+> k≤i
+
+μt[k]
+
+ , (6) where the non-decreasing constraint enforces monotonic progression and prevents backward jumps. We then com-pute the incremental change ∆μt[i] = μt[i] − μt[i − 1] ,which tracks the evolution of the attention trajectory. Alarge ∆μt[i] indicates a sudden shift in attention focus, sig-naling the onset of a plateau. The set of actions preceding this plateau is defined as 
+
+Pt = { i | ∆μt[i] < τ }, (7) where τ is a fixed threshold. At sampling step t, the forward execution horizon is then determined as 
+
+Nf = ⌊μt[min( Rt ∩ Pt)] ⌋ + 1 . (8) The same procedure is applied to the reversed attention ma-trix ˜St to obtain the backward horizon Nb. If the combined coverage satisfies Nf + Nb ≥ p, a full-range coverage is adopted ( N = p); otherwise, only the forward prefix length is used as the effective execution horizon ( N = Nf ). Em-pirically, we find that the former case typically occurs when the prediction horizon p is small, whereas the latter domi-nates for larger p. A concrete example illustrating the full procedure is shown in Fig. 6. 
+
+## 4. Experiments 
+
+4.1. Experimental Settings 
+
+Models. We evaluate our method on two representative flow-based Vision–Language–Action models: π0.5 [12] and GR00T N1.5 [24]. For π0.5, we conduct experiments with two variants using prediction horizons of p = 10 
+
+and p = 50 to examine horizon-dependent behavior. For GR00T N1.5, we adopt the publicly released pretrained checkpoints with the default prediction horizon of p = 16 .AutoHorizon operates on the first or third sampling step and typically uses fixed hyperparameters of q = 0 .9 and 
+
+τ = 0 .3, requiring no additional parameter tuning. 
+
+Baselines. We compare against the following baselines: • Static Oracle. This corresponds to the conventional set-ting in action chunking policies, where a fixed execution horizon is maintained throughout rollout. Execution hori-zons are uniformly sampled for full range coverage. • Static Oracle+. An enhanced version of Static Oracle that performs brute-force search over the prediction hori-zon, thereby achieving optimal performance under fixed horizon settings. It serves as a strong yet costly baseline, as it requires p rollouts per task. 6Table 2. Performance comparison using GR00T N1.5 on the LIBERO benchmark. Best results are highlighted in bold .Task Suite LIB-Spatial LIB-Object LIB-Goal LIB-10 Static Oracle                                                                                                                   
+
+> e= 1 92.7 ±0.9 94.7 ±3.4 82.7 ±0.9 74.7 ±3.4
+> e= 2 96.0 ±1.6 95.3 ±3.8 82.0 ±1.6 83.3 ±0.9
+> e= 4 94.7 ±3.4 95.3 ±2.5 90.7 ±0.9 88.7 ±1.9
+> e= 8 95.3 ±0.9 97.3 ±0.9 94.7 ±3.4 86.0 ±5.9
+> e= 12 91.3 ±2.5 96.0 ±0.0 90.0 ±0.0 86.0 ±4.3
+> e= 16 94.0 ±3.3 94.7 ±0.9 90.7 ±0.9 90.0 ±1.6 Static Oracle+ 96.0 ±1.6 97.3 ±0.9 94.7 ±3.4 90.0 ±1.6 Random 93.3 ±0.9 96.0 ±2.8 92.0 ±1.6 88.7 ±1.9
+> AutoHorizon 96.7 ±0.9 98.7 ±1.8 96.0 ±1.6 92.7 ±2.5
+
+• Random: To assess the effect of adaptive horizon selec-tion, we include a stochastic baseline where the execution horizon is randomly sampled at each rollout step, follow-ing e ∼ U (1 , p ). This baseline isolates the contribution of structured, attention-guided adaptation from performance variations arising purely from random horizon changes. For all experiments, we report both the mean and standard deviation to ensure fair comparison and robust evaluation. We also compare against two adaptive re-planning base-lines, Action Trigger and Uncertainty Proxy, in Sec. 8. Al-though these baselines are not central to the focus of this paper, we include them to further demonstrate the effective-ness of AutoHorizon. 
+
+4.2. Simulation Results 
+
+We evaluate AutoHorizon in simulated robotic manipula-tion environments that require both short- and long-horizon decision making. Our experiments leverage two benchmark datasets: the LIBERO dataset [20], which offers a diverse suite of single-arm manipulation tasks, and the RoboTwin dataset [7, 23], which focuses on bimanual coordination tasks. For LIBERO, we include four subsets— LIBERO-Spatial , LIBERO-Goal , LIBERO-Object , and LIBERO-10 —and perform 25 independent rollouts per task. For RoboTwin, we evaluate on seven manipulation tasks: ad-just bottle position , pick dual bottles , place container onto plate , stack two bowls , place empty cup on coaster , open laptop , and press stapler . Each task is executed for 100 tri-als. All experiments are repeated three times to account for stochasticity in action sampling and environment initializa-tion, ensuring statistical robustness. 
+
+LIBERO Benchmark. Tab. 1 reports the results of π0.5
+
+on the LIBERO benchmark. Under a small prediction hori-zon ( p = 10 ), the optimal execution horizon for the Static Oracle baseline typically appears at the upper bound of valid values. The Random baseline also performs relatively well, suggesting that models trained with short prediction horizons tend to overfit and accurately capture short trajec-tory segments. When the prediction horizon increases to 
+
+p = 50 , we observe a significantly different behavior. The performance of Static Oracle first rises and then declines LIB-Spatial LIB-Object LIB-Goal LIB-10    
+
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> Horizon Value
+> Spatial: 13.48 Object: 13.94 Goal: 12.79 10: 14.15
+
+Figure 5. Estimated execution horizon distributions by Auto-Horizon. The legend displays the mean values of the distributions. 
+
+as the execution horizon extends, while the Random base-line suffers a pronounced drop in performance. In many cases, suboptimal horizon choices even cause Static Ora-cle to underperform the Random baseline, underscoring the importance of selecting an appropriate execution horizon. The enhanced Static Oracle+ consistently achieves strong results, and the specific horizon values used for this base-line are listed in Sec. 8.2. Across both horizon configura-tions, AutoHorizon consistently outperforms all baselines. We attribute this improvement to its ability to dynamically adapt execution horizons during rollout, effectively balanc-ing long-term consistency with short-term reactivity. We further evaluate AutoHorizon on the LIBERO bench-mark using GR00T N1.5 [24], which differs from π0.5 in both architectural design and training pipeline. As shown in Tab. 2, although the precise performance trends vary, 
+
+Static Oracle again exhibits a characteristic peak followed by degradation as the execution horizon increases. Our method consistently achieves superior results, demonstrat-ing robustness and generalization across different architec-tures and training regimes. In Sec. 9, we also visualize the attention weight distributions for GR00T N1.5, which yield conclusions consistent with our earlier analysis. 
+
+RoboTwin Benchmark. Tab. 3 presents the results on the RoboTwin benchmark across tasks with varying diffi-culty. For both tasks that are highly sensitive ( pick bottles )and those that are relatively insensitive ( stack bowls ) to the choice of execution horizon, our method achieves compara-ble or superior performance to the baselines, demonstrating its adaptability across diverse task dynamics. 
+
+Ablation. Fig. 5 visualizes the value distribution of exe-cution horizons estimated by AutoHorizon across the four LIBERO task suites. AutoHorizon yields a broad range of horizon lengths during rollout, demonstrating adaptabil-ity to diverse input conditions and capturing the frequent shifts in VLA’s prediction dynamics. Most estimated hori-zons fall within moderately low values—favoring reactiv-ity—while occasional larger horizons facilitate faster task 7Table 3. Performance comparison using π0.5 on the RoboTwin tasks. Best results are highlighted in bold .Task Suite Adjust Bottle Pick Bottles Place Container Stack Bowls Place Cup Open Laptop Press Stapler Static Oracle                                                                                                                                                                              
+
+> e= 0 .2p79.0 ±1.4 40.7 ±0.5 84.0 ±2.8 90.7 ±1.2 83.7 ±0.9 68.3 ±1.9 44.0 ±0.0
+> e= 0 .4p89.0 ±0.0 67.0 ±0.0 83.0 ±0.0 87.3 ±1.7 77.7 ±2.5 78.3 ±0.5 48.0 ±0.0
+> e= 0 .6p89.3 ±0.9 65.0 ±0.0 82.0 ±0.0 86.7 ±2.5 68.3 ±0.5 71.7 ±2.1 67.0 ±0.0
+> e= 0 .8p76.7 ±1.2 58.0 ±1.4 81.0 ±0.0 90.0 ±2.8 66.0 ±1.6 78.7 ±0.5 70.0 ±0.0
+> e= 1 .0p58.7 ±1.2 30.0 ±0.0 76.7 ±0.5 87.7 ±1.2 56.3 ±3.8 84.0 ±0.0 71.0 ±0.0 Static Oracle+ 98.7 ±0.5 67.0 ±0.0 91.0 ±0.8 90.7 ±1.2 83.7 ±0.9 84.0 ±0.0 72.0 ±0.0 Random 85.3 ±0.5 60.0 ±0.0 86.0 ±0.0 88.7 ±3.4 70.7 ±2.5 82.0 ±0.0 69.0 ±0.0
+> AutoHorizon 100.0 ±0.0 68.0 ±0.0 91.0 ±0.8 92.0 ±0.8 85.3 ±2.1 84.7 ±0.9 75.0 ±0.0
+
+completion when long-term consistency is beneficial. We further compare with a variation of Static Oracle using fixed horizons closest to AutoHorizon’s mean estimated values (e.g ., e = 14 and e = 15 for LIBERO-10) in Sec. 8, and find that AutoHorizon consistently achieves higher success rates. These results confirm the effectiveness of dynamic horizon adjustment over fixed-horizon strategies. We also examine the effect of hyperparameters in Sec. 8.7. The results show that AutoHorizon’s performance remains stable across different combinations of parameter settings. Compared with the strong Static Oracle+ base-line, it always achieves comparable or even superior results, demonstrating robustness to hyperparameter choices. 
+
+4.3. Real-World Results 
+
+Setup. We further evaluate AutoHorizon in real-world robotic manipulation scenarios. Experiments are conducted on a Franka Research 3 robot (7-DoF arm) [10] following the DROID experimental setup [15]. The backbone VLA is 
+
+π0.5, configured with a prediction horizon of p = 50 .We assess all methods on three single-arm pick-and-place tasks of increasing difficulty: put cucumber on plate ,
+
+put Rubik’s cube on plate , and put Rubik’s cube into bowl .A total of 150 trajectories are collected for model fine-tuning. For evaluation, we adopt a stage-based solve rate that measures progress across four phases: (1) reaching the object, (2) grasping and lifting it, (3) moving it toward the target location, and (4) successfully placing it in the con-tainer. Each task is evaluated over ten trials per setting, with each trial capped at 300 control steps, amounting to approx-imately three hours of total robot execution time. Object positions and orientations are randomized across trials to ensure robustness and generalization. 
+
+Results. Tab. 4 summarizes the performance across the three tasks. The occasionally large standard deviations arise from the binary nature of the outcomes, where some roll-outs successfully complete the task, while others fail en-tirely. Several key observations emerge from the execu-tion process. When the execution horizon is too short ( i.e ., 
+
+e ∈ [1 , 5] ), the robot frequently hesitates or stalls during motion. This behavior stems from the policy’s tendency to                                                                                              
+
+> Table 4. Performance comparison on real-world tasks. Best results are highlighted in bold .Task Suite Cucumber Plate Cube Plate Cube Bowl Static Oracle
+> e= 5 91.5 ±12.7 0.0 ±0.0 76.0 ±40.7
+> e= 10 94.0 ±11.5 81.5 ±35.4 97.5 ±4.2
+> e= 20 88.0 ±20.3 54.0 ±43.9 89.5 ±17.6
+> e= 30 89.0 ±19.0 74.5 ±36.3 87.5 ±17.0
+> e= 40 79.0 ±24.5 81.5 ±28.7 56.5 ±31.3
+> e= 50 50.0 ±40.8 51.5 ±38.6 58.5 ±34.0 Static Oracle+ 97.0 ±7.9 81.5 ±35.4 97.5 ±4.2 Random 88.5 ±14.7 60.5 ±44.1 77.0 ±27.3
+> AutoHorizon 98.0 ±4.8 92.0 ±15.7 99.0 ±2.1
+
+predict subtle, low-amplitude movements for the initial few actions within a chunk, resulting in insufficient overall pro-gression. At moderate horizons ( e ∈ [20 , 40] ), the robot of-ten overreaches or collides with the workspace, reflecting a loss of reactivity. When the execution horizon becomes ex-cessively long ( e > 40 ), the robot struggles to maintain ac-curate object localization, leading to frequent object drops and a diminished ability to correct errors during execution. In contrast, AutoHorizon dynamically adjusts the execu-tion horizon throughout the rollout. As shown in Fig. 2, under stable conditions—such as reaching for or transport-ing the object—the estimated horizons increase, accelerat-ing execution progress. When the robot begins to physically interact with the environment ( e.g ., grasping or placing the cube), the estimated horizons adaptively shorten, enhancing reactivity to environmental changes. 
+
+## 5. Conclusion 
+
+Determining the execution horizon in action chunking flow policies remains an underexplored yet crucial challenge. In this work, we analyze the predictive behaviors of flow-based VLAs through attention weight inspection. Our anal-ysis reveals that predicted action chunks exhibit limited temporal adaptability and consistently rely on radial ac-tion sinks for structural guidance. Building on these in-sights, we interpret action self-attention weights as im-plicit indicators of the model’s predictive confidence and 8propose an autonomous, attention-guided execution hori-zon estimation algorithm that dynamically assigns chunk-specific horizons. Extensive evaluations in both simulated and real-world robotic manipulation tasks demonstrate that our method consistently outperforms other baselines, high-lighting its effectiveness and generalizability. 
+
+## References 
+
+[1] Brenna D. Argall, Sonia Chernova, Manuela Veloso, and Brett Browning. A survey of robot learning from demon-stration. Robotics and Autonomous Systems , 57(5):469–483, 2009. 1 [2] Lucas Beyer, Andreas Steiner, Andr´ e Susano Pinto, Alexan-der Kolesnikov, Xiao Wang, Daniel Salz, Maxim Neumann, Ibrahim Alabdulmohsin, Michael Tschannen, Emanuele Bugliarello, Thomas Unterthiner, Daniel Keysers, Skanda Koppula, Fangyu Liu, Adam Grycner, Alexey Gritsenko, Neil Houlsby, Manoj Kumar, Keran Rong, Julian Eisensch-los, Rishabh Kabra, Matthias Bauer, Matko Boˇ snjak, Xi Chen, Matthias Minderer, Paul Voigtlaender, Ioana Bica, Ivana Balazevic, Joan Puigcerver, Pinelopi Papalampidi, Olivier Henaff, Xi Xiong, Radu Soricut, Jeremiah Harmsen, and Xiaohua Zhai. Paligemma: A versatile 3b vlm for trans-fer, 2024. 2 [3] Kevin Black, Noah Brown, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Lucy Xiaoyang Shi, James Tanner, Quan Vuong, Anna Walling, Haohuan Wang, and Ury Zhilinsky. π0: A vision-language-action flow model for general robot control, 2024. 1, 2, 3 [4] Kevin Black, Manuel Y. Galliker, and Sergey Levine. Real-time execution of action chunking flow policies, 2025. 1, 3[5] Chi-Lam Cheang, Guangzeng Chen, Ya Jing, Tao Kong, Hang Li, Yifeng Li, Yuxiao Liu, Hongtao Wu, Jiafeng Xu, Yichu Yang, Hanbo Zhang, and Minzhao Zhu. Gr-2: A gen-erative video-language-action model with web-scale knowl-edge for robot manipulation, 2024. 2 [6] Guo Chen, Zhiqi Li, Shihao Wang, Jindong Jiang, Yicheng Liu, Lidong Lu, De-An Huang, Wonmin Byeon, Matthieu Le, Tuomas Rintamaki, Tyler Poon, Max Ehrlich, Tuomas Rintamaki, Tyler Poon, Tong Lu, Limin Wang, Bryan Catan-zaro, Jan Kautz, Andrew Tao, Zhiding Yu, and Guilin Liu. Eagle 2.5: Boosting long-context post-training for frontier vision-language models, 2025. 2 [7] Tianxing Chen, Zanxin Chen, Baijun Chen, Zijian Cai, Yibin Liu, Zixuan Li, Qiwei Liang, Xianliang Lin, Yiheng Ge, Zhenyu Gu, et al. Robotwin 2.0: A scalable data gen-erator and benchmark with strong domain randomization for robust bimanual robotic manipulation. arXiv preprint arXiv:2506.18088 , 2025. 7 [8] Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau, Yilun Du, Benjamin Burchfiel, Russ Tedrake, and Shuran Song. Diffusion policy: Visuomotor policy learning via action dif-fusion, 2024. 1, 2, 3 [9] Xiangming Gu, Tianyu Pang, Chao Du, Qian Liu, Fengzhuo Zhang, Cunxiao Du, Ye Wang, and Min Lin. When attention sink emerges in language models: An empirical view. arXiv preprint arXiv:2410.10781 , 2024. 3 [10] Sami Haddadin. The franka emika robot: A standard plat-form in robotics research. IEEE Robotics & Automation Magazine , 31(4):136–148, 2024. 8 [11] Yucheng Hu, Yanjiang Guo, Pengchao Wang, Xiaoyu Chen, Yen-Jen Wang, Jianke Zhang, Koushil Sreenath, Chaochao Lu, and Jianyu Chen. Video prediction policy: A generalist robot policy with predictive visual representations, 2025. 2 [12] Physical Intelligence, Kevin Black, Noah Brown, James Darpinian, Karan Dhabalia, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Manuel Y. Gal-liker, Dibya Ghosh, Lachy Groom, Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Devin LeBlanc, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Allen Z. Ren, Lucy Xiaoyang Shi, Laura Smith, Jost Tobias Springenberg, Kyle Stachowicz, James Tanner, Quan Vuong, Homer Walke, Anna Walling, Haohuan Wang, Lili Yu, and Ury Zhilinsky. π0.5: avision-language-action model with open-world generaliza-tion, 2025. 1, 2, 3, 4, 6 [13] Seil Kang, Jinyeong Kim, Junhyeok Kim, and Seong Jae Hwang. See what you are told: Visual attention sink in large multimodal models, 2025. 3 [14] Kento Kawaharazuka, Jihoon Oh, Jun Yamada, Ingmar Pos-ner, and Yuke Zhu. Vision-language-action models for robotics: A review towards real-world applications. IEEE Access , 13:162467–162504, 2025. 1 [15] Alexander Khazatsky, Karl Pertsch, Suraj Nair, Ashwin Bal-akrishna, Sudeep Dasari, Siddharth Karamcheti, Soroush Nasiriany, Mohan Kumar Srirama, Lawrence Yunliang Chen, Kirsty Ellis, Peter David Fagan, Joey Hejna, Masha Itkina, Marion Lepert, Yecheng Jason Ma, Patrick Tree Miller, Jimmy Wu, Suneel Belkhale, Shivin Dass, Huy Ha, Arhan Jain, Abraham Lee, Youngwoon Lee, Marius Mem-mel, Sungjae Park, Ilija Radosavovic, Kaiyuan Wang, Al-bert Zhan, Kevin Black, Cheng Chi, Kyle Beltran Hatch, Shan Lin, Jingpei Lu, Jean Mercat, Abdul Rehman, Pan-nag R Sanketi, Archit Sharma, Cody Simpson, Quan Vuong, Homer Rich Walke, Blake Wulfe, Ted Xiao, Jonathan Hee-won Yang, Arefeh Yavary, Tony Z. Zhao, Christopher Agia, Rohan Baijal, Mateo Guaman Castro, Daphne Chen, Qi-uyu Chen, Trinity Chung, Jaimyn Drake, Ethan Paul Fos-ter, Jensen Gao, Vitor Guizilini, David Antonio Herrera, Minho Heo, Kyle Hsu, Jiaheng Hu, Muhammad Zubair Ir-shad, Donovon Jackson, Charlotte Le, Yunshuang Li, Kevin Lin, Roy Lin, Zehan Ma, Abhiram Maddukuri, Suvir Mir-chandani, Daniel Morton, Tony Nguyen, Abigail O’Neill, Rosario Scalise, Derick Seale, Victor Son, Stephen Tian, Emi Tran, Andrew E. Wang, Yilin Wu, Annie Xie, Jingyun Yang, Patrick Yin, Yunchu Zhang, Osbert Bastani, Glen Berseth, Jeannette Bohg, Ken Goldberg, Abhinav Gupta, Abhishek Gupta, Dinesh Jayaraman, Joseph J Lim, Jitendra Malik, Roberto Mart´ ın-Mart´ ın, Subramanian Ramamoorthy, Dorsa Sadigh, Shuran Song, Jiajun Wu, Michael C. Yip, Yuke Zhu, Thomas Kollar, Sergey Levine, and Chelsea Finn. 
+
+9Droid: A large-scale in-the-wild robot manipulation dataset, 2025. 8 [16] Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao, Ashwin Balakrishna, Suraj Nair, Rafael Rafailov, Ethan Fos-ter, Grace Lam, Pannag Sanketi, Quan Vuong, Thomas Kol-lar, Benjamin Burchfiel, Russ Tedrake, Dorsa Sadigh, Sergey Levine, Percy Liang, and Chelsea Finn. Openvla: An open-source vision-language-action model, 2024. 1, 2 [17] Lucy Lai, Ann Zixiang Huang, and Samuel J Gershman. Ac-tion chunking as policy compression. PsyArXiv , 2022. 1 [18] Chengmeng Li, Junjie Wen, Yan Peng, Yaxin Peng, Feifei Feng, and Yichen Zhu. Pointvla: Injecting the 3d world into vision-language-action models. arXiv preprint arXiv:2503.07511 , 2025. 2 [19] Shuang Li, Yihuai Gao, Dorsa Sadigh, and Shuran Song. Unified video action model, 2025. 1, 2 [20] Bo Liu, Yifeng Zhu, Chongkai Gao, Yihao Feng, Qiang Liu, Yuke Zhu, and Peter Stone. Libero: Benchmarking knowl-edge transfer for lifelong robot learning, 2023. 7 [21] Yuejiang Liu, Jubayer Ibn Hamid, Annie Xie, Yoonho Lee, Max Du, and Chelsea Finn. Bidirectional decoding: Im-proving action chunking via closed-loop resampling. Inter-national Conference on Learning Representations (ICLR) ,2025. 1, 2, 4 [22] Yueen Ma, Zixing Song, Yuzheng Zhuang, Jianye Hao, and Irwin King. A survey on vision-language-action models for embodied ai, 2025. 1 [23] Yao Mu, Tianxing Chen, Zanxin Chen, Shijia Peng, Zhiqian Lan, Zeyu Gao, Zhixuan Liang, Qiaojun Yu, Yude Zou, Mingkun Xu, Lunkai Lin, Zhiqiang Xie, Mingyu Ding, and Ping Luo. Robotwin: Dual-arm robot benchmark with gen-erative digital twins. In Proceedings of the Computer Vision and Pattern Recognition Conference (CVPR) , pages 27649– 27660, 2025. 7 [24] NVIDIA, :, Johan Bjorck, Fernando Casta˜ neda, Nikita Cher-niadev, Xingye Da, Runyu Ding, Linxi ”Jim” Fan, Yu Fang, Dieter Fox, Fengyuan Hu, Spencer Huang, Joel Jang, Zhenyu Jiang, Jan Kautz, Kaushil Kundalia, Lawrence Lao, Zhiqi Li, Zongyu Lin, Kevin Lin, Guilin Liu, Edith Llon-top, Loic Magne, Ajay Mandlekar, Avnish Narayan, Soroush Nasiriany, Scott Reed, You Liang Tan, Guanzhi Wang, Zu Wang, Jing Wang, Qi Wang, Jiannan Xiang, Yuqi Xie, Yinzhen Xu, Zhenjia Xu, Seonghyeon Ye, Zhiding Yu, Ao Zhang, Hao Zhang, Yizhou Zhao, Ruijie Zheng, and Yuke Zhu. Gr00t n1: An open foundation model for generalist humanoid robots, 2025. 1, 2, 3, 6, 7 [25] OpenAI. Gpt-4 technical report, 2024. 2 [26] Lucy Xiaoyang Shi, Brian Ichter, Michael Equi, Liyim-ing Ke, Karl Pertsch, Quan Vuong, James Tanner, Anna Walling, Haohuan Wang, Niccolo Fusai, Adrian Li-Bell, Danny Driess, Lachy Groom, Sergey Levine, and Chelsea Finn. Hi robot: Open-ended instruction following with hier-archical vision-language-action models, 2025. 1 [27] Mustafa Shukor, Dana Aubakirova, Francesco Capuano, Pepijn Kooijmans, Steven Palma, Adil Zouitine, Michel Ar-actingi, Caroline Pascal, Martino Russi, Andres Marafioti, Simon Alibert, Matthieu Cord, Thomas Wolf, and Remi Ca-dene. Smolvla: A vision-language-action model for afford-able and efficient robotics, 2025. 1, 2, 3 [28] Jiaming Song, Arash Vahdat, Morteza Mardani, and Jan Kautz. Pseudoinverse-guided diffusion models for inverse problems. In International Conference on Learning Repre-sentations , 2023. 3 [29] Gemini Team. Gemini: A family of highly capable multi-modal models, 2025. 2 [30] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-reit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need, 2023. 2, 3 [31] Junjie Wen, Yichen Zhu, Jinming Li, Minjie Zhu, Zhibin Tang, Kun Wu, Zhiyuan Xu, Ning Liu, Ran Cheng, Chaomin Shen, et al. Tinyvla: Towards fast, data-efficient vision-language-action models for robotic manipulation. IEEE Robotics and Automation Letters , 2025. 2 [32] Guangxuan Xiao, Yuandong Tian, Beidi Chen, Song Han, and Mike Lewis. Efficient streaming language models with attention sinks, 2024. 3, 5 [33] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, Chujie Zheng, Dayiheng Liu, Fan Zhou, Fei Huang, Feng Hu, Hao Ge, Haoran Wei, Huan Lin, Jia-long Tang, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jing Zhou, Jingren Zhou, Junyang Lin, Kai Dang, Keqin Bao, Kexin Yang, Le Yu, Lianghao Deng, Mei Li, Mingfeng Xue, Mingze Li, Pei Zhang, Peng Wang, Qin Zhu, Rui Men, Ruize Gao, Shixuan Liu, Shuang Luo, Tian-hao Li, Tianyi Tang, Wenbiao Yin, Xingzhang Ren, Xinyu Wang, Xinyu Zhang, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yinger Zhang, Yu Wan, Yuqiong Liu, Zekun Wang, Zeyu Cui, Zhenru Zhang, Zhipeng Zhou, and Zihan Qiu. Qwen3 technical report, 2025. 2 [34] Maryam Zare, Parham M. Kebria, Abbas Khosravi, and Saeid Nahavandi. A survey of imitation learning: Algo-rithms, recent developments, and challenges, 2023. 1 [35] Yanjie Ze, Gu Zhang, Kangning Zhang, Chenyuan Hu, Muhan Wang, and Huazhe Xu. 3d diffusion policy: Gen-eralizable visuomotor policy learning via simple 3d repre-sentations, 2024. 1, 2 [36] Wenyao Zhang, Hongsi Liu, Zekun Qi, Yunnan Wang, Xin-qiang Yu, Jiazhao Zhang, Runpei Dong, Jiawei He, Fan Lu, He Wang, et al. Dreamvla: a vision-language-action model dreamed with comprehensive world knowledge. arXiv preprint arXiv:2507.04447 , 2025. 2 [37] Zhenyu Zhang, Ying Sheng, Tianyi Zhou, Tianlong Chen, Lianmin Zheng, Ruisi Cai, Zhao Song, Yuandong Tian, Christopher R´ e, Clark Barrett, Zhangyang Wang, and Beidi Chen. H 2o: Heavy-hitter oracle for efficient generative in-ference of large language models, 2023. 3 [38] Qingqing Zhao, Yao Lu, Moo Jin Kim, Zipeng Fu, Zhuoyang Zhang, Yecheng Wu, Zhaoshuo Li, Qianli Ma, Song Han, Chelsea Finn, et al. Cot-vla: Visual chain-of-thought rea-soning for vision-language-action models. In Proceedings of the Computer Vision and Pattern Recognition Conference ,pages 1702–1713, 2025. 2 [39] Tony Z. Zhao, Vikash Kumar, Sergey Levine, and Chelsea 
+
+10 Finn. Learning fine-grained bimanual manipulation with low-cost hardware, 2023. 1, 2, 3 [40] Haoyu Zhen, Xiaowen Qiu, Peihao Chen, Jincheng Yang, Xin Yan, Yilun Du, Yining Hong, and Chuang Gan. 3d-vla: A 3d vision-language-action generative world model. arXiv preprint arXiv:2403.09631 , 2024. 1, 2 [41] Jinguo Zhu, Weiyun Wang, Zhe Chen, Zhaoyang Liu, Shen-glong Ye, Lixin Gu, Hao Tian, Yuchen Duan, Weijie Su, Jie Shao, Zhangwei Gao, Erfei Cui, Xuehui Wang, Yue Cao, Yangzhou Liu, Xingguang Wei, Hongjie Zhang, Haomin Wang, Weiye Xu, Hao Li, Jiahao Wang, Nianchen Deng, Songze Li, Yinan He, Tan Jiang, Jiapeng Luo, Yi Wang, Con-ghui He, Botian Shi, Xingcheng Zhang, Wenqi Shao, Junjun He, Yingtong Xiong, Wenwen Qu, Peng Sun, Penglong Jiao, Han Lv, Lijun Wu, Kaipeng Zhang, Huipeng Deng, Jiaye Ge, Kai Chen, Limin Wang, Min Dou, Lewei Lu, Xizhou Zhu, Tong Lu, Dahua Lin, Yu Qiao, Jifeng Dai, and Wenhai Wang. Internvl3: Exploring advanced training and test-time recipes for open-source multimodal models, 2025. 2 [42] Brianna Zitkovich, Tianhe Yu, Sichun Xu, Peng Xu, Ted Xiao, Fei Xia, Jialin Wu, Paul Wohlhart, Stefan Welker, Ayzaan Wahid, Quan Vuong, Vincent Vanhoucke, Huong Tran, Radu Soricut, Anikait Singh, Jaspiar Singh, Pierre Sermanet, Pannag R. Sanketi, Grecia Salazar, Michael S. Ryoo, Krista Reymann, Kanishka Rao, Karl Pertsch, Igor Mordatch, Henryk Michalewski, Yao Lu, Sergey Levine, Lisa Lee, Tsang-Wei Edward Lee, Isabel Leal, Yuheng Kuang, Dmitry Kalashnikov, Ryan Julian, Nikhil J. Joshi, Alex Irpan, Brian Ichter, Jasmine Hsu, Alexander Herzog, Karol Hausman, Keerthana Gopalakrishnan, Chuyuan Fu, Pete Florence, Chelsea Finn, Kumar Avinava Dubey, Danny Driess, Tianli Ding, Krzysztof Marcin Choromanski, Xi Chen, Yevgen Chebotar, Justice Carbajal, Noah Brown, An-thony Brohan, Montserrat Gonzalez Arenas, and Kehang Han. Rt-2: Vision-language-action models transfer web knowledge to robotic control. In Proceedings of The 7th Conference on Robot Learning , pages 2165–2183. PMLR, 2023. 2 
+
+11 VLA Knows Its Limits 
+
+# Supplementary Material 
+
+## 6. Proof of Proposition 1 
+
+Under the assumptions of Proposition 1, let L be divisible by e (for simplicity), and let δdj (e) = k e log e with k > 0
+
+(independent of j). If m = L/e denotes the number of executed chunks, then there are m − 1 chunk transitions. Hence, from Eq. (2) the total loss can be written as 
+
+L(e) = ( m − 1) δc +
+
+> m
+
+X
+
+> j=1
+
+δdj (e)=
+
+ Le − 1
+
+
+
+δc + Le k e log e
+
+=
+
+ Le − 1
+
+
+
+δc + Lk log e. (9) Treating e > 0 as a continuous variable, differentiate: 
+
+∂L(e)
+
+∂e = − Lδ c
+
+e2 + Lk e = Le2
+
+ ke − δc. (10) The unique stationary point is at ˆe = δc/k . Moreover, 
+
+∂2L(e)
+
+∂e 2 = Le3
+
+ 2δc − ke , (11) 
+
+∂2L(ˆ e)
+
+∂e 2 = L δ c
+
+ˆe3 > 0, (12) so L(e) is strictly decreasing on (0 , ˆe) and strictly increas-ing on (ˆ e, ∞), hence ˆe is the unique global minimizer in the continuous domain. (Thus L is unimodal ; it need not be globally convex.) Since e ∈ N (and, in practice, 1 ≤ e ≤ p), the discrete minimizer lies among the two integers nearest to ˆe:
+
+e∗ ∈ arg min   
+
+> e∈{⌊ ˆe⌋,⌈ˆe⌉}∩ [1 ,p ]
+
+L(e), ˆe = δc
+
+k . (13) Equivalently, without the upper bound p,
+
+e∗ ∈
+
+n
+
+max  1, ⌈ˆe⌉, max  1, ⌈ˆe⌉ − 1o
+
+, (14) choosing the value that yields the smaller L(e). Finally, since lim e→∞ L(e) = + ∞ and L is unimodal, this discrete minimizer is global. 
+
+## 7. Method Demonstration 
+
+We provide an algorithm demonstration in Alg. 1, detailing the proposed method. Also, Fig. 6 illustrates AutoHorizon on a toy example rollout, clarifying the steps for estimating the per-chunk execution horizon: row-wise normalization, low-entropy row selection, forward soft-pointer plateau de-tection (the backward pointer is not shown), and horizon fusion. 
+
+Algorithm 1 AutoHorizon 
+
+Input: Attention matrix St and its reverse ˜St at time t,quantile q, threshold τ 
+
+> 1:
+
+Obtain row entropy Ht with Eq. (5)  
+
+> 2:
+
+Retain low-entropy rows with Eq. (4) // Forward traversal  
+
+> 3:
+
+Compute μt with Eq. (6)  
+
+> 4:
+
+∆μt ← diff (μt) 
+
+> 5:
+
+Pt ← { i | ∆μt[i] < τ } 
+
+> 6:
+
+Nf ← ⌊ μt[min( Rt ∩ Pt)] ⌋ + 1 
+
+// Backward traversal  
+
+> 7:
+
+Apply step 3-6 to ˜St 
+
+> 8:
+
+Obtain backward horizon Nb
+
+// Horizon determination  
+
+> 9:
+
+if Nf + Nb ≥ p then N ← p else N ← Nf
+
+Output: N0.5 0.1 0.2 0.1 0.1                 
+
+> 0.5 0.2 0.1 0.15 0.05
+> 0.4 0.2 0.1 0.1 0.2
+> 0.2 0.2 0.2 0.2 0.2
+> 0.1 0.1 0.2 0.2 0.4
+
+Normalized Attention 
+
+> 0.84
+> 0.83
+> 0.91
+> 1.00
+> 0.91
+> 1.2
+> 1.2
+> 1.5
+> 2.0
+> 2.7
+> 1.2
+> 0.0
+> 0.3
+> 0.5
+> 0.7
+
+Figure 6. Example demonstration of how AutoHorizon works. 
+
+## 8. Additional Results 
+
+8.1. More Baselines 
+
+We further include two re-planning baselines for compari-son, including: • Action Trigger: Based on the action chunk distribution, it sets the execution horizon as the first index where the difference between consecutive actions exceeds τa.• Uncertainty Proxy: It samples 4 chunks per observation and estimates per-step uncertainty via Monte Carlo vari-ance, calculating the horizon as the earliest step where uncertainty exceeds the threshold of τu. The executed ac-1tions are obtained by averaging sampled chunks. Tab. 5 shows the results. AutoHorizon consistently outper-forms these two baselines over various threshold settings. We also observe that these two baselines are very sensitive to the change of hyper-parameters. Moreover, Uncertainty Proxy incurs much more computation latency as it needs to compute 4 chunks for every observation, hindering its ap-plicability under real-world settings. 
+
+Table 5. Comparison with additional baselines.                                                           
+
+> Task Suite LIB-Spatial LIB-Object LIB-Goal LIB-10 Press Stapler
+> τa= 1 e−295.2 ±0.3 90.5 ±1.3 84.9 ±2.4 77.7 ±1.1 32.0 ±0.0 Action Trigger
+> τa= 5 e−294.4 ±0.9 94.3 ±1.3 85.3 ±1.5 77.5 ±0.9 58.0 ±0.0
+> τa= 1 e−193.9 ±1.9 88.9 ±2.6 85.7 ±0.9 79.6 ±0.7 60.0 ±0.0
+> τa= 3 e−179.1 ±0.1 74.9 ±1.9 76.9 ±0.8 74.8 ±0.9 71.0 ±0.0
+> τu= 1 e−294.9 ±1.1 84.5 ±0.7 84.4 ±0.9 70.3 ±1.1 40.0 ±0.0 Uncertainty Proxy
+> τu= 5 e−294.8 ±0.7 84.8 ±1.6 85.7 ±3.8 68.9 ±2.8 72.0 ±0.0
+> τu= 1 e−194.9 ±0.2 89.5 ±0.8 87.7 ±1.6 79.2 ±1.1 71.0 ±0.0
+> τu= 3 e−191.5 ±0.5 82.0 ±2.6 87.2 ±1.1 77.6 ±2.0 72.0 ±0.0
+> Ours 96.5 ±0.9 98.0 ±0.6 94.4 ±1.0 92.1 ±1.0 75.0 ±0.0
+
+8.2. Execution Horizons for Static Oracle+ 
+
+Table 6 lists the fixed execution horizons selected for Static Oracle+ on the LIBERO benchmark. Note that we do not sweep the entire range of possible values; instead, we per-form a targeted grid search over a plausible interval where the optimal static e is likely to lie. 
+
+Table 6. Execution horizons found by Static Oracle+. 
+
+Task Suite LIB-Spatial LIB-Object LIB-Goal LIB-10 
+
+π0.5 (p = 10) 10 8 10 10 
+
+π0.5 (p = 50) 5 13 15 15 GR00T (p = 16) 2 8 8 16 
+
+The results show substantial variability across tasks and models: the optimal static execution horizon differs markedly, and no clear, generalizable pattern emerges from final success rates alone. For example, LIBERO-Spatial 
+
+tends to prefer shorter execution horizons as the prediction horizon increases, whereas LIBERO-10 exhibits the oppo-site trend. 
+
+8.3. Comparison with Nearest Static Oracle 
+
+To assess the benefit of the dynamic horizon strategy, we compare AutoHorizon with Static Oracle baselines whose fixed horizons are the nearest neighbors to the mean horizon estimated by our method, such that: e ∈ {⌊ e∗⌋ , ⌊e∗⌋ +1}. Table 7 reports results on the LIBERO benchmark using 
+
+π0.5 with p = 50 , and the corresponding mean horizons from our method are shown in Fig. 5. 
+
+Table 7. Comparison with Nearest Static Oracle on LIBERO. 
+
+m indicates the mean of the estimated execution horizon distribu-tion by our method. Task Suite LIB-Spatial LIB-Object LIB-Goal LIB-10 Static Oracle ( e = ⌊m⌋) 95.7 ± 0.2 97.6 ± 0.6 92.4 ± 0.0 89.1 ± 1.4 Static Oracle ( e = ⌈m⌉) 95.1 ± 0.2 97.2 ± 0.0 93.9 ± 0.2 91.9 ± 0.4             
+
+> Ours 96.5 ±0.9 98.0 ±0.6 94.4 ±1.0 92.1 ±1.0
+
+Across different task configurations, AutoHorizon achieves higher or comparable success rates relative to the nearest Static Oracle , demonstrating the effectiveness of dynamic horizon estimation. We further observe that the mean execution horizon produced by AutoHorizon closely approximates the optimal static choice, while its occasional selection of larger or smaller horizons enables handling cor-ner cases during long rollouts—an advantage unattainable with a single fixed horizon. 
+
+8.4. Performance under Shorter Prediction Horizon 2 4 6 8 10 12 15 
+
+Execution Horizon 
+
+> 60
+> 65
+> 70
+> 75
+> 80
+> 85
+> 90
+> 95
+> 100
+> Success Rate (%)
+> LIBERO-Spatial
+> LIBERO-Object
+> LIBERO-Goal
+> LIBERO-10
+
+Figure 7. Average success rates on the LIBERO benchmark with a prediction horizon of 10 using π0.5.
+
+Fig. 7 reports results under a shorter prediction horizon (p = 10 ) using π0.5. The relationship between performance and execution-horizon persists, with peak performance of-ten attained at the boundary e = p. When e > p , perfor-mance drops sharply. We attribute this to a train–test mis-match: the policy is trained on chunks of length at most p
+
+and does not generalize to longer horizons. This observa-tion provides a natural upper bound for the execution hori-zon such that 1 ≤ e ≤ p.
+
+8.5. Effect of Language Tokens 
+
+We investigate the role of language tokens in action gen-eration by analyzing their contribution within the cross-attention mechanism of π0.5 on the LIBERO bench-mark. Although the language tokens exhibit high attention weights, we find that they carry only subtle semantic in-fluence on action prediction. To quantify this effect, we perform ablation studies summarized in Tab. 8. Original 
+
+denotes using the unaltered attention weights, while Mask Lang indicates fully masking the language tokens’ attention weights (with re-normalization applied to preserve the soft-max distribution). The results show that masking the language tokens leads to mixed but generally minor performance changes, often resulting in only marginal degradation. This suggests that most linguistic information has been absorbed into the vi-sion tokens during training, rendering explicit language at-2Step 0 Step 5 Step 10 Step 20 Step 30 Figure 8. Visualization of the cross-attention weights in GR00T N1.5 over different rollout steps. 
+
+tention largely redundant at inference time. To further examine this redundancy, we apply the Vi-sual Attention Redistribution (VAR) technique proposed by Kang et al. [13], which redistributes a portion of the atten-tion mass from certain tokens to others. Under our case, we redistribute the attention mass from the language to-kens to other modalities. We denote this variant as VAR-L-p, where p represents the fraction of language attention weights redistributed ( e.g ., VAR-L-0.5 redistributes 50% of the language attention). This strategy acts as a soft ver-sion of language masking, since Original corresponds to 
+
+VAR-L-1.0 . When setting p = 0 .5, performance notably improves—sometimes even surpassing the Original base-line ( e.g ., cases under p = 50 , e = 10 ). This finding indicates that partially redistributing language attention to vision–action tokens can enhance model performance, re-inforcing the conclusion that language token attention con-tains substantial redundancy in pretrained VLAs. 
+
+Table 8. Effect of language tokens on LIBERO benchmark.                                                                                 
+
+> Task Suite LIB-Spatial LIB-Object LIB-Goal LIB-10
+> p= 10
+> e= 10
+> Original 99.1 ±0.5 98.8 ±0.9 97.2 ±1.0 90.4 ±0.6 Mask Lang 97.7 ±0.5 99.5 ±0.5 96.1 ±0.8 91.3 ±1.6 VAR-L-0.5 98.5 ±0.5 99.2 ±0.6 96.9 ±1.0 90.7 ±1.0
+> p= 50
+> e= 10
+> Original 91.2 ±2.3 94.9 ±0.2 97.1 ±0.2 92.7 ±1.0 Mask Lang 92.8 ±0.9 93.7 ±0.5 81.7 ±1.5 79.6 ±1.5 VAR-L-0.5 94.8 ±1.2 96.7 ±0.8 89.6 ±1.6 92.1 ±1.5
+
+8.6. Smoothness Analysis 
+
+We visualize the robot kinematics over time through cal-culating the joint velocity norm. Fig. 9 shows that Auto-Horizon produces smoother velocity transitions over time, demonstrating its potential of achieving stable and smooth actions with improved performance. 0 60 120 180 240 
+
+Time Step 
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Velocity Norm  Static Oracle+
+> AutoHorizon
+
+Figure 9. Smoothness analysis. 
+
+8.7. Hyper-parameter Sensitivity 
+
+To verify the effect of hyper-parameter choices, we con-ducted experiments using π0.5 on LIBERO-10. Tab. 9 shows that AutoHorizon remains stable across variations in attention choice L, entropy quantile q, and threshold τ .During analysis, we fix the other parameters choices for fair comparison. We also provide a brief analysis on the effect of combining different hyper-parameters in Tab. 10, where the model performance remains stable across a wide range of settings. 
+
+Table 9. Hyper-parameter sensitivity analysis.                                        
+
+> L= 2 L= 3 L= 4 L= 5 L= 6
+> 89.9 ±1.2 92.1 ±1.0 90.9 ±2.5 89.5 ±1.8 90.4 ±1.4
+> q= 0 .7q= 0 .8q= 0 .9q= 0 .99 q= 0 .999
+> 90.8 ±0.3 92.0 ±1.4 92.1 ±1.0 91.9 ±1.2 91.5 ±2.0
+> τ= 0 .1τ= 0 .2τ= 0 .3τ= 0 .4τ= 0 .5
+> 90.9 ±1.0 90.0 ±0.9 92.1 ±1.0 91.7 ±1.0 91.6 ±1.4
+
+Table 10. More ablations on hyper-parameters. 
+
+Params q = 0 .8 q = 0 .9 q = 0 .99 
+
+τ = 0 .2 90.0 ± 0.9 90.5 ± 1.9 90.0 ± 1.7 
+
+τ = 0 .3 92.0 ± 1.4 92.1 ± 1.0 91.9 ± 1.2 
+
+τ = 0 .4 91.7 ± 1.0 88.3 ± 0.8 90.0 ± 2.1 
+
+## 9. Attention Mechanism within GR00T N1.5 
+
+We further demonstrate that our observations are not lim-ited to π0.5 but also generalize to other flow-based VLA models such as GR00T N1.5, which employs a substantially different architecture and training pipeline. Unlike π0.5,GR00T N1.5 adopts an alternating modality fusion process: one block performs cross-attention between action and vi-sion–language tokens, followed by another block that ap-plies action self-attention. This alternating pattern repeats multiple times during the forward pass, enabling iterative refinement of multimodal representations. In Fig. 8, we visualize the cross-attention maps between generated actions and vision–language tokens over different policy execution steps. The token indices 0–19 , 276 –282 ,and 539 to the end correspond to visual input. The vi-sualization reveals that the cross-attention mechanism in GR00T N1.5 exhibits the same invariance pattern observed in π0.5—different generated actions consistently attend to the same vision–language tokens. 3Step 0 Step 35 Figure 10. Visualization of normalized action self-attention in GR00T N1.5 over different rollout steps. 
+
+In Fig. 10, we visualize the action self-attention maps over different rollout steps. GR00T N1.5 likewise displays the radial action sink phenomenon, where the initial and ter-minal action tokens receive disproportionately high atten-tion weights. This consistent structural bias across models reinforces our interpretation that radial action sinks act as implicit indicators of the model’s predictive limits and can therefore inform execution horizon estimation. 4
