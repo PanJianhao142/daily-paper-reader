@@ -1,0 +1,807 @@
+Title: Physics-informed neural particle flow for the Bayesian update step
+
+URL Source: https://arxiv.org/pdf/2602.23089v1
+
+Published Time: Fri, 27 Feb 2026 02:02:45 GMT
+
+Number of Pages: 28
+
+Markdown Content:
+# Physics-informed neural particle flow for the Bayesian update step 
+
+Domonkos Csuzdi a, Tamás Bécsi a, Olivér Tör˝ oa, ∗
+
+> aDepartment of Control for Transportation and Vehicle Systems,Faculty of Transportation Engineering and Vehicle Engineering,Budapest University of Technology and Economics, M˝ uegyetem rkp. 3, Budapest, H-1111, Hungary
+
+Abstract 
+
+The Bayesian update step poses significant computational challenges in high-dimensional nonlinear estimation. While log-homotopy particle flow filters o ff er an alternative to stochastic sampling, existing formulations usually yield sti ff 
+
+di ff erential equations. Conversely, existing deep learning approximations typically treat the update as a black-box task or rely on asymptotic relaxation, neglecting the exact geometric structure of the finite-horizon probability transport. In this work, we propose a physics-informed neural particle flow, which is an amortized inference framework. To construct the flow, we couple the log-homotopy trajectory of the prior to posterior density function with the continuity equation describing the density evolution. This derivation yields a governing partial di ff erential equation (PDE), referred to as the master PDE. By embedding this PDE as a physical constraint into the loss function, we train a neural network to approximate the transport velocity field. This approach enables purely unsupervised training, eliminating the need for ground-truth posterior samples. We demonstrate that the neural parameterization acts as an implicit regularizer, mitigating the numerical sti ff ness inherent to analytic flows and reducing online computational complexity. Experimental validation on multimodal benchmarks and a challenging nonlinear scenario confirms better mode coverage and robustness compared to state-of-the-art baselines. 
+
+Keywords: particle flow, physics-informed learning, Bayesian update, amortized inference 
+
+1. Introduction 
+
+At its core, Bayesian inference is a problem of integration. Computing the posterior expectation of the state requires normalizing the product of a prior and a likelihood. This task involves evaluating high-dimensional integrals that are typically not available in closed form. To overcome this intractability, computational statistics use Markov chain Monte Carlo (MCMC) methods [1, 2], such as the Metropolis–Hastings algorithm. These methods construct a Markov chain that has the target density as its stationary distribution. This way, complex integrals can be evaluated as ergodic averages [3]. In the context of dynamic state estimation, where the probability density function (pdf) must be updated recur-sively as new data arrive, sequential Monte Carlo (SMC) estimators [4, 5], also known as particle filters (PFs), have become a standard approximation technique [6, 7, 8]. SMC extends the Monte Carlo approach to dynamic systems by representing the evolving pdf with a set of weighted samples. However, both MCMC and SMC face severe limitations in high-dimensional state spaces. Standard sampling methods su ff er from the curse of dimensionality, leading to slow mixing in MCMC chains and weight degeneracy in particle filters. The theoretical connection between statistical mechanics and multivariate optimization, established by Kirkpatrick et al. [9], provided the basis for simulated annealing and motivated the application of stochastic di ff erential equations, such as Langevin dynamics, to probabilistic inference. By treating the probability density as a physical system relaxing toward thermal equilibrium, these methods apply stochastic forces to avoid getting stuck in local optima and explore the state space more e ff ectively than simple random walks. Although stochastic approaches guarantee asymptotic convergence, they are limited by the di ff usive nature of the exploration process. Random walks can be computationally ine ffi cient, particularly in high-dimensional spaces. To 
+
+> ∗Corresponding author
+> arXiv:2602.23089v1 [cs.LG] 26 Feb 2026
+
+transition from the prior to the posterior, particles must traverse regions of low probability. To address this issue, particle flow filters have emerged as an alternative. In contrast to SMC methods, these algorithms transport samples along a continuous trajectory. An important realization of this approach is the log-homotopy particle flow filter, introduced by Daum and Huang [10, 11]. The core principle is to define a continuous deformation of the probability density function, pa-rameterized by a pseudo-time variable λ ∈ [0 , 1], which smoothly bridges the prior distribution and the posterior. The particle trajectories are then either governed by a deterministic ordinary di ff erential equation (ODE) or a stochastic di ff erential equation (SDE) derived to match the evolution of this density. However, deriving a valid transport map presents a significant challenge [12, 13]. Analytical solutions derived from the log-homotopy often yield numerically sti ff di ff erential equations that pose stability problems for standard integrators [14, 15, 16, 17]. Conversely, deep learning-based approximations o ff er flexibility but frequently treat the update as a black box. Notable examples include normalizing flows [18, 19] and conditional neural processes [20], which parameterize the transport map using invertible neural networks. These methods typically rely on optimizing a statistical divergence such as the Kullback–Leibler (KL) divergence between the transported prior and the target posterior. While e ff ective for general density estimation, this formulation ignores the specific geometric structure of the Bayesian update. Recent approaches that explicitly model particle dynamics, such as the particle flow version of Bayes’ rule [21], rely on meta-learning strategies applied to synthetic tasks and assume that convergence to the posterior occurs asymptotically. However, these methods do not enforce the finite-time continuity equation that is derived from the log-homotopy. This paper focuses on the discrete-time Bayesian update step, isolating it from the prediction dynamics. This separation allows us to examine the fusion of the prior and the likelihood, independent of any particular temporal dynamics or transition models. Under the Markov assumption, the prior distribution contains all historical informa-tion, allowing the multiplication and normalization operations to be addressed in a static framework without loss of generality. In this work, we propose a novel framework that addresses the limitations of both traditional sampling and modern flow-based methods. We introduce a physics-informed neural particle flow (PINPF), which implements the Bayesian update via deterministic particle transport driven by a neural network. Coupling the continuity equation with the log-homotopy that interpolates between the prior and the posterior, results in an implicit partial di ff erential equation (PDE) for the velocity field. Since this equation is underdetermined and admits a broad family of valid transport solutions, it serves as a general governing law, which we call therefore the master PDE. Unlike black-box neural operators, our method explicitly uses this PDE to constrain the learning process. By embedding this physical law into training, we obtain an amortized inference operator trained in a fully unsupervised manner. This approach combines the theoretical rigor of analytical particle flows with the flexibility of deep learning. Neural parameterization reduces numerical sti ff ness associated with exact flow filters while maintaining a computational complexity of O(N) per update. The implementation of our algorithm can be accessed at https://github.com/DomonkosCs/PINPF .
+
+1.1. Notations 
+
+The real-valued n-dimensional Euclidean space is denoted by Rn. For a scalar function f (x) : Rn → R, its gradient is ∇ f (x) = [∂ f /∂ x1, ∂ f /∂ x2, . . . , ∂ f /∂ xn]⊤ ∈ Rn. For a vector field v(x) : Rn → Rn, its divergence is 
+
+∇ · v(x) = Pni=1 ∂vi/∂ xi ∈ R. Unless explicitly stated otherwise, the operator ∇ refers to di ff erentiation with respect to 
+
+x. The Laplace operator ∆ is defined by ∆ f (x) = Pni=1 ∂2 f /∂ x2 
+
+> i
+
+∈ R.We adopt the following simplified notation for the one-step Bayesian inference throughout this paper. Let x ∈ Rnx
+
+denote the random state vector and z ∈ Rnz the random measurement vector in the nx- and nz-dimensional spaces, respectively. Let px(x) denote the prior probability density function of x and pz(z | x) the likelihood of a measurement 
+
+z. According to Bayes’ theorem, the posterior conditional density function of x given a measurement z is 
+
+px(x|z) = px(x)pz(z|x)
+
+pz(z) , (1) where the normalizing constant is pz(z) = R px(x)pz(z|x) d x. We assume that all probability density functions exist, are su ffi ciently di ff erentiable, and are nonvanishing everywhere. For simplicity, we use the abbreviations p(x) = px(x|z), 
+
+g(x) = px(x), and h(x) = pz(z|x). 2Discrete time steps are indexed by k, while t ∈ R denotes a continuous flow parameter and λ ∈ [0 , 1] is the continuous homotopy parameter. Probability density functions parameterized by t or λ are denoted by pt or pλ,respectively. The expectation w.r.t. the density p is denoted by Ep.
+
+1.2. Plan of the paper 
+
+The remainder of the paper is organized as follows. Section 2 reviews the relevant algorithms for implementing the Bayesian update step. Techniques are cathegorized into sampling-based, transport-based, and variational approaches. Section 3 establishes the mathematical foundation of the proposed method and introduces the master PDE for the general deterministic log-homotopy particle flow. In Section 4, we perform a theoretical analysis of the master PDE. We verify its consistency with the global conservation of probability mass and derive its explicit solution in one dimension. To give a broader perspective, we examine the theoretical links connecting stochastic relaxation and deterministic transport methods and provide a comparative analysis of the discussed algorithms. Section 5 details the proposed PINPF framework. We formulate the physics-informed loss function based on the residual of the master PDE, describe the feature construction strategy, and present the sequential local learning algo-rithm. Section 6 evaluates the method on a four-dimensional multimodal Gaussian mixture problem and a challenging nonlinear time-di ff erence-of-arrival tracking scenario, demonstrating its ability to mitigate numerical sti ff ness and generalize to out-of-distribution priors. Section 7 concludes the paper, and Appendix A presents additional qualitative results and visualizations of the training data. 
+
+2. Implementing the Bayesian update 
+
+In the Bayesian framework, Bayes’ theorem serves as a fundamental tool for probabilistic inference [22, 23, 24]. In practice, the posterior distribution is often estimated by pointwise multiplication of the prior pdf and the likelihood function. For specific distributions, such as those from the exponential family, conjugate priors can be used, yielding a closed-form solution in which the posterior remains in the same family [25, Chapter 3]. When such analytical convenience is unavailable, numerical grid-based methods such as the histogram filter can perform the multiplication explicitly on a discretized grid [26, Chapter 4]. However, the resulting function does not automatically integrate to unity. To ensure that the posterior describes a valid probability distribution, normalization is required, which requires computing an integral over the entire space. This problem is generally intractable, especially in high dimensions. Effi cient algorithms aim to avoid this computationally intensive integration. The most well-known specialized estimator is the Kalman filter, which operates in the linear-Gaussian regime and provides an exact analytical solution where normalization is implicit [27, 28]. Regarding numerical approaches, the particle filter approximates the pos-terior with a finite set of weighted samples, e ff ectively reducing the normalization problem to the normalization of scalar weights [29]. It should be noted that this distinct update step is an artifact of discrete-time formulations. In continuous-time sys-tems, the sequential distinction between prediction and update disappears. Instead, the posterior distribution evolves simultaneously under the influence of system dynamics and incoming observations. Mathematically, the evolution of the probability density function is governed by the Kushner–Stratonovich equation [30, 31]. In this stochastic dif-ferential equation, the Bayesian update appears not as a pointwise multiplication but as an additive innovation term driven by the discrepancy between observed and expected measurements. In the specific case of linear dynamics and Gaussian noise, this infinite-dimensional problem simplifies to a finite set of ordinary di ff erential equations known as the Kalman–Bucy filter [32]. The connection between discrete- and continuous-time filtering is discussed in detail in [33] and [34], covering both discrete-to-continuous and continuous-to-discrete approaches. 
+
+2.1. Bayesian update in sequential estimation 
+
+In recursive estimation tasks arising in state-space systems, the general intractability of the update step has driven a significant body of research toward SMC methods [4, 5]. Particle filters approximate the posterior pdf pk(x) at 3time step k using a finite set of weighted random samples (particles) xik with associated importance weights wik ≥ 0(i = 1, . . . , N). The empirical pdf is given by the Dirac mixture 
+
+pk(x) ≈
+
+> N
+
+X
+
+> i=1
+
+wikδ(x − xik) , (2) where δ(·) denotes the Dirac delta. For (2) to represent a valid pdf, the weights must sum to unity. In the particle filter framework [29], particles are propagated through the system dynamics, and their weights are updated according to the likelihood of the observed data. However, standard SMC algorithms su ff er from inherent degeneracies [8, 6, 7, 35]. A well-known phenomenon is weight degeneracy: after a few iterations, the variance of the weights can increase uncontrollably, leading to a situation in which all but one particle carry negligible weight. To counteract this, a resampling step is typically introduced to discard particles with low weights and duplicate those with high weights. While resampling preserves the statistical validity of the filter, it introduces a new issue known as particle depletion or sample impoverishment. This results in a loss of diversity, with the particle cloud collapsing to a single point in state space and failing to represent posterior uncertainty adequately. Furthermore, these methods are susceptible to the curse of dimensionality [36]. In high-dimensional state spaces, the volume of the region where the likelihood is significant becomes exponentially small relative to the prior support. It has been shown that the number of particles required to avoid weight collapse scales exponentially with the state dimension [37, 38, 39]. Interestingly, a large number of independent observations can also lead to filter collapse [40]. To overcome particle depletion and weight collapse caused by assimilating highly informative observations, vari-ous progressive Bayesian update methods have been proposed. The underlying idea is to avoid pointwise multiplica-tion of the prior by the full likelihood function in a single step. Instead, measurement assimilation is decomposed into a sequence of partial updates that are numerically stable. An early approach of this kind was introduced by Oudjane and Musso for regularized particle filters [41]. Their method factorizes the likelihood function in a principled way into smaller sub-likelihoods and introduces a decreasing sequence of covariance matrices for the observation noise. A similar method for Gaussian problems is presented in [42]. Another progressive update method for Bayesian state estimation was proposed by Hanebeck [43]. In this ap-proach, the probability density evolves according to a system of linear first-order ODEs defined over an artificial progression parameter ranging from zero to one. The ODEs are derived by minimizing the squared integral deviation between the true and the approximated density, which governs the evolution of the density parameters during the update. 
+
+2.2. Sampling methods 
+
+In the Bayesian framework, a significant computational challenge in high-dimensional inference is sampling from the posterior and evaluating expectations. According to Bayes’ theorem, the posterior density p(x) is given by 
+
+p(x) = h(x)g(x)
+
+R h(x)g(x) d x , (3) where h is the likelihood and g is the prior pdf. One can express the posterior in Boltzmann–Gibbs form as 
+
+p(x) = 1
+
+K e−V(x) , (4) where V(x) = − log h(x) − log g(x) is the potential energy function, and K = R e−V(x) dx is the intractable normalizing constant. Because K is generally unavailable in closed form, direct sampling is impossible for most nontrivial models. To overcome this, MCMC methods construct an ergodic Markov chain x( j), ( j = 1, . . . , J) that admits p as its unique stationary distribution. Under weak regularity conditions, the ergodic theorem guarantees that sample averages converge to the desired posterior expectations [44]: lim 
+
+> J→∞
+
+1
+
+J
+
+> J
+
+X
+
+> j=1
+
+φ(x( j)) = Ep[φ(x)] , (5) 4where φ is an integrable function of the state. The most general algorithm in this class is the Metropolis–Hastings algorithm [45, 46]. At each step j, a candidate state x′ is sampled from a user-defined proposal distribution q(x′ | x( j)), such as a Gaussian random walk centered at the current state x( j). The candidate is then accepted with probability min 1, p(x′)q(x( j) | x′)
+
+p(x( j))q(x′ | x( j))
+
+!
+
+. (6) Since the target density p(x) = e−V(x)/K appears in both the numerator and the denominator, the intractable constant 
+
+K cancels out, allowing the transition to be computed using the unnormalized pdf. However, standard random-walk MCMC methods su ff er from severe ine ffi ciencies in high dimensions due to the curse of dimensionality [47]. Isotropic exploration of the state space results in di ff usive behavior, leading to long mixing times and highly correlated samples. Despite these advances, gradient-based MCMC methods often fail in the presence of multimodal distributions because the Markov chains tend to become trapped in local minima of the potential energy landscape. To overcome this issue, annealed MCMC methods construct a sequence of intermediate distributions that bridge a tractable prior and a complex posterior [48]. A geometric path is typically defined via an inverse-temperature parameter β ∈ [0 , 1], yielding a family of densities pβ(x) ∝ h(x)βg(x). This strategy of progressively transforming a simple probability measure into the target distribution has a close theoretical connection to the homotopy-based particle flows discussed in this work, although it is implemented in this context via discrete stochastic transitions rather than continuous deterministic transport. 
+
+2.3. Transport methods and normalizing flows 
+
+While annealed MCMC relies on stochastic transitions to bridge the initial and target distributions, an alternative paradigm is deterministic measure transport. The objective is to construct a di ff eomorphism M : Rd → Rd that pushes a tractable reference density ρ0 forward to the generally intractable target posterior p.Formally, one seeks a map M such that the pushforward of the reference density matches the target, denoted by 
+
+M#ρ0 = p. This condition implies that if u ∼ ρ0, then x = M(u) is distributed according to p. The densities are related by the change-of-variables formula: 
+
+p(M(u)) = ρ0(u) |det ∇M(u)|−1 . (7) Once M is approximated, independent posterior samples can be generated at negligible cost by pushing reference samples through the map. This e ff ectively converts the integration problem of Bayesian inference into an optimization problem over function spaces. The existence of such maps is guaranteed by optimal transport theory. In particular, Brenier’s theorem [49, 50] states that there exists a unique map that minimizes the quadratic Wasserstein cost and is given by the gradient of a convex scalar potential. Alternatively, the Knothe–Rosenblatt rearrangement [51, 52] guarantees the existence of a triangular transport map, which is computationally favorable due to its e ffi ciently computable Jacobian determinant. In the context of machine learning, these maps are realized as normalizing flows (NF) [18, 19]. Early approaches parameterized the transport map M as a composition of simple, invertible algebraic layers (e.g., planar or radial flows) [53]. An improvement over these elementary transformations is the neural spline flow (NSF) proposed by Durkan et al. [54]. This architecture replaces simple a ffi ne coupling layers with monotonic rational-quadratic splines defined on a discretized grid. By enforcing monotonicity, the transformation remains strictly invertible, while the piecewise definition provides su ffi cient flexibility to model complex, multimodal densities. The Jacobian of these transformations is diagonal or triangular causing that determinant computations remain tractable with linear complex-ity. Despite the success of discrete flow architectures, recent developments have shifted toward continuous-time for-mulations, referred to as continuous normalizing flows (CNF) [55]. In this framework, the discrete sequence of layered transformations is replaced by a continuous integration process. The flow of samples is modeled by a first-order ODE, where the time-dependent velocity field fθ is parameterized by a neural network with weights θ:dx(t)dt = fθ(x(t), t) . (8) 5The transformation M is obtained by numerically integrating this equation from an initial time t0 to a terminal time 
+
+t1. A distinct advantage of this formulation is e ffi cient computation of the change in probability density. Unlike general discrete flows, which may require computing the determinant of the Jacobian at every step, CNFs rely on the instantaneous change-of-variables formula [56]. This formula states that the rate of change of the log-density is determined by the negative divergence of the vector field fθ. Consequently, the total change in log-density is given by integrating the divergence of the flow along the trajectory: log p(x(t1)) = log p(x(t0)) −
+
+Z t1
+
+> t0
+
+∇ · fθ dt . (9) This approach allows the log-density to be computed using standard ODE solvers by treating it as an auxiliary state variable. The parameters of the flow are typically learned via variational inference (VI) by minimizing the KL divergence 
+
+DKL (M#ρ0 ∥ p) between the approximated density and the target posterior p. It is important to note that the standard training paradigm for NFs is maximum likelihood estimation (MLE), which minimizes the forward KL divergence 
+
+DKL (p ∥ M#ρ0). However, MLE is a supervised approach requiring independent samples from the target distribution, which are unavailable in the inference setting. Consequently, one is restricted to minimizing the reverse KL divergence [18]. This objective is known to induce mode-seeking behavior, often causing the flow to underestimate posterior variance or drop modes entirely [57, 19]. Furthermore, standard NFs are indi ff erent to the geometry of the transition: they yield a mapping that minimizes a statistical divergence but lacks physical interpretability. 
+
+2.4. Stein variational gradient descent 
+
+Stein variational gradient descent (SVGD), introduced by Liu and Wang [58], is a deterministic alternative to classical MCMC sampling. While MCMC approaches rely on stochastic ergodic chains to explore the target posterior 
+
+p(x), SVGD frames sampling as a variational inference task. The objective is to transport a set of particles {xi}Ni=1 to approximate p(x) by minimizing the KL divergence via a gradient flow on a reproducing kernel Hilbert space (RKHS). The transport map is defined as M(x) = x+ϵϕ (x), where ϕ is a perturbation direction in the RKHS. By maximizing the decay rate of the KL divergence, a closed-form expression for the optimal velocity field ϕ∗ is obtained as 
+
+ϕ∗(x) = Eq(y)
+
+ k(x, y)∇y log p(y)
+
+| {z }
+
+> Driving force
+
++ ∇yk(x, y)
+
+| {z }
+
+> Repulsive force
+
+ , (10) where q is the density of the evolving particle set. The update rule xi ← xi + ϵϕ ∗(xi) can be interpreted as the combination of two competing forces: 1. Driving force: The first term, k(x, y)∇y log p(y), is a weighted aggregation of the score functions of the particle ensemble. The kernel k(x, y) acts as a spatial smoothing operator, causing the driving force to be computed as a weighted average of the gradients of the surrounding particles rather than relying solely on the local score function. This mechanism allows particles located in regions with negligible gradients to move toward high-probability regions indicated by neighboring particles. 2. Repulsive force: The second term, ∇yk(x, y), induces a repulsive force that drives particle x away from y when they are in close proximity. This mechanism allows SVGD to avoid mode collapse, which is typical in standard optimization-based sampling. A standard choice for the kernel is a radial basis function k(x, y) = exp( −∥ x − y∥2/h). The bandwidth parameter h
+
+is usually given by a dynamic strategy using the median heuristic [59] as h = m2/ log N, where 
+
+m = median {∥ xi − x j∥ : 1 ≤ i < j ≤ N} . (11) Theoretically, this evolution constitutes the gradient flow of the KL divergence with respect to the Stein geome-try [60]. A key distinction from Langevin dynamics, which corresponds to gradient flow in the Wasserstein metric, is the absence of stochastic noise. Instead of relying on Brownian di ff usion to explore the state space, SVGD uses deterministic, nonlocal interactions induced by the kernel. This repulsive interaction typically requires fewer particles to cover the support of the target distribution than stochastic methods. 62.5. Particle flow Bayes’ rule 
+
+A recent advance bridging the gap between deterministic transport maps and sequential Bayesian inference is particle flow Bayes’ rule (PFBR), proposed by Chen et al. [21]. While classical transport methods often require solving a computationally intensive optimization problem for each new observation, PFBR aims to learn a flexible, amortized operator that generalizes across priors and observations. The core idea is to represent the Bayesian update as a continuous-time dynamical system. The transport velocity field fθ is parameterized by a deep neural network, evolving particles according to the ODE dx(t)dt = fθ(x(t), t, S), t ∈ [0 , T ] . (12) Here, t is a continuous pseudo-time variable, and T is a terminal time chosen to be su ffi ciently large to reach equi-librium. The velocity depends on the particle state x, time t, and the current empirical distribution of the particle set 
+
+S = {xi}Ni=1.The theoretical foundation of PFBR rests on the correspondence between stochastic di ff usion processes and de-terministic flows. Consider the overdamped Langevin SDE, which targets the posterior distribution p(x): dx(t) = ∇ log p(x) d t + √2 d wt , (13) where wt denotes the Wiener process. The evolution of the intermediate probability density pt(x) of this process is governed by the Fokker-Planck equation [61]: 
+
+∂pt(x)
+
+∂t = −∇ · (pt(x)∇ log p(x)) + ∆ pt(x) . (14) By using the identity ∆pt = ∇· (pt∇ log pt), the di ff usion term can be rearranged to express the evolution as a continuity equation: 
+
+∂pt(x)
+
+∂t = −∇ ·  pt(x) ∇ log p(x) − ∇ log pt(x) . (15) The equivalent deterministic velocity field is identified as: dx(t)dt = ∇ log p(x) − ∇ log pt(x) . (16) In the PFBR framework, the network fθ is trained via meta-learning to approximate this velocity field. By minimizing the KL divergence over a distribution of synthetic inference tasks, the resulting model acts as a general-purpose Bayesian update operator that transports particles from the prior to the posterior. 
+
+2.5.1. Finite-time vs. asymptotic flow formulations 
+
+Chen et al. [21] established the existence of the transport flow by exploiting the correspondence between the Fokker–Planck equation of a stochastic Langevin process and the continuity equation of a deterministic system. They showed that the marginal density evolution of the stochastic process can be exactly replicated by an ODE. To resolve the dependence of this flow on the intractable instantaneous density, the problem is framed as a deterministic optimal control task. By exploiting the equivalence between closed-loop and open-loop controls, they proved the existence of a fixed velocity field that depends only on the initial distribution. The analytical structure of velocity fields moving particles along Bayesian log-homotopy trajectories was intro-duced by Daum and Huang [10, 11]. A key distinctin between log-homotopy flows and the PFBR is the temporal formulation. PFBR relies on the asymptotic convergence t → ∞ of the probability-flow ODE toward equilibrium. In contrast, a Daum–Huang type filter usees an ODE or SDE to transport particles over a compact pseudo-time interval 
+
+λ ∈ [0 , 1]. PFBR does not explicitly enforce the finite-horizon log-homotopy constraint, which leaves the analytical structure of the Bayesian update implicit. Consequently, the neural network must learn the transport geometry entirely from data, which increases the complexity of the meta-learning task compared to a physically constrained approach. 72.6. Motivation and contribution 
+
+A review of existing methods reveals certain trade-o ff s in deterministic particle transport for Bayesian inference, which can be categorized into three classes: 
+
+• Log-homotopy particle flows (e.g., exact [11], incompressible [17]): these methods rely on rigorous derivations based on log-homotopy. However, they are prone to numerical sti ff ness and instability in strongly nonlinear scenarios, often requiring heuristic regularization techniques for practical implementation. 
+
+• Interacting particle systems (SVGD [58]): this approaches ensures stable convergence, however, comes with high computational costs ( O(N2)) due to pairwise particle interactions. Furthermore, operates as online opti-mization procedure that requires solving a minimization problem at each time step. 
+
+• Neural operators (PFBR [21]): this method o ff ers fast, amortized inference ( O(N)). However, typically treats the update as a black-box learning task, neglecting the analytical constraints available through the log-homotopy formulation. In this work, we propose a novel framework that integrates log-homotopy particle flow within a deep learning architecture. By interpreting the master PDE as a physical constraint for an amortized neural operator rather than a di ff erential equation to be solved online, we achieve the following contributions: 
+
+• Physics-informed Bayesian operator: a learning-based operator parameterized by a multilayer perceptron (MLP) is introduced. In contrast to PFBR, which learns an arbitrary flow by minimizing a statistical divergence, this operator is explicitly constrained to satisfy the master PDE. Consequently, optimization is guided by the gov-erning flow dynamics rather than relying solely on data-driven statistical divergences. 
+
+• Unsupervised training scheme: we propose a training objective based on the residual of the master PDE. This formulation enables purely unsupervised training, eliminating the need for ground-truth posterior samples or computationally expensive MCMC simulations. 
+
+• Mitigation of numerical sti ff ness: we show that the neural parameterization acts as an inherent regularizer, eff ectively addressing the numerical sti ff ness that characterizes traditional analytical particle flow filters. The method is evaluated on a highly nonlinear problem featuring a banana-shaped twisted density, where standard numerical integrators for the flow equation typically diverge. 
+
+• Robust mode discovery: we evaluate the proposed method on a four-dimensional Gaussian mixture problem characterized by separated modes. Results indicate that the physics-informed flow prevents mode collapse and identifies all modes compared to baseline methods, while maintaining the computational e ffi ciency of an amortized O(N) update. 
+
+3. Log-homotopy particle flow 
+
+The fundamental concept of the log-homotopy particle flow (LHPF) filter, introduced by Daum and Huang [10, 11], is to perform the Bayesian update by transporting particles continuously from the prior distribution g(x) to the posterior distribution p(x) via a flow in pseudo-time. 
+
+3.1. General stochastic formulation 
+
+Let λ ∈ [0 , 1] denote a pseudo-time parameter, where λ = 0 corresponds to the prior distribution g(x) and λ = 1corresponds to the posterior p(x). The evolution of the probability density function pλ(x) is defined by the log-homotopy log pλ(x) = log g(x) + λ log h(x) − log Kλ , (17) where h(x) is the likelihood function and Kλ = R g(x)h(x)λ dx is the normalization constant required to ensure R pλ(x) d x = 1. 8To transform samples from the prior to the posterior, the motion of the particles is modeled by a generic Itô stochastic di ff erential equation dx(λ) = f (x, λ ) d λ + σ(x, λ ) d wλ , (18) where f is the drift vector, σ is the di ff usion matrix, and wλ is a Wiener process. For notational simplicity, the explicit dependence on x and λ is omitted when clear from context. The evolution of the probability density pλ under SDE (18) is governed by the Fokker-Planck equation: 
+
+∂pλ
+
+∂λ = −∇ · (pλ f ) + 12 ∇ · ∇ · (pλσσ ⊤) . (19) The problem of designing a log-homotopy particle flow is equivalent to finding functions f and σ such that the density evolution in (19) matches the boundary conditions imposed by Bayes’ theorem and the flow obeys the homo-topy constraint (17). However, since we have one scalar constraint for the evolution of pλ, and multiple unknowns as the components of vector f and matrix σ, the problem is underdetermined. Consequently, there is no unique particle flow; rather, there exists a rich family of valid flows. Various formulations have been derived so far [13, 62], including the exact flow with zero di ff usion [11, 63] and stochastic flows [64]. 
+
+3.2. The deterministic master PDE 
+
+In this work, we consider deterministic flows, where the di ff usion matrix σ is set to zero. This choice reduces the stochastic evolution (18) to the ODE dx(λ)dλ = f . (20) Correspondingly, the Fokker-Planck equation simplifies to the continuity equation, describing the conservation of probability mass under a deterministic flow: 
+
+∂pλ
+
+∂λ = −∇ · (pλ f ) . (21) To derive the governing equation for the drift f , we first di ff erentiate the log-homotopy (17) with respect to λ:
+
+∂ log pλ
+
+∂λ = log h − d log Kλ
+
+dλ . (22) To obtain the explicit form of the term involving Kλ, we rely on the constraint that the pdf pλ must remain normalized throughout the flow: Z
+
+pλ dx = 1 . (23) Di ff erentiating both sides with respect to λ and assuming regularity conditions that allow the interchange of integration and di ff erentiation, we obtain: ddλ
+
+Z
+
+pλ dx =
+
+Z ∂pλ
+
+∂λ dx = 0 . (24) Using the log-derivative identity 
+
+∂pλ
+
+∂λ = pλ
+
+∂ log pλ
+
+∂λ , (25) constraint (24) can be expressed as an expectation with respect to the intermediate density pλ as 
+
+Z
+
+pλ
+
+∂ log pλ
+
+∂λ dx = Epλ
+
+" ∂ log pλ
+
+∂λ 
+
+#
+
+= 0 . (26) This expression simply states that probability mass cannot be created or destroyed throughout the flow. Substituting the homotopy derivative from (22) into (26) yields 
+
+Epλ
+
+"
+
+log h − d log Kλ
+
+dλ
+
+#
+
+= 0 . (27) 9Exploiting the linearity of expectation, and noting that Kλ depends only on λ we arrive at d log Kλ
+
+dλ = Epλ [log h] . (28) This indicates that the rate of change of the log-normalizer is equal to the expected log-likelihood throughout the flow. This result is obtained in [65] in an alternative way. By substituting the expectation from (28) back into (22) we obtain 
+
+∂ log pλ
+
+∂λ = log h − Epλ [log h] . (29) Using the log-derivative and the identity ∇ · (pλ f ) = pλ∇ · f + f · ∇ pλ we write the continuity equation (21) in the form ∂ log pλ
+
+∂λ = − f · ∇ log pλ − ∇ · f (30) and combine it with (29) to arrive at the master PDE of the deterministic log-homotopy flow: 
+
+−∇ · f − f · ∇ log pλ = log h − Epλ [log h] . (31) This linear, first-order PDE connects the divergence of the flow field to the deviation of the local log-likelihood from its global mean. The intermediate density pλ is defined by the log-homotopy (17). Since Kλ does not depend on x we can write 
+
+−∇ · f − f · ∇ (log g + λ log h) = log h − Epλ [log h] . (32) 
+
+Target density 
+
+(Boltzmann-Gibbs) 
+
+p(x) ∝ e−V(x)
+
+Static distribution 
+
+Stochastic evolution 
+
+(Fokker-Planck equation)  
+
+> ∂pt
+> ∂t
+
+= ∇ · (pt∇V) + ∆ pt
+
+Steady state at t → ∞ 
+
+Homotopy evolution 
+
+(Master PDE) 
+
+−∇· (pλ f )/pλ = log h−Epλ [log h]Endpoint at λ = 1
+
+Posterior samples 
+
+(Dirac mixture) 
+
+{xi}Ni=1 ∼ p(x)Static samples 
+
+Brownian motion 
+
+(Langevin equation) dx = −∇ V dt + √2 d Wt
+
+Fluctuating equilibrium 
+
+Particle flow 
+
+(Deterministic ODE)  
+
+> dx
+> dλ
+
+= f (x, λ )Characteristic curves         
+
+> Mean-field limit
+> Empirical measure
+> Method of characteristics
+> Relaxation
+> (t → ∞ )
+> Ergodicity
+> Termination
+> (λ=1)
+> R10
+> Figure 1: Physics based Bayesian computation. Center: The estimation objectiveis a static target posterior and its discrete approximation via an empirical measure. Left: Stochastic relaxation, where the system asymptotically converges to a fluctuating equilibrium ( t→ ∞ ). The macroscopic and microscopic views are linked via the mean-field limit. Right: Deterministic transport, where the system evolves over a finite horizon ( λ∈[0 ,1]). The particle trajectories correspond to the characteristic curves of the macroscopic master PDE.
+
+4. Theoretical analysis 
+
+In this section, we analyze the theoretical properties of the derived master PDE. First, we verify its consistency with the fundamental law of probability mass conservation. Subsequently, we derive the explicit solution for the one-dimensional case, establishing a geometric connection to quantile-preserving transport. Finally, we contextualize the proposed approach within the broader landscape of physics-based Bayesian computation, contrasting the deterministic transport paradigm with stochastic relaxation methods. 10 4.1. Consistency with conservation of probability mass 
+
+To verify the physical consistency of the master PDE, we integrate the expression over the entire state space Rnx .First, we rewrite (31) as 
+
+− 1
+
+pλ
+
+∇ · (pλ f ) = log h − Epλ [log h] . (33) Multiplying both sides by the density pλ and integrating with respect to x, we obtain: 
+
+Z
+
+−∇ · (pλ f ) d x =
+
+Z
+
+pλ
+
+log h − Epλ [log h] dx . (34) The rhs is 0 due to (27). For the lhs, we apply the divergence theorem. Assuming standard regularity conditions where the probability density pλ and the probability current pλ f decay to zero as ∥x∥ → ∞ , the surface integral at the boundary vanishes so we can write 
+
+Z
+
+∇ · (pλ f ) d x =
+
+I
+
+(pλ f ) · n dS = 0 , (35) where n is the unit normal to the surface element d S .The above confirms that the master PDE is mathematically consistent with the global conservation of probability mass. It ensures that the net change in probability mass over the entire domain is zero, satisfying the requirement that 
+
+> ddλ
+
+R pλ dx = 0. 
+
+4.2. Sanity check in one dimension 
+
+In the one-dimensional case, the master PDE 
+
+− ∂∂x (pλ f ) = pλ
+
+log h − Epλ [log h] (36) has a unique explicit solution. Since we have 
+
+pλ
+
+log h − Epλ [log h] = pλ
+
+∂ log pλ
+
+∂λ = ∂pλ
+
+∂λ , (37) the PDE to be solved is a continuity equation in one dimesnion: 
+
+− ∂∂x (pλ f ) = ∂pλ
+
+∂λ . (38) We integrate both sides with respect to the spatial coordinate from −∞ to x. Assuming pλ and pλ f vanish at infinity and regularity conditions that allow us to interchange the order of di ff erentiation and integration, we obtain 
+
+−pλ f = ∂∂λ 
+
+Z x
+
+> −∞
+
+pλ du . (39) The integral on the rhs stands for the cumulative distribution function (cdf) Fλ of the intermediate density. The velocity field f is then expressed as 
+
+f = − 1
+
+pλ
+
+∂Fλ
+
+∂λ , (40) meaning that in one dimension, the flow is uniquely determined by the homotopy evolution of the pdf and cdf. The total derivative of Fλ is dFλ
+
+dλ = ∂Fλ
+
+∂λ + ∂Fλ
+
+∂x
+
+dx
+
+dλ , (41) which reduces to dFλ
+
+dλ = −pλ f + pλ f = 0 . (42) Physically, this ensures that the flow preserves the quantile ordering of the particles, which corresponds to the mono-tone transport. Similar approaches are derived in [43, 66] using linear homotopy. 11 Table 1: Overview of particle-based Bayesian inference methods in dimension D using N particles.                                                                      
+
+> Feature MCMC LHPF SVGD NF /CNF PFBR PINPF (Ours) Work princi-ple
+> Ergodic theory Log-homotopy Variational infer-ence Measure transport Meta-learning Physics-informed learning
+> Dynamics Stochastic Markov chain ODE or SDE Deterministic gra-dient flow Deterministic map
+> /ODE Deterministic neu-ral ODE Deterministic neu-ral ODE
+> Update logic Accept /reject Numeric integra-tion Gradient descent &kernelized re-pulsion Apply map /inte-grate ODE Forward pass of learned fθ
+> Forward pass of learned fθ
+> Complexity (per step)
+> O(N·D2)(likelihood)
+> O(N·D3)(matrix inversion)
+> O(N2·D)(pairwise kernel)
+> O(N·D2)(network depth)
+> O(N·D2)(network depth)
+> O(N·D2)(network depth)
+> Integration horizon
+> t→ ∞
+> (asymptotic)
+> λ∈[0 ,1] (sti ff )Iterative opt. (until conver-gence) 1 step (map) /R10t→ ∞
+> (asymptotic)
+> λ∈[0 ,1]
+> Training No No No Yes Yes Yes
+> Main advantages
+> Asymptotically exact Analytic form, no resampling Deterministic, closed-form up-date Flexible geometry, fast sampling Fast amortized in-ference Physics-constrained, reduces sti ff ness
+> Main drawbacks
+> Correlated sam-ples, slow mixing Numerical sti ff -ness, stability issues High computa-tional cost per step Lacks physical in-terpretability Black-box, gener-alization gap Training complex-ity
+
+4.3. Overview of particle-based posterior estimation 
+
+Figure 1 shows the scheme of physics based computation of the posterior distribution and categorizes methods based on their representation and their convergence mechanism. Dashed arrow means convergence in distribution, dotted arrow indicates ergodic convergence, and solid arrows stand for analytic convergences. The objective of Bayesian inference is to characterize the static posterior density p(x), shown in the top center block. The target density can be written in the Boltzmann–Gibbs form p(x) ∝ e−V(x) = g(x)h(x) where V(x) is the potential function of the distribution. Numerical methods approximate this density using a Dirac mixture formed by a set of discrete samples {xi}Ni=1. The samples form an empirical measure that represents the target distribution. Traditional MCMC and Langevin dynamics (left column) operate via stochastic relaxation. These methods treat the probability density as a physical system relaxing toward equilibrium. Macroscopically, the evolution of the den-sity is governed by the Fokker–Planck equation, which includes a di ff usion term. Convergence to the target posterior happens asymptotically as t → ∞ . Microscopically, particles follow stochastic di ff erential equations. Even at equi-librium, particles continue to fluctuate because of the Brownian driving force. The connection between the dynamic trajectory and the static samples is established via ergodicity, where the time-average of a single trajectory converges to the ensemble average of the target density. The vertical correspondence between the SDE and the Fokker–Planck equation is known as the mean-field limit as particle number N → ∞ .The right column shows deterministic particle flow methods based on log-homotopy. These methods view the Bayesian update as a mass transport problem defined by a log-homotopy over a finite pseudo-time interval λ ∈ [0 , 1]. Macroscopically, the density evolves according to the continuity equation, which enforces the conservation of proba-bility mass without di ff usion. Microscopically, particles move according to a deterministic ODE. The flow terminates exactly at λ = 1, mapping the prior ensemble directly to the posterior ensemble. The vertical connection in this paradigm is the method of characteristics, where the particle trajectories are the characteristic curves of the continuity equation. The framework proposed in this paper explicitly exploits this correspondence: we seek to learn the microscopic particle dynamics such that the evolution of the probability density satisfies the master PDE. By embedding this PDE into the loss function of a neural network, we ensure that the learned particle trajectories constitute a valid deterministic transport map to the target posterior. 12 Table 1 compares the theoretical principles and computational complexity of particle-based methods. A critical di ff erentiator is the online scaling with respect to the state dimension D and particle number N. Analytical LHPF methods typically require the inversion of a covariance matrix or Hessian at every integration step [11], resulting in cubic scaling O(ND 3). In contrast, neural operator-based methods (such as PFBR, NF, and PINPF) rely on feed-forward passes involving matrix-vector multiplications, which has ( ND 2) complexity. This quadratic scaling makes neural approaches tractable in high-dimensional settings where analytical flows can be computationally infeasible. 
+
+5. Physics-informed neural particle flow 
+
+In this section, we introduce the physics-informed neural particle flow (PINPF). Instead of attempting to solve the sti ff di ff erential equations of the particle flow online, our approach approximates the velocity field f using a neural network. This network is trained o ffl ine to satisfy the master PDE, resulting in an amortized inference operator that is both computationally e ffi cient and numerically stable. 
+
+5.1. The physics-informed loss function 
+
+We interpret the master PDE (31) as a physical constraint which expresses a balance between the required evolution of the density and the actual transport induced by the flow field: 
+
+−∇ · f − f · ∇ log pλ
+
+| {z }
+
+> Transport rate
+
+= log h − Epλ [log h]
+
+| {z }
+
+> Homotopy drive
+
+. (43) The rhs of (43) originates from the derivative of the log-homotopy equation (22) and it drives the flow. The magnitude of this driving force depends on the parameterization of the homotopy. In our formulation, we employ the straight lin-ear homotopy λ. Had we chosen a general homotopy α(λ) (s.t. α(0) = 0, α (1) = 1) instead of the linear interpolation, the driving term would be scaled by the derivative dα 
+
+> dλ
+
+as a factor of log h. The e ff ect of the chosen homotopy function on the flow is discussed in [16]. The lhs of (43) represents the actual change in log-density resulting from the particle motion. It is composed of two physical mechanisms derived from the continuity equation: the compression of the volume element ( −∇ · f ) and the advection of the density along the flow ( − f · ∇ log pλ). We define the velocity field approximation as a function fθ(·), parameterized by a neural network with weights θ.The PDE residual R(x, λ ; θ) is the di ff erence between the two sides of (43): 
+
+R(x, λ ; θ) = log h − Epλ [log h] −  −∇ · fθ − fθ · ∇ log pλ
+
+ . (44) The instantaneous loss at λ is the expected squared residual over the intermediate density pλ:
+
+Epλ
+
+h(R(x, λ ; θ)) 2i , (45) and throughout the flow the total loss is 
+
+L(θ) =
+
+Z 10
+
+Epλ
+
+h(R(x, λ ; θ)) 2i dλ . (46) In practice, we approximate the expectation using a batch of N particles {xi}Ni=1 sampled from the prior and sum up through the L discrete steps of the flow . The empirical loss function is then 
+
+L(θ) =
+
+> L
+
+X
+
+> k=1
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+
+(R(xi, λ k; θ)) 2 . (47) The divergence ∇ · fθ is computed e ffi ciently via automatic di ff erentiation. It is important to note that even in this deterministic setting, (31) remains underdetermined for state dimensions 
+
+dx > 1, as it provides a single scalar constraint for the dx components of the velocity field f . The analytic solution provided by Daum and Huang [11] for Gaussian distributions relies on specific assumptions (e.g., minimum norm or gradient flow structure) to resolve this ambiguity. In our approach, we allow the neural network to implicitly resolve this degree of freedom during the optimization process. 13 5.2. Feature construction 
+
+A critical design choice in learning the velocity field is the selection of the input context for the neural network. While a standard MLP taking only ( x, λ ) as input is theoretically universal, we find that incorporating geometric information significantly improves convergence and generalization. To determine a necessary feature set, we rely on the theoretical structure of specific Daum–Huang filters, where closed-form solutions for f exist under specific assumptions. We construct our context vector ci to explicitly include terms appearing in these closed-form solutions. Consequently, the augmented input vector for the i-th particle at integration step λ is defined as: The augmented input vector ci for the i-th particle is defined as: 
+
+ci = xi, λ, z, log h(xi), ∇ log pλ(xi), ∇ log h(xi) , (48) where for log pλ(x) we can use the unnormalized intermediate log-density log g(x) + λ log h(x). The components are chosen with specific roles: xi, λ, and z establish the scale of the state and the measurement space, while log h provides direct likelihood feedback. Crucially, we include the gradients of the likelihood and the intermediate potential. By explicitly providing these gradients, the network fθ learns the geometry of the problem, rather than simply overfitting the state space. 
+
+5.3. Training 
+
+Unlike Neural ODEs, which typically backpropagate gradients through the entire integration trajectory using the adjoint method, we treat the training of the flow at each discretization step λk as an independent regression problem. The particles are propagated numerically from λ = 0 to λ = 1 using the Euler method: 
+
+xk+1 = xk + fθ(ck)∆λ. (49) During training, a fixed pseudo-time step ∆λ is used to provide a stable optimization target. At each step k, the loss 
+
+L(θ) is computed based on the current particle positions xk, and gradients are applied to update θ. The computational graph is detached after the update step. This prevents the accumulation of gradients across time steps, significantly reducing memory consumption and avoiding the vanishing /exploding gradient problem common in training deep dynamical systems. This approach e ff ectively breaks the global transport problem into a sequence of local physics-informed constraints. The training procedure is detailed in Algorithm 1. In each iteration, we sample a batch of inference tasks from a training dataset Dtrain . Each task is defined by a measurement realization z and a parameter set governing the g(x)prior and the h(x) likelihood functions. This multi-task framework, inspired by [21], enables the model to learn a generalized Bayesian update operator rather than solving a single instance. For every task, a particle set {xi}Ni=1 is initialized by sampling the prior g(x). 
+
+5.4. Inference dynamics 
+
+During the evaluation /inference phase, we adopt the adaptive step size selection scheme in the Euler method (49) from Mori et al. [67]. To mitigate numerical sti ff ness, the step size is adjusted such that the particle displacement in state space is bounded by a constant threshold ∆L:
+
+∆λ = ∆L
+
+max i ∥ fθ(ck)∥ . (50) This adaptive scheme directly determines the number of function evaluations (NFE) during the integration of the flow, which is the primary factor influencing computational time. While analytical Daum–Huang flows often exhibit extreme sti ff ness requiring a very high NFE (i.e. generally small ∆λ) to maintain stability, our learned neural flow tends to be smoother, allowing for a significantly lower NFE and faster inference. The adaptive ∆λ scheme is only used during inference. Applying it during training would couple the integration grid to the currently unstable velocity field, restricting convergence. 14 5.4.1. Design flexibility 
+
+While our implementation uses absolute state coordinates and independent particle processing, the neural frame-work is flexible enough to incorporate more complex input structures. For instance, to enforce scale-invariance, one could employ nondimensionalization techniques or formulate the problem as an error-state estimation. Furthermore, the choice of coordinate system can play a significant role in flow stability. As noted by Crouse [17], standard Carte-sian coordinates can introduce artificial singularities or biases in specific applications (e.g., bearings-only tracking), whereas transforming the state into polar coordinates can simplify the flow. Finally, while our MLP treats particles independently, the architecture could be extended using deep sets or attention mechanisms to condition on population-level features in highly non-Gaussian regimes. 
+
+Algorithm 1 Physics-Informed Neural Particle Flow Training 
+
+Require: Dataset of tasks D, number of particles N, pseudo step size ∆λ
+
+Initialize MLP parameters θ
+
+while training do Task Sampling: 
+
+Sample batch of tasks {z, g(x), h(z|x)} ∼ D train 
+
+Sample initial particles xi 
+
+> 0
+
+∼ g(x) for i = 1, . . . , N
+
+Initialize total loss Ltotal ← 0
+
+Flow Integration: for k = 0 to 1/∆λ − 1 do 
+
+λk ← k · ∆λ
+
+for each particle xik do 
+
+// Compute log-homotopy potential 
+
+log p(xk) ← log g(xk) + λk log h(z|xk)
+
+// Feature construction (48) Compute gradients via autodi ff : vp = ∇ log p(xk), vh = ∇ log h(z|xk)Construct input ck = [xk, λ k, z, log h, vp, vh]
+
+// Predict flow vector fk ← MLP θ(ck)
+
+end for 
+
+// Compute physics-informed loss 
+
+Compute divergence ∇ · fk via autodi ff 
+
+Estimate expectation E[log h] ≈ 1
+
+> N
+
+Pi log h(z|xik)
+
+L1 ← log h(z|xk) − E[log h]
+
+L2 ← −∇ · fk − (∇ log p(xk)) · fk
+
+Lstep ← ∥L 1 − L 2∥2
+
+Ltotal ← L total + Lstep 
+
+// Particle update (Euler step) xk+1 ← xk + fk · ∆λ
+
+Detach xk+1 from computation graph 
+
+end for Optimization: 
+
+Update θ ← Adam( ∇θLtotal )
+
+end while 
+
+15 6. Experiments 
+
+To assess the performance of the proposed physics-informed neural particle flow, we employ two primary metrics for comparing particle-based distributions. The energy distance (ED) provides a robust measure of the statistical dis-tance between two distributions without requiring explicit density estimation and hyperparameter tuning [68]. Com-plementing this, the sliced Wasserstein distances (SWD) is used to capture structural similarities in high-dimensional spaces by computing the 1D Wasserstein distance across various linear projections [69]. Together, these metrics evaluate both the local accuracy and the global mode coverage of the algorithms. 
+
+6.1. Four-dimensional Gaussian mixture Posterior 
+
+We evaluate PINPF on a multimodal posterior estimation task involving a four-dimensional state space. The training dataset consists of 1000 inference tasks. For each task, the prior is a zero-centered Gaussian with diagonal covariance, where the diagonal variances are sampled uniformly from [1 , 10] for each dimension. The likelihood is defined as a three-component Gaussian mixture model (GMM) with equal component weights. The means of the mixture components are sampled uniformly from [ −3, 3] for each dimension, and their diagonal covariances consist of variances sampled uniformly between 0 .32 and 0 .72. This configuration yields a complex, multimodal Gaussian posterior characterized by occasionally separated modes and varying component importance. The test set is composed of 100 tasks generated using the same parameter distributions. Random examples from this test set are shown in Fig. A.10. We present the quantitative results in Table 3. The training and inference hyperparameters for PINPF, determined via ablation on the validation set, are listed in Table 2. For the evaluation, the ED was computed using 10 4 ground-truth samples drawn from the analytic posterior. For the SWD, we used 1000 projections and downsampled the analytic ground truth so that its number of particles matched that of the inference methods ( N = 1500). 
+
+Baselines. Since traditional MCMC algorithms struggle to sample from multimodal distributions, we employ an annealed realization. The annealed MCMC method uses a linear annealing schedule β ∈ [0 , 1] divided into 10 steps. A population of 1500 particles is initialized from the prior. At each temperature step, particle states are updated using 5 sequential iterations of the No-U-Turn Sampler (NUTS) [70] with a fixed step size of 0.1. We also compare against SVGD [58], which evolves a population of 1500 particles using the Adagrad optimizer. The optimization runs for 500 iterations with a learning rate of 0.2, using a radial basis function kernel with bandwidth determined by the median heuristic. As an amortized baseline, we trained a conditional neural spline flow (NSF) [54] on the same dataset that were used for training PINPF. The flow architecture consists of a stack of 20 coupling layers combined with random permutations to ensure dimensional mixing. To e ff ectively capture the disconnected modes of the target posterior, we use rational quadratic spline transforms with resolution of 32 bins. The spline parameters are predicted by a residual network with two linear layers of 128 hidden units each, which takes the flattened observation, prior parameters, and likelihood parameters as context. Additionally, the Daum–Huang incompressible flow (IF) is evaluated with the same number of particles and integration scheme as the PINPF. Notably, its computational time is 3 × of PINPF’s due to the large number of NFE caused by the sti ff ness of the incompressible flow. 
+
+Qualitative analysis. We present a corner plot for a particular test case to examine mode coverage, as depicted in Figure 2. We selected the sample whose ED and SWD values are closest to the mean values reported in Table 3. To keep the figure uncluttered, we omit the results for IF and NSF. Additional qualitative examples are provided in Fig. A.10. 
+
+Ablation on flow parameters. We analyze the sensitivity of PINPF to the adaptive step threshold ∆L and the number of particles N during evaluation. Figure 3. illustrates the trade-o ff between GPU runtime and SWD on the validation set. The distinct elbow point observed in the performance curves supports the selection of N = 1500 and ∆L = 0.5 for the final evaluation. Notably, the computational cost of increasing N is marginal due to the highly parallelized nature of the flow operations. 16 x1x2
+
+x0
+
+> x3
+
+x1 x2 x3
+
+ours Analytic SVGD Annealed MCMC Figure 2: Corner plot for a representative test inference task, which is selected as the one whose quantitative performance is closest to the mean across all 100 test problems (Table 3). Posterior samples from our method, SVGD, and annealed MCMC are shown alongside the analytic reference. Each method generates 1500 particles, and marginal and pairwise densities are estimated via kernel density estimation. 0.02 0.03 0.05 0.10 0.20 0.30 
+
+GPU Time (s) 
+
+0.400 
+
+0.425 
+
+0.450 
+
+0.475 
+
+0.500 
+
+0.525 
+
+0.550 
+
+0.575 
+
+0.600      
+
+> SWD
+> ∆L= 0 .05 ∆L= 0 .1∆L= 0 .5∆L= 1 .0∆L= 2 .0
+
+N
+
+> 150 300 500 1000 1500 3000
+
+Figure 3: The e ff ect of di ff erent adaptive step thresholds ∆L and particle numbers N on the validation dataset in terms of SWD and computational time. 
+
+17 Table 2: Hyperparameter settings for training and inference of PINPF. 
+
+Parameter Value 
+
+MLP Architecture 
+
+Hidden Layers 6Hidden Dimension 64 Activation Function (each layer) SiLU 
+
+Training 
+
+Num. particles 500 Pseudo-time step fix, ∆λ = 0.01 Optimizer Adam Training Epochs 6000 Learning Rate 0.004 LR Decay Rate ( γ) 0.8 LR Decay Frequency 300 epochs Gradient Clipping 1.0 Training samples 1000 Batch size 64 
+
+Inference 
+
+Num. particles 1500 Pseudo-time step adaptive, ∆L = 0.5
+
+> Table 3: Performance results on the four-dimensional Gaussian mixture posterior problem. The mean values are reported over the 100 samples from the test dataset.
+
+Method ED SWD GPU Time [s] PINPF (ours) 0.1150 0.4201 0.0442 annealed MCMC 0.0958 0.3854 3.8336 NSF 0.1416 0.4186 0.0499 SVGD 0.1997 0.5262 1.4170 Incompressible Flow 0.2338 0.6052 0.1257 
+
+Ablation on flow input features. To validate the feature selection strategy proposed in our methodology (see Eq. 48), we performed an ablation study by training a variant of PINPF where the gradient terms ∇ log p and ∇ log h were excluded from the context. We observed that omitting gradients results in a significantly slower decline of the loss. Quantitatively, the model using gradient inputs achieved a superior ED of 0 .1138 compared to 0 .1274 for the gradient-free variant. This corresponds to a 10 .6% improvement in accuracy. While computing these input derivatives via automatic di ff erentiation introduces a computational overhead (increasing the training time by 15 .6%) the substantial gain in accuracy and convergence speed justifies this design choice. 
+
+Out-of-distribution prior. To further assess the robustness and zero-shot generalization capability of the learned flow, we construct an out-of-distribution (OOD) test dataset that mirrors the previous experimental setup, except that the prior distribution is replaced by a GMM with three components. Importantly, PINPF was not retrained or fine-tuned for this experiment. The GMM prior consists of 3 modes with randomly sampled mixture weights, normalized per instance. The component means are generated by perturbing a common central location with Gaussian noise of standard deviation 2.0 in each dimension, resulting in clustered but distinct modes. Each component is assigned a diagonal covariance, with variances independently sampled from a uniform distribution on [1 , 5]. As a result, the prior components are deliberately chosen to be broad, so as not to introduce additional well-separated posterior modes, but rather to modify 18 the geometry and gradients of the prior density. During training, PINPF is conditioned on the prior only through the gradient term ∇  log g(x) + λ log h(x). This design encourages robustness with respect to moderate changes in the prior, as the network is exposed to prior infor-mation exclusively via its score. In the present OOD setting, inference is performed using gradients computed from the GMM prior described above, while the network parameters correspond to training with a unimodal Gaussian prior. Due to the increased di ffi culty of the inference problem, we refine the inference parameters by generally reducing the step size via setting ∆L = 0.1, and increase the number of particles to N = 3000 for both PINPF and the IF. This choice remains computationally feasible, as PINPF is still substantially faster than the competing baselines. The hyperparameters of annealed MCMC and SVGD are kept unchanged. NFS would have required retraining because its context depended on the model family used in the prior work; therefore, we excluded it from this study. The quantitative results are summarized in Table 4. As expected, all methods exhibit a degradation in performance under the OOD prior. Nevertheless, PINPF continues to outperform SVGD in both accuracy metrics, while maintain-ing a significantly lower computational cost. This result highlights the robustness of the learned neural flow to prior misspecification. 
+
+> Table 4: Zero-shot generalization performance on the out-of-distribution (GMM prior) dataset. PINPF was not retrained.
+
+Method ED SWD Time [s] PINPF (ours) 0.4352 0.7045 0.2243 annealed MCMC 0.1427 0.4142 4.3955 SVGD 0.4521 0.7701 2.2110 Incompressible flow 0.4819 0.7329 0.3003 
+
+6.2. Single time-di ff erence-of-arrival fusion 
+
+We also evaluate PINPF on a challenging nonlinear tracking scenario [71, 72] which involves fusing a single time-di ff erence-of-arrival (TDOA) measurement. As detailed in [67, 17], this measurement model induces a non-Gaussian, hyperbolic (banana-shaped) likelihood function. When the likelihood is fused with a Gaussian prior, the resulting posterior is highly non-Gaussian, typically exhibiting significant curvature. Furthermore, depending on the location and variance of the prior, the posterior can become multimodal, with separated modes. The TDOA measurement z is defined as the di ff erence in Euclidean distances between a target x ∈ R2 and two sensors S A, S B ∈ R2:
+
+z = h(x) + ν, (51) 
+
+h(x) = ∥x − S A∥ − ∥ x − S B∥, (52) where the measurement noise is Gaussian ν ∼ N (0 , σ 2). Fig. 4 shows the likelhood contour for the experimental setup described in [67]: sensors are located at S A = [−3, 0] and S B = [3 , 0], the target is positioned at [4 , 4] and observed with a noise standard deviation of σ = 0.3. 
+
+6.2.1. Experimental setup 
+
+We generated a synthetic dataset consisting of 1000 training tasks for PINPF, 100 validation tasks for ablation study, and 100 test tasks for evaluation. For each task, the true target state is sampled from N([4 , 4] ⊤, diag(1 .52, 1.52)). The measurement noise standard deviation σ is sampled uniformly from U[0 .4, 0.9]. To simulate challenging initial-ization conditions, the prior means are significantly o ff set from the true state by perturbations drawn from N(0 , diag(4 2, 52)), while the diagonal prior variances are sampled from N(5 , 1), rejecting any negative samples. Reference posterior sam-ples for evaluation were generated using grid sampling. The location of the sensors S A, S B are unchanged. We compare the PINPF against three analytic Daum–Huang flow baselines (incompressible flow, mean exact flow, localized exact flow [62]), the SVGD, and the annealed MCMC method, which is expected to perform well in this low-dimensional, generally unimodal problem. Based on the same ablation study described in Section 6.1., we selected a particle count of N = 1000 and an adaptive step threshold of ∆L = 1.0 for the flows. 19 −2 0 2 4 6 8 10 12 14  
+
+> x1
+> −10
+> −50510 15
+> x2
+> SASB
+> Target Figure 4: The likelihood landscape of the TDOA measurement. The nonlinear measurement equation creates a hyperbolic high-probability ridge. Table 5: Performance summary on the TDOA task (averaged over 100 test samples).
+
+Method ED SWD Time [s] PINPF (ours) 0.0697 0.3238 0.0196 Incompressible flow 0.2415 1.0460 0.3767 Local Gaussian exact flow 0.1749 0.6155 0.0132 Mean Gaussian exact flow 0.2521 0.6277 0.0101 SVGD 0.1344 0.4084 0.3733 annealed MCMC 0.0036 0.1527 4.8788 
+
+6.2.2. Results and discussion Quantitative analysis. The performance metrics on the test set are summarized in Table 5. The PINPF significantly outperforms the analytic flow baselines in terms of distribution matching, measured by ED and SWD. While the mean exact flow and localized exact flow are computationally inexpensive, they rely on Gaussian approximations that fail to capture the curvature of the TDOA posterior. The incompressible flow, while flexible, is computationally heavier and exhibits higher error. The increase in computation is the result of the adaptive stepsize selection algorithm, which generally assigns small λ stepsizes, thus increasing the required function evaluations by approximately an order of maginude in this case. As a result, it can be said, that the learned flow is less sti ff , therefore can use larger stepsizes while still maintaining good performance. Among the deterministic methods evaluated, PINPF has accuracy closest to the annealed MCMC benchmark and achieves competitive inference time. 
+
+Qualitative analysis. We analyze two distinct scenarios to understand the failure modes of the Daum–Huang flow baselines. 
+
+• Scenario A: Informative prior (Fig. 5). In this case, the prior is reasonably close to the likelihood. As expected, the mean exact flow produces samples from a Gaussian distribution, which fails to capture the tails. The incompressible flow demonstrates the “fringe” behavior described by Fig. 8 in [67]: particles move towards the likelihood but stop at the fringe of the probability mass, leading to poor variance estimation. The localized exact flow performs better by linearizing locally, but it overestimates the density in the lower tail region. This local linearization, however only performs well in this case, as the prior is informative. In contrast, PINPF correctly moves the particles into the non-Gaussian curved shape, though with slight variance underestimation near the mode. 
+
+• Scenario B: Distant prior (Fig. 6). This scenario represents a di ffi cult test where the prior mean is far from the true target. The flows based on linearization (mean exact flow and localized exact flow) collapse, as the linearization of the measurement function produces inaccurate results when the prior particles are in very low 20 −5.0
+
+> −2.50.02.55.07.510 .0
+> x2
+
+Neural Flow 
+
+> Prior Particles
+
+Inc. Flow   
+
+> 0510
+> x1
+> −5.0
+> −2.50.02.55.07.510 .0
+> x2
+
+Mean Exact   
+
+> 0510
+> x1
+
+Local Exact Figure 5: Qualitative comparison on a sample with an informative prior. The analytic flows struggle to capture the “banana” shape (Mean Exact) or properly cover the variance (Incompressible), while the Neural Flow matches the posterior geometry accurately. 
+
+likelihood regions. This result aligns with Fig. 3 /a in [17]. The incompressible flow concentrates on the mode, but also scatteris particles in incorrect directions. PINPF demonstrates better posterior distribution coverage. Because the network approximates the global transport map via amortization, it successfully navigates particles from the distant prior to the correct posterior mode without the linearization errors occuring in the exact flows. 
+
+Trajectory analysis. Fig. 7 illustrates the particle trajectories generated by PINPF. The learned vector field produces smooth paths that particles follow from the prior to the posterior. 
+
+7. Conclusion 
+
+The paper has presented the physics-informed neural particle flow for the Bayesian update step, which integrates the log-homotopy approach with neural operator-based inference. Coupling the log-homotopy trajectory with the continuity equation yields the master PDE, which serves as a physical constraint on the transport velocity field. This unsupervised training framework does not require ground-truth posterior samples. PINPF departs from the stochastic relaxation of MCMC and Langevin dynamics in favor of finite-time deterministic transport. Unlike black-box neural operators, embedding the master PDE into the training objective ensures that the learned transport respects probability conservation. Analysis demonstrates three advantages of this approach. First, the neural parameterization acts as an implicit regularizer, reducing the numerical sti ff ness inherent in exact analytical flows. This allows larger integration steps and fewer function evaluations. Second, the method maintains linear computational complexity with respect to particle number, making high-dimensional nonlinear filtering tractable. Third, the physics-informed nature of the operator ensures robust zero-shot generalization to out-of-distribution priors, outperforming purely data-driven approaches. 21 −10 .0
+
+> −7.5
+> −5.0
+> −2.50.02.55.07.5
+> x2
+
+Neural Flow 
+
+> Prior Particles
+
+Inc. Flow    
+
+> −10 −505
+> x1
+> −10 .0
+> −7.5
+> −5.0
+> −2.50.02.55.07.5
+> x2
+
+Mean Exact    
+
+> −10 −505
+> x1
+
+Local Exact Figure 6: Comparison on a sample with a distant prior. The Gaussian-based approximations (Exact flows) fail due to linearization errors. The Neural Flow robustly transports the particles to the posterior. 
+
+Experiments on multimodal Gaussian mixtures and a non-Gaussian nonlinear scenario confirm that PINPF accu-rately captures complex posterior geometries and resolves multiple modes. This work proves that neural transport operators constrained by physical conservation laws o ff er a viable, e ffi cient alternative for Bayesian inference. Future research includes formulating the problem as error-state estimation or using nondimensionalization to enforce scale invariance. Currently the proposed method processes particles independently. Extending the architecture with deep sets or attention mechanisms would allow the model to condition on population-level features, potentially improving performance in highly non-Gaussian scenarios. 
+
+8. Acknowledgement 
+
+The project supported by the Doctoral Excellence Fellowship Programme (DCEP) is funded by the National Research Development and Innovation Fund of the Ministry of Culture and Innovation and the Budapest University of Technology and Economics. This research was supported by the Ministry of Culture and Innovation and the National Research, Development and Innovation O ffi ce within the Cooperative Technologies National Laboratory of Hungary (Grant No. 2022-2.1.1-NL-2022-00012). This work was funded by the National Research, Development and Innovation O ffi ce (NKFIH) under NKKP Grant Agreement No. ADVANCED 152880. 
+
+9. Declaration of generative AI and AI-assisted technologies in the manuscript preparation process 
+
+During the preparation of this work the authors used Gemini in order to polish language and delivery and to collect references. After using this tool, the authors reviewed and edited the content as needed and take full responsibility for 22 −10 −5 0 5
+
+x1
+
+> −10 .0
+> −7.5
+> −5.0
+> −2.50.02.55.07.5
+> x2
+
+Neural Flow Trajectory     
+
+> Start (Prior) End (Posterior)
+> 0.00.20.40.60.81.0
+> λ (Flow time) Figure 7: Particle trajectories generated by PINPF for the sample in Fig. 6. The color gradient represents the flow time λ∈[0 ,1]. The model learns a smooth transport map that compresses the variance along the informative direction of the measurement.
+
+the content of the published article. 
+
+Appendix A. Training samples References 
+
+[1] M.-H. Chen, Q.-M. Shao, J. G. Ibrahim, Monte Carlo methods in Bayesian computation, Springer Science & Business Media, 2012. [2] G. L. Jones, Q. Qin, Markov chain Monte Carlo in practice, Annual Review of Statistics and Its Application 9 (1) (2022) 557–578. [3] S. Asmussen, P. W. Glynn, A new proof of convergence of MCMC via the ergodic theorem, Statistics & Proba-bility Letters 81 (10) (2011) 1482–1485. [4] A. Barbu, S.-C. Zhu, Monte Carlo Methods, Springer Singapore, Singapore, 2020. doi:10.1007/ 978-981-13-2971-5 .URL http://link.springer.com/10.1007/978-981-13-2971-5 
+
+[5] C. P. Robert, G. Casella, Monte Carlo Statistical Methods, 2nd Edition, Springer, 2004. [6] A. Doucet, S. Godsill, C. Andrieu, On sequential Monte Carlo sampling methods for Bayesian filtering, Statistics and Computing 10 (3) (2000) 197–208. doi:10.1023/A:1008935410038 .URL https://link.springer.com/10.1023/A:1008935410038 
+
+[7] A. Doucet, N. Freitas, N. Gordon (Eds.), Sequential Monte Carlo Methods in Practice, Springer New York, New York, NY, 2001. doi:10.1007/978-1-4757-3437-9 .URL http://link.springer.com/10.1007/978-1-4757-3437-9 
+
+[8] M. S. Arulampalam, S. Maskell, N. Gordon, T. Clapp, A tutorial on particle filters for online nonlinear /non-Gaussian Bayesian tracking, IEEE Transactions on Signal Processing 50 (2) (2002) 174–188. 23 Figure A.8: Random samples drawn from the training dataset for the TDOA problem. The dashed black lines represent the Gaussian prior, and the solid red lines represent the true posterior density . 
+
+[9] S. Kirkpatrick, C. D. Gelatt Jr, M. P. Vecchi, Optimization by simulated annealing, Science 220 (4598) (1983) 671–680. [10] F. Daum, J. Huang, Nonlinear filters with log-homotopy, in: Signal and Data Processing of Small Targets 2007, Vol. 6699, SPIE, 2007, pp. 423–437. [11] F. Daum, J. Huang, A. Noushin, Exact particle flow for nonlinear filters, in: Signal processing, sensor fusion, and target recognition XIX, Vol. 7697, SPIE, 2010, pp. 92–110. [12] F. Daum, J. Huang, Exact particle flow for nonlinear filters: seventeen dubious solutions to a first order linear underdetermined pde, in: 2010 Conference Record of the Forty Fourth Asilomar Conference on Signals, Systems and Computers, IEEE, 2010, pp. 64–71. [13] L. Dai, F. Daum, A new parameterized family of stochastic particle flow filters, arXiv preprint arXiv:2103.09676 (2021). [14] F. Daum, J. Huang, Seven dubious methods to mitigate sti ff ness in particle flow with non-zero di ff usion for nonlinear filters, Bayesian decisions, and transport, in: Signal and Data Processing of Small Targets 2014, Vol. 9092, SPIE, 2014, pp. 72–82. [15] L. Dai, F. Daum, On the role of the di ff usion matrix in sti ff ness mitigation for stochastic particle flow filters, in: 2022 25th International Conference on Information Fusion (FUSION), IEEE, 2022, pp. 1–8. [16] L. Dai, F. Daum, Sti ff ness mitigation in stochastic particle flow filters, IEEE Transactions on Aerospace and Electronic Systems 58 (4) (2022) 3563–3577. [17] D. F. Crouse, Particle Flow Solutions Avoiding Sti ff Integration, Tech. Rep. NRL /5340 /FR–2021 /1, U. S. Naval Research Laboratory (2021). URL https://apps.dtic.mil/sti/html/trecms/AD1134516/ 
+
+[18] D. Rezende, S. Mohamed, Variational inference with normalizing flows, in: International conference on machine learning, PMLR, 2015, pp. 1530–1538. 24 Figure A.9: Randomly selected samples from the test set comparing the ground truth posterior and the proposed Neural Flow method. Black dashed: Prior distribution. Red solid: Ground truth posterior. Blue solid: Kernel Density Estimate (KDE) of particles generated by our Neural Flow model. 
+
+[19] G. Papamakarios, E. Nalisnick, D. J. Rezende, S. Mohamed, B. Lakshminarayanan, Normalizing flows for probabilistic modeling and inference, Journal of Machine Learning Research 22 (57) (2021) 1–64. [20] M. Garnelo, D. Rosenbaum, C. Maddison, T. Ramalho, D. Saxton, M. Shanahan, Y. W. Teh, D. Rezende, S. A. Eslami, Conditional neural processes, in: International conference on machine learning, PMLR, 2018, pp. 1704– 1713. [21] X. Chen, H. Dai, L. Song, Particle Flow Bayes’ Rule, in: International Conference on Machine Learning, PMLR, 2019, pp. 1119–1129. [22] E. T. Jaynes, Probability theory: The logic of science, Cambridge university press, 2003. [23] S. Särkkä, L. Svensson, Bayesian Filtering and Smoothing, 2nd Edition, Cambridge University Press, 2023. 
+
+doi:10.1017/9781108917407 .URL https://www.cambridge.org/core/product/identifier/9781108917407/type/book 
+
+[24] A. Taghvaei, P. G. Mehta, How to implement the Bayes’ formula in the age of ml?, arXiv preprint arXiv:2411.09653 (2024). [25] H. Rai ff a, R. Schlaifer, Applied statistical decision theory, John Wiley & Sons, 2000. [26] S. Thrun, W. Burgard, D. Fox, Probabilistic Robotics, MIT Press, 2005. [27] R. E. Kalman, A new approach to linear filtering and prediction problems, Journal of Basic Engineering 82 (1) (1960) 35–45. [28] Z. Chen, et al., Bayesian filtering: From kalman filters to particle filters, and beyond, Statistics 182 (1) (2003) 1–69. [29] N. J. Gordon, D. J. Salmond, A. F. Smith, Novel approach to nonlinear /non-Gaussian Bayesian state estimation, IEE Proceedings F (Radar and Signal Processing) 140 (1993) 107–113(6). 25 Figure A.10: Cornerplots of randomly selected test samples of the four-dimensional Gaussian mixture posterior problem. Red solid: Ground truth posterior. Blue solid: kernel density estimate of particles generated by PINPF. 
+
+[30] R. L. Stratonovich, Conditional Markov processes, Theory of Probability & Its Applications 5 (2) (1960) 156– 178. doi:10.1137/1105015 .[31] H. J. Kushner, On the di ff erential equations satisfied by conditional probablitity densities of markov processes, with applications, Journal of the Society for Industrial and Applied Mathematics Series A Control 2 (1) (1964) 106–119. doi:10.1137/0302009 .[32] R. Kalman, R. Bucy, New Results in Linear Filtering and Prediction Theory, Transactions of the ASME, Journal of Basic Engineering, 83 (1) (1961) 95–108. doi:10.1115/1.3658902 .[33] A. H. Jazwinski, Stochastic processes and filtering theory, Academic Press, 1970. [34] S. Särkkä, A. Solin, Applied stochastic di ff erential equations, Vol. 10, Cambridge University Press, 2019. [35] C. M. Bishop, N. M. Nasrabadi, Pattern recognition and machine learning, Springer, 2006. [36] F. Daum, J. Huang, Curse of dimensionality and particle filters, in: 2003 IEEE Aerospace Conference Proceed-ings, Vol. 4, IEEE, 2003, pp. 1979–1993. [37] T. Bengtsson, P. Bickel, B. Li, Curse-of-dimensionality revisited: Collapse of the particle filter in very large scale systems, Probability and Statistics: Essays in Honor of David A. Freedman 2 (2008) 316–334. [38] C. Snyder, T. Bengtsson, P. Bickel, J. Anderson, Obstacles to high-dimensional particle filtering, Monthly Weather Review 136 (12) (2008) 4629–4640. [39] P. Rebeschini, R. Van Handel, Can local particle filters beat the curse of dimensionality?, The Annals of Applied Probability 25 (5) (2015) 2809–2866. [40] P. J. Van Leeuwen, Nonlinear Data Assimilation for high-dimensional systems: - with geophysical applications -, in: Nonlinear Data Assimilation, Vol. 2, Springer International Publishing, Cham, 2015, pp. 1–73, series Title: Frontiers in Applied Dynamical Systems: Reviews and Tutorials. doi:10.1007/978-3-319-18347-3_1 .URL https://link.springer.com/10.1007/978-3-319-18347-3_1 
+
+[41] N. Oudjane, C. Musso, Progressive correction for regularized particle filters, in: Proceedings of the Third Inter-national Conference on Information Fusion, Vol. 2, IEEE, 2000, pp. THB2 /10–THB2 /17. 26 [42] U. D. Hanebeck, Pgf 42: Progressive gaussian filtering with a twist, in: Proceedings of the 16th international conference on information fusion, IEEE, 2013, pp. 1103–1110. [43] U. D. Hanebeck, K. Briechle, A. Rauh, Progressive Bayes: a new framework for nonlinear state estimation, in: Multisensor, Multisource Information Fusion: Architectures, Algorithms, and Applications 2003, Vol. 5099, SPIE, 2003, pp. 256–267. [44] L. Tierney, Markov chains for exploring posterior distributions, The Annals of Statistics 22 (4) (1994) 1701– 1722. [45] N. Metropolis, A. W. Rosenbluth, M. N. Rosenbluth, A. H. Teller, E. Teller, Equation of state calculations by fast computing machines, The journal of chemical physics 21 (6) (1953) 1087–1092. [46] W. K. Hastings, Monte Carlo sampling methods using markov chains and their applications, Biometrika 57 (1) (1970) 97–109. [47] R. Bellman, Adaptive Control Processes: A Guided Tour, Princeton University Press, 1961. [48] R. M. Neal, Annealed importance sampling, Statistics and computing 11 (2) (2001) 125–139. [49] Y. Brenier, Polar factorization and monotone rearrangement of vector-valued functions, Communications on pure and applied mathematics 44 (4) (1991) 375–417. [50] N. Bonnotte, From Knothe’s rearrangement to Brenier’s optimal transport map, SIAM Journal on Mathematical Analysis 45 (1) (2013) 64–87. [51] M. Rosenblatt, Remarks on a multivariate transformation, The Annals of Mathematical Statistics 23 (3) (1952) 470–472. [52] H. Knothe, Contributions to the theory of convex bodies, Michigan Mathematical Journal 4 (1) (1957) 39–52. [53] I. Kobyzev, S. J. Prince, M. A. Brubaker, Normalizing flows: An introduction and review of current methods, IEEE transactions on pattern analysis and machine intelligence 43 (11) (2020) 3964–3979. [54] C. Durkan, A. Bekasov, I. Murray, G. Papamakarios, Neural spline flows, Advances in neural information pro-cessing systems 32 (2019). [55] R. T. Chen, Y. Rubanova, J. Bettencourt, D. K. Duvenaud, Neural ordinary di ff erential equations, Advances in neural information processing systems 31 (2018). [56] U. Köthe, A review of change of variable formulas for generative modeling, arXiv preprint arXiv:2308.02652 (2023). [57] D. M. Blei, A. Kucukelbir, J. D. McAuli ff e, Variational inference: A review for statisticians, Journal of the American statistical Association 112 (518) (2017) 859–877. [58] Q. Liu, D. Wang, Stein variational gradient descent: A general purpose Bayesian inference algorithm, Advances in neural information processing systems 29 (2016). [59] D. Garreau, W. Jitkrittum, M. Kanagawa, Large sample analysis of the median heuristic, arXiv preprint arXiv:1707.07269 (2017). [60] Q. Liu, Stein Variational Gradient Descent as Gradient Flow, in: Advances in Neural Information Processing Systems, Vol. 30, 2017. [61] H. Risken, The Fokker-Planck equation, Springer, 1996. 27 [62] D. F. Crouse, C. Lewis, Consideration of particle flow filter implementations and biases, Tech. Rep. NRL /MR /5344–19-9938, Naval Research Laboratory, Washington DC (2020). URL https://apps.dtic.mil/sti/html/trecms/AD1091426/ 
+
+[63] O. Tör˝ o, T. Bécsi, Analytic solution of the exact Daum–Huang flow equation for particle filters, Information Fusion 92 (2023) 247–255. [64] F. Daum, J. Huang, A. Noushin, New Theory and Numerical Results for Gromov’s Method for Stochastic Particle Flow Filters, in: 2018 21st International Conference on Information Fusion (FUSION), IEEE, Cambridge, 2018, pp. 108–115. doi:10.23919/ICIF.2018.8455287 .[65] F. Daum, J. Huang, A. Noushin, Coulomb’s law particle flow for nonlinear filters, in: Signal and Data Processing of Small Targets 2011, Vol. 8137, SPIE, 2011, pp. 99–108. [66] O. C. Schrempf, D. Brunn, U. D. Hanebeck, Dirac mixture density approximation based on minimization of the weighted cramer-von mises distance, in: 2006 IEEE International Conference on Multisensor Fusion and Integration for Intelligent Systems, IEEE, 2006, pp. 512–517. [67] S. Mori, F. Daum, J. Douglas, Adaptive step size approach to homotopy-based particle filtering Bayesian update, in: 2016 19th International Conference on Information Fusion (FUSION), IEEE, 2016, pp. 2035–2042. [68] G. J. Székely, M. L. Rizzo, Energy statistics: A class of statistics based on distances, Journal of statistical planning and inference 143 (8) (2013) 1249–1272. [69] N. Bonneel, J. Rabin, G. Peyré, H. Pfister, Sliced and radon Wasserstein barycenters of measures, Journal of Mathematical Imaging and Vision 51 (1) (2015) 22–45. [70] M. D. Ho ff man, A. Gelman, et al., The No-U-Turn sampler: adaptively setting path lengths in Hamiltonian Monte Carlo, J. Mach. Learn. Res. 15 (1) (2014) 1593–1623. [71] U. Aulia, I. Hasanuddin, M. Dirhamsyah, N. Nasaruddin, Navigation framework from a monocular camera for autonomous mobile robots, Periodica Polytechnica Transportation Engineering 53 (4) (2025) 389–405. [72] D. Csuzdi, T. Bécsi, P. Gáspár, O. Tör˝ o, Exact particle flow Daum–Huang filters for mobile robot localization in occupancy grid maps, Complex & Intelligent Systems 11 (4) (2025) 187. 28

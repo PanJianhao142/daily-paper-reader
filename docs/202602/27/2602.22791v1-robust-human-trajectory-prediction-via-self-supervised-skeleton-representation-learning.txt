@@ -1,0 +1,597 @@
+Title: Robust Human Trajectory Prediction via Self-Supervised Skeleton Representation Learning
+
+URL Source: https://arxiv.org/pdf/2602.22791v1
+
+Published Time: Fri, 27 Feb 2026 01:49:11 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# Robust Human Trajectory Prediction via Self-Supervised Skeleton Representation Learning 
+
+## Taishu Arashima 1,† Hiroshi Kera 2,† Kazuhiko Kawamoto 3,††Chiba University 
+
+> 1
+
+taishu.arashima@chiba-u.jp , 2kera@chiba-u.jp , 3kawa@faculty.chiba-u.jp 
+
+## Abstract 
+
+Human trajectory prediction plays a crucial role in appli-cations such as autonomous navigation and video surveil-lance. While recent works have explored the integration of human skeleton sequences to complement trajectory in-formation, skeleton data in real-world environments often suffer from missing joints caused by occlusions. These disturbances significantly degrade prediction accuracy, in-dicating the need for more robust skeleton representations. We propose a robust trajectory prediction method that in-corporates a self-supervised skeleton representation model pretrained with masked autoencoding. Experimental re-sults in occlusion-prone scenarios show that our method improves robustness to missing skeletal data without sac-rificing prediction accuracy, and consistently outperforms baseline models in clean-to-moderate missingness regimes. 
+
+## 1. Introduction 
+
+Human trajectory prediction estimates future pedestrian paths from past motion history and is a fundamental tech-nique for applications such as path planning for autonomous robots [22] and human tracking in surveillance systems [10]. Accurate prediction requires understanding pedes-trian intention, which is often difficult to infer from posi-tions alone. Most existing trajectory prediction methods [2, 12, 16, 21, 26] use only past trajectories as input. As a result, these methods often struggle to capture intention-related cues such as directional changes and characteristic motion patterns. To address this limitation, recent stud-ies incorporate human skeletal sequences as an auxiliary modality [24, 25]. Because skeletal sequences directly re-flect human body structure, skeletal information provides high-level motion cues that are not available from trajec-tories alone. However, skeletal sequences collected in real environments are often incomplete. Joint detection errors, body orientation changes, and occlusions frequently cause partial missing joints in the input skeleton. Such incomplete skeletal observations disrupt the structural and temporal 
+
+Figure 1. Impact of occlusion-induced missing skeletons on tra-jectory prediction accuracy. The top row shows a clean (non-occluded) skeleton observation, while the bottom row shows an occluded observation with missing joints. Using an existing hu-man trajectory prediction (HTP) model, prediction accuracy is high under clean inputs (FDE = 0.17 m) but degrades substantially under occluded inputs (FDE = 0.87 m), where FDE denotes the final displacement error. 
+
+consistency of skeletal representations, leading to substan-tial performance degradation. This issue remains a chal-lenge for skeleton-aided trajectory prediction methods un-der diverse missing patterns. A straightforward approach is to train the downstream predictor directly on incomplete skeleton inputs so that it adapts to missingness. However, this strategy often introduces a practical trade-off: while it can improve tolerance to missing joints, it may weaken the use of informative skeleton cues under clean conditions and thus reduce prediction accuracy. To address this trade-off, we propose a two-stage frame-work that separates self-supervised skeleton representation learning from downstream trajectory prediction. In the pre-training stage, a subset of joints is intentionally masked, and the model is trained to reconstruct the masked joint coordi-nates from incomplete inputs. This process enables the en-coder to learn stable skeleton representations under partial observability. The pretrained encoder is then integrated into the downstream predictor as a skeleton embedding mod-ule and fused with trajectory information to provide body-motion cues for prediction. The key idea of our method is not to make the downstream predictor itself adapt to incom-1
+
+> arXiv:2602.22791v1 [cs.CV] 26 Feb 2026
+
+plete skeletons, but to acquire robustness at the representa-tion level during pretraining. This design aims to preserve the ability to exploit skeleton cues while reducing sensitiv-ity to missing joints, thereby alleviating the trade-off be-tween prediction accuracy and robustness. For evaluation, we use the large-scale synthetic JTA dataset [6] and construct multiple missing-data scenarios with different corruption settings. Experimental results show that the proposed method consistently improves pre-diction accuracy from clean to moderate missingness con-ditions while remaining competitive under severe missing-ness. In addition, skeleton-reliance analysis and qualitative comparisons confirm that the gains do not come from weak-ening skeleton usage, but from preserving the usefulness of skeleton features under partial observations. The main contributions of this paper are summarized as follows. • A two-stage framework for robust skeleton-aided tra-jectory prediction. We propose an integrated frame-work that explicitly separates reconstruction-based skele-ton representation learning from downstream trajectory prediction, improving tolerance to missing skeleton in-puts while preserving prediction performance under clean conditions. • Representation-level robustness via mask-based self-supervised skeleton learning. We show that reconstruction-based pretraining learns skeleton repre-sentations that remain informative across diverse missing patterns, positioning mask-based self-supervision as a principled approach to robustness rather than only a task-specific performance enhancement. 
+
+## 2. Related Work 
+
+Human Trajectory Prediction Early work on human tra-jectory prediction models pedestrian motion using physics-inspired formulations [13] or statistical approaches [15, 31]. These methods provide interpretable models of motion dy-namics but rely on simplified assumptions that limit their ability to capture complex, nonlinear social behaviors. With the rise of deep learning, data-driven approaches have be-come dominant. Recurrent neural networks (RNNs) [2, 12, 16, 26] model temporal dependencies in motion sequences, while attention-based models [9, 24, 28, 36] selectively rea-son over socially relevant agents and time steps. In parallel, graph-based methods [18, 21] explicitly encode inter-agent interactions and achieve strong performance in crowded scenes. Despite architectural diversity, most of these ap-proaches share an implicit assumption: pedestrian intent can be inferred primarily from spatial trajectories. This position-based representation often fails to capture fine-grained motion cues that reflect internal intent, especially in socially complex environments. To address this limitation, recent work incorporates hu-man skeletal information as an additional modality. Yagi et al. [33] extract discriminative features from skeletal se-quences to improve accuracy. Salzmann et al. [25] integrate 3D pose, head orientation, and scene context into a uni-fied Transformer framework, demonstrating the importance of explicitly modeling body dynamics. Subsequent meth-ods, including SocialTransMotion [24] and its extensions [7, 8], further confirm that skeletal cues provide comple-mentary information beyond trajectories. However, these approaches implicitly assume reliable skeletal observations. In real-world settings, pose estimates are often noisy or in-complete due to occlusions, viewpoint changes, and sensing errors. Naively incorporating such imperfect skeletal data can degrade performance and obscure the intended benefits of multimodal modeling. 
+
+Robustness to Incomplete Skeletons Skeletal representa-tions are inherently vulnerable to observation noise. Occlu-sions, sensor limitations, and pose estimation failures fre-quently lead to missing or corrupted joints, which can sig-nificantly affect downstream tasks. Prior work addresses this issue primarily through explicit reconstruction of miss-ing joints. Autoencoder-based methods exploit structural priors of the human body to recover plausible poses from in-complete inputs [3, 14]. Temporal models leverage motion continuity to infer missing information across time [5, 17]. In parallel, the pose estimation community improves ro-bustness at the sensing stage through occlusion-aware ar-chitectures [4], spatio-temporal Transformers [37, 38], and diffusion-based generative models that produce multiple plausible hypotheses under severe ambiguity [27]. While effective for pose recovery, these approaches typ-ically aim to reconstruct a single deterministic pose se-quence. Reconstruction errors therefore propagate directly to downstream predictors. Moreover, accurate reconstruc-tion alone does not necessarily guarantee that the resulting representation is robust or informative for prediction tasks. In contrast, we argue that robustness should be learned at the representation level rather than enforced through re-construction. By training models to encode partially ob-served skeletons into stable latent representations, down-stream predictors can operate on features that are inherently robust to missing or corrupted inputs. 
+
+Skeleton Representation Learning Self-supervised learn-ing has emerged as an effective paradigm for learning skele-tal representations without manual annotation [19]. By ex-ploiting the intrinsic spatiotemporal structure of human mo-tion, these methods achieve strong performance across a wide range of downstream tasks. Existing approaches fall broadly into two categories. Contrastive methods enforce consistency across augmented views of the same motion sequence [1, 11, 20, 23, 30], encouraging invariance to per-2turbations. Generative methods reconstruct masked or cor-rupted skeletal inputs, learning latent representations that capture spatial and temporal dependencies [29, 32, 34, 39]. Despite strong empirical results, most prior work evalu-ates representations primarily in terms of downstream ac-curacy under clean or mildly perturbed conditions. This focus implicitly assumes reliable skeletal observations and leaves robustness under realistic partial observability under-explored. In this work, we reinterpret masked modeling not merely as a reconstruction objective but as a mechanism for learning uncertainty-aware and robust skeletal represen-tations. By explicitly training under partial observability, the learned representations generalize more reliably to real-world scenarios characterized by missing skeletal data. 
+
+## 3. Proposed Method 
+
+We propose a trajectory prediction framework that incorpo-rates 3D skeleton information under partial observability. The method pretrains a spatio-temporal skeleton encoder via masked joint reconstruction and replaces the linear pose embedding in Social-TransMotion with the pretrained en-coder output. 
+
+3.1. Self-Supervised Skeleton Representation Learning 
+
+We design the skeleton encoder with robustness to missing and corrupted observations. We pretrain the encoder using a reconstruction-based self-supervised learning framework. During pretraining, a subset of joints is masked from the input skeleton sequence, so that the encoder learns to infer missing joint information from the remaining visible joints and temporal context. 
+
+3.1.1. Skeleton Representation 
+
+We adopt an asymmetric encoder-decoder architecture for self-supervised skeleton representation learning. The en-coder maps a masked skeleton sequence to joint-level latent features, while a lightweight decoder reconstructs masked joint coordinates from the latent representation. We represent the human skeleton as a graph composed of joints and their physical connections. Let xt,i ∈ RC denote the coordinate of joint i at time step t. The skeleton at time 
+
+t is defined as 
+
+Xt =
+
+
+
+x⊤
+
+> t, 1
+
+x⊤
+
+> t, 2
+
+...
+
+x⊤
+
+> t,N
+
+ ∈ RN ×C .
+
+where N is the number of joints and C is the coordinate dimensionality. A skeleton sequence consisting of T frames is defined as 
+
+S = ( X1, X 2, . . . , X T ) ∈ RT ×N ×C . 
+
+> Figure 2. Overview of the self-supervised skeleton learning frame-work. Random masks are applied to the input skeleton sequence, and a spatio-temporal encoder extracts latent representations from the remaining visible joints. A decoder then reconstructs the orig-inal skeleton sequence. Through this process, the model learns structural representations invariant to missing data and noise.
+
+The skeleton structure is defined by a joint set V =
+
+{v1, . . . , v N } and an adjacency matrix A ∈ { 0, 1}N ×N ,where Aij = 1 indicates a physical connection between joints i and j.
+
+3.1.2. Architecture 
+
+The encoder GE is implemented as an L-layer ST-GCN[35], which jointly models spatial dependencies across frames. Given a masked skeleton sequence ˜S, the encoder produces a latent representation by leveraging the remain-ing visible joints and the underlying spatio-temporal struc-ture: 
+
+H = GE (A, ˜S), H ∈ RT ×N ×D.
+
+where D is the feature dimension. The decoder GD maps the latent representation back to joint coordinates: 
+
+Y = GD (A, H), Y ∈ RT ×N ×C .
+
+Following the asymmetric design of masked autoencoders, the decoder is implemented as a lightweight MLP. The lightweight decoder prevents compensation at the decoding stage. This design encourages the encoder to capture de-pendencies that are transferable to downstream tasks. The encoder GE is retained for downstream trajectory predic-tion. 
+
+3.1.3. Masking Strategy 
+
+In real-world scenarios, missing skeleton observations vary in both temporal persistence and spatial extent. To reflect these differences, we design three masking strategies for the input skeleton sequence S ∈ RT ×N ×C , as illustrated in Fig. 3. These strategies cover a range of missing patterns, from short-term local dropouts to long-term large-scale oc-clusions. For all masking strategies, masked joint-time lo-cations are replaced with zeros. This zero-filled representa-tion serves as an explicit indicator of missing inputs under partial observations. 
+
+Temporal Consistent Mask. This strategy applies an iden-tical mask pattern across all frames to a randomly selected subset of joints (Fig. 3a). The mask simulates long-term 3(a) Temporally Consis-tent mask            
+
+> (b) Random mask (c) Body-Part mask
+> Figure 3. Illustration of three mask patterns used for self-supervised skeleton pretraining: (a) Temporally Consistent
+> masks the same joints across all frames; (b) Random masks joints independently at each frame; (c) Body-Part masks multiple joints in the same body part together.
+
+occlusions or tracking failures, with missing observations persisting over time. 
+
+Random Mask. In this strategy, joints to be masked are independently sampled at each frame (Fig. 3b). This set-ting models sporadic detection failures and short-term oc-clusions, exposing the encoder to temporally inconsistent missing patterns. 
+
+Body-Part Mask. Following SkeletonMAE [34], this strat-egy masks multiple joints simultaneously based on prede-fined body parts (Fig. 3c). This mask simulates severe oc-clusions caused by obstacles or other agents, with entire body regions becoming unobservable. In our implementa-tion, the skeleton is divided into four parts: center upper ,
+
+center lower , right limb , and left limb .
+
+3.1.4. Reconstruction Loss 
+
+The objective of the self-supervised learning framework is to directly reconstruct masked joint coordinates. To mea-sure the discrepancy between the reconstructed skeleton se-quence and the original input, we employ the mean squared error (MSE) as the reconstruction loss. Let the input skele-ton sequence be S ∈ RT ×N ×C and the reconstructed se-quence be Y ∈ RT ×N ×C . The reconstruction loss is de-fined as: 
+
+Lrec = 1
+
+T N ∥S − Y∥22 .
+
+3.2. Integration into Human Trajectory Prediction 
+
+We integrate the skeleton encoder pretrained in a self-supervised manner into a trajectory prediction model. 
+
+3.2.1. Integration Strategy 
+
+As illustrated in Fig. 4, we build our trajectory prediction model on the Social-TransMotion [24] framework, which maps multiple modalities into a shared feature space via a two-stage architecture. A Cross-Modality Transformer 
+
+integrates modality-specific motion features, and a Social Transformer models interactions among agents. In the orig-inal Social-TransMotion framework, each modality is em-bedded by a linear projection with positional encoding. In contrast, we keep the trajectory embedding unchanged and replace only the 3D skeleton embedding with a skeleton en-coder GE pretrained via self-supervised learning. During downstream trajectory-prediction training, the pretrained skeleton encoder GE is kept frozen unless otherwise stated. That is, only the trajectory prediction modules are opti-mized in the downstream stage. Let the input 3D skeleton sequence be S ∈ RT ×N ×C ,where T is the number of observed frames, N is the num-ber of joints, and C is the coordinate dimension. We en-code S into a high-level representation using the pretrained skeleton encoder GE , and then apply positional encoding: 
+
+H(pose) = GE (S), H(pose) ∈ RT ×N ×D ,
+
+z(pose)  
+
+> t,n
+
+= PE 
+
+
+
+h(pose) 
+
+> t,n
+
+
+
+, z(pose)  
+
+> t,n
+
+∈ RD .
+
+Here, h(pose)  
+
+> t,n
+
+∈ RD denotes the skeleton feature vector for joint n at time step t, and PE( ·) is the positional encoding based on temporal and joint indices. While residual connections are sometimes used in mod-ule transfer to preserve the original embedding, we inten-tionally omit such a skip path so that skeleton tokens are de-rived solely from the pretrained encoder. Adding the origi-nal linear skeleton projection can allow the model to bypass the encoder and directly rely on corrupted joint coordinates, undermining robustness under missingness. Therefore, we fully replace the skeleton embedding with the encoder. 
+
+3.2.2. Overall Architecture 
+
+Our trajectory prediction model follows the overall de-sign of Social-TransMotion [24]. In this framework, the Cross-Modality Transformer integrates motion representa-tions from multiple modalities, while the Social Trans-former models social interactions among agents. In our setting, the modality set is restricted to trajectory (traj) and 3D skeleton (pose) inputs. The embedding of the 3D skeleton modality is replaced by the pretrained skele-ton encoder, while the rest of the framework remains un-changed. Let Tobs and Tpred denote the lengths of the ob-servation and prediction horizons, respectively. For agent i, the embedded trajectory and skeleton se-quences over the observation window are defined as 
+
+Zci =  z(c) 
+
+> i, 1
+
+, . . . , z(c)
+
+> i,T obs
+
+ ∈ RTobs ×ec×D ,
+
+where ec represents the number of elements in modality c.Following Social-TransMotion, the Cross-Modality Transformer takes as input a latent query sequence Qi ∈
+
+RTpred ×D corresponding to the prediction horizon, together with the modality-specific embeddings. The output of the 4Figure 4. Overall architecture of the proposed framework. (a)    
+
+> Self-supervised pretraining : a skeleton encoder is pretrained by reconstructing masked joints from partially observed skeleton se-quences. (b) Individual feature extraction : observed trajectories are embedded, and skeleton sequences are encoded by the pre-trained (frozen) encoder. Positional encoding (PE) is added to each stream, the resulting tokens are concatenated, and a Cross-Modality Transformer produces an agent-wise representation. (c)
+> Interaction modeling :the agent-wise representations are pro-cessed by a Social Transformer to model inter-agent interactions.
+
+Cross-Modality Transformer is given by 
+
+mQ i, mZ ci = CMT( Qi, Zci , c ∈ { traj , pose }) .
+
+Here, mQ i ∈ RTpred ×D denotes the cross-modal query representation, obtained by attending to the modality-specific embeddings within the Cross-Modality Trans-former, thereby aggregating information from both trajec-tory and skeleton cues. Following Social-TransMotion, the cross-modal repre-sentation fed into the Social Transformer is defined as 
+
+mZ M 
+
+> i
+
+= Concat 
+
+
+
+mQ i, mZ traj 
+
+> i
+
+
+
+∈ R(Tpred +Tobs )×D .
+
+This design incorporates skeleton information into trajec-tory representations without introducing explicit skeleton tokens, thus preserving the original input structure of the Social Transformer. The Social Transformer output is denoted as SM i =Concat 
+
+
+
+SM T 
+
+> i
+
+, SM Q
+
+> i
+
+
+
+, where SM T 
+
+> i
+
+and SM Q 
+
+> i
+
+corre-spond to mZ traj  
+
+> i
+
+and mQ i, respectively. Finally, the future trajectory of the target agent ( i = 1 ) is predicted from the query-stream output of the Social Transformer: 
+
+ˆY1 = MLP 
+
+
+
+SM Q1
+
+
+
+∈ RTpred ×2.
+
+3.2.3. Loss Function 
+
+We use the mean squared error (MSE) between the pre-dicted and ground-truth trajectories as the training loss: 
+
+Ltraj = 1
+
+Tpred 
+
+> Tpred
+
+X
+
+> t=1
+
+∥ˆyt − yt∥22 .
+
+Here, yt, ˆyt ∈ R2 denote the ground-truth and predicted pedestrian positions at time step t, respectively. 
+
+## 4. Experiments 
+
+We conduct experiments in two stages: (i) self-supervised skeleton representation learning and (ii) fine-tuning for hu-man trajectory prediction. In the first stage, we evaluate reconstruction quality and representation consistency under joint masking. In the second stage, we assess trajectory pre-diction performance in partial-observation scenarios. 
+
+4.1. Datasets 
+
+We conduct experiments on the JTA dataset [6], a large-scale synthetic dataset of pedestrian behaviors in complex crowd scenes. JTA simulates realistic urban environments and contains frequent occlusions. Following the protocol of SocialTransMotion [24], we use Tobs = 9 observed frames and predict Tpred = 12 future frames at 2.5 fps (i.e., 3.6 s observation and 4.8 s prediction). For self-supervised pre-training, we also use 9-frame skeleton sequences for con-sistency with the downstream observation length. 
+
+4.2. Self-Supervised Skeleton Representation Learning 
+
+4.2.1. Implementation Details 
+
+For self-supervised pretraining on skeleton sequences, the encoder-decoder model is optimized using Adam with an initial learning rate of 1.5×10 −4. PReLU is used as the acti-vation function. The batch size is set to 1024, and the model is trained for 50 epochs. All pretraining experiments are im-plemented in PyTorch and conducted on a single NVIDIA RTX 6000 GPU. 
+
+4.2.2. Evaluation Metrics 
+
+To evaluate the representations learned by self-supervised pretraining, we use two complementary metrics: (i) recon-struction accuracy in 3D joint space, and (ii) stability of en-coder features when joints are masked. 
+
+Joint Position Error (MPJPE) We measure reconstruc-tion accuracy using the mean per-joint position error (MPJPE) in meters (m), defined as the average ℓ2 dis-tance between the reconstructed joint positions yt,i and the 5Table 1. Cross-evaluation of three masking strategies (Fig. 3). Each model is trained with one strategy and evaluated under all three test-time masks (Temporally-Consistent, Random, Body-Part) with a fixed test mask ratio of 0.5. Bold indicates the best result within each training strategy (min MPJPE / max cosine sim-ilarity).                      
+
+> Train Test MPJPE Cos Sim
+> Temporally-Consistent Temporally-Consistent 0.058 0.841
+> Random 0.201 0.833 Body-Part 0.215 0.821 Random Temporally-Consistent 0.062 0.912 Random 0.036 0.935
+> Body-Part 0.047 0.928 Body-Part Temporally-Consistent 0.213 0.805 Random 0.183 0.846 Body-Part 0.051 0.882
+
+ground-truth positions xt,i over all joints and time steps: 
+
+MPJPE = 1
+
+T |V |
+
+> T
+
+X
+
+> t=1
+
+X
+
+> vi∈V
+
+∥xt,i − yt,i ∥2 ,
+
+where t is the time index and V is the set of joints. 
+
+Feature Consistency under Joint Masking To quantify how consistent the encoder features are under joint mask-ing, we compute cosine similarity between latent represen-tations extracted from the unmasked input, ht,i , and the masked input, ˜ht,i .
+
+CosSim = 1
+
+T |V |
+
+> T
+
+X
+
+> t=1
+
+X
+
+> vi∈V
+
+h⊤ 
+
+> t,i
+
+˜ht,i 
+
+∥ht,i ∥2 ∥˜ht,i ∥2
+
+.
+
+Higher cosine similarity indicates more stable representa-tions under joint masking. 
+
+4.2.3. Effect of Masking Design 
+
+We examine how reconstruction-based pretraining behaves under different masking designs. Unless otherwise noted, we use Random masking with a training mask ratio rtrain =0.5 and a 3-layer ST-GCN encoder. In this section, we vary one factor at a time—(i) masking strategy and (ii) training mask ratio—while keeping all other settings fixed. We re-port reconstruction accuracy (MPJPE) and representation consistency measured by cosine similarity between latent features from clean and masked inputs. 
+
+Effect of Masking Strategy We analyze how the mask-ing strategy affects reconstruction accuracy and how well a model transfers to different test-time masking patterns. We consider three strategies (Fig. 3): Temporally-Consistent, Random, and Body-Part. Table 1 reports cross-evaluation results, where each model is trained with one strategy and evaluated under all  
+
+> (a) Line plot. (b) Heatmap.
+
+Figure 5. Reconstruction MPJPE under varying training and test-time mask ratios. (a) MPJPE versus the training mask ratio rtrain ,with one curve for each test-time mask ratio rtest . (b) Heatmap over (rtrain , r test ), where darker colors indicate lower MPJPE. Table 2. Reconstruction performance under different training mask ratios. Each model is evaluated across test-time mask ratios 
+
+rtest ∈ { 0.1, 0.2, . . . , 0.9}. We report the mask-rate-averaged MPJPE (mean over rtest ).               
+
+> Mask ratio in train 0.2 0.3 0.4 0.5 0.6 0.7 0.8
+> Mask-rate-avg 0.070 0.058 0.051 0.046 0.047 0.051 0.066
+
+three test-time masks with rtest = 0 .5. Across the three strategies, the lowest MPJPE is obtained when the training and test masks match, while mismatched combinations lead to larger errors. For instance, the Temporally-Consistent model increases its MPJPE from 0.058 (matched) to 0.201 and 0.215 under Random and Body-Part tests, respec-tively. A similar pattern is observed for the Body-Part model (0.051 matched vs. 0.213/0.183 under Temporally-Consistent/Random tests). This suggests that structured masking can bias the model toward specific temporal or spa-tial missing structures, which may not carry over to other masking patterns. In contrast, Random masking yields low MPJPE (0.036–0.062) together with high cosine similarity (0.912–0.935) across test-time masks, indicating that the encoder captures informative motion features that remain consistent even when joints are missing. Based on these ob-servations, we adopt Random masking as the default strat-egy for downstream trajectory prediction. 
+
+Effect of Masking Ratio Fig. 5 shows reconstruction MPJPE under varying masking ratios. In Fig. 5a, the horizontal axis denotes the training mask ratio rtrain , and each curve corresponds to a test-time mask ratio rtest ∈{0.1, 0.2, . . . , 0.9}. Fig. 5b presents the same results as a heatmap for compact visualization. Overall, using overly small or overly large training mask ratios increases sensitivity to the test-time masking level. When rtrain is small, most joints remain visible during pre-training, making the reconstruction task relatively easy. As a result, the encoder receives limited supervision for infer-ring missing joints, and the error increases markedly un-6Figure 6. Reconstruction example at a representative test-time mask ratio ( rtest = 0 .5). The model reconstructs a coherent body structure and preserves the overall motion trend across frames. 
+
+der severe test-time masking. Conversely, when rtrain is large, the amount of observed evidence becomes insuffi-cient, which hinders recovery of fine-grained joint config-urations and leads to over-smoothed reconstructions. This causes elevated errors even under low test-time masking. Table 2 summarizes these results using the mask-rate-averaged MPJPE, computed by averaging MPJPE over the nine rtest values for each rtrain . The averaged error exhibits a U-shaped trend, reaching its minimum at rtrain = 0 .5.These results suggest that a non-extreme training mask ra-tio provides a good balance between preserving sufficient visible joints and learning to infer missing ones; therefore, we use rtrain = 0 .5 as the default setting. 
+
+4.2.4. Visualization 
+
+Fig. 6 shows a representative reconstruction example at 
+
+rtest = 0 .5 using the default pretraining setting (Random masking with rtrain = 0 .5). Despite missing observations, the reconstruction closely follows the ground-truth motion, with only minor joint-level deviations. The model also preserves a coherent body configuration and maintains the overall motion trend across frames, rather than collapsing to a time-invariant or overly averaged pose. Overall, this qual-itative example matches the quantitative trends in Fig. 5. 
+
+4.3. Fine-tuning for Human Trajectory Prediction 
+
+4.3.1. Implementation Details 
+
+For downstream human trajectory prediction, we follow the configuration of Social-TransMotion. The Cross-Modality Transformer consists of 6 layers with 4 attention heads, while the Social Transformer is composed of 3 layers with 4 attention heads. The model dimension is fixed to 128 for all components. Adam is used as the optimizer with an initial learning rate of 1 × 10 −4. The learning rate is decayed by a factor of 0.1 after 80% of the total 50 training epochs. 
+
+4.3.2. Evaluation Metrics 
+
+We evaluate trajectory prediction performance using Aver-age Displacement Error (ADE) and Final Displacement Er-ror (FDE), two standard metrics. 
+
+Average Displacement Error (ADE) ADE measures the mean Euclidean distance between the predicted positions ˆyt
+
+and the ground-truth positions yt throughout prediction. 
+
+ADE = 1
+
+Tpred 
+
+> Tpred
+
+X
+
+> t=1
+
+∥yt − ˆyt∥2 .
+
+Final Displacement Error (FDE) FDE measures the Eu-clidean distance between the predicted and ground-truth po-sitions at the final prediction timestep. 
+
+FDE = yTpred − ˆyTpred 2 .
+
+4.3.3. Robustness Evaluation under Random Joint Masking 
+
+We evaluate robustness to test-time joint missingness by varying the masking ratio. We compare our method with the following three baselines: • Baseline (Standard) : the original Social-TransMotion. • Baseline (Reconstruction) : a reconstruction-preprocessing baseline that uses the reconstruction model trained in Section 4.2 to complete missing joints before prediction. The trajectory predictor uses the same weights as the Baseline (Standard). • Baseline (Corruption-trained) : the same predictor ar-chitecture trained directly on corrupted skeleton inputs with a fixed random joint masking rate of 0.5.
+
+Results Table 3 summarizes the results under random joint masking. Ours achieves the best ADE/FDE from Clean to Moderate missingness ( 0.0–0.4), while Baseline (Reconstruction) performs best at High missingness ( 0.6). 
+
+Baseline (Corruption-trained) shows a nearly flat error pro-file across mask ratios, but its clean-input accuracy is lower than both Baseline (Standard) and Ours .
+
+Discussion The two baselines represent complementary strategies. Baseline (Corruption-trained) trains the down-stream predictor on corrupted skeleton inputs, which flat-tens the degradation trend but lowers clean-condition ac-curacy. In contrast, Baseline (Reconstruction) reconstructs 7Table 3. Comparison under random joint masking. Missingness levels are grouped as Clean ( 0.0), Low ( 0.2), Moderate ( 0.4), and High (0.6), where the value in parentheses denotes the mask rate. Each cell reports ADE / FDE, followed by the degradation rate (%) relative to the clean condition of the same method. Bold indicates the best ADE / FDE at each missingness level.                           
+
+> Method Clean (0.0) Low (0.2) Moderate (0.4) High (0.6)
+> Baseline (Standard) 0.920 / 1.884 (+0.0 / +0.0%) 0.940 / 1.916 (+2.2 / +1.7%) 0.969 / 1.957 (+5.3 / +3.9%) 1.050 / 2.090 (+14.0 / +10.9%) Baseline (Reconstruction) 0.920 / 1.884 (+0.0 / +0.0%) 0.927 / 1.892 (+0.8 / +0.4%) 0.940 / 1.907 (+2.1 / +1.2%) 0.973 / 1.939 (+5.7 / +2.9%) Baseline (Corruption-trained) 0.956 / 1.948 (+0.0 / +0.0%) 0.953 / 1.942 (-0.3 / -0.3%) 0.955 / 1.946 (-0.1 / -0.1%) 0.960 / 1.955 (+0.4 / +0.4%) Ours 0.898 / 1.832 (+0.0 / +0.0%) 0.913 / 1.853 (+1.7 / +1.1%) 0.934 / 1.884 (+4.0 / +2.8%) 1.017 / 2.058 (+13.3 / +12.3%)
+
+Table 4. Analysis of skeleton contribution. We quantify the contri-bution of skeleton cues by zeroing the 3D pose part in the Cross-Modality Transformer input and measuring the resulting perfor-mance drop. A larger drop ( ∆) indicates stronger reliance on skeleton information.              
+
+> Method Clean Skeleton disabled ∆(ADE / FDE)
+> Baseline (Standard / Reconstruction) 0.920 / 1.884 1.563 / 3.186 +0.643 / +1.301 Baseline (Corruption-trained) 0.956 / 1.948 1.239 / 2.355 +0.283 / +0.407 Ours 0.898 / 1.832 2.389 / 4.789 +1.491 / +2.957
+
+missing joints before prediction, which can reduce missing-ness effects. However, clean-condition accuracy remains bounded by Baseline (Standard) because the downstream predictor is identical in the two baselines. Accordingly, both baselines outperform Ours at High missingness and exhibit smaller degradation rates at low-to-moderate miss-ingness. In the practically important low-to-moderate miss-ingness regime, Ours still achieves the best ADE/FDE. 
+
+4.3.4. Skeleton Reliance Diagnostics 
+
+Robustness cannot be compared only from ranking based on degradation rates (Table 3), because the three compared methods can rely on skeleton cues to different degrees. To quantify skeleton reliance, we disable the skeleton (3D pose) part of the Cross-Modality Transformer input on clean data and measure the resulting performance drop. A larger drop indicates stronger reliance on skeleton information. 
+
+Results Table 4 reports the performance drop when skele-ton cues are disabled. Ours exhibits a larger drop than Base-line (Standard) (+1 .491 / + 2 .957 vs. +0 .643 / + 1 .301 in ADE/FDE), indicating stronger reliance on skeleton cues. In contrast, Baseline (Corruption-trained) shows a smaller drop, suggesting weaker effective reliance. This gap im-plies that the two baselines can appear more robust when robustness is judged by degradation rate, especially at high missingness. Since Ours relies more on skeleton cues, Ours 
+
+benefits most when these cues are sufficiently available, i.e., from Clean to Moderate missingness. To compare robustness as fairly as possible, differences in skeleton reliance should be minimized. Appendix C pro-vides controlled comparisons with matched skeleton depen-dence. 
+
+Discussion Stronger skeleton reliance can improve clean-input accuracy, but it can also increase sensitivity when joints are missing. This trade-off makes it difficult to im-prove clean accuracy and missingness robustness simulta-neously in skeleton-aided trajectory prediction. Despite stronger skeleton reliance, Ours remains competitive in degradation at low-to-moderate missingness and achieves the best ADE/FDE from Clean to Moderate missingness. This result suggests that the proposed self-supervised pre-training improves robustness by strengthening skeleton mo-tion representations under partial observations, rather than by reducing skeleton reliance. 
+
+4.4. Visualization 
+
+Figs. 7 and 8 provide qualitative comparisons on two repre-sentative scenes to illustrate the accuracy–robustness trade-off and how the proposed method mitigates it. We com-pare four methods: Baseline (Standard) , Baseline (Recon-struction) , Baseline (Corruption-trained) , and Ours . For each scene, we show predictions under clean input (0.0) and moderate missingness (0.4) with random joint masking. 
+
+Case 1: Straight trajectory The first example is a sim-ple straight-motion scene and is consistent with the quan-titative trends in Table 3. Under clean input, Baseline (Corruption-trained) already shows lower accuracy, indi-cating the clean-accuracy cost of training directly on cor-rupted skeletons. Baseline (Standard) predicts well under clean input but degrades under masking, incorrectly pre-dicting a turn after missing a pose cue. Baseline (Recon-struction) partially mitigates this degradation, but its per-formance remains bounded by the inherited downstream predictor. In contrast, Ours remains stable in both clean and masked conditions, suggesting that the proposed rep-resentation preserves motion-relevant skeleton cues while improving robustness to missing joints. 
+
+Case 2: Curved trajectory The second example is a curved-motion scene, where accurate prediction requires stronger use of skeletal cues such as body orientation and motion tendency. In this more challenging case, the base-lines often fail to capture path curvature even under clean in-put, producing overly straight forecasts. By contrast, Ours 
+
+8(a) Clean (0.0) (b) Moderate missingness (0.4)      
+
+> Figure 7. Straight-trajectory case under clean and masked inputs. This example is consistent with the quantitative trends: Ours re-mains stable, while the baselines show either masking-induced degradation or lower clean accuracy.
+> (a) Clean (0.0) (b) Moderate missingness (0.4)
+> Figure 8. Curved-trajectory case under clean and masked inputs. This is a skeleton-sensitive case: the baselines often fail to capture path curvature even under clean input, whereas Ours preserves the turning tendency under both clean and masked inputs.
+
+follows the curved trajectory under clean input and main-tains this behavior under moderate missingness. This sup-ports that the proposed method not only uses skeleton cues more effectively, but also preserves their usefulness under partial observations. Overall, these examples suggest that the proposed method improves robustness not by weakening skeleton re-liance, but by learning skeleton representations that remain informative under missing joints. This qualitative evidence is consistent with the quantitative results in Table 3. 
+
+## 5. conclusion 
+
+In this study, we proposed a framework based on self-supervised skeleton representation learning for robust hu-man trajectory prediction from skeleton sequences. In skeleton-aided trajectory prediction, there is an inherent trade-off between prediction accuracy and robustness to missing joints. To address this issue, the proposed method pretrains skeleton representations via reconstruction learn-ing from incomplete skeleton inputs, and then integrates the pretrained encoder into a downstream trajectory predictor. This design aims to improve robustness under missing joints while preserving the ability to effectively exploit skele-ton cues. Experimental results showed that the proposed method consistently improves prediction accuracy from clean to moderate missingness, while remaining competi-tive under severe missingness. Additional skeleton-reliance analysis and qualitative comparisons further showed that these gains do not come from weakening skeleton usage. Instead, the gains come from preserving the usefulness of skeleton features under partial observations. Overall, these findings suggest that the proposed method is a promising approach for achieving both high accuracy and robustness to missing joints in skeleton-aided trajectory prediction. 
+
+## Acknowledgement 
+
+This work was supported by JSPS KAKENHI Grant Num-ber JP23K24914. 
+
+## References 
+
+[1] Mohamed Abdelfattah, Mariam Hassan, and Alexan-dre Alahi. Maskclr: Attention-guided contrastive learning for robust action representation learning. In 
+
+IEEE/CVF Conference on Computer Vision and Pat-tern Recognition (CVPR) , pages 18678–18687, 2024. 2[2] Alexandre Alahi, Kratarth Goel, Vignesh Ra-manathan, Alexandre Robicquet, Li Fei-Fei, and Sil-vio Savarese. Social lstm: Human trajectory predic-tion in crowded spaces. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,pages 961–971, 2016. 1, 2 [3] Nicolo Carissimi, Paolo Rota, Cigdem Beyan, and Vit-torio Murino. Filling the gaps: Predicting missing joints of human poses using denoising autoencoders. In European Conference on Computer Vision (ECCV) Workshops , 2018. 2 [4] Yu Cheng, Bo Yang, Bo Wang, Yan Wending, and Robby Tan. Occlusion-aware networks for 3d human pose estimation in video. In IEEE/CVF International Conference on Computer Vision (ICCV) , pages 723– 732, 2019. 2 [5] Qiongjie Cui, Huaijiang Sun, Yupeng Li, and Yue Kong. A deep bi-directional attention network for human motion recovery. In International Joint Con-
+
+9ference on Artificial Intelligence (IJCAI) , pages 701– 707, 2019. 2 [6] Matteo Fabbri, Fabio Lanzi, Simone Calderara, An-drea Palazzi, Roberto Vezzani, and Rita Cucchiara. Learning to detect and track visible and occluded body joints in a virtual world. In European Conference on Computer Vision (ECCV) , pages 430–446, 2018. 2, 5 [7] Yang Gao, Po-Chien Luan, and Alexandre Alahi. Multi-transmotion: Pre-trained model for human mo-tion prediction. In Conference on Robot Learning (CoRL) , 2024. 2 [8] Yang Gao, Saeed Saadatnejad, and Alexandre Alahi. Social-pose: Enhancing trajectory prediction with hu-man body pose. IEEE Transactions on Intelligent Transportation Systems , 26:21309–21319, 2025. 2 [9] Francesco Giuliari, Irtiza Hasan, Marco Cristani, and Fabio Galasso. Transformer networks for trajectory forecasting. In International Conference on Pattern Recognition (ICPR) , pages 10335–10342, 2021. 2 [10] Haifeng Gong, Jack Sim, Maxim Likhachev, and Jianbo Shi. Multi-hypothesis motion planning for vi-sual object tracking. In International Conference on Computer Vision (ICCV) , pages 619–626, 2011. 1 [11] Tianyu Guo, Hong Liu, Zhan Chen, Mengyuan Liu, Tao Wang, and Runwei Ding. Contrastive learn-ing from extremely augmented skeleton sequences for self-supervised action recognition. In AAAI Con-ference on Artificial Intelligence (AAAI) , volume 36, pages 762–770, 2022. 2 [12] Agrim Gupta, Justin Johnson, Li Fei-Fei, Silvio Savarese, and Alexandre Alahi. Social gan: Socially acceptable trajectories with generative adversarial net-works. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 2255–2264, 2018. 1, 2 [13] Dirk Helbing and Peter Molnar. Social force model for pedestrian dynamics. Physical Review E , 51:4282, 1995. 2 [14] Daniel Holden. Robust solving of optical motion cap-ture data by denoising. ACM Transactions on Graph-ics , 37(4):165, 2018. 2 [15] Kihwan Kim, Dongryeol Lee, and Irfan Essa. Gaus-sian process regression flow for analysis of motion tra-jectories. In International Conference on Computer Vision (ICCV) , pages 1164–1171, 2011. 2 [16] Parth Kothari, Sven Kreiss, and Alexandre Alahi. Hu-man trajectory forecasting in crowds: A deep learning perspective. IEEE Transactions on Intelligent Trans-portation Systems , 23(7):7386–7400, 2022. 1, 2 [17] Shujie Li, Zhou Yang, Haisheng Zhu, Wenjun Xie, Yang Zhao, and Xiaoping Liu. Bidirectional recurrent autoencoder for 3d skeleton motion data refinement. 
+
+Computers & Graphics , 81:92–103, 2019. 2 [18] Congcong Liu, Yuying Chen, Ming Liu, and Bertram E. Shi. Avgcn: Trajectory prediction using graph convolutional networks guided by human atten-tion. In IEEE International Conference on Robotics and Automation (ICRA) , pages 14234–14240, 2021. 2 [19] Yang Liu, Keze Wang, Lingbo Liu, Haoyuan Lan, and Liang Lin. Tcgl: Temporal contrastive graph for self-supervised video representation learning. IEEE Trans-actions on Image Processing , 31:1978–1993, 2022. 2 [20] Soroush Mehraban, Mohammad Javad Rajabi, and Babak Taati. Stars: Self-supervised tuning for 3d ac-tion recognition in skeleton sequences, 2025. 2 [21] Abduallah Mohamed, Kun Qian, Mohamed Elho-seiny, and Christian Claudel. Social-stgcnn: A so-cial spatio-temporal graph convolutional neural net-work for human trajectory prediction. In IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion (CVPR) , 2020. 1, 2 [22] Brian Paden, Michal ˇ C´ ap, Sze Zheng Yong, Dmitry Yershov, and Emilio Frazzoli. A survey of motion planning and control techniques for self-driving urban vehicles. IEEE Transactions on Intelligent Vehicles ,1(1):33–55, 2016. 1 [23] Haocong Rao, Shihao Xu, Xiping Hu, Jun Cheng, and Bin Hu. Augmented skeleton based contrastive action learning with momentum lstm for unsupervised action recognition. Information Sciences , 569:90–109, 2021. 2[24] Saeed Saadatnejad, Yang Gao, Kaouther Messaoud, and Alexandre Alahi. Social-transmotion: Promptable human trajectory prediction. In International Confer-ence on Learning Representations (ICLR) , 2024. 1, 2, 4, 5 [25] Tim Salzmann, Hao-Tien Chiang, Markus Ryll, Dorsa Sadigh, Carolina Parada, and Alex Bewley. Robots that can see: Leveraging human pose for trajectory prediction. IEEE Robotics and Automation Letters ,PP:1–8, 2023. 1, 2 [26] Tim Salzmann, Boris Ivanovic, Punarjay Chakravarty, and Marco Pavone. Trajectron++: Dynamically-feasible trajectory forecasting with heterogeneous data. In European Conference on Computer Vision (ECCV) , pages 683–700, 2020. 1, 2 [27] Wenkang Shan, Zhenhua Liu, Xinfeng Zhang, Zhao Wang, Kai Han, Shanshe Wang, Siwei Ma, and Wen Gao. Diffusion-based 3d human pose estimation with multi-hypothesis aggregation. In IEEE/CVF Interna-tional Conference on Computer Vision (ICCV) , pages 14715–14725, 2023. 2 [28] Liushuai Shi, Le Wang, Chengjiang Long, Sanping Zhou, Mo Zhou, Zhenxing Niu, and Gang Hua. Sgcn: Sparse graph convolution network for pedestrian tra-jectory prediction. In IEEE/CVF Conference on Com-
+
+10 puter Vision and Pattern Recognition (CVPR) , pages 8990–8999, 2021. 2 [29] Kun Su, Xiulong Liu, and Eli Shlizerman. Predict & cluster: Unsupervised skeleton based action recogni-tion. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 9631–9640, 2020. 3 [30] Fida Mohammad Thoker, Hazel Doughty, and Cees G. M. Snoek. Skeleton-contrastive 3d action repre-sentation learning. In ACM International Conference on Multimedia , pages 1655–1663, 2021. 2 [31] Jack M. Wang, David J. Fleet, and Aaron Hertzmann. Gaussian process dynamical models for human mo-tion. IEEE Transactions on Pattern Analysis and Ma-chine Intelligence , 30(2):283–298, 2007. 2 [32] Wenhan Wu, Yilei Hua, Ce Zheng, Shiqian Wu, Chen Chen, and Aidong Lu. Skeletonmae: Spatial-temporal masked autoencoders for self-supervised skeleton ac-tion recognition. In IEEE International Conference on Multimedia and Expo Workshops (ICMEW) , pages 224–229, 2023. 3 [33] Takuma Yagi, Karttikeya Mangalam, Ryo Yonetani, and Yoichi Sato. Future person localization in first-person videos. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 7593– 7602, 2018. 2 [34] Hong Yan, Yang Liu, Yushen Wei, Zhen Li, Guanbin Li, and Liang Lin. Skeletonmae: Graph-based masked autoencoder for skeleton sequence pre-training. In 
+
+IEEE/CVF International Conference on Computer Vi-sion (ICCV) , pages 5583–5595, 2023. 3, 4 [35] Sijie Yan, Yuanjun Xiong, and Dahua Lin. Spatial temporal graph convolutional networks for skeleton-based action recognition. AAAI Conference on Artifi-cial Intelligence (AAAI) , 32(1), 2018. 3 [36] Ye Yuan, Xinshuo Weng, Yanglan Ou, and Kris Ki-tani. Agentformer: Agent-aware transformers for socio-temporal multi-agent forecasting. In Interna-tional Conference on Computer Vision (ICCV) , pages 9793–9803, 2021. 2 [37] Cong Zhang, Gang Chen, and Yubo Xue. 3d human pose estimation transformer based on spatio-temporal augmentation. In International Conference on Ar-tificial Intelligence and Computational Intelligence ,pages 164–169, 2025. 2 [38] Qitao Zhao, Ce Zheng, Mengyuan Liu, Pichao Wang, and Chen Chen. Poseformerv2: Exploring frequency domain for efficient and robust 3d human pose estima-tion. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 8877–8886, 2023. 2 [39] Nenggan Zheng, Jun Wen, Risheng Liu, Liangqu Long, Jianhua Dai, and Zhefeng Gong. Unsupervised representation learning with long-term dynamics for skeleton based action recognition. AAAI Conference on Artificial Intelligence (AAAI) , 32(1), 2018. 3 11 Robust Human Trajectory Prediction via Self-Supervised Skeleton Representation Learning 
+
+# Supplementary Material 
+
+Table 5. Effect of encoder depth L in the ST-GCN-based re-construction encoder. We report mask-rate-averaged MPJPE (lower is better), averaged over test-time mask ratios rtest ∈{0.1, 0.2, . . . , 0.9}.
+
+Depth 1 2 3 4
+
+Mask-rate-avg MPJPE 0.058 0.047 0.046 0.051 
+
+Table 6. Effect of reconstruction loss design in self-supervised pretraining ( rtrain = 0.5, rval = 0.5). Masked-only loss slightly improves masked-joint reconstruction, but severely de-grades unmasked-joint reconstruction and representation consis-tency.             
+
+> Loss design Masked Unmasked Average Cos sim
+> All-joint loss 0.046 0.026 0.036 0.935 Masked-only loss 0.043 0.218 0.131 0.899
+
+## A. Ablation Studies on Self-Supervised Skele-ton Learning 
+
+A.1. Effect of Encoder Depth 
+
+We compared reconstruction performance across different encoder depths. As shown in Table 5, the 3-layer encoder achieved the lowest reconstruction error. Although the dif-ferences among encoders with L ≥ 2 were relatively small, performance improved from 1 to 3 layers. On the other hand, the 4-layer encoder showed a slightly higher recon-struction error than the 3-layer encoder. These results indi-cate that simply increasing the depth does not always im-prove performance. Therefore, we adopt the 3-layer en-coder. 
+
+A.2. Effect of Reconstruction Loss Design 
+
+We analyze the effect of the reconstruction loss design in self-supervised pretraining. While masked modeling often uses a loss only on masked joints, our downstream predictor relies directly on the encoder’s latent representations (with-out skip connections), so representation stability for both masked and unmasked joints is important. We compare two loss designs under the same setting (rtrain = 0.5, rval = 0.5): All-joint loss (loss on all joints) and Masked-only loss (loss on masked joints only). As shown in Table 6, masked-only loss slightly improves masked-joint error, but severely degrades unmasked-joint error, resulting in worse average error and lower cosine sim-ilarity between masked and unmasked representations.      
+
+> (a) rval = 0 .4(b) rval = 0 .6
+
+Figure 9. Reconstruction example 1 (successful case) under two validation masking ratios ( rval = 0 .4 and 0.6).      
+
+> (a) rval = 0 .4(b) rval = 0 .6
+
+Figure 10. Reconstruction example 2 (successful case) under two validation masking ratios ( rval = 0 .4 and 0.6). 
+
+In contrast, all-joint loss maintains lower errors on both joint subsets and yields more consistent latent representa-tions. Because our method uses these latent representations for downstream prediction, we adopt the all-joint recon-struction loss in all experiments. 
+
+## B. Additional Reconstruction Examples in Self-Supervised Skeleton Learning 
+
+Figures 9–12 show four qualitative examples of skeleton re-construction under two validation masking ratios ( rval =0.4 and 0.6). Examples 1 and 2 are representative successful cases, while Examples 3 and 4 are more challenging cases involving direction changes. Examples 1 and 2 correspond to simple straight-motion patterns (with different traveling directions), and the model reconstructs them reliably at both masking ratios. This in-dicates that the reconstruction model preserves the overall skeletal/motion structure well when the motion pattern is simple. 1(a) rval = 0 .4 (b) rval = 0 .6
+
+Figure 11. Reconstruction example 3 (challenging case) under two validation masking ratios ( rval = 0 .4 and 0.6).      
+
+> (a) rval = 0 .4(b) rval = 0 .6
+
+Figure 12. Reconstruction example 3 (challenging case) under two validation masking ratios ( rval = 0 .4 and 0.6). 
+
+Examples 3 and 4 are harder cases with direction changes (one turn in Example 3 and two turns in Example 4). At rval = 0 .4, the reconstructed skeletons can be locally noisy, but the turning behavior is still partially preserved. At 
+
+rval = 0 .6, the reconstructed poses become more averaged and body orientation is sometimes misestimated; however, the model often retains the coarse motion tendency. Overall, these examples suggest that the reconstruction model is effective at preserving global motion cues under missingness, while fine-grained pose structure and orien-tation become more difficult to recover in highly masked, direction-changing sequences. 
+
+## C. Additional Analyses with Controlled Skele-ton Reliance 
+
+This appendix provides controlled analyses that comple-ment the robustness results in the main text. As discussed in Section 4.3.3, robustness cannot be fairly compared from degradation trends alone, because the compared models may rely on skeleton cues to different degrees. To reduce this confounding factor, we conduct controlled comparisons designed to match the skeleton encoder capacity and, as much as possible, the effective reliance on skeleton cues. 
+
+C.1. Controlled Baseline: ST-GCN Replacement without Pretraining (Supervised Only) 
+
+To enable a fairer robustness comparison, we introduce a controlled baseline that matches the skeleton encoder archi-
+
+Table 7. Controlled skeleton ablation comparison (clean input; mask rate 0.0). We compare our pretrained encoder against a same-parameter ST-GCN replacement trained without pretraining. This provides a reference with similar skeleton contribution ( ∆), isolating the effect of pretraining.                 
+
+> Model Clean Skeleton disabled ∆ADE ∆FDE
+> Baseline (Standard) 0.920 / 1.884 1.563 / 3.186 +0.643 +1.301 Baseline (ST-GCN) 0.895 / 1.810 2.657 / 4.868 +1.762 +3.058 Ours 0.898 / 1.832 2.389 / 4.789 +1.491 +2.957
+
+Table 8. Performance under random joint masking. Each entry reports ADE / FDE. Bold indicates the best result at each mask rate.                 
+
+> Method Clean (0.0) Low (0.2) Moderate (0.4) High (0.6)
+> Baseline (Standard) 0.920 / 1.884 0.940 / 1.916 0.969 / 1.957 1.050 / 2.090 Baseline (ST-GCN) 0.895/1.810 1.060 / 2.094 1.330 / 2.646 1.543 / 3.106 Ours 0.898 / 1.832 0.913 / 1.853 0.934 / 1.884 1.017 / 2.058
+
+tecture of our method while removing self-supervised pre-training. Specifically, we replace the original skeleton em-bedding module with the same ST-GCN architecture used in 
+
+Ours , but train it from scratch using only downstream tra-jectory supervision (i.e., without self-supervised pretrain-ing). We refer to this model as Baseline (ST-GCN) .This controlled baseline serves two purposes. First, it reduces the architectural gap between the standard baseline and Ours . Second, it provides a comparison target with sim-ilar skeleton-encoder capacity, allowing us to better isolate the effect of self-supervised pretraining on robustness. As shown in Table 7, Baseline (ST-GCN) and Ours 
+
+exhibit comparable performance drops in the skeleton-disabling test, indicating a similar level of skeleton contri-bution. This makes the robustness comparison in the next subsection more interpretable. 
+
+Baseline (ST-GCN) achieves a clean-input accuracy of 
+
+0.895 /1.810 (ADE/FDE), suggesting that upgrading the skeleton encoder alone encourages the predictor to exploit motion cues more effectively. However, as shown next, this increased reliance on skeleton information can amplify sen-sitivity to missing joints. We report its behavior under ran-dom joint masking in Appendix C.2. 
+
+C.2. Controlled Robustness under Random Joint Masking 
+
+We evaluate robustness under random joint masking for three models: (i) Baseline (standard), (ii) Baseline (ST-GCN; supervised only), and (iii) Ours (pretrained). This controlled comparison helps disentangle robustness gains from differences in architectural capacity and skeleton de-pendence. A key observation is that Baseline (ST-GCN) is markedly less robust than Baseline (standard). This trend is consistent with the skeleton-contribution analysis in Sec-2tion 4.3.3: because Baseline (ST-GCN) relies more on skeleton cues, missing joints more severely disrupt its pre-dictions. In other words, stronger skeleton utilization can improve clean-input performance while amplifying brittle-ness under corruption. Importantly, despite exhibiting similarly high skele-ton contribution, Ours consistently outperforms Baseline (ST-GCN) under low-to-moderate masking, demonstrat-ing that self-supervised pretraining yields more missing-tolerant representations beyond simply replacing the en-coder. Moreover, compared to Baseline (standard), Ours 
+
+remains superior up to 0.6 masking, highlighting robustness gains in the practically relevant low-to-medium missingness regime. We also note that the error increase of Ours becomes more noticeable between 0.4 and 0.6 masking. Beyond high missingness (e.g., > 0.6), errors rapidly increase for all models, reflecting the ill-posed nature of trajectory pre-diction with extremely limited body observations. 
+
+C.3. Controlled Comparison: Coordinate Comple-tion vs. Latent Representation 
+
+The robustness ordering can change under severe missing-ness, partly because the results become sensitive to how strongly each model relies on skeleton cues. To make the comparison more interpretable, we construct a controlled setting that keeps the downstream trajectory predictor ar-chitecture identical and isolates how missing skeletons are handled: (i) completing missing joints as coordinates and feeding the completed skeleton to the predictor, versus (ii) absorbing missingness through a pretrained encoder and feeding latent features (without using reconstructed coor-dinates). Specifically, all compared methods use the same down-stream trajectory predictor (including the same in-model ST-GCN skeleton branch in architecture), and differ only in how skeleton information is injected: • Baseline (ST-GCN) + Reconstruction : the downstream predictor is exactly the same as Baseline (ST-GCN). In addition, we use a skeleton reconstruction model (4.2) to complete missing joints. At test time, missing joints are first reconstructed. • Ours : the downstream predictor architecture is again the same, but we initialize the in-model ST-GCN skeleton encoder with the self-supervised pretrained encoder and keep it frozen . The predictor receives the encoder’s latent representations as skeleton cues, and reconstructed joint coordinates are never passed downstream. Table 9 provides a controlled comparison to disentan-gle whether skeleton cues help from how they should be injected into the predictor. In particular, the coordinate-completion baseline (Baseline (ST-GCN) + Recon) explic-itly reconstructs missing joints and feeds the completed co-
+
+Table 9. Performance under random joint masking. Each entry reports ADE / FDE. Bold indicates the best result at each mask rate. The coordinate-completion baseline reconstructs missing joints and feeds completed coordinates to the predictor.                 
+
+> Method Clean (0.0) Low (0.2) Moderate (0.4) High (0.6)
+> Baseline (ST-GCN) 0.895/1.810 1.060 / 2.094 1.330 / 2.646 1.543 / 3.106 Baseline (ST-GCN) + Recon 0.895 / 1.810 0.902 / 1.820 0.969 / 1.952 1.357 / 2.781 Ours 0.898 / 1.832 0.913 / 1.853 0.934/1.884 1.017 / 2.058
+
+ordinates to the downstream trajectory predictor, whereas Ours never passes reconstructed coordinates and instead in-jects high-dimensional skeleton representations learned via self-supervised pretraining. Under clean inputs, the gap between Baseline (ST-GCN) and Ours is very small. This indicates that our robustness-oriented pretraining can trade a negligible amount of clean-condition optimality for improved stability under partial ob-servability, i.e., a minor loss of “clean-specialized” informa-tion in exchange for missing-tolerant representations. As the missingness increases, the difference between coordinate-level completion and representation-level inte-gration becomes more pronounced. While coordinate com-pletion can yield gains at low missingness, its performance degrades substantially at higher mask rates. This trend is consistent with the fact that reconstruction errors in-evitably grow with missingness and, when reconstructed coordinates are directly fed to the predictor, these errors are propagated and potentially amplified by the downstream model. In contrast, Ours exhibits a much milder degra-dation and achieves the best results at moderate-to-high missingness. These results support our design choice: in-corporating skeleton information through robust latent rep-resentations is preferable to injecting reconstructed coor-dinates, because representation-level integration mitigates the direct transmission of reconstruction noise to trajectory prediction. Overall, the table suggests that, as skeleton cues are leveraged more aggressively in trajectory predic-tion, avoiding coordinate-level error propagation becomes increasingly important; consequently, learning and using missing-tolerant high-level representations is a more reli-able strategy than coordinate completion under severe joint missingness. 
+
+## D. Reconstruction-Based Completion is Com-plementary to the Proposed Method 
+
+We further examine whether reconstruction-based coordi-nate completion is an alternative to our method or a com-plementary component. To this end, we apply the same reconstruction frontend used in Baseline (Reconstruction) 
+
+also to Ours , and evaluate the combined model ( Ours + Re-construction ) under random joint masking. Table 10 shows that reconstruction and the proposed pre-trained representation are not mutually exclusive. Com-3Table 10. Compatibility of reconstruction-based coordinate com-pletion with the proposed method under random joint masking. Each entry reports ADE / FDE. Lower is better.                           
+
+> Method Clean (0.0) Low (0.2) Moderate (0.4) High (0.6)
+> Baseline (Reconstruction) 0.920 / 1.884 0.927 / 1.892 0.940 / 1.907 0.973 / 1.939 Ours 0.898 /1.832 0.913 / 1.853 0.934 / 1.884 1.017 / 2.058 Ours + Reconstruction 0.898 /1.832 0.903 /1.838 0.910 /1.849 0.933 /1.878
+
+pared with Ours , Ours + Reconstruction consistently im-proves ADE/FDE across all evaluated masking rates, with especially clear gains in the low-to-moderate masking regime. This indicates that coordinate-level completion and representation-level robustness address different aspects of missingness and can be combined effectively. Compared with Baseline (Reconstruction) , Ours + Re-construction achieves lower errors at all masking rates in this setting, suggesting that the gain does not come only from reconstruction itself, but also from the missing-tolerant latent representation learned by our self-supervised pretraining. These results support our claim that the pro-posed method is compatible with upstream pose/skeleton restoration modules, rather than being a competing alterna-tive. 
+
+## E. Qualitative Case Study on Prediction Up-dates Under Clean Skeleton Inputs 
+
+In this appendix, we provide a qualitative case study under clean skeleton inputs to support that the proposed method extracts and utilizes more informative skeleton-based mo-tion features than Baseline (Standard) . We focus on a scene in which the future turning behavior is not yet evident at an earlier observation step, but becomes more predictable two frames later as body orientation and pose configuration evolve. Figure 13 shows the same scene at two observation steps separated by two additional observed frames. Each panel contains the input skeleton sequence (top) and the predicted trajectories (bottom). In the later observation step, the two newly observed frames are highlighted with red boxes. No-tably, the final observed frame reveals a clearer change in body orientation, which provides an important cue for the upcoming direction change. At the earlier observation step, both Baseline (Standard) 
+
+and Ours are inaccurate, indicating that the future turning tendency is still ambiguous from the currently available mo-tion evidence. Two frames later, however, the pose be-comes more informative. At this point, Ours updates its prediction more clearly toward the curved ground-truth tra-jectory, while Baseline (Standard) remains less responsive and tends to stay closer to a straight prediction. These examples suggest that the proposed method is more effective at extracting and utilizing motion-relevant skeleton cues when such cues emerge over time. Impor- 
+
+> (a) Earlier observation step (b) Two frames later
+
+Figure 13. Qualitative case study on prediction updates under clean skeleton inputs. The same scene is shown at two observa-tion steps separated by two additional observed frames. In each panel, the top row shows the input skeleton sequence and the bot-tom row shows the predicted trajectories by Baseline (Standard) 
+
+and Ours with the ground truth. In the right panel, the two newly observed frames are highlighted with red boxes. The later observa-tion reveals a clearer body-orientation cue for the upcoming turn. While both methods are inaccurate at the earlier step, Ours up-dates its prediction toward the curved ground-truth trajectory after the additional observations, whereas Baseline (Standard) remains less responsive. 
+
+tantly, the claim here is not that the proposed method al-ways predicts correctly from limited observations. Rather, the key qualitative evidence is whether the model updates its prediction when newly observed pose information becomes informative. From this viewpoint, the proposed method demonstrates stronger skeleton feature extraction and usage than Baseline (Standard) .
+
+## F. Qualitative Case Study on Curved Trajecto-ries 
+
+In this appendix, we provide qualitative comparisons on curved-trajectory scenes to clarify when skeletal cues are essential and how the proposed method behaves under par-tial joint missingness. We compare methods with rela-tively low skeleton reliance ( Baseline (Standard) , Baseline (Reconstruction) , and Baseline (Corruption-trained) ) and higher skeleton reliance ( Baseline (STGCN) and Ours ) in a unified figure. As shown in Fig. 14, under clean skeleton input, the low-reliance methods often fail to capture path curvature and tend to produce overly straight predictions. In contrast, the higher-reliance methods ( Baseline (STGCN) and Ours )better follow the turning tendency in both examples. This suggests that skeletal cues are crucial for curved-trajectory prediction, where body orientation and motion tendency provide important signals for anticipating future direction 4(a) Case 1 (Clean) (b) Case 1 (Masked, r = 0 .4)   
+
+> (c) Case 2 (Clean) (d) Case 2 (Masked, r= 0 .4)
+
+Figure 14. Qualitative comparison on curved-trajectory scenes un-der clean and partially missing skeleton inputs. Methods that ef-fectively exploit skeletal cues better capture turning motion under clean inputs, whereas methods with low skeleton reliance tend to produce overly straight predictions. Under random joint masking (r = 0 .4), the proposed method better preserves the turning ten-dency than the baselines, supporting improved robustness through more stable skeleton-based motion cues. 
+
+changes. A clearer difference appears under random joint masking with r = 0 .4 (Fig. 14). Although Baseline (STGCN) can capture the turn under clean input, it often fails to maintain the turning tendency once skeleton observations become in-complete. By contrast, Ours remains closer to the curved ground-truth trajectory and preserves a prediction pattern similar to the clean condition. These examples support the interpretation that the pro-posed method does not gain robustness by reducing skele-ton reliance. Instead, it improves robustness by preserving the usefulness of skeleton-based motion representations un-der partial observations. This qualitatively supports that the proposed method mitigates the accuracy–robustness trade-off in skeleton-aided trajectory prediction. 
+
+## G. Model Size and Inference Time 
+
+To assess the computational cost of the proposed design and its practical variants, we compare the number of pa-rameters and the inference time per sample across all meth-ods. Table 11 reports both model size and inference 
+
+Table 11. Comparison of the number of parameters and inference time (ms/sample).           
+
+> Method Params Inference Time
+> Baseline (Standard/Corruption-trained) 3,188,546 1.942 Ours/Baseline (ST-GCN) 3,703,198 2.099 Baseline (Reconstruction) 3,720,097 2.132 Ours + Recon 4,234,749 2.273
+
+time in ms/sample . Overall, all methods are in a simi-lar computational range. Compared with Baseline (Stan-dard, Corruption-trained) , Ours (and Baseline (ST-GCN) )increases the number of parameters from 3.19M to 3.70M, while the inference time increases only slightly from 1.942 to 2.099 ms/sample. The reconstruction-based variants re-quire a few more parameters and slightly longer inference time ( Baseline (Reconstruction) : 3.72M, 2.132 ms/sample; 
+
+Ours + Recon : 4.23M, 2.273 ms/sample), but the overall differences remain modest. These results indicate that the proposed method and its related variants introduce only limited computational over-head. In particular, the proposed method improves robust-ness while maintaining practical inference efficiency. 5
