@@ -1,0 +1,423 @@
+Title: LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving
+
+URL Source: https://arxiv.org/pdf/2603.01928v1
+
+Published Time: Tue, 03 Mar 2026 04:06:29 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+Yuechen Luo * 1 2 Fang Li * 2 Shaoqing Xu * 2 † Yang Ji 2 Zehan Zhang 2 † Bing Wang 2 Yuannan Shen 2
+
+Jianwei Cui 2 Long Chen 2 Guang Chen 2 Hangjun Ye 2 Zhi-Xin Yang 3 Fuxi Wen 1
+
+# Abstract 
+
+While Vision-Language-Action (VLA) models have revolutionized autonomous driving by uni-fying perception and planning, their reliance on explicit textual Chain-of-Thought (CoT) leads to semantic-perceptual decoupling and perceptual-symbolic conflicts. Recent shifts toward latent reasoning attempt to bypass these bottlenecks by thinking in continuous hidden space. However, without explicit intermediate constraints, standard latent CoT often operates as a physics-agnostic representation. To address this, we propose the La tent Spatio-Temporal VLA (LaST-VLA ), a framework shifting the reasoning paradigm from discrete symbolic processing into a phys-ically grounded Latent Spatio-Temporal CoT. By implementing a dual-feature alignment mecha-nism, we distill geometric constraints from 3D foundation models and dynamic foresight from world models directly into the latent space. Cou-pled with a progressive SFT training strategy that transitions from feature alignment to trajec-tory generation, and refined via Reinforcement Learning with Group Relative Policy Optimiza-tion (GRPO) to ensure safety and rule compliance. LaST-VLA setting a new record on NAVSIM v1 
+
+(91.3 PDMS) and NAVSIM v2 (87.1 EPDMS), while excelling in spatial-temporal reasoning on 
+
+SURDS and NuDynamics benchmarks. The code is available at LaST-VLA Code. 
+
+# 1. Introduction 
+
+The evolution of autonomous driving is undergoing a pro-found shift: from traditional modular pipelines (Hu et al., 2023; Zhang et al., 2024; Jiang et al., 2023) to Vision-Language-Action (VLA) models (Wang et al., 2025b; Li 
+
+> *
+
+Equal contribution †Projector leader 1Tsinghua University 
+
+> 2
+
+Xiaomi EV 3University of Macau. Correspondence to: Yuechen Luo <luo-yc24@mails.tsinghua.edu.cn >.
+
+Preprint. March 3, 2026. 
+
+Figure 1. Comparison of VLA Paradigms. (a) Direct VLA is efficient but lacks reasoning. (b) Explicit Textual CoT is inter-pretable but suffers high latency and hallucinations. (c) Naive Latent CoT (w/o supervision) is efficient but unstable (model collapse). (d) Our Spatio-Temporal Latent CoT (supervision) 
+
+aligns latent features with physical priors, achieving efficiency, stability, and grounding. 
+
+et al., 2025f; Wang et al., 2025c). While modular approaches offer interpretability, they often struggle with complex and long-tail scenarios due to rigid rule-based designs and er-ror propagation across modules. In contrast, VLA models unify visual perception and driving policy into a holistic system, demonstrating superior scene generalization and natural language instruction following capabilities. While VLA models have demonstrated promising perfor-mance surpassing traditional end-to-end (E2E) approaches. They remain hindered by fundamental limitations that im-pede their deployment in real world. Early works (Wang et al., 2025b; Fu et al., 2025) directly generate trajecto-ries without explicit intermediate reasoning, as shown in Figure 1(a), suffering from poor interpretability. Recent efforts (Hwang et al., 2024; Li et al., 2025d) unlock strong reasoning capabilities through explicit Chain-of-Thought (CoT), thereby achieving interpretability and enabling the VLA to solve complex scenarios in step-by-step manner, as shown in Figure 1(b). However, projecting dense visual 1
+
+> arXiv:2603.01928v1 [cs.CV] 2 Mar 2026 LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving
+
+data into discrete text creates an inherent semantic gap, often leading to hallucinations inconsistent with visual input. Con-sequently, the planner often disregards visual evidence and instead follows flawed linguistic guidance, leading to poten-tially hazardous decision failures. Moreover, the generation of extensive intermediate sequences increases inference cost and results in redundant over-thinking, as discovered in AdaThinkDrive (Luo et al., 2025) and AutoVLA (Zhou et al., 2025b). In response, recent methods (Hao et al., 2024; Wei et al., 2025) argue that natural language may not al-ways be the optimal medium for structured reasoning. They shift from explicit textual reasoning to implicit latent space reasoning, as shown in Figure 1(c), achieving higher com-putational efficiency by bypassing the generation of lengthy textual chains. However, our empirical findings indicate that these methods typically rely solely on supervision from the final answer, without intermediate constraints. This ab-sence of intermediate guidance leads to an unstable training process and renders the model susceptible to collapse. To address these challenges, we propose LaST-VLA, a novel latent reasoning framework. Inspired by World Action Mod-els (Xia et al., 2025) and VLM methods with spatial forc-ing (Li et al., 2025b; Zheng et al., 2025), we leverage latent representations from geometry foundation models and video world models as supervision targets, as shown in Figure 1(d). The design paradigm enables the model to receive tempo-rally stable, step-level supervisory signals while simultane-ously embedding spatial-temporal perceptual capabilities into latent reasoning process. Our methodology employs a progressive training strategy to ensure the model effectively internalizes these grounded reasoning capabilities. As illustrated in the top-right corner of Figure 2, the first stage of supervised learning aims to equip the model with spatial-temporal reasoning capabili-ties, while the second stage focuses on enabling the model to learn specific planning tasks. Furthermore, we employ Reinforcement Learning (RL) to enhance specific driving decision-making capabilities, as shown in the bottom-right corner of Figure 2. Following SFT, the model is equipped with spatial-temporal understanding and planning abilities. Subsequently, we refine the model using RL based on met-rics such as driving safety and comfort, ultimately endowing it with superior driving proficiency. In summary, our key contributions are: • We highlight two critical deficiencies in existing VLA-based autonomous driving: the disconnect between language and physical reality, and the safety hazards induced by excessive reliance on linguistic priors. • We propose LaST-VLA, which unifies instruction fol-lowing and dynamic prediction via a latent spatio-temporal CoT. This design surpasses both direct ex-plicit textual reasoning and unsupervised latent ap-proaches, overcoming the precision limitations of the former and the training instability of the latter. • We design a progressive training strategy that first equips the model with spatial-temporal understand-ing capabilities, and subsequently enables it to ac-quire planning. Experiments demonstrate that our method significantly outperforms state-of-the-art base-lines across multiple autonomous driving benchmarks. 
+
+# 2. Related Work 
+
+2.1. VLA models in Autonomous Driving 
+
+Traditional E2E methods (Jiang et al., 2023; Hu et al., 2023) rely on modular pipelines but often lack natural interfaces for high-level intent. In contrast, VLAs unify these stages, demonstrating superior contextual understanding. Early research focused on scene understanding and meta-action generation (Tian et al., 2024; Jiang et al., 2025). Some approaches employ VLMs directly for textual trajectory prediction. For instance, Orion (Fu et al., 2025) and Om-niDrive (Wang et al., 2025b) adopt StreamPETR (Wang et al., 2023) as Q-Former3D to compress scene features. This architecture bridges the visual reasoning space and facilitates subsequent textual trajectory prediction. Simi-larly, EMMA (Hwang et al., 2024), trained on large-scale datasets, leverages Gemini (Team et al., 2023) to predict discrete textual perception and planning outputs. Others integrate VLMs with E2E models in fast-slow systems: DriveVLM (Sima et al., 2024) uses VLMs for coarse trajec-tory prediction, which is refined by an E2E model. More recent methods introduce a textual cot prior to trajectory pre-diction, leveraging the common sense reasoning capabilities of LLM backbones to enhance planning performance, par-ticularly in rare or complex scenarios (Hwang et al., 2024; Wang et al., 2025c; 2024). 
+
+2.2. Latent Chain-of-Thought 
+
+Textual CoT has become a popular strategy for eliciting reasoning in VLMs and VLAs. However, some works (Zhu et al., 2026) revealed that visual information is suppressed by the generated text, leading the answer to no longer fo-cus on it. Moreover, recent research (Lou et al., 2025; Zhang et al., 2025) discovered that a large amount of mean-ingless CoT also leads to low efficiency and accuracy. In autonomous driving, AdaThinkDrive (Luo et al., 2025) and AutoVLA (Zhou et al., 2025b) showed that explicit textual CoT can hinder planning performance in some scenarios. To overcome the shortcomings of the textual CoT, some works (Cheng & Van Durme, 2024; Hao et al., 2024) be-gun to explore latent reasoning in LLMs, where intermedi-ate computations are performed in continuous latent space rather than in textual space. This paradigm enables more 2LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving     
+
+> Figure 2. Overview of the LaST-VLA framework. (a) Model Architecture: The model constructs a Latent CoT by aligning hidden states with dynamic and geometric priors distilled from foundation models (Cosmos and VGGT) via specialized adapters. (b) Progressive Training Strategy: The pipeline features a two-stage SFT phase that utilizes structured causal masking to enforce physically grounded reasoning, followed by RL fine-tuning to directly optimize the policy for driving safety and compliance.
+
+cost-effective inference budget. Building on these ideas, subsequent works (Ray et al., 2025; Li et al., 2025a) extend latent reasoning to VLMs, achieving latent spatial reason-ing. In contrast, we observe that leaving the continuous latent CoT unsupervised degrades planning performance. To address this, we propose Think with Latent Spatio-Temporal , a mechanism that leverages geometric and dy-namic priors to supervise the latent CoT, thereby enhancing the fidelity and robustness of trajectory planning. 
+
+# 3. Method 
+
+In this section, we present the LaST-VLA framework, as il-lustrated in Figure 2. This architecture is designed to bridge the gap between perception and planning via a Latent Spatio-Temporal CoT mechanism. The overall pipeline comprises three core components: (1) Latent Spatio-Temporal CoT, (2) Progressive Two-Stage SFT Strategy, and (3) Latent-Grounded Trajectory Refinement via GRPO. 
+
+3.1. Preliminaries 
+
+In this work, we formulate end-to-end autonomous driving planning as a conditional generation problem augmented by latent reasoning. 
+
+Inputs. At any given time step t, the system receives a multimodal query tuple Qt = ( It, L ), comprising the front-view camera image It ∈ RH×W ×3 and the text input L.Specifically, L includes the navigation instruction l (e.g., 
+
+“Turn left” ), the ego-vehicle state vector sego ∈ Rds (velocity, acceleration), and historical trajectory hhis ∈ RT ×3.
+
+Latent Reasoning. Deviating from standard VLA paradigms that directly map inputs to actions, we intro-duce a Latent Spatio-Temporal CoT , denoted as H, to serve as a continuous reasoning bridge. Derived from the final hidden states of the VLM backbone, we explicitly structure 
+
+H into two decoupled features: H = {Hdyn , H geo }. Here, 
+
+Hdyn captures temporal dynamics evolution (WM), while 
+
+Hgeo encodes spatial geometry (3D). These continuous la-tent variables are autoregressively generated to explicitly ground the reasoning process in physical properties. 
+
+Probabilistic Modeling. Our objective is to learn a hierar-chical model that generates the trajectory at conditioned on the latent CoT H. We formalize this by decoupling the joint distribution into a thinking phase and a planning phase: 
+
+Pθ (at, | Qt) = P (Hdyn , H geo | Qt)
+
+| {z }
+
+> Thinking Process
+
+· P (at | Hdyn , H geo , Qt)
+
+| {z }
+
+> Planning Process
+
+.
+
+(1) In this formulation, the model first acts as a Thinker to gen-erate the continuous reasoning states H, and subsequently functions as a Planner to predict trajectory waypoints at
+
+conditioned on these grounded thoughts. Notably, both prob-ability distributions are parameterized by the same VLA, realized through unified auto-regressive process. 
+
+3.2. Latent Spatio-Temporal CoT 
+
+To teach the model to reason with 3D geometry and world dynamics, conventional approaches typically rely on explicit reconstruction targets, such as predicting dense depth maps or future video frames. However, these methods suffer from high computational overhead and information redundancy, as they compel the model to focus on irrelevant textural details rather than critical physical states. Instead, as de-3LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving   
+
+> Figure 3. Architecture of the Dynamics (a) and Geometry (b) Adapters. Random mask is used only during training.
+
+picted in Figure 2 (a), we introduce external foundation models as feature-level teachers during training, distilling their structured knowledge into the continuous latent tokens generated from the VLM’s reasoning process. This strat-egy facilitates effective physical understanding without the burden of pixel-level generation. Specifically, the reasoning process begins with visual encod-ing. Given the input image It, vision encoder V is employed to extract patch-level visual embeddings Eimg = V(It) ∈
+
+RN ×D . These visual features are concatenated with the embeddings of linguistic instructions EL to form the multi-modal input sequence. The VLM πθ autoregressively gener-ates the hidden states. Let hk denote the output of the last layer at step k. The latent CoT sequence H is derived as: 
+
+H = {hk}Kk=1 = πθ (Eimg , E L), (2) where K is the length of the reasoning chain. This sequence is strictly partitioned into dynamic ( Hdyn ) and geometric (Hgeo ) streams to facilitate two specialized physical align-ments with adapters. To prevent the adapter from shortcut-ting alignment by attending solely to raw pixel patterns, we apply a random binary mask M to the visual embeddings, yielding ˜Eimg = Eimg ⊙ M . These masked features and continuous CoT hidden states are as input to adapters for alignment with different priors. 
+
+Dynamics Adapter (Φdyn ). As illustrated in Figure 3(a), this adapter bridges the sequential hidden states with the rep-resentation space of video world model (Cosmos (Agarwal et al., 2025)). Unlike the static nature of standard linguistic tokens, the world model’s latent space inherently encodes temporal dynamics evolution. Consequently, by projecting the linear token sequence to align with this dynamic mani-fold, Φdyn effectively captures future motion prior of traffic participants and continuous environmental changes. 
+
+Geometry Adapter (Φgeo ). As illustrated in Figure 3(b), this adapter aligns the spatial hidden states with dense fea-ture space of 3D foundation model of VGGT (Wang et al., 2025a). By fusing the linguistic latent states Hgeo with the original visual embeddings ˜Eimg , it recovers metrically ac-curate spatial priors, such as scene depth and occupancy structures, directly in the latent space. The overall transfor-mation process is formally defined as: 
+
+pgeo = Φ geo (Hgeo , ˜Eimg ), pdyn = Φ dyn (Hdyn , ˜Eimg ),
+
+(3) The latent CoT serves as an implicit reasoning bridge that encodes what the world looks like in 3D space and how it will change, while remaining fully differentiable and aligned with the downstream trajectory output space. 
+
+Latent-Conditioned Planning. Finally, the grounded latent chain-of-thought is integrated in the trajectory generation process. Following the latent reasoning phase, our policy au-toregressively predicts the future waypoints at (represented as textual tokens) conditioned on these physical reasonings: 
+
+at ∼ πθ (at | Hdyn , H geo , Qt). (4) This ensures that the final planning decision is explicitly driven by the spatio-temporal understanding distilled in the latent space. 
+
+3.3. Progressive Two-Stage SFT Strategy 
+
+As illustrated in Figure 2 (b), our method introduces external foundation models as feature teachers during training, and distills their structured knowledge into the continuous latent tokens generated in the VLM’s reasoning process. To imple-ment this effectively, we propose a Progressive Two-Stage Supervised Fine-Tuning strategy that decouples the complex objective into learning to think and learning to action .
+
+Unified Optimization Objective. We first formulate the unified training objective for both stages. To ground the latents in physical reality, we employ feature distillation from frozen foundation models, denoting FCosmos as the dynamic feature derived from the Cosmos and FVGGT as the geometric features from the VGGT aggregator. For dynamic representation, we designate three sets of latent tokens to align with the temporal features of FCosmos . These tokens encode dynamics across progressive temporal scales, capturing short-term, medium-term, and long-term motion. Simultaneously, we allocate a distinct set of latent tokens to align with FVGGT to capture static geometric constraints. The alignment losses are calculated as the Mean Squared Error (MSE) between the adapter-projected features p and these teacher targets: 
+
+LWM = ∥pdyn − FCosmos ∥22, L3D = ∥pgeo − FVGGT ∥22, (5) The total SFT loss combines the trajectory prediction error with these physical alignment terms: 
+
+Ltotal = λaction LCE + λWM LWM + λ3D L3D . (6) 4LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+where LCE denotes the cross-entropy loss for action genera-tion, and λ are the balancing coefficients adjusted dynami-cally across stages. 
+
+Phase I: Physics-Aware Alignment. In this initial phase, we prioritize learning physical knowledge over trajectory generation. We set the loss weights to λWM = λ3D = 1 .0 ≫
+
+λaction = 0 .01 . This forces the latent CoT H to strictly align with the teacher models’ geometric and dynamic represen-tations. To ensure the planner relies on this reasoning, we apply a Structured Causal Masking (Figure 2(b)): (1) La-tent Mutual Masking: We mask the 3D and WM tokens from each other so they learn independently. (2) Visual Bottleneck Masking: We prevent the action tokens from attending to the raw image embeddings Eimg . This forces the model to compress all necessary visual information into 
+
+H, making the latent thoughts the only information bridge for decision-making. 
+
+Phase II: Latent-Grounded Planning. Once the rea-soning capability is established, we switch to the second phase to refine the driving policy. We invert the weights to 
+
+λaction = 1 .0 ≫ λWM = λ3D = 0 .01 , prioritizing accurate trajectory prediction. In this stage, we allow action tokens to attend to both the latent CoT H and the raw image embed-dings Eimg . This allows the model to combine two types of information: the high-level physical understanding from H
+
+and the fine-grained visual details from the original image. The reduced alignment weights maintain consistency in the reasoning, while the planner learns to use both signals for robust driving. 
+
+3.4. Latent-Grounded Trajectory Refinement via GRPO 
+
+Following the progressive SFT phase, our policy has ac-quired robust spatio-temporal capabilities, where the geo-metric and dynamic latent CoT ground the reasoning pro-cess. To further elevate the policy’s execution capability, we freeze the dynamics and geometry adapters. We employ Group Relative Policy Optimization (GRPO) (Shao et al., 2024) to optimize the VLA’s action generation by max-imizing trajectory-level rewards, using established latent reasoning as stable internal guidance. 
+
+Reward Formulation. To incentivize the model to gener-ate safe, compliant, and precise driving behaviors, we design a composite reward function R comprising three distinct components. PDMS Reward (Rtraj ) evaluates the overall quality of the predicted trajectory using the Predictive Driver Model Score (Dauner et al., 2024), normalized to a contin-uous value in [0 , 1] . Format Reward (Rfmt ) is a discrete indicator that strictly penalizes adherence failures to the required output structure. Goal Reward (Rgoal ) encourages endpoint precision by assigning tiered incentives based on the L1 distance between the predicted and ground-truth end-points. Calculation details are provided in the Appendix D. The total reward for a trajectory is integrated as: 
+
+R = λtraj Rtraj + λf mt Rfmt + λgoal Rgoal . (7) 
+
+Optimization Objective. We employ GRPO as the re-inforcement learning algorithm to optimize the policy πθ .For each input query q, we sample a group of G candidate outputs {o1, o 2, . . . , o G} from the sampling policy πθold .The optimization process leverages the relative advantage of these outputs to update the policy, incorporating a clipped objective to ensure training stability and a KL-divergence term to prevent excessive deviation from the reference pol-icy πref . The objective function is formulated as follows: 
+
+J (θ) = Eq∼D, {oi}∼ πθold 
+
+"
+
+1
+
+G
+
+> G
+
+X
+
+> i=1
+
+Ji − βDKL (πθ || πref )
+
+#
+
+,
+
+(8) 
+
+Ji = min ( ciAi, clip (ci, 1 − ϵ, 1 + ϵ) Ai) . (9) Here, ci = πθ (oi|q)/π θold (oi|q), ϵ and β are hyperpa-rameters controlling the clipping range and regularization strength, respectively. The advantage Ai is computed by standardizing the rewards within the group: Ai =(Ri − mean (R)) /std (R), where Ri is the total reward for output oi.
+
+# 4. Experiment 
+
+4.1. Implementation details Datasets. We primarily utilize NAVSIM (Dauner et al., 2024), a planning-oriented benchmark derived from Open-Scene. From the standard 85k split, we curate a 24k sub-set of challenging scenarios, denoted as navtrain-hard-24k, to enhance training efficiency. Additionally, we employ 
+
+SURDS (Guo et al., 2024), built on nuScenes, to evalu-ate 3D spatial reasoning capabilities. To further assess dy-namic scene understanding, we constructed the NuDynam-ics benchmark following SURDS (details in Appendix C.2). 
+
+Metrics. We evaluate our method across two primary dimensions: closed-loop trajectory planning and spatial-dynamic reasoning. For trajectory planning evaluation on the NAVSIM, we leverage the Predictive Driver Model Score (PDMS) for 
+
+NAVSIMv1 (Dauner et al., 2024) and the Extended Predic-tive Driver Model Score (EPDMS) for NAVSIMv2 (Cao et al., 2025) as the closed-loop planning metrics (details in Appendix D). For spatial and dynamic scene reasoning, we employ two benchmarks. On the SURDS benchmark, we report the aver-aged accuracy across its key tasks, including Yaw Angle De-termination (Yaw), Pixel Location Estimation (Pixel), Depth 5LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving  
+
+> Table 1. Comparison with state-of-the-art methods on NAVSIMv1 with PDMS. * indicates models utilizing Textual CoT.
+
+Method Image Lidar NC ↑ DAC ↑ TTC ↑ CF ↑ EP ↑ PDMS ↑
+
+Constant Velocity 68.0 57.8 50.0 100 19.4 20.6 Ego Status MLP 93.0 77.3 83.6 100 62.8 65.6 UniAD (Hu et al., 2023) ✓ 97.8 91.9 92.9 100 78.8 83.4 DiffusionDrive (Liao et al., 2025) ✓ ✓ 98.2 96.2 94.7 100 82.2 88.1 WoTE (Li et al., 2025e) ✓ ✓ 98.5 96.8 94.9 99.9 81.9 88.3 DriveVLA-W0-7B (Li et al., 2025c) ✓ 98.7 99.1 94.9 99.3 83.3 90.2 AdaThinkDrive-8B* (Luo et al., 2025) ✓ 98.4 97.8 95.2 100 84.4 90.3 Recogdrive-2B (Li et al., 2025f) ✓ 97.9 97.3 94.9 100 87.3 90.8 InternVL3-8B (SFT)* ✓ 98.3 92.3 94.7 100 77.2 83.9 InternVL3-8B (RL)* ✓ 98.3 94.0 94.7 100 83.0 87.2 
+
+LaST-VLA-2B (SFT) ✓ 98.5 95.2 95.6 100 80.4 87.0 
+
+LaST-VLA-2B (RL) ✓ 98.6 97.7 95.6 100 86.5 91.1 
+
+LaST-VLA-8B (SFT) ✓ 98.7 95.4 95.6 100 80.5 87.3 
+
+LaST-VLA-8B (RL) ✓ 98.7 97.9 95.6 100 86.8 91.3                                                                                              
+
+> Table 2. Comparison with state-of-the-art methods on NAVSIMv2 with EPDMS.
+> Method NC ↑DAC ↑DDC ↑TLC ↑EP ↑TTC ↑LK ↑HC ↑EC ↑EPDMS ↑
+> Ego Status 93.1 77.9 92.7 99.6 86.0 91.5 89.4 98.3 85.4 64.0 TransFuser (Chitta et al., 2022) 96.9 89.9 97.8 99.7 87.1 95.4 92.7 98.3 87.2 76.7 DiffusionDrive (Liao et al., 2025) 98.2 95.9 99.4 99.8 87.5 97.3 96.8 98.3 87.7 84.5 HydraMDP++ (Li et al., 2024) 98.5 98.5 99.5 99.7 87.4 97.9 95.8 98.2 75.7 85.6 DriveVLA-W0-7B (Li et al., 2025c) 98.5 99.1 98.0 99.7 86.4 98.1 93.2 97.9 58.9 86.1
+> LaST-VLA-2B (RL) 98.6 97.7 99.1 99.7 90.2 98.2 96.6 98.3 86.8 86.8
+> LaST-VLA-8B (RL) 98.7 97.9 99.2 99.7 90.3 98.2 96.6 98.3 86.3 87.1
+
+Range Determination (Depth), Distance Estimation (Dis), Left/Right Determination (L/R), and Front/Behind Determi-nation(F/B). On the NuDynamics benchmark, we utilize the Motion State Estimation (Motion) metric to assess dynamic object understanding. 
+
+Training Details. We utilize InternVL3 (Zhu et al., 2025) as the foundation model, trained across: SFT and RL phases. In the first SFT stage, we fine-tune the model on navtrain-hard-24k for 2 epochs. In the second SFT stage, the model is trained on the full navtrain dataset for 2 epochs. Finally, during the RL phase, we train the model on navtrain-hard-24k for 2 epochs. For SURDS and NuDynamics, we only perform SFT for 2 epochs. Additional details and hyperpa-rameters are provided in the Appendix D. 
+
+4.2. Performance Comparison NAVSIM Benchmark. Table 1 presents the performance comparison on the NAVSIMv1 benchmark. Under the vision-only setting, LaST-VLA-8B achieves a PDMS of 91.3, setting a new state-of-the-art (SOTA). This result sur-passes the previous best vision-only method (Recogdrive-2B) by 0.5 PDMS. Remarkably, even our lightweight Last-VLA-2B delivers exceptional performance with 91.1 PDMS, outperforming Recogdrive-2B despite utilizing similar pa-rameters. Furthermore, LaST-VLA-8B outperforms VLM baselines, with its SFT and RL variants surpassing their InternVL3-8B baseline by 3.4 and 4.1 PDMS, respectively. Notably, the improvements in No at-Fault Collision (NC) and Drivable Area Compliance (DAC) are attributed to the enhanced 3D spatial awareness, while the superior Time-to-Collision (TTC) and Ego Progress (EP) performance validates the dynamic foresight capabilities distilled from the world model. Consistently, on the NAVSIMv2 bench-mark (Table 2), LaST-VLA maintains its superiority, achiev-ing a new SOTA with 87.1 EPDMS. This score outper-forms the previous best method, DriveVLA-W0-7B, by 1.0 EPDMS. Remarkably, even the lightweight 2B variant de-livers exceptional performance with 86.8 EPDMS, which also surpasses the prior SOTA. These results demonstrate that, compared to standard VLMs, our method significantly enhances comprehensive driving capabilities, particularly in complex scenarios that require 3D reasoning and future prediction. Moreover, the consistent excellence across both benchmarks confirms that our approach is not merely over-fitting to the PDMS; rather, it demonstrates strong gener-alization by performing robustly on the more holistic and 6LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving                                                                                                                           
+
+> Table 3. Comparison with state-of-the-art methods on the SURDS and NuDynamics benchmarks. Score represents the average performance on SURDS. Motion denotes the Motion State Estimation accuracy on NuDynamics. * indicates models trained with SFT+RL, and †indicates models trained with Only SFT. All methods except LaST-VLA utilize Textual CoT.
+> Method Single-object (%) ↑Multi-object(%) ↑Score(%) ↑Motion (%) ↑
+> Yaw Pixel Depth Dis L/R F/B
+> Qwen2.5-VL-72B-Instruct 11.57 6.13 44.00 58.05 66.16 14.92 33.47 54.79 Qwen2.5-VL-7B-Instruct 7.57 3.46 25.95 11.46 17.95 9.30 12.61 48.77 Qwen2.5-VL-3B-Instruct 6.27 3.81 27.68 17.84 14.81 10.49 13.48 35.34 SURDS-3B* (Guo et al., 2024) 20.97 44.81 69.84 49.30 51.35 8.54 40.80 -InternVL3-8B †45.19 61.83 100.00 82.05 86.16 84.43 76.61 73.97
+> LaST-VLA-8B †70.16 71.28 100.00 86.05 90.27 88.00 84.29 81.19
+> Table 4. Ablation study analyzing the impact of geometric (3D) and dynamic (WM) latent CoT across SFT and RL training phases. Mode WM 3D NC ↑DAC ↑TTC ↑CF ↑EP ↑PDMS ↑
+> SFT 98.3 92.3 94.7 100 77.2 83.9
+> ✓98.6 94.4 95.5 100 78.4 85.8
+> ✓98.6 94.8 95.7 100 79.1 86.4
+> ✓✓98.7 95.4 95.7 100 80.5 87.3
+> RL 98.3 94.0 94.7 100 83.0 87.2
+> ✓98.5 97.7 95.2 100 86.7 90.9
+> ✓98.6 97.7 95.6 100 86.4 91.0
+> ✓✓98.7 97.9 95.6 100 86.7 91.3
+
+challenging EPDMS. 
+
+SURDS and NuDynamics Benchmark. Table 3 presents the comparative evaluation on both the SURDS and NuDy-namics benchmarks. With only SFT, LaST-VLA surpasses previous SOTA methods on SURDS, achieving improve-ments of 43.49% and 7.68% over the SURDS method and InternVL3-8B baseline, respectively. Specifically, LaST-VLA dominates intrinsic geometric reasoning, with Yaw Determination and Pixel Estimation reaching 70.16% and 71.28%, demonstrating precise absolute localization ca-pabilities. Furthermore, exceptional performance on re-lational tasks, such as Left/Right (90.27%) and Front/Be-hind (88.00%), highlights the model’s robust spatial com-positional reasoning, mitigating the spatial disorientation often observed in prior VLMs. On NuDynamics, LaST-VLA demonstrates superior dynamic scene understanding with a Motion score of 81.19%, outperforming both the fine-tuned InternVL3-8B and general Qwen2.5-VL-72B (Bai et al., 2025). This validates that aligning with world mod-els endows the planner with the capability to accurately perceive and predict the motion states of dynamic agents. 
+
+4.3. Ablation Studies On Latent Spatio-temporal Reasoning. Table 4 vali-dates the impact of our spatiotemporal reasoning compo-nents. Explicitly incorporating both geometric (3D) and dynamic (WM) pathways yields consistent gains across                                 
+
+> Table 5. Ablation study on the effectiveness of Textual CoT (Text), Latent CoT (Latent), and Latent Token Supervision(sup.) after RL training phase. “w/o” denotes “without”. Method NC ↑DAC ↑TTC ↑CF ↑EP ↑PDMS ↑
+> No Text 98.5 94.3 95.5 100 79.6 86.0 Text 98.3 94.0 94.7 100 83.0 87.2 Latent (w/o sup.) 98.6 96.8 95.8 100 84.6 89.8 Latent (with sup.) 98.7 97.9 95.6 100 86.7 91.3
+> Figure 4. PDMS performance varying with training steps during the RL phase.
+
+training phases. During SFT, the full model achieves a 3.4 PDMS increase over the baseline, driven by a substantial rise in DAC. This confirms that the geometric latent CoT grounds the planner in physical reality, ensuring precise ad-herence to boundaries. The RL phase further amplifies this advantage, widening the performance gap to a 4.1 PDMS improvement. Notably, the superior TTC and EP metrics highlight the role of the dynamic latent CoT: by distilling foresight from the World Model, the agent anticipates evolv-ing dynamics for safer and more efficient planning. 
+
+On Reasoning. Table 5 investigates reasoning modalities. Compared to baseline without the textual CoT, introducing explicit textual CoT improves PDMS by 1.2, suggesting symbolic planning aids task decomposition but is limited by the semantic gap. Employing the latent CoT without supervision achieves 89.8 PDMS, effectively bypassing the 7LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving                         
+
+> Figure 5. Qualitative visualization comparing the Textual CoT baseline (Red) and LaST-VLA (Green) . (a) Drivable Area Compliance (DAC): Our method maintains precise lane adherence, whereas the baseline violates spatial boundaries. (b) Time-to-Collision (TTC):
+> Our method accurately anticipates dynamics to avoid rear-end collisions, while the baseline fails to brake effectively.
+> Table 6. Ablation study on the effectiveness of the Structured Causal Mask after RL training phase. Mode NC ↑DAC ↑TTC ↑CF ↑EP ↑PDMS ↑
+> Standard Mask 98.1 97.3 94.6 100 86.6 90.4 Structured Causal Mask 98.7 97.9 95.6 100 86.7 91.3
+
+textual bottleneck. However, this unsupervised approach functions as an ungrounded “black box” lacking physical constraints. This deficiency manifests as training instability: as visualized in Figure 4, the unsupervised variant suffers from marked performance oscillations even at later stages (orange line). In contrast, explicit physical supervision on latent tokens yields optimal performance, surpassing the unsupervised variant by 1.5 PDMS while achieving robust stability upon convergence (red line). Notably, this physical grounding translates into critical safety gains, boosting DAC to 97.9 and TTC to 95.6. These results demonstrate that aligning latent CoT with physical priors transforms unstable features into a robust, grounded reasoning engine. 
+
+On Structured Causal Mask. Table 6 examines the impact of the proposed structured causal mask. Compared to the standard masking baseline, our design increases PDMS by 2.0. This quantitative gain validates that blocking the direct visual shortcut effectively compels the planner to rely on the high-level latent spatio-temporal reasoning, thereby enhancing both trajectory compliance and safety. 
+
+On the Number of Latent Tokens. Table 7 examines the impact of latent granularity. The configuration with 
+
+N3D = 12 and NWM = 3 × 12 yields the optimal 91.3 PDMS. Reducing tokens degrades performance due to in-formation bottlenecks, while increasing them introduces re-dundancy that complicates optimization. Thus, the selected                                                  
+
+> Table 7. Ablation study on the number of geometric(3D) and dynamic(WM) latent tokens after RL training phase. ID WM/N 3D/N NC ↑DAC ↑TTC ↑CF ↑EP ↑PDMS ↑
+> 13*12 698.6 97.5 95.6 100 86.5 90.9 23*12 24 98.4 97.7 95.2 100 86.5 90.8 33*6 12 98.6 97.5 95.4 100 86.5 90.8 43*24 12 98.9 97.6 96.0 100 85.9 90.9 53*12 12 98.7 97.9 95.6 100 86.7 91.3
+
+configuration balances capacity and efficiency. Overall, the model performance remains relatively stable across varying token numbers. 
+
+4.4. Qualitative Results 
+
+To visualize the efficacy of our approach, Figure 5 presents a qualitative comparison between the textual CoT baseline and LaST-VLA. As illustrated in Figure 5(a), LaST-VLA (Green) generates smooth, compliant trajectories that strictly adhere to lane boundaries, whereas the baseline (Red) strug-gles with metric precision, occasionally deviating from the drivable area. This validates that our geometric latent CoT, explicitly aligned with 3D foundation models, effectively grounds the planner with accurate spatial constraints. Fur-thermore, regarding dynamic safety in Figure 5(b), while the baseline suffers from limited foresight and fails to decel-erate, LaST-VLA accurately predicts future dynamics and executes timely braking to ensure safety in critical interac-tion scenarios. This demonstrates the significance of the dynamic latent CoT in distilling temporal foresight from the world model, equipping the planner with predictive capabili-ties typically lacking in pure textual reasoning. More results can be found in Appendix B. 8LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+# 5. Conclusion 
+
+In this work, we introduced LaST-VLA , a framework that shifts the reasoning paradigm of autonomous driving from explicit text to a continuous Latent Spatio-Temporal Space. By distilling physical priors from 3D and video founda-tion models, our approach effectively addresses the chal-lenges of inference latency, semantic hallucinations, and the lack of physical grounding inherent to textual CoT. Cou-pled with a progressive training strategy and GRPO, LaST-VLA achieves SOTA performance on NAVSIM, SURDS and NuDynamics benchmarks. These results demonstrate that aligning latent thinking with physical reality signifi-cantly enhances the robustness, efficiency, and safety of VLA-based planning. 
+
+# Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+# References 
+
+Agarwal, N., Ali, A., Bala, M., Balaji, Y., Barker, E., Cai, T., Chattopadhyay, P., Chen, Y., Cui, Y., Ding, Y., et al. Cosmos world foundation model platform for physical ai. 
+
+arXiv preprint arXiv:2501.03575 , 2025. Bai, S., Chen, K., Liu, X., Wang, J., Ge, W., Song, S., Dang, K., Wang, P., Wang, S., Tang, J., et al. Qwen2. 5-vl technical report. arXiv preprint arXiv:2502.13923 , 2025. Caesar, H., Bankiti, V., Lang, A. H., Vora, S., Liong, V. E., Xu, Q., Krishnan, A., Pan, Y., Baldan, G., and Beijbom, O. nuscenes: A multimodal dataset for autonomous driving. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 11621–11631, 2020. Cao, W., Hallgarten, M., Li, T., Dauner, D., Gu, X., Wang, C., Miron, Y., Aiello, M., Li, H., Gilitschenski, I., et al. Pseudo-simulation for autonomous driving. arXiv preprint arXiv:2506.04218 , 2025. Cheng, J. and Van Durme, B. Compressed chain of thought: Efficient reasoning through dense representations. arXiv preprint arXiv:2412.13171 , 2024. Chitta, K., Prakash, A., Jaeger, B., Yu, Z., Renz, K., and Geiger, A. Transfuser: Imitation with transformer-based sensor fusion for autonomous driving. IEEE transactions on pattern analysis and machine intelligence , 45(11): 12878–12895, 2022. Dauner, D., Hallgarten, M., Li, T., Weng, X., Huang, Z., Yang, Z., Li, H., Gilitschenski, I., Ivanovic, B., Pavone, M., et al. Navsim: Data-driven non-reactive autonomous vehicle simulation and benchmarking. Advances in Neu-ral Information Processing Systems , 37:28706–28719, 2024. Fu, H., Zhang, D., Zhao, Z., Cui, J., Liang, D., Zhang, C., Zhang, D., Xie, H., Wang, B., and Bai, X. Orion: A holis-tic end-to-end autonomous driving framework by vision-language instructed action generation. arXiv preprint arXiv:2503.19755 , 2025. Guo, X., Zhang, R., Duan, Y., He, Y., Nie, D., Huang, W., Zhang, C., Liu, S., Zhao, H., and Chen, L. Surds: Benchmarking spatial understanding and reasoning in driving scenarios with vision language models. arXiv preprint arXiv:2411.13112 , 2024. Hao, S., Sukhbaatar, S., Su, D., Li, X., Hu, Z., Weston, J., and Tian, Y. Training large language models to reason in a continuous latent space. arXiv preprint arXiv:2412.06769 , 2024. Hu, Y., Yang, J., Chen, L., Li, K., Sima, C., Zhu, X., Chai, S., Du, S., Lin, T., Wang, W., et al. Planning-oriented autonomous driving. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pp. 17853–17862, 2023. Huang, Z., Tang, T., Chen, S., Lin, S., Jie, Z., Ma, L., Wang, G., and Liang, X. Making large language models better planners with reasoning-decision alignment. In European Conference on Computer Vision , pp. 73–90. Springer, 2024. Hwang, J.-J., Xu, R., Lin, H., Hung, W.-C., Ji, J., Choi, K., Huang, D., He, T., Covington, P., Sapp, B., et al. Emma: End-to-end multimodal model for autonomous driving. 
+
+arXiv preprint arXiv:2410.23262 , 2024. Jiang, B., Chen, S., Xu, Q., Liao, B., Chen, J., Zhou, H., Zhang, Q., Liu, W., Huang, C., and Wang, X. Vad: Vectorized scene representation for efficient autonomous driving. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 8340–8350, 2023. Jiang, B., Chen, S., Zhang, Q., Liu, W., and Wang, X. Al-phadrive: Unleashing the power of vlms in autonomous driving via reinforcement learning and reasoning. arXiv preprint arXiv:2503.07608 , 2025. Li, B., Sun, X., Liu, J., Wang, Z., Wu, J., Yu, X., Chen, H., Barsoum, E., Chen, M., and Liu, Z. Latent visual reasoning. arXiv preprint arXiv:2509.24251 , 2025a. Li, F., Song, W., Zhao, H., Wang, J., Ding, P., Wang, D., Zeng, L., and Li, H. Spatial forcing: Implicit spatial rep-resentation alignment for vision-language-action model. 
+
+arXiv preprint arXiv:2510.12276 , 2025b. 9LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+Li, Y., Shang, S., Liu, W., Zhan, B., Wang, H., Wang, Y., Chen, Y., Wang, X., An, Y., Tang, C., et al. Drivevla-w0: World models amplify data scaling law in autonomous driving. arXiv preprint arXiv:2510.12796 , 2025c. Li, Y., Tian, M., Zhu, D., Zhu, J., Lin, Z., Xiong, Z., and Zhao, X. Drive-r1: Bridging reasoning and planning in vlms for autonomous driving with reinforcement learning. 
+
+arXiv preprint arXiv:2506.18234 , 2025d. Li, Y., Wang, Y., Liu, Y., He, J., Fan, L., and Zhang, Z. End-to-end driving with online trajectory evaluation via bev world model. arXiv preprint arXiv:2504.01941 , 2025e. Li, Y., Xiong, K., Guo, X., Li, F., Yan, S., Xu, G., Zhou, L., Chen, L., Sun, H., Wang, B., et al. Recogdrive: A rein-forced cognitive framework for end-to-end autonomous driving. arXiv preprint arXiv:2506.08052 , 2025f. Li, Z., Li, K., Wang, S., Lan, S., Yu, Z., Ji, Y., Li, Z., Zhu, Z., Kautz, J., Wu, Z., et al. Hydra-mdp: End-to-end multimodal planning with multi-target hydra-distillation. 
+
+arXiv preprint arXiv:2406.06978 , 2024. Liao, B., Chen, S., Yin, H., Jiang, B., Wang, C., Yan, S., Zhang, X., Li, X., Zhang, Y., Zhang, Q., et al. Diffu-siondrive: Truncated diffusion model for end-to-end au-tonomous driving. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 12037–12047, 2025. Lou, C., Sun, Z., Liang, X., Qu, M., Shen, W., Wang, W., Li, Y., Yang, Q., and Wu, S. Adacot: Pareto-optimal adaptive chain-of-thought triggering via reinforcement learning. 
+
+arXiv preprint arXiv:2505.11896 , 2025. Luo, Y., Li, F., Xu, S., Lai, Z., Yang, L., Chen, Q., Luo, Z., Xie, Z., Jiang, S., Liu, J., et al. Adathinkdrive: Adap-tive thinking via reinforcement learning for autonomous driving. arXiv preprint arXiv:2509.13769 , 2025. Ray, A., Abdelkader, A., Mao, C., Plummer, B. A., Saenko, K., Krishna, R., Guibas, L., and Chu, W.-S. Mull-tokens: Modality-agnostic latent thinking. arXiv preprint arXiv:2512.10941 , 2025. Shao, Z., Wang, P., Zhu, Q., Xu, R., Song, J., Bi, X., Zhang, H., Zhang, M., Li, Y., Wu, Y., et al. Deepseekmath: Push-ing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 , 2024. Sima, C., Renz, K., Chitta, K., Chen, L., Zhang, H., Xie, C., Beißwenger, J., Luo, P., Geiger, A., and Li, H. Driv-elm: Driving with graph visual question answering. In 
+
+European conference on computer vision , pp. 256–274. Springer, 2024. Team, G., Anil, R., Borgeaud, S., Alayrac, J.-B., Yu, J., Sori-cut, R., Schalkwyk, J., Dai, A. M., Hauth, A., Millican, K., et al. Gemini: a family of highly capable multimodal models. arXiv preprint arXiv:2312.11805 , 2023. Tian, X., Gu, J., Li, B., Liu, Y., Wang, Y., Zhao, Z., Zhan, K., Jia, P., Lang, X., and Zhao, H. Drivevlm: The conver-gence of autonomous driving and large vision-language models. arXiv preprint arXiv:2402.12289 , 2024. Wang, J., Chen, M., Karaev, N., Vedaldi, A., Rupprecht, C., and Novotny, D. Vggt: Visual geometry grounded transformer. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 5294–5306, 2025a. Wang, S., Liu, Y., Wang, T., Li, Y., and Zhang, X. Exploring object-centric temporal modeling for efficient multi-view 3d object detection. In Proceedings of the IEEE/CVF international conference on computer vision , pp. 3621– 3631, 2023. Wang, S., Yu, Z., Jiang, X., Lan, S., Shi, M., Chang, N., Kautz, J., Li, Y., and Alvarez, J. M. Omnidrive: A holis-tic vision-language dataset for autonomous driving with counterfactual reasoning. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 22442– 22452, 2025b. Wang, T., Xie, E., Chu, R., Li, Z., and Luo, P. Drivecot: Integrating chain-of-thought reasoning with end-to-end driving. arXiv preprint arXiv:2403.16996 , 2024. Wang, Y., Luo, W., Bai, J., Cao, Y., Che, T., Chen, K., Chen, Y., Diamond, J., Ding, Y., Ding, W., et al. Alpamayo-r1: Bridging reasoning and action prediction for generaliz-able autonomous driving in the long tail. arXiv preprint arXiv:2511.00088 , 2025c. Wei, X., Liu, X., Zang, Y., Dong, X., Cao, Y., Wang, J., Qiu, X., and Lin, D. Sim-cot: Supervised implicit chain-of-thought. arXiv preprint arXiv:2509.20317 , 2025. Xia, T., Li, Y., Zhou, L., Yao, J., Xiong, K., Sun, H., Wang, B., Ma, K., Ye, H., Liu, W., et al. Drivelaw: Unifying planning and video generation in a latent driving world. 
+
+arXiv preprint arXiv:2512.23421 , 2025. Zeng, S., Chang, X., Xie, M., Liu, X., Bai, Y., Pan, Z., Xu, M., Wei, X., and Guo, N. Futuresightdrive: Thinking visually with spatio-temporal cot for autonomous driving. 
+
+arXiv preprint arXiv:2505.17685 , 2025. Zhang, D., Wang, G., Zhu, R., Zhao, J., Chen, X., Zhang, S., Gong, J., Zhou, Q., Zhang, W., Wang, N., et al. Sparsead: Sparse query-centric paradigm for efficient end-to-end autonomous driving. arXiv preprint arXiv:2404.06892 ,2024. 10 LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+Zhang, J., Lin, N., Hou, L., Feng, L., and Li, J. Adaptthink: Reasoning models can learn when to think. arXiv preprint arXiv:2505.13417 , 2025. Zheng, D., Huang, S., Li, Y., and Wang, L. Learning from videos for 3d world: Enhancing mllms with 3d vision geometry priors. arXiv preprint arXiv:2505.24625 , 2025. Zheng, W., Xia, Z., Huang, Y., Zuo, S., Zhou, J., and Lu, J. Doe-1: Closed-loop autonomous driving with large world model. arXiv preprint arXiv:2412.09627 , 2024. Zhou, X., Han, X., Yang, F., Ma, Y., Tresp, V., and Knoll, A. Opendrivevla: Towards end-to-end autonomous driving with large vision language action model. arXiv preprint arXiv:2503.23463 , 2025a. Zhou, Z., Cai, T., Zhao, S. Z., Zhang, Y., Huang, Z., Zhou, B., and Ma, J. Autovla: A vision-language-action model for end-to-end autonomous driving with adaptive rea-soning and reinforcement fine-tuning. arXiv preprint arXiv:2506.13757 , 2025b. Zhu, J., Wang, W., Chen, Z., Liu, Z., Ye, S., Gu, L., Tian, H., Duan, Y., Su, W., Shao, J., et al. Internvl3: Exploring advanced training and test-time recipes for open-source multimodal models. arXiv preprint arXiv:2504.10479 ,2025. Zhu, Z., Liang, J., Jiang, S., Fu, J., Liu, M., Sun, G., Ng, S.-K., and Qin, B. Analyzing reasoning consistency in large multimodal models under cross-modal conflicts. arXiv preprint arXiv:2601.04073 , 2026. 11 LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+# A. Appendix 
+
+In this appendix, we present details to support the findings of the main paper. First, Section B reports extended experimental results, including open-loop evaluations on the nuScenes benchmark, comprehensive ablation studies regarding geometric supervision. Section C elaborates on the data preparation protocols for the nuScenes and NuDynamics benchmarks. 
+
+Section D outlines the implementation specifications, covering model architecture, training parameters, evaluation metrics, and RL reward design. Finally, Section E provides qualitative visualizations of successful and failure planning scenarios, along with supplementary assessments on the SURDS and NuDynamics benchmarks. 
+
+# B. More Results 
+
+nuScenes Benchmark. Table 8 presents the open-loop planning evaluation on the nuScenes dataset. LaST-VLA-8B achieves SOTA performance in trajectory precision, recording the lowest average L2 error of 0.38m among all compared VLM-based methods. Beyond superior accuracy, the model maintains an low collision rate of 0.18%, demonstrating that our latent reasoning paradigm effectively balances precise geometric adherence with safety. Furthermore, the lightweight LaST-VLA-2B also delivers robust performance, validating the effectiveness of our approach across different model sizes.  
+
+> Table 8. Comparison with state-of-the-art methods on the nuScenes. * indicates that the ego status is use.
+
+Method VLM Model L2 (m) ↓ Collision (%) ↓
+
+1s 2s 3s Avg. 1s 2s 3s Avg. 
+
+Conventional End-to-end Methods 
+
+UniAD* (Hu et al., 2023) - 0.20 0.42 0.75 0.46 0.02 0.25 0.84 0.37 
+
+VLMs-based Methods 
+
+Doe-1 (Zheng et al., 2024) Lumina-mGPT-7B 0.50 1.18 2.11 1.26 0.04 0.37 1.19 0.53 AutoVLA* (Zhou et al., 2025b) Qwen2.5-VL-3B 0.28 0.66 1.16 0.70 0.14 0.25 0.53 0.31 RDA-Driver* (Huang et al., 2024) LLaVA-7B 0.23 0.73 1.54 0.80 0.00 0.13 0.83 0.32 OpenDriveVLA* (Zhou et al., 2025a) Qwen2.5VL-3B 0.19 0.58 1.24 0.67 0.02 0.18 0.70 0.30 FSDrive* (Zeng et al., 2025) Qwen2-VL-2B 0.18 0.39 0.77 0.45 0.00 0.06 0.42 0.16 LaST-VLA* (Ours) InternVL3-2B 0.19 0.35 0.71 0.42 0.03 0.16 0.47 0.22 
+
+LaST-VLA* (Ours) InternVL3-8B 0.17 0.33 0.64 0.38 0.00 0.11 0.42 0.18 
+
+Ablation on Geometric Supervision Layers. Table 9 investigates the efficacy of supervising latent thoughts with different layers of the VGGT aggregator. We observe that supervising shallow layers (Features 4 and 11) yields suboptimal performance. This is likely because these early layers primarily encode low-level visual textures rather than the explicit 3D depth and geometric structures essential for spatial planning. While performance improves with increasing depth (Feature 17), aggregating features across all layers (ID 4) fails to outperform the single final layer. We attribute this diminishing return to increased learning difficulty due to information redundancy and the need for a longer latent CoT sequence, which complicates optimization. In contrast, supervising solely with the final layer (Feature 23) achieves the peak performance of 91.0 PDMS, confirming that the terminal layer encapsulates the most refined and compact 3D geometric priors for efficient reasoning.   
+
+> Table 9. Ablation study on the effectiveness of supervising features from different layers of the VGGT aggregator. The Feature (23) is the last layer. Note: These methods only have geometric (3D) latent CoT, without dynamic (WM) latent CoT.
+
+ID Supervised Features NC ↑ DAC ↑ TTC ↑ CF ↑ EP ↑ PDMS ↑
+
+1 Feature (4) 98.3 97.3 94.8 100 86.5 90.4 2 Feature (11) 98.2 97.3 94.6 100 86.5 90.3 3 Feature (17) 98.4 97.5 95.3 100 86.4 90.7 4 Feature (4, 11, 17, 23) 98.4 97.7 94.8 100 86.8 90.8 5 Feature (23) (Ours) 98.6 97.7 95.6 100 86.4 91.0 
+
+12 LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+# C. Data Preparation Details 
+
+C.1. nuScenes 
+
+To further validate the generalization and effectiveness of our proposed Spatio-Temporal Latent CoT, we extend our evaluation to the nuScenes dataset (Caesar et al., 2020). This large-scale benchmark comprises 1,000 complex driving scenarios, each spanning approximately 20 seconds. The data is captured via a comprehensive sensor suite, featuring a 32-beam LiDAR and six surrounding cameras that provide a 360-degree field of view. For our experiments, we utilize the standard split containing 28,130 samples for training and 6,019 samples for validation. 
+
+C.2. NuDynamics 
+
+NuDynamics is constructed upon the SURDS dataset with the goal of evaluating dynamic scene understanding capabilities. We select clearly visible targets from the NuScenes dataset and utilize Qwen2.5-VL-32B (Bai et al., 2025) to generate concise descriptions. Behavioral labels, including stopped crossing, moving in the same direction, moving in the opposite direction, and diagonal movement, are derived by mapping native annotations from the nuScenes dataset. The dataset comprises 4K training samples and 1K evaluation samples, and a prompt example is illustrated in Figure 14. 
+
+# D. Experimental Details 
+
+Model Architecture. We leverage InternVL3-8B (Zhu et al., 2025) as our vision-language backbone, bridging a 300M-parameter InternViT encoder with the Qwen2.5-7B language model. Distinguished by its resolution-adaptive architecture, the model dynamically modulates feature extraction granularity according to image complexity. By prioritizing fine-grained processing for information-rich regions while applying coarser abstraction to simpler areas, it effectively strikes an optimal balance between visual fidelity and computational overhead. 
+
+Training Parameters and Hardware Configuration. We utilize InternVL3-8B (Zhu et al., 2025) as the foundation model, training across three sequential stages on 8 NVIDIA H20 GPUs. The first SFT stage fine-tunes on the navtrain-hard-24k subset for 2 epochs with a learning rate of 1 × 10 −5, batch size of 2, and 4 gradient accumulation steps; we enable the Structured Causal Mask and set loss weights to λW M = λ3D = 1 .00 and λaction = 0 .01 . Subsequently, the second stage trains on the full 85k navtrain dataset for 2 epochs using 2 gradient accumulation steps, where the mask is disabled and weights are adjusted to λaction = 1 .00 with λW M = λ3D = 0 .01 . Finally, the RL phase employs GRPO for 2 iterations using a learning rate of 2 × 10 −6, batch size of 2, 16 gradient accumulation steps, 8 generations, and a sampling temperature of 2.0, with reward coefficients set to λtraj = 8 , λ f mt = 1 , λ goal = 1 and a KL penalty β = 0 .1. The training duration for the three stages is approximately 1 hour, 3.5 hours, and 48 hours, respectively. 
+
+Metric. To comprehensively evaluate planning performance, we employ specific metrics tailored to each benchmark. For closed-loop planning within the NAVSIM suite, we adopt the Predictive Driver Model Score (PDMS) for NAVSIMv1 (Dauner et al., 2024) and the Extended Predictive Driver Model Score (EPDMS) for NAVSIMv2 (Cao et al., 2025). Additionally, on the nuScenes dataset, we follow the protocol of UniAD (Hu et al., 2023) to assess open-loop trajectory quality using L2 metrics and collision rate. For NAVSIMv1, PDMS integrates five sub-metrics: No At-Fault Collision (NC), Drivable Area Compliance (DAC), Time-to-Collision (TTC), Comfort (C), and Ego Progress (EP) to produce a comprehensive closed-loop planning score. Its calculation formula is defined as follows: 
+
+P DM S = N C × DAC ×
+
+ 5 × EP + 5 × T T C + 2 × C
+
+12 
+
+
+
+, (10) For NAVSIMv2, the EPDMS metric includes several components categorized as penalties or weighted subscores. Its key metrics are No at-Fault Collision (NC), Drivable Area Compliance (DAC), Driving Direction Compliance (DDC), Traffic Light Compliance (TLC), Ego Progress (EP), Time to Collision (TTC), Lane Keeping (LK), History Comfort (HC), and Extended Comfort (EC). Its calculation formula is defined as follows: 
+
+EP DM S = N C × DAC × DDC × T LC ×
+
+ 5 × EP + 2 × LK + 2 × HC + 5 × T T C + 2 × EC 
+
+16 
+
+
+
+. (11) 
+
+Detailed Rewards Design in RL. To effectively guide the policy optimization during the Reinforcement Learning stage, 13 LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+we formulate a composite reward function comprising three distinct components: trajectory quality ( Rtraj ), structural validity (Rfmt ), and goal alignment ( Rgoal ). For the trajectory reward rtraj , we directly leverage the feedback from the NAVSIM simulator. Instead of using a surrogate loss, we utilize the continuous PDMS, ranging from 0 to 1, as the primary reward signal. This encourages the model to generate paths that maximize safety and drivability metrics as defined above. For the format reward rfmt , we assign a total of 1.0 point to enforce structural integrity. This is equally dis-tributed: 0.5 points are awarded for the correct usage of structural tags ( <latent start wm >... <latent end wm >,
+
+<latent start 3d >... <latent end 3d >, and <answer >... </answer >), and the remaining 0.5 points validate the syntax of the trajectory waypoints to ensure the output is well-formed and machine-parsable. For the goal reward rgoal , we employ a piecewise function based on the L1 distance to encourage precise alignment between the predicted endpoint and the ground truth (Luo et al., 2025). 
+
+# E. Visualization Analysis 
+
+Failure Analysis and Limitations. We analyzed failure cases where the planning performance drops significantly, such as when the PDMS is 0. As shown in Figure 7, the main failure pattern occurs when the target trajectory extends beyond the Field of View (FOV) of the front-view camera. This typically happens in scenarios involving sharp turns or complex intersections, where the model lacks sufficient visual information about the peripheral environment. Consequently, the planner may generate paths that deviate from the drivable area. This issue is primarily due to our current reliance on a single front-view camera. In future work, we plan to address this by incorporating surround-view inputs and temporal information to expand the perceptual range for more robust planning. 
+
+Qualitative Visualization on SURDS and NuDynamics. To further evaluate the comprehensive reasoning capabilities of LaST-VLA, we present qualitative visualizations on the SURDS and NuDynamics benchmarks. Figures 8 through 13 illustrate representative input queries and corresponding model responses across diverse SURDS tasks, such as Yaw Angle Determination and Pixel Location Estimation. These examples confirm that our model can accurately interpret complex 3D geometric constraints from 2D images. Furthermore, the visualizations on the NuDynamics benchmark (Figure 14) highlight the model’s proficiency in analyzing scene evolution and motion trends. Collectively, these results demonstrate that our latent reasoning paradigm effectively equips the agent with robust 3D spatial awareness and dynamic scene understanding. 14 LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+Figure 6. Qualitative visualization comparing the Textual CoT baseline (Red) and LaST-VLA (Green) on NAVSIM benchmark. (a) 
+
+Drivable Area Compliance (DAC): Our method maintains precise lane adherence, whereas the baseline violates spatial boundaries. (b) 
+
+Time-to-Collision (TTC): Our method accurately anticipates dynamics to avoid rear-end collisions, while the baseline fails to brake effectively. 
+
+15 LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+Figure 7. Qualitative visualization of failure cases on NAVSIM benchmark. The red line represents the trajectory predicted by LaST-VLA, while the green line denotes the Ground Truth. We observe that failures predominantly occur when the planned path extends beyond the front-view camera’s field of view (FOV). Lacking sufficient visual context in these peripheral regions, the model struggles with precise spatial grounding, leading to potential collisions or deviations from the drivable area. 
+
+16 LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+Figure 8. Examples of the Yaw Angle Determination task on the SURDS benchmark. 
+
+Figure 9. Examples of the Pixel Location Estimation task on the SURDS benchmark. 
+
+17 LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+Figure 10. Examples of the Depth Range Determination on the SURDS benchmark. 
+
+Figure 11. Examples of the Distance Estimation task on the SURDS benchmark. 
+
+18 LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+Figure 12. Examples of the Left/Right Determination task on the SURDS benchmark. 
+
+Figure 13. Examples of the Front/Behind Determination task on the SURDS benchmark. 
+
+19 LaST-VLA: Thinking in Latent Spatio-Temporal Space for Vision-Language-Action in Autonomous Driving 
+
+Figure 14. Examples of the Motion State Estimation task on the NuDynamics benchmark. 
+
+20

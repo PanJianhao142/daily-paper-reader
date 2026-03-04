@@ -1,0 +1,1181 @@
+Title: Preconditioned Score and Flow Matching
+
+URL Source: https://arxiv.org/pdf/2603.02337v1
+
+Published Time: Wed, 04 Mar 2026 01:12:31 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+# Preconditioned Score and Flow Matching 
+
+Shadab Ahamed * 1 Eshed Gal * 1 Simon Ghyselincks 1 Md Shahriar Rahim Siddiqui 1 Moshe Eliasof 2
+
+Eldad Haber 1
+
+# Abstract 
+
+Flow matching and score-based diffusion train vector fields under intermediate distributions pt,whose geometry can strongly affect their opti-mization. We show that the covariance Σt of 
+
+pt governs optimization bias: when Σt is ill-conditioned, and gradient-based training rapidly fits high-variance directions while systematically under-optimizing low-variance modes, leading to learning that plateaus at suboptimal weights. We formalize this effect in analytically tractable settings and propose reversible, label-conditional 
+
+preconditioning maps that reshape the geometry of pt by improving the conditioning of Σt without altering the underlying generative model. Rather than accelerating early convergence, precondition-ing primarily mitigates optimization stagnation by enabling continued progress along previously sup-pressed directions. Across MNIST latent flow matching, and additional high-resolution datasets, we empirically track conditioning diagnostics and distributional metrics and show that precondition-ing consistently yields better-trained models by avoiding suboptimal plateaus. 
+
+# 1. Introduction 
+
+Flow matching (Lipman et al., 2023) and score-based dif-fusion models (Song et al., 2021; Ho et al., 2020) have be-come central tools for continuous-time generative modeling, achieving state-of-the-art performance across image (Cae-tano et al., 2025), audio (Guan et al., 2024; Xu et al., 2025a), and 3D synthesis (Wang et al., 2025; Danese et al., 2026). In both paradigms, generation is framed as the process of transporting samples from a simple reference distribution to a complex data distribution by learning a time-dependent dy-namical system. Despite their empirical success, these mod-els exhibit a persistent and increasingly well-documented 
+
+> 1
+
+University of British Columbia, Vancouver, BC Canada 
+
+> 2
+
+University of Cambridge, Cambridge, United Kingdom. Corre-spondence to: Shadab Ahamed <shadab.ahamed@hotmail.com >.
+
+Preprint. March 4, 2026. 
+
+Figure 1. (Top) Baseline : Standard flow matching learns a trans-port path from a Gaussian reference to the complex data distribu-tion x1 ∈ Z . When Z exhibits strong anisotropy, the intermediate distributions xt ∼ pt inherit ill-conditioned covariances, causing gradient-based optimization to stagnate on low-variance modes. 
+
+(Bottom) Precondition-then-Match : We introduce a reversible preconditioning operator P that maps the target data to a latent representation ˜Z that is closer to a Gaussian distribution. This transformation reshapes the geometry, ensuring that the interme-diate distributions ˜xt ∼ ˜pt remain well-conditioned throughout the transport process, improving optimization speed. Samples are drawn by mapping back to the original data space via P−1, im-proving convergence without altering the underlying generative model capacity. 
+
+optimization phenomenon: training loss often plateaus long before sample quality saturates (Lin & Yang, 2025; Xu et al., 2025b). Empirically, models that appear nearly converged under their training objective can continue to yield substantial im-provements in sample fidelity for many additional epochs. This behavior suggests that slow convergence is not pri-marily driven by model capacity, architecture, or data avail-ability. Instead, it points to a misalignment between the optimization objective and the aspects of the learned dynam-ics most relevant to generation. Existing mitigation strategies, such as carefully tuned noise schedules (Aranguri et al., 2025), time-dependent loss reweighting (Billera et al., 2025; Diefenbacher et al., 2020), or probability flow distillation (Zhou et al., 2025), can im-prove sample quality in practice, but they do not directly address the underlying source of the inefficiency. These approaches often introduce additional hyperparameters or 1
+
+> arXiv:2603.02337v1 [cs.LG] 2 Mar 2026 Preconditioned Score and Flow Matching
+
+computational overhead while leaving the core regression structure of flow and score matching unchanged. We discuss additional related work in Section A. In this work, we show that a key contributor to slow con-vergence lies in the conditioning of the regression problems induced by flow- and score-matching objectives. At each time step, training reduces to the estimation of a vector field from samples, drawn from an intermediate distribu-tion along the transport path. When these distributions ex-hibit strong anisotropy, the resulting optimization problem becomes ill-conditioned: gradient-based methods rapidly fit high-variance directions while making only marginal progress along low-variance ones .To isolate and study this effect, we analyze flow matching in controlled settings where the exact transport dynamics are analytically tractable. We begin with a linear-Gaussian model problem, followed by a Gaussian-mixture extension that captures multimodality. In both cases, we show that optimization dynamics closely mirror those of gradient de-scent and stochastic gradient descent on ill-conditioned least-squares objectives, as commonly used in flow and score matching (Dao et al., 2023; Lipman et al., 2023; 2024). Cru-cially, these difficulties arise even when the model class is expressive enough to represent the exact velocity field, demonstrating that optimization, rather than approximation, is the fundamental bottleneck in convergence. Motivated by this understanding, we discuss a novel mitiga-tion approach that substantially improves convergence for flow matching: preconditioning . In its broader form, pre-conditioning refers to strategies that reshape the geometry of the learning problem without modifying the underlying generative process. By reducing variance imbalance across the data, preconditioning can significantly improve the con-vergence of the optimization algorithm, obtaining better samples with better convergence. 
+
+Contributions. Our main contributions are: • A theoretical analysis of the optimization process in flow and score matching, revealing how data anisotropy gov-erns the optimization speed. • A principled preconditioning framework, inspired by nu-merical linear algebra, that improves convergence without changing model architecture or sampling procedures. • We experiment with a number of datasets, from 2D points to MNIST and other image datasets, and demonstrate the novelty of our method. 
+
+# 2. Flow and Score Matching: Preliminaries 
+
+Continuous time generative models construct a transport from a simple reference distribution p0 (typically Gaussian) to a target data distribution p1. Rather than learning a direct map x0 7 → x1, these models introduce a family of interme-diate distributions {pt}t∈[0 ,1] obtained by the interpolation 
+
+xt = s(t)x1 + c(t)x0, (1) where s(0) = 0 , s (1) = 1 , c (0) = 1 and c(1) = 0 . The goal is to learn the dynamics governing the evolution of the probability pt over time. 
+
+2.1. Score-based Diffusion 
+
+Score-based diffusion models (Song et al., 2021; Ho et al., 2020) define a forward noising process that gradually trans-forms data into noise. A parametric model sθ (x, t ) is trained to approximate the score of the intermediate distribution, 
+
+sθ (x, t ) ≈ ∇ x log pt(x), (2) where pt denotes the distribution of the noisy data at time t.Sampling is performed by integrating the reverse-time stochastic differential equation (SDE), 
+
+dx t =
+
+
+
+f (xt, t ) − g(t)2sθ (xt, t )
+
+
+
+dt + g(t) dw t, (3) where g(t) controls the noise schedule, or equivalently, the associated probability flow ordinary differential equation (ODE), 
+
+dx t
+
+dt = f (xt, t ) − 12 g(t)2sθ (xt, t ), (4) which yields a deterministic transport from p0 to p1.
+
+2.2. Flow Matching 
+
+Flow matching (Lipman et al., 2023) provides an alternative formulation that avoids explicit score estimation. Instead, one directly learns the right-hand side of an ODE governing the transport between p0 and p1,
+
+dx t
+
+dt = vθ (xt, t ), x0 ∼ p0, (5) Given the synthetic interpolation path between p0 and p1
+
+in Equation (1), a model is trained to regress the predicted velocity vθ (xt, t ) onto an analytically known target velocity induced by that path, 
+
+v⋆(xt, t ) = s′(t)x1 + c′(t)x0.
+
+In the standard conditional flow matching setting, training minimizes, 
+
+LCFM (θ) = Ex0,x 1
+
+Z 10
+
+vθ
+
+ xt, t  − v⋆t (xt, t ) 2 dt. (6) This optimization problem can be thought of as a generic regression that aims to approximate v⋆t (xt, t ) by the learned vector field vθ (xt, t ).2Preconditioned Score and Flow Matching 
+
+2.3. A Unified Optimization Perspective 
+
+Despite differences in parameterization, both score and flow matching reduce to time-indexed least-squares regression under intermediate distributions pt. At each time t, training approximates a target vector field using samples from pt,with optimization performed via stochastic gradient descent. From this perspective, optimization behavior is governed not only by model expressiveness, but also by the geometric properties of pt that enter the regression objective. Crucially, the geometry of pt, especially its covariance Σt, affects convergence. When Σt is ill-conditioned, the regression becomes poorly conditioned, leading to rapid convergence in some directions and slow or stalled progress in others (Boyd & Vandenberghe, 2004). In stochastic settings, this effect is further exacerbated by gradient noise, leading to premature plateaus despite nonzero optimal error (Bottou et al., 2016). In Section 3, we analyze Gaussian and Gaussian mixture models for which the exact score or flow is analytically known, revealing that anisotropic covariances directly im-pair optimization, independent of model capacity. 
+
+# 3. Gaussian Transport Model: A Solvable Case of Optimization Difficulty 
+
+We study a simplified setting where both the base and target distributions are Gaussian, and the ground truth transport is linear. This fully solvable model reveals that optimization difficulties in flow and score matching stem from condition-ing on intermediate distributions, mirroring gradient descent on ill-conditioned quadratics (Shapiro et al., 2009). We high-light these phenomena in more detail in Section B and in Figure 6 we visualize the evolution of covariance structure, condition numbers, and the resulting impact on gradient descent dynamics and learned score and vector fields. 
+
+3.1. Setup: Ill-conditioned Target Covariance 
+
+Let the base distribution be x0 ∼ N (0 , I ), and the tar-get distribution be x1 ∼ N (0 , H ), where H ∈ Rd×d
+
+is symmetric and positive definite. We write the eigen-decomposition, H = U ΛU ⊤, with orthogonal U and 
+
+Λ = diag( λ1, . . . , λ d), λ i > 0. We say that H is ill-conditioned if its condition number, 
+
+κ(H) = λmax (H)
+
+λmin (H) = max i λi
+
+min i λi
+
+(7) is large. Geometrically, this means that samples from x1
+
+exhibit highly anisotropic variability: along eigendirections corresponding to larger λi, the distribution has larger vari-ance, while directions associated with smaller λi are tightly concentrated. Such anisotropy leads to strong disparities in curvature across directions. This disparity directly impacts optimization, as gradient-based learning tends to progress more rapidly along well-conditioned directions, while con-verging slowly along directions associated with small vari-ance (Nocedal & Wright, 1999). Using a simple path between x0 and x1,
+
+xt = (1 − t) x0 + t x 1, t ∈ [0 , 1] . (8) For each fixed t, xt is a Gaussian random variable with mean zero and covariance that we will compute explicitly below. 
+
+3.2. Analytic Score and Velocity in the Gaussian Case 
+
+Before formulating the learning problem, we first compute the exact score and velocity fields induced by the interpola-tion, xt = (1 − t)x0 + tx 1, x 0 ∼ N (0 , I ), x 1 ∼ N (0 , H ).Because x0 and x1 are jointly Gaussian and xt is their affine combination, the conditional distribution of (x1 − x0) given 
+
+xt is Gaussian and linear in xt. In particular, both the score and the flow velocity at time t are linear functions of xt.
+
+Score. The marginal distribution of xt is Gaussian with covariance, 
+
+Σt := E[xtx⊤ 
+
+> t
+
+] = (1 − t)2I + t2H. (9) Using the identity for the gradient of the log of a normal distribution, we have, 
+
+∇x log pt(xt) = −Σ−1 
+
+> t
+
+xt. (10) 
+
+Velocity. The probability–flow ODE associated with the linear interpolation satisfies, dx t/dt = x1 − x0. Taking conditional expectation with respect to xt gives the exact velocity field, v⋆t (xt) = E[x1 − x0 | xt] = A⋆(t) xt, for some matrix A⋆(t) ∈ Rd×d depending only on t and H.Using standard Gaussian conditioning, 
+
+A⋆(t) = Cov (x1 − x0, x t) Σ −1
+
+> t
+
+=  tH − (1 − t)I  (1 − t)2I + t2H−1. (11) We note that both the score and the velocity are exactly lin-ear in xt. Therefore, the model class vθ (xt, t ) = A(t) xt, is expressive enough to represent the true flow without approx-imation error . Any optimization difficulty observed in this section cannot be attributed to model misspecification, non-linear effects, or limited parameterization – it arises solely from the statistics of the regression problem at time t.
+
+Key observation. Even when the true flow is exactly representable, optimization can be arbitrarily slow due solely to the ill-conditioning of the intermediate co-variance Σt, as we quantify below, which suppresses learning along low-variance directions. 3Preconditioned Score and Flow Matching          
+
+> Figure 2. Comparison of flow matching without and with preconditioning on a 2D Gaussian transport task .(a) Standard flow matching transports samples from the source Gaussian (blue) to the elongated target Gaussian (green). (b) Preconditioned flow matching transports samples to a whitened target (black triangles) (flow lines not visible), then inverts the preconditioning to obtain the transported samples. (c) Preconditioning avoids early optimization stagnation and achieves a lower Maximum Mean Discrepancy (MMD) between the target and the transported distribution. (d) Condition number of the learned transport map over time for both methods. The preconditioned approach achieves lower condition numbers, improving sample alignment and optimization stability.
+
+This observation motivates the learning problem studied in Section 3.3: the goal is to recover the exact matrix A⋆(t)
+
+from data by minimizing mean squared error. As we will show, even in this analytically solvable Gaussian setting, where the target flow is completely linear, gradient–based optimization can be unexpectedly slow depending on the structure of H.
+
+3.3. Linear Regression Objective and Exact Minimizer 
+
+At a fixed time t, we consider a linear predictor for the velocity field, vθ (xt, t ) = A(t) xt, where A(t) ∈ Rd×d is a parameter matrix. As a simple and analytically tractable proxy for flow matching, we take the target velocity to be 
+
+v⋆t = x1 − x0, and define the mean-squared error objective, 
+
+L(A(t)) = E∥A(t)xt − (x1 − x0)∥2. (12) This objective is quadratic and therefore the optimal solu-tion, A⋆(t), can be obtained by solving the linear system, 
+
+A⋆(t)Σ t = tH − (1 − t)I, (13) where Σt is defined in Equation (9). The full derivation for Σt, the cross-covariance, and the normal equations is provided in Section B.1. 
+
+3.4. Condition Number and Convergence 
+
+The regression problem in Equation (12) is governed by the covariance matrix Σt, which appears both in the normal equations and in the gradient dynamics. We characterize its spectrum and conditioning in terms of t and the eigenvalues of H. Since Σt and H share the same eigenvectors, the eigenvalues of Σt are, 
+
+σi(t) = (1 − t)2 + t2λi, i = 1 , . . . , d, (14) where {λi}di=1 are the eigenvalues of H. A derivation for this spectral form is provided in Section B.2. The condition number of Σt is therefore, 
+
+κ(Σ t) = max i σi(t)min i σi(t) = (1 − t)2 + t2λmax 
+
+(1 − t)2 + t2λmin 
+
+. (15) Several regimes are informative. For t = 0 , we have Σ0 = I
+
+and κ(Σ 0) = 1 , corresponding to perfect conditioning. For 
+
+t = 1 , Σ1 = H and κ(Σ 1) = κ(H). For intermediate t ∈
+
+(0 , 1) , the condition number interpolates smoothly between these two extremes and converges to κ(H) as t → 1.When H is ill-conditioned, and t is not too close to zero, Σt
+
+exhibits a large condition number. As we show next, this directly leads to the slow convergence of gradient-based op-timization, even though the model, i.e., the neural network, can represent the exact solution. 
+
+In the context of Gradient Descent , the effect of the condi-tion number on the convergence behavior for gradient-based methods is well-studied in the literature (Nocedal & Wright, 1999; Boyd & Vandenberghe, 2004). In particular, we have that the number of iterations k for the solution of the prob-lem scales as, 
+
+k ≈ log(1 /ε )
+
+− log ρ ≈ 12ησ min (t) log 1
+
+ε . (16) When Σt is ill-conditioned, σmin (t) is small and σmax (t) is large. The learning rate must satisfy η < 1/σ max (t), which forces ρ close to 1 and results in extremely slow conver-gence along low variance directions. This behavior mirrors the classical convergence theory of gradient descent on ill-conditioned quadratic objectives (Boyd & Vandenberghe, 2004). 
+
+In the context of Stochastic Gradient Descent (SGD) ,the problem of ill-conditioning becomes even more acute 4Preconditioned Score and Flow Matching 
+
+(Shapiro et al., 2009). We briefly summarize how stochas-ticity affects the error dynamics, deferring derivations to Section B.4. At a fixed time t, the SGD error admits a decomposition into independent modes aligned with the eigenvectors of Σt.In each eigendirection i, the scalar error component ei,m 
+
+follows a linear stochastic recursion of the form, 
+
+ei,m +1 = (1 − 2ησ i(t)) ei,m + ζi,m , (17) where ζi,m is a zero-mean noise term whose variance de-pends on the gradient variability in direction i.In steady state, the variance of ei,m satisfies, 
+
+Var( ei, ∞) ∝ ησi(t) . (18) Thus, directions associated with small eigenvalues σi(t)
+
+suffer a two-fold disadvantage: (i) they contract very slowly due to the small deterministic factor 2ησ i(t); and (ii) they accumulate larger stochastic fluctuations due to the inverse dependence of the steady state variance on σi(t). As a result, low variance directions dominate both convergence speed and final accuracy under SGD. 
+
+Alternative Optimization Techniques. Ill-conditioning has similar effects virtually on any first order method (meth-ods such as Adam (Kingma & Ba, 2014)), that do not ap-proximately invert the Hessian (Nocedal & Wright, 1999; Bottou et al., 2016), and therefore the effects discussed above are to be observed on virtually all common techniques that are used for the solution of the regression problem in Equation (12). 
+
+3.5. Extension to Gaussian Mixture Model 
+
+While the Gaussian case analysis in Sections 3.1 to 3.4 is simple, it also extends to the more complex setting of a Gaussian mixture. Detailed derivations for this subsection are provided in Section C. Let the target distribution be a mixture of K Gaussians with zero mean, 
+
+x1 ∼
+
+> K
+
+X
+
+> k=1
+
+πk N (0 , H k), πk > 0,
+
+> K
+
+X
+
+> k=1
+
+πk = 1 , (19) with base distribution x0 ∼ N (0 , I ) and interpolation xt =(1 − t)x0 + tx 1. As in Section 3.2, the score and probability flow velocity remain analytic, but now take the form of mixtures of linear maps weighted by posterior components. Assuming perfect component assignment, optimization de-composes into K regression subproblems, each governed by the component-specific covariance, 
+
+Σt,k = (1 − t)2I + t2Hk, (20) with the eigenvalues of Σt,k given by σk,i (t) = (1 − t)2 +
+
+t2λk,i , where {λk,i }di=1 are the eigenvalues of Hk. Con-sequently, both gradient descent and stochastic gradient descent converge at rates controlled by the optimization problem, 
+
+min  
+
+> k,i
+
+σk,i (t), (21) i.e., by the smallest eigenvalue across all mixture compo-nents. Even if most components are well-conditioned, a single poorly conditioned component dominates the global convergence rate and steady state error. Thus, multimodality exacerbates the optimization bottleneck identified in Sec-tion 3: training speed and final accuracy are governed by the hardest component rather than by average data geome-try .
+
+Key observation. In Gaussian mixtures, optimiza-tion is controlled by the worst-conditioned component .Even if most components are well-behaved and the model is expressive, a single anisotropic component can dominate convergence speed and final error, caus-ing training to plateau. Multimodality, therefore, am-plifies conditioning effects rather than averaging them out. 
+
+# 4. Preconditioning: A General Solution to Optimization Bottlenecks 
+
+The analyses in Sections 3 and 3.5 show that the conver-gence rate of gradient–based training is governed by the smallest eigenvalue of the covariance matrices Σt (Gaus-sian case) or Σt,k (GMM case). When these matrices are ill-conditioned, the optimization becomes slow, even though the model class is expressive enough to represent the exact flow. This phenomenon mirrors classical optimization in linear algebra, where gradient descent struggles on poorly conditioned systems. In this section, we introduce a gen-eral preconditioning framework that improves convergence by transforming the data distribution before applying flow matching. In linear algebra, solving a linear system M x = b, with gra-dient descent, is practical only when M is well-conditioned. When the linear system is ill-conditioned, it is common to 
+
+precondition the problem, that is, transforming it to a form, 
+
+( cM −1M )x = cM −1b, (22) where cM is a preconditioner. Optimally, cM = M ; how-ever, this is impractical. In practice, cM approximates M
+
+in some sense and is much easier to invert. The point is that the new problem with the linear system cM −1M as a system matrix, has a much better condition number and therefore is much more amenable to the convergence of iter-ative methods and in particular to gradient-based methods. 5Preconditioned Score and Flow Matching 
+
+Preconditioning is a well-studied field (see Benzi (2002); Saad (1992); Golub & Ye (2000)) with a wide variety of methods that are problem-dependent. Our goal here is to construct an analogous preconditioning transformation for flow and score matching: instead of predicting the flow for the original target distribution x1 directly, we use an invertible preconditioner operator P and define a new distri-bution ˜x1 = Px1 that is closer to Gaussian. The regression problem associated with ˜x1 is then much better conditioned, preventing early optimization stagnation and leading to sub-optimal solutions. As a result, our flow matching training problem can be divided into the following two steps, 
+
+Precondition-then-Match Framework: 
+
+1. Apply a learned preconditioner P to map x1 7 →
+
+˜x1 with more isotropic structure. 2. Use standard flow matching to model the flow 
+
+N (0 , I ) → ˜x1.See Figure 2 for an illustration of how preconditioning im-proves sample alignment and conditioning in a simple 2D transport task from a standard Gaussian to an elongated Gaussian, and also mitigates optimization stagnation to sub-optimal solutions. We now provide theoretical justification for the benefits of preconditioning in a simplified setting. The following result shows how preconditioning can dramatically accelerate con-vergence in a basic least squares problem, illustrating the same principles at play in flow matching. 
+
+Theorem 4.1 (Preconditioning Improves Convergence) .
+
+Consider the linear least squares objective 
+
+L(A) = E[∥Ax − y∥2],
+
+where x ∈ Rd, y ∈ Rd, and Σ = E[xx ⊤] is positive definite with condition number κ(Σ) = λmax (Σ) /λ min (Σ) . Let A⋆
+
+denote the optimal solution and let gradient descent be used to minimize L(A). Then, 
+
+• Without preconditioning: gradient descent converges linearly at rate, 
+
+∥Ak − A∗∥F ≤ (1 − 2ηλ min (Σ)) k ∥A0 − A∗∥F ,
+
+where η < 1/λ max (Σ) , requiring O(κ log(1 /ε )) steps to reach error ε (here, ∥ · ∥ F denotes the Frobenius norm). 
+
+• With preconditioning: let P = Σ −1/2 and define ˜x =
+
+Px. Then gradient descent on the transformed problem, 
+
+˜L(A) = E[∥A˜x − y∥2] converges at a rate, 
+
+∥Ak − A∗∥F ≤ (1 − 2η)k ∥A0 − A∗∥F ,
+
+with no dependence on κ, and requires only 
+
+O(log(1 /ε )) steps. 
+
+This result formally explains why preconditioning alleviates optimization bottlenecks arising from ill-conditioned input geometry. A full proof is provided in Section D.1. Importantly, our proposed approach does not represent a single algorithm but rather many possible algorithms. Sim-ilarly to preconditioners for linear systems (Benzi et al., 2005), a preconditioner in our work can be a solver that is used to transform the data from its original form to more Gaussian-like. Preconditioning can be achieved in many different ways, and while we propose two methods below, we foresee other methods that can be tailored to specific datasets. We provide an expanded discussion in Section 6. 
+
+4.1. Normalizing Flow Preconditioner 
+
+One common technique for transforming data sampled from a target distribution into a Gaussian is Normalizing Flows (Ruthotto & Haber, 2021; Kobyzev et al., 2020; Papamakar-ios et al., 2019). The main idea is to use a reversible transformation Pθ to transform the data, ˜x1 = Pθ (x). If 
+
+˜x1 ∼ N (0 , I ), then the distribution of x1 can be computed by the change-of-variables formula, 
+
+p(x1) = N (Pθ (x1); 0 , I ) · | det DPθ (x1)| , (23) where DPθ denotes the Jacobian. Maximum-likelihood training aims to maximize p(x1) or minimize its negative log over the observed data, which leads to the following optimization problem, 
+
+min  
+
+> θ
+
+Ex1∼p1
+
+h 12 ∥P θ (x1)∥2 − log det DPθ (x1)
+
+i
+
+. (24) While normalizing flows offer a compelling generative mod-eling approach, they require invertible transformations with tractable log-Jacobian determinants. This restricts them to a less expressive family compared to models like UNet (Ron-neberger et al., 2015) or DiT (Croitoru et al., 2023), making them less popular than flow matching or diffusion methods. Nonetheless, such flows can be used as excellent precon-ditioners to flow matching, transforming the data from its original form to a more Gaussian representation, that makes flow matching much more effective. 
+
+4.2. Flow Matching Preconditioner 
+
+A second approach to designing a preconditioner is to learn a low-capacity flow that uses a small, relatively inexpensive network to transform the data. In this case, we first solve the optimization problem in Equation (6), and train a low-capacity network for a velocity field vη (xt, t ). We then 6Preconditioned Score and Flow Matching 
+
+(a) x1 ∼ p1 (b) ˆx1 = Flow (z)          
+
+> Figure 3. Flow matching without preconditioning. (a) Ground-truth Swiss roll samples x1∼p1.(b) Generated samples ˆx1
+> obtained by transporting Gaussian source zthrough a learned flow. The structural mismatch highlights the challenge of learning complex transport maps without preconditioning.
+
+integrate the data, 
+
+dx dt = −vη (x, t ) x(t = 0) ∼ p1(x), t ∈ [0 , 1] . (25) Let Pη be the pushforward operator from x1 to the final state ˜x1. The new data, ˜x1 = Pη (x1) at t = 1 is much more Gaussian-like than the original data x1. We then use a standard flow matching to compute a velocity model from 
+
+˜x1 to a Gaussian. Particular choices of low-capacity networks that can be used as preconditioners are presented in our numerical experi-ments 5. Such networks are typically problem-dependent. 
+
+# 5. Experiments 
+
+Preconditioning is a new concept in the context of flow matching. Our goal here is to illustrate its effectiveness on problems where its effect can be tested. We emphasize that large, diverse datasets (such as ImageNet) require special attention and preconditioners. Designing an optimal precon-ditioner for such datasets is beyond the scope of this paper. Nonetheless, we show the effectiveness of our approach for a number of commonly used image datasets, such as MNIST, LSUN Churches (Yu et al., 2015), Oxford Flowers-102 (Nilsback & Zisserman, 2008), and AFHQ Cats (Choi et al., 2020). We first present our experiments with 2D flows, where the effect of each preconditioner can be easily observed, and then also show results on image datasets. 
+
+5.1. 2D Point Clouds 
+
+To build intuition and isolate algorithmic behavior of the proposed preconditioning strategy, we begin with 2D ex-periments since low-dimensional settings allow for direct visualization of densities, transport maps, and trajectories. We study the Swiss roll, a curved, anisotropic, non-Gaussian manifold with severe scale separation, as a testbed for eval-uating preconditioning methods. Even with small isotropic noise, its geometry is challenging: elongated along the man-ifold and tightly concentrated transversely. Preconditioning 
+
+(a) ˜x = Pθ (x1) (b) ˜z = Flow (˜ x)
+
+(c) ˜x = Flow −1(z) (d) ˆx = P−1 
+
+> θ
+
+(˜ x)                   
+
+> Figure 4. Flow matching preconditioned by a normalizing flow. (a) The data x1(Swiss Roll) is pushed forward by normalizing flow to ˜x1.(b) The points ˜x1computed in (a) are integrated with a learned velocity field to Gaussian points ˜z.(c) Random Gaussian points zare pushed backwards using the flow to obtain ˜x1.(d) The points ˜x1in (c) are pushed backwards using the normalizing flow.
+
+(a) ˜x = Flow lc (x1) (b) Flow (˜ x)
+
+(c) ˜x = Flow −1(z) (d) ˆx = Flow −1(˜ x)        
+
+> Figure 5. Flow matching preconditioned by a low accuracy flow. (a) The data (Swiss roll) is pushed forward by a preconditioner, low-accuracy flow. (b) The points computed in (a) are integrated with a learned velocity field to a Gaussian. (c) Random Gaussian points are pushed backwards using the high-capacity flow. (d) The points in (c) are pushed backwards using the low-capacity flow.
+
+here serves as geometric isotropization, aiming to reduce anisotropy and simplify the structure to facilitate easier transport toward a Gaussian. As a baseline, we use stan-dard flow matching to map a Gaussian to the Swiss roll, the results for which are presented in Figure 3. We then use both a normalizing flow and a flow-matching-based model to precondition the problem. 
+
+Normalizing Flow Preconditioner. Figure 4 shows that normalizing flow (NF) significantly improves generation quality over the standard non-preconditioned flow matching (Figure 3). While the pushforward ˜x = Pθ (x1) in Figure 4 (a) isn’t perfectly Gaussian either, it is far more isotropic (and closer to Gaussian), allowing the second-stage flow (b) to operate on a simpler geometry. In inference, Gaussian samples are pulled back via the learned flow (c) and the inverse NF (d), recovering the original distribution more 7Preconditioned Score and Flow Matching                         
+
+> Table 1. Sliced-Schaefer distances for the Swiss roll dataset. The top row compares generated samples with ground truth; the bottom row measures how Gaussian the pushed data is. Lower is better.
+> Direction No preconditioner NF preconditioner Flow preconditioner
+> z→x11.11 ×10 −15.8×10 −27.2×10 −2
+> x1→z8.1×10 −13.1×10 −13.4×10 −1
+
+faithfully, as compared to Figure 3 (b). 
+
+Flow Matching Preconditioner. In our second experiment, we use a low-capacity flow Flow lc with just 168 parameters as a preconditioner. As shown in Figure 5, even such a lightweight model improves the performance of a down-stream high-capacity flow, similar to the normalizing flow case in Figure 4. To evaluate the effect of preconditioning quantitatively, we compute the Sliced-Schaefer distance between point clouds in both directions: x1 → z (data to Gaussian) and z → x1
+
+(Gaussian to data). Results in Table 1 show that both pre-conditioners improve upon the baseline, with normalizing flow performing the best. Its distinct transformation is likely to complement flow matching by reducing the effective null space of the standard flow. We provide additional experi-ments in 2D for the Checkerboard to Swiss roll transport problem in Section G.1 and Figure 11. 
+
+5.2. MNIST 
+
+We evaluate our method on MNIST using a two-stage ap-proach in the latent space of a VAE (trained from scratch with 64 latent dimensions). The main flow model is a condi-tional MLP-based vector field trained with flow matching using sine-cosine interpolation. We compare two precondi-tioners: a normalizing flow trained via maximum-likelihood, and a low-capacity flow trained with flow matching. FID scores between decoded samples and real images are used for evaluation. Full architectural and training details are pro-vided in the Section F.1. Quantitative results are provided in Table 2, which shows that preconditioning significantly improves the perceptual quality of the generated images for the MNIST data. Some qualitative visualizations are presented in Figure 7. Also, see Figure 12 for a compar-ison of condition numbers κ(Σ t) across time t, showing that both preconditioning methods significantly reduce ill-conditioning throughout the transport. 
+
+5.3. High-Resolution Image Synthesis 
+
+We evaluate flow-based preconditioning using a UNet back-bone across varying resolutions. Experiments are conducted on Oxford Flowers-102 (Nilsback & Zisserman, 2008) and LSUN Churches (Yu et al., 2015) at 256 × 256 resolution, and extended to the AFHQ Cats dataset (Choi et al., 2020)              
+
+> Table 2. FID scores for the MNIST dataset comparing the flow matching performance in the latent space of VAE, without pre-conditioning, with a normalizing flow (NF) preconditioner, and with a flow matching preconditioner. Lower FID indicates better performance.
+> Dataset No preconditioner NF preconditioner Flow preconditioner MNIST 13.83 2.62 6.95
+> Table 3. FID scores for the datasets, LSUN Churches, Oxford Flowers-102, and AFHQ Cats, comparing the flow matching in the latent space of VAE, without and with a flow matching precondi-tioning. Lower FID indicates better performance.
+> Dataset No preconditioner Flow preconditioner LSUN Churches 19.53 14.47
+> Oxford Flowers-102 23.82 22.64
+> AFHQ Cats 8.41 7.75
+
+at 512 ×512 resolution to assess scalability. As shown in Ta-ble 3, preconditioning yields consistent FID improvements over standard flow matching. The baseline is trained un-til convergence, ensuring that these gains reflect improved optimization rather than undertraining. Additional imple-mentation details are provided in Section F. Preconditioning is implemented using an additional flow model. We do not use normalizing flows as preconditioners for those datasets, since their invertibility constraints and architectural restrictions make them less compatible with real-world complex data (Papamakarios et al., 2019). In contrast, flow-based preconditioning provides a flexible, architecture-aligned mechanism for improving conditioning without modifying the core generative model. Qualitative results in Section E further show that the additional flow corrects residual artifacts and visually improves samples that standard flow matching fails to refine. 
+
+# 6. Discussion and Conclusion 
+
+In practice, flow and score networks are nonlinear and high-dimensional, making direct spectral analysis infeasible. Still, our linear toy model highlights core optimization barriers in-duced by data covariance. It reveals how poor conditioning can significantly hinder convergence in both gradient de-scent and SGD, even when the model is expressive enough to learn the target. These insights are supported by experi-ments showing that preconditioning improves both optimiza-tion behavior and sample quality. Future directions include learning time-dependent preconditioners A(t), empirically verifying how t-weighted sampling and per-t learning rates affect convergence and sample quality, extending the analy-sis to latent-variable models, and studying SGD dynamics in nonlinear networks via local linearization. 8Preconditioned Score and Flow Matching 
+
+Impact Statement. This work is methodological in na-ture and focuses on improving the optimization behavior of score-based diffusion and flow matching models through principled preconditioning. By clarifying the roles of data geometry and conditioning in these generative frameworks, the proposed analysis and methods aim to make training more stable and efficient without introducing new modeling assumptions or expanding into new application domains. The techniques studied here do not inherently introduce new societal risks beyond those already associated with existing generative image models. We expect this work to primarily benefit researchers and practitioners by providing clearer di-agnostics and design principles for training continuous-time generative models more reliably. 
+
+# References 
+
+Aranguri, S., Biroli, G., Mezard, M., and Vanden-Eijnden, E. Optimizing noise schedules of generative models in high dimensions. arXiv preprint arXiv:2501.00988 , 2025. Benzi, M. Preconditioning techniques for large linear sys-tems: A survey. Journal of Computational Physics ,182(2):418–477, 2002. ISSN 0021-9991. doi: https: //doi.org/10.1006/jcph.2002.7176. Benzi, M., Golub, G. H., and Liesen, J. Numerical solu-tion of saddle point problems. Acta numerica , 14:1–137, 2005. Billera, L., Nordlinder, H. N., and Murrell, B. Time de-pendent loss reweighting for flow matching and diffu-sion models is theoretically justified. arXiv preprint arXiv:2511.16599 , 2025. Bottou, L., Curtis, F. E., and Nocedal, J. Optimization methods for large-scale machine learning. arXiv preprint arXiv:1606.04838 , 2016. Boyd, S. and Vandenberghe, L. Convex optimization . Cam-bridge University press, 2004. Caetano, F., Viviers, C., With, P. H. N. D., and van der Som-men, F. Symmetrical flow matching: Unified image gen-eration, segmentation, and classification with score-based generative models. arXiv preprint arXiv:2506.10634 ,2025. Cao, W. and Zhang, W. An analysis and solution of ill-conditioning in physics-informed neural networks. Jour-nal of Computational Physics , 520:113494, 2025. ISSN 0021-9991. Choi, Y., Uh, Y., Yoo, J., and Ha, J.-W. Stargan v2: Diverse image synthesis for multiple domains. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , 2020. Croitoru, F.-A., Hondru, V., Ionescu, R. T., and Shah, M. Diffusion models in vision: A survey. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2023. Danese, D., Lombardi, A., Attimonelli, M., Fasano, G., and Noia, T. D. Flowlet: Conditional 3d brain mri synthesis using wavelet flow matching. arXiv preprint arXiv:2601.05212 , 2026. Dao, Q., Phung, H., Nguyen, B., and Tran, A. Flow match-ing in latent space. arXiv preprint arXiv:2307.08698 ,2023. Dauphin, Y. N., Pascanu, R., Gulcehre, C., Cho, K., Gan-guli, S., and Bengio, Y. Identifying and attacking the saddle point problem in high-dimensional non-convex op-timization. In Advances in Neural Information Processing Systems , 2014. Diefenbacher, S., Eren, E., Kasieczka, G., Korol, A., Nach-man, B., and Shih, D. Dctrgan: Improving the precision of generative models with reweighting. Journal of Instru-mentation , 2020. Dinh, L., Sohl-Dickstein, J., and Bengio, S. Density estima-tion using real nvp. In ICLR , 2017. Golub, G. and Ye, Q. Inexact preconditioned conjugate gradient method with inner-outer iteration. SIAM J. Scient. Comp. , 21:1305–1320, 2000. Guan, W., Wang, K., Zhou, W., Wang, Y., Deng, F., Wang, H., Li, L., Hong, Q., and Qin, Y. Lafma: A latent flow matching model for text-to-audio generation. Interspeech ,2024. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion prob-abilistic models. In Advances in Neural Information Processing Systems (NeurIPS) , 2020. Karras, T., Aittala, M., Aila, T., and Laine, S. Elucidating the design space of diffusion-based generative models. 
+
+Neural Information Processing Systems , 2022. Kingma, D. P. and Ba, J. Adam: A method for stochas-tic optimization. International Conference on Learning Representations , 2014. Kingma, D. P. and Welling, M. Auto-encoding variational bayes. International Conference on Learning Represen-tations , 2013. Kobyzev, I., Prince, S. J., and Brubaker, M. A. Normalizing flows: An introduction and review of current methods. 
+
+IEEE transactions on pattern analysis and machine intel-ligence , 43(11):3964–3979, 2020. 9Preconditioned Score and Flow Matching 
+
+Lazzarino, L., Nakatsukasa, Y., and Zerbinati, U. Precon-ditioned normal equations for solving discretised partial differential equations. arXiv preprint arXiv:2502.17626 ,2025. Lin, S. and Yang, X. Diffusion model with perceptual loss. 
+
+arXiv preprint arXiv:2401.00110v7 , 2025. Lipman, Y., Chen, R. T. Q., Ben-Hamu, H., Nickel, M., and Le, M. L. Flow matching for generative modeling. In 
+
+International Conference on Learning Representations (ICLR) , 2023. Lipman, Y., Havasi, M., Holderrieth, P., Shaul, N., Le, M., Karrer, B., Chen, R. T., Lopez-Paz, D., Ben-Hamu, H., and Gat, I. Flow matching guide and code. arXiv preprint arXiv:2412.06264 , 2024. Nilsback, M.-E. and Zisserman, A. Automated flower clas-sification over a large number of classes. In Proceedings of the Indian Conference on Computer Vision, Graphics and Image Processing (ICVGIP) , 2008. Nocedal, J. and Wright, S. Numerical Optimization .Springer, 1999. Papamakarios, G., Nalisnick, E., Rezende, D. J., Mohamed, S., and Lakshminarayanan, B. Normalizing flows for probabilistic modeling and inference. Journal of Machine Learning Research , 2019. Quirynen, R. and Di Cairano, S. Presas: Block-structured preconditioning of iterative solvers within a primal active-set method for fast mpc. arXiv preprint arXiv:1912.02122v2 , 2020. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., and Ommer, B. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pp. 10684–10695, 2022. Ronneberger, O., Fischer, P., and Brox, T. U-net: Convolu-tional networks for biomedical image segmentation. In In-ternational Conference on Medical image computing and computer-assisted intervention , pp. 234–241. Springer, 2015. Ruthotto, L. and Haber, E. An introduction to deep genera-tive modeling. GAMM-Mitteilungen , 44(2):e202100008, 2021. Saad, Y. Analysis of some krylov subspace approximations to the matrix exponent operator. SIAM J. Numer Anal , 29, 1992. Saad, Y. Iterative Methods for Sparse Linear Systems .SIAM, 2003. Shapiro, A., Dentcheva, D., and Ruszczynski, D. Lec-tures on Stochastic Programming: Modeling and Theory .SIAM, Philadelphia, 2009. Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Er-mon, S., and Poole, B. Score-based generative modeling through stochastic differential equations. In International Conference on Learning Representations (ICLR) , 2021. Trefethen, L. N. and Bau, D. Numerical Linear Algebra .SIAM, 1997. Wang, J., Reynaud, H., Erick, F. X., and Kainz, B. Ctflow: Video-inspired latent flow matching for 3d ct synthesis. 
+
+arXiv preprint arXiv:2508.12900 , 2025. Xu, X., Mei, J., Zheng, Z., Tao, Y., Xie, Z., Zhang, Y., Liu, H., Wu, Y., Yan, M., Wu, W., Zhang, C., and Wu, M. Uniflow-audio: Unified flow matching for au-dio generation from omni-modalities. arXiv preprint arXiv:2509.24391 , 2025a. Xu, Y., Luo, S., Wang, L., He, D., and Liu, C. Diagnosing and improving diffusion models by estimating the optimal loss value. arXiv preprint arXiv:2506.13763 , 2025b. Ye, Q. Preconditioning for accelerated gradient de-scent optimization and regularization. arXiv preprint arXiv:2410.00232v2 , 2024. Yu, F., Seff, A., Zhang, Y., Song, S., Funkhouser, T., and Xiao, J. Lsun: Construction of a large-scale image dataset using deep learning with humans in the loop. In Proceed-ings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2015. Zhai, S., Zhang, R., Nakkiran, P., Berthelot, D., Gu, J., Zheng, H., Chen, T., Bautista, M. A., Jaitly, N., and Susskind, J. Normalizing flows are capable generative models. arXiv preprint arXiv:2412.06329v3 , 2025. Zhou, M., Gu, Y., Zheng, H., Song, L., He, G., Zhang, Y., Hu, W., and Yang, Y. Score distillation of flow matching models. arXiv preprint arXiv:2509.25127 , 2025. 10 Preconditioned Score and Flow Matching 
+
+# A. Additional Related Work 
+
+Generative Models. Generative models aim to learn complex data distributions in order to synthesize realistic samples. Early approaches include explicit density models such as variational autoencoders and autoregressive models, which provide principled likelihood-based training objectives (Kingma & Welling, 2013). More recently, flow-matching methods (Lipman et al., 2023) have been proposed, which learn the velocity field for a continuous transformation between distributions. Normalizing flows and diffusion-based methods frame generation as transforming a simple reference distribution into the data distribution, either through invertible mappings or stochastic dynamics, and have achieved strong results across many domains (Dinh et al., 2017; Ho et al., 2020). Recent work by (Zhai et al., 2025) further demonstrates that normalizing flows can serve as highly competitive generative models. 
+
+Preconditioning. Preconditioning is a classical technique in numerical analysis aimed at improving the conditioning of optimization problems (Ye, 2024) and differential equations (Lazzarino et al., 2025), thereby accelerating convergence and enhancing numerical stability (Saad, 2003; Trefethen & Bau, 1997). By rescaling variables or operators to reduce anisotropy and curvature disparities, preconditioning enables more efficient iterative solvers and more stable time integration (Quirynen & Di Cairano, 2020). Similar issues arise in machine learning, where poorly conditioned objectives can hinder optimization and lead to slow or unstable training dynamics (Cao & Zhang, 2025). Consequently, preconditioning has been widely adopted in large-scale learning systems, both implicitly through adaptive optimization methods and explicitly through problem-dependent transformations, yielding substantial improvements in convergence speed and robustness (Dauphin et al., 2014). In the context of diffusion models, recent work has shown that appropriate reparameterization and noise-dependent preconditioning can substantially improve optimization behavior and sample quality, highlighting the critical role of conditioning in generative model training (Karras et al., 2022). 
+
+# B. Theoretical Analysis for the Gaussian Transport Model 
+
+B.1. Linear Regression Objective and Exact Minimizer 
+
+We derive the closed-form solution for the linear regression problem considered in Section 3.3. We consider a linear predictor for the velocity field at time t,
+
+vθ (xt, t ) = A(t) xt, (26) where A(t) ∈ Rd×d is the parameter matrix to be learned. As a proxy for flow or score matching, we take the target velocity 
+
+v⋆t = x1 − x0, (27) and define the mean-squared error loss 
+
+L(A(t)) = E∥A(t)xt − (x1 − x0)∥2. (28) For simplicity, we suppress the explicit dependence on t and write A instead of A(t).
+
+Computing the covariances. Since x0 and x1 are independent, zero–mean Gaussians, 
+
+E[x0] = 0 , E[x1] = 0 , E[x0x⊤ 
+
+> 1
+
+] = 0 . (29) By definition, 
+
+xt = (1 − t)x0 + tx 1. (30) The covariance of xt is therefore 
+
+Σt := E[xtx⊤ 
+
+> t
+
+] (31) 
+
+= E
+
+h (1 − t)x0 + tx 1
+
+  (1 − t)x0 + tx 1
+
+⊤i
+
+(32) 
+
+= (1 − t)2E[x0x⊤ 
+
+> 0
+
+] + t2E[x1x⊤ 
+
+> 1
+
+] + (1 − t)E[x0x⊤ 
+
+> 1
+
+] + t(1 − t)E[x1x⊤ 
+
+> 0
+
+]. (33) 11 Preconditioned Score and Flow Matching 
+
+Using E[x0x⊤ 
+
+> 0
+
+] = I, E[x1x⊤ 
+
+> 1
+
+] = H, and the independence of x0 and x1, we obtain 
+
+Σt = (1 − t)2I + t2H. (34) Next, we compute the cross-covariance 
+
+C := E(x1 − x0)x⊤
+
+> t
+
+. (35) Expanding xt,
+
+C = (1 − t)E(x1 − x0)x⊤
+
+> 0
+
+ + tE(x1 − x0)x⊤
+
+> 1
+
+.
+
+For the first term, 
+
+E[( x1 − x0)x⊤ 
+
+> 0
+
+] = E[x1x⊤ 
+
+> 0
+
+] − E[x0x⊤ 
+
+> 0
+
+] = −I, (36) and for the second term, 
+
+E[( x1 − x0)x⊤ 
+
+> 1
+
+] = E[x1x⊤ 
+
+> 1
+
+] − E[x0x⊤ 
+
+> 1
+
+] = H. (37) Thus, 
+
+C = tH − (1 − t)I. (38) 
+
+Exact minimizer. Expanding the loss, 
+
+L(A) = E(Ax t − (x1 − x0)) ⊤(Ax t − (x1 − x0)) . (39) Using the identity 
+
+∇AE[∥Ax − y∥2] = 2 E[( Ax − y)x⊤], (40) the stationarity condition ∇AL(A) = 0 yields 
+
+AΣt = C. (41) Since Σt is positive definite, the unique minimizer is 
+
+A⋆(t) = CΣ−1 
+
+> t
+
+=  tH − (1 − t)I  t2H + (1 − t)2I−1. (42) 
+
+B.2. Spectral Decomposition of Σt
+
+We justify the spectral characterization of Σt used in Section 3.4. Let H = U ΛU ⊤ be the eigendecomposition of H. Using 
+
+I = U IU ⊤, we write 
+
+Σt = (1 − t)2U IU ⊤ + t2U ΛU ⊤ = U  (1 − t)2I + t2ΛU ⊤. (43) Thus, Σt is diagonal in the eigenbasis of H, with eigenvalues 
+
+σi(t) = (1 − t)2 + t2λi. (44) 
+
+B.3. Gradient Descent Error Dynamics 
+
+We derive the convergence properties of full batch gradient descent for the linear regression problem. The gradient of the loss is 
+
+∇AL(A) = 2( AΣt − C), (45) and the gradient descent update with learning rate η > 0 is 
+
+Ak+1 = Ak − 2η(AkΣt − C). (46) Let A⋆ be the minimizer and define the error matrix Ek = Ak − A⋆. Using A⋆Σt = C, we obtain 
+
+Ek+1 = Ak+1 − A⋆ = Ak − 2η(AkΣt − C) − A⋆ = Ek − 2ηE kΣt = Ek(I − 2ηΣt). (47) 12 Preconditioned Score and Flow Matching 
+
+Figure 6. Gaussian model illustrating conditioning and optimization effects in flow and score matching: (a) Growth of the condition number κ(Σ t) along the linear interpolation Σt = (1 − t)2I + t2H showing how intermediate distributions pt gradually inherit the ill-conditioning of H; (b) evolution of the eigenvalues σi(t) of Σt for κ(H) = 1000 , highlighting the increasing spectral disparity that creates slow and fast directions; (c) Covariance ellipses of pt = N (0 , Σt) at selected times, visualizing the transition from an isotropic distribution to a highly anisotropic one; (d) Predicted number of gradient-descent iterations k(t) required to reach a fixed error tolerance, demonstrating the sharp slowdown at large t due to ill-conditioning; (e) Effect of ideal preconditioning (whitening), which removes conditioning growth and keeps κ(Σ t) ≈ 1 for all t; (f) Per-mode gradient-descent error decay at t = 0 .9, showing that large-variance modes converge rapidly while small-variance modes decay extremely slowly; (g) Optimal score field s∗(x, t ) = −Σ−1 
+
+> t
+
+x, exhibiting strong anisotropy and stiffness along low-variance directions; (h) Optimal flow-matching velocity field v⋆(x, t ) = A⋆(t)x, which is smoother than the score but still inherits anisotropy from Σt.
+
+Let Σt = U diag( σ1(t), . . . , σ d(t)) U ⊤ be the eigen decomposition of Σt. Then 
+
+I − 2ηΣt = U diag(1 − 2ησ 1(t), . . . , 1 − 2ησ d(t)) U ⊤. (48) In the corresponding eigenbasis, each error component evolves independently as 
+
+ei,k +1 = (1 − 2ησ i(t)) ei,k . (49) Convergence requires |1 − 2ησ i(t)| < 1 for all i, which is equivalent to 
+
+0 < η < 1
+
+σmax (t) . (50) The slowest decaying mode corresponds to the smallest eigenvalue σmin (t), with contraction factor 
+
+ρ = 1 − 2ησ min (t). (51) To reduce the error in this mode by a factor ε ∈ (0 , 1) , we need approximately 
+
+k ≈ log(1 /ε )
+
+− log ρ ≈ 12ησ min (t) log 1
+
+ε , (52) where we used log(1 − x) ≈ − x for small x.13 Preconditioned Score and Flow Matching 
+
+B.4. Stochastic Gradient Descent Error Dynamics 
+
+This section provides the detailed derivations for the stochastic gradient descent dynamics discussed in Section 3.4. In practice, we do not have access to the exact expectations defining L(A) and its gradient; instead, we approximate them using samples and apply stochastic gradient descent (SGD). We analyze the effect of this stochasticity on the error dynamics. 
+
+Single sample SGD update. For simplicity, consider SGD updates based on a single sample (x(m)0 , x (m)1 ) at step m.Define 
+
+x(m) 
+
+> t
+
+= (1 − t) x(m)0 + t x (m)1 , y(m) = x(m)1 − x(m)0 . (53) The per-sample loss is 
+
+ℓm(A) = ∥Ax (m) 
+
+> t
+
+− y(m)∥2, (54) and its gradient is 
+
+∇Aℓm(A) = 2( Ax (m) 
+
+> t
+
+− y(m))( x(m) 
+
+> t
+
+)⊤. (55) The SGD update with learning rate η is 
+
+Am+1 = Am − η∇Aℓm(Am) = Am − 2η(Amx(m) 
+
+> t
+
+− y(m))( x(m) 
+
+> t
+
+)⊤. (56) 
+
+Error recursion with noise. Let A⋆ denote the exact minimizer and define Em = Am − A⋆. We write the update in terms of Em:
+
+Em+1 = Am+1 − A⋆ (57) 
+
+= Am − 2η(Amx(m) 
+
+> t
+
+− y(m))( x(m) 
+
+> t
+
+)⊤ − A⋆. (58) Add and subtract 2η(A⋆x(m) 
+
+> t
+
+− y(m))( x(m) 
+
+> t
+
+)⊤ to obtain 
+
+Em+1 = Am − A⋆ (59) 
+
+− 2η
+
+h
+
+(Amx(m) 
+
+> t
+
+− y(m)) − (A⋆x(m) 
+
+> t
+
+− y(m))
+
+i
+
+(x(m) 
+
+> t
+
+)⊤ (60) 
+
+= Em − 2η(Amx(m) 
+
+> t
+
+− y(m))( x(m) 
+
+> t
+
+)⊤ (61) 
+
++ 2 η(A⋆x(m) 
+
+> t
+
+− y(m))( x(m) 
+
+> t
+
+)⊤ (62) 
+
+= Em − 2ηE mx(m) 
+
+> t
+
+(x(m) 
+
+> t
+
+)⊤ − 2η(A⋆x(m) 
+
+> t
+
+− y(m))( x(m) 
+
+> t
+
+)⊤. (63) Taking expectations conditional on Em and using 
+
+E[x(m) 
+
+> t
+
+(x(m) 
+
+> t
+
+)⊤] = Σ t, E[A⋆x(m) 
+
+> t
+
+− y(m)] = 0 , (64) we recover the deterministic contraction 
+
+E[Em+1 | Em] = Em(I − 2ηΣt), (65) as in the full batch case. The last term 
+
+ξm := −2η(A⋆x(m) 
+
+> t
+
+− y(m))( x(m) 
+
+> t
+
+)⊤ (66) is a zero-mean noise term (since A⋆ satisfies the optimality condition) that represents gradient variability. We can therefore write the SGD error recursion as 
+
+Em+1 = Em(I − 2ηΣt) + Ξ m, (67) where Ξm is a zero-mean random matrix capturing gradient noise. Projecting onto any eigen direction i of Σt, the corresponding scalar error component ei,m satisfies 
+
+ei,m +1 = (1 − 2ησ i(t)) ei,m + ζi,m , (68) where ζi,m is a zero-mean noise term whose variance depends on the gradient variance in direction i.14 Preconditioned Score and Flow Matching 
+
+Steady state variance. For a scalar recursion 
+
+zm+1 = az m + ξm, (69) with |a| < 1, zero mean noise ξm of variance Var( ξm) = σ2 
+
+> ξ
+
+, and ξm independent across m, the stationary variance is 
+
+Var( z∞) = σ2
+
+> ξ
+
+1 − a2 . (70) In our case, a = 1 − 2ησ i(t), so 
+
+1 − a2 = 1 − (1 − 2ησ i(t)) 2 = 4 ησ i(t) − 4η2σi(t)2. (71) For small η, the term 4η2σi(t)2 is negligible compared to 4ησ i(t), yielding the approximation 
+
+1 − a2 ≈ 4ησ i(t). (72) If we denote by σ2 
+
+> ζ,i
+
+the variance of the noise ζi,m , the stationary variance of ei,m is 
+
+Var( ei, ∞) ≈ σ2
+
+> ζ,i
+
+4ησ i(t) . (73) Since σ2 
+
+> ζ,i
+
+scales proportionally to η2, we may write σ2 
+
+> ζ,i
+
+≈ ciη2 for constants ci depending on the data distribution and A⋆.Substituting, 
+
+Var( ei, ∞) ≈ ciη2
+
+4ησ i(t) = ciη
+
+4σi(t) . (74) Thus, up to constants, the steady state variance in direction i scales as 
+
+Var( ei, ∞) ∝ ησi(t) . (75) 
+
+Implications. Directions with small σi(t) therefore suffer a double disadvantage. First, the contraction factor 1 − 2ησ i(t)
+
+is close to one, so the bias in that direction decays very slowly. Second, the steady state variance Var( ei, ∞) scales inversely with σi(t), so low variance directions accumulate larger stochastic fluctuations for a given learning rate. Together, these effects make low eigenvalue modes the bottleneck in both convergence speed and final accuracy, mirroring the behavior of SGD on ill-conditioned quadratic objectives. 
+
+# C. Theoretical Analysis of the Gaussian Mixture Model 
+
+This section provides the full derivations underlying the Gaussian mixture model extension discussed in Section 3.5 of the main text. We now extend the analysis to the setting where the target distribution is a mixture of Gaussians. This case introduces multimodality and provides a stylized model for real datasets that contain clusters or discrete semantic modes. Importantly, as in the single-Gaussian case, the score and probability–flow velocity remain analytic, which enables exact characterization of the optimization dynamics. 
+
+C.1. Analytic Velocity and Score in the GMM Case 
+
+Let the target distribution be a mixture of K zero-mean Gaussians 
+
+x1 ∼
+
+> K
+
+X
+
+> k=1
+
+πk N (0 , H k), πk > 0,
+
+> K
+
+X
+
+> k=1
+
+πk = 1 , (76) and let the base distribution remain 
+
+x0 ∼ N (0 , I ), (77) 15 Preconditioned Score and Flow Matching 
+
+with interpolation 
+
+xt = (1 − t)x0 + tx 1. (78) We denote the component posterior weights at time twk(xt) := P(x1 originated from component k | xt), (79) which satisfy P 
+
+> k
+
+wk(xt) = 1 and depend on both πk and Hk.
+
+Score. Since xt is a mixture of Gaussians, 
+
+pt(xt) = 
+
+> K
+
+X
+
+> k=1
+
+πk N (0 , Σt,k ), Σt,k = (1 − t)2I + t2Hk, (80) and the score admits the usual mixture-of-Gaussians form 
+
+∇x log pt(xt) = −
+
+> K
+
+X
+
+> k=1
+
+wk(xt) Σ −1 
+
+> t,k
+
+xt. (81) 
+
+Velocity. The probability–flow ODE again satisfies dx t 
+
+> dt
+
+= x1 − x0, so conditioning on xt and using the mixture law of total expectation gives 
+
+v⋆t (xt) = E[x1 − x0 | xt] = 
+
+> K
+
+X
+
+> k=1
+
+wk(xt) A⋆k(t) xt, (82) with 
+
+A⋆k(t) =  tH k − (1 − t)I  (1 − t)2I + t2Hk
+
+−1. (83) Thus, the analytic velocity is a mixture of linear maps applied to xt, weighted by wk(xt).
+
+Key observation. Unlike the single–Gaussian case where the velocity is purely linear in xt, the velocity here is a linear mixture with data–dependent component weights . The exact flow is still structured and low-dimensional, but no single linear matrix A(t) can represent it in general. 
+
+C.2. Learning a Mixture of Linear Predictors 
+
+To focus on optimization rather than model misspecification, we assume that the model has the correct number of mixture components and that the mixture means are known. We parameterize 
+
+vθ (xt, t ) = 
+
+> K
+
+X
+
+> k=1
+
+ˆwk(xt) Ak(t) xt, (84) where Ak(t) ∈ Rd×d and ˆwk(xt) are estimated mixture responsibilities. For simplicity, and to isolate conditioning effects, we assume ˆwk(xt) = wk(xt) (perfect gating). The regression objective becomes 
+
+L({Ak(t)}) = E
+
+
+
+> K
+
+X
+
+> k=1
+
+wk(xt) Ak(t) xt − (x1 − x0)
+
+> 2
+
+ . (85) As before, define the optimal matrices via 
+
+A⋆k(t) =  tH k − (1 − t)I  (1 − t)2I + t2Hk
+
+−1, (86) so the model class is again expressive enough to represent the exact analytic velocity. Any observed optimization difficulty arises solely from the induced regression structure, not from lack of capacity. 16 Preconditioned Score and Flow Matching 
+
+C.3. Conditioning of the Regression Problem 
+
+Since gradients with respect to Ak are taken only on samples effectively routed to component k, the subproblem for Ak is governed by the covariance of xt conditional on component k:
+
+Σt,k = E[xtx⊤ 
+
+> t
+
+| x1 in component k] = (1 − t)2I + t2Hk. (87) Diagonalizing Hk = UkΛkU ⊤ 
+
+> k
+
+, we obtain eigenvalues 
+
+σk,i (t) = (1 − t)2 + t2λk,i , i = 1 , . . . , d. (88) The condition number within component k is therefore 
+
+κ(Σ t,k ) = (1 − t)2 + t2λk, max 
+
+(1 − t)2 + t2λk, min 
+
+. (89) Just as in the single–Gaussian case, κ(Σ t,k ) grows rapidly with both t and the condition number κ(Hk) = λk, max /λ k, min .
+
+Coupling across components. The overall optimization landscape combines K subproblems with potentially very different condition numbers. Modes belonging to poorly conditioned components (small λk, min ) converge much more slowly than those belonging to well-conditioned components. Thus, the global convergence rate of the whole model is governed by 
+
+min  
+
+> k,i
+
+σk,i (t), (90) i.e. by the hardest direction across all mixture components. 
+
+C.4. Gradient Descent Error Dynamics 
+
+Let A⋆k(t) denote the optimal matrices and define error matrices Ek,ℓ = Ak,ℓ − A⋆k(t) at iteration ℓ. The gradient of L with respect to Ak contracts each Ek,ℓ according to 
+
+Ek,ℓ +1 = Ek,ℓ 
+
+ I − 2ηΣt,k 
+
+, (91) so in eigen-direction i of component k,
+
+ek,i,ℓ +1 = (1 − 2ησ k,i (t)) ek,i,ℓ . (92) Convergence requires 
+
+0 < η < 1max k,i σk,i (t) , (93) and the number of gradient steps needed to reduce the slowest mode by a factor ε is 
+
+12η min k,i σk,i (t) log 1
+
+ε . (94) Thus, even if most mixture components are well-conditioned, a single poorly conditioned component controls the global training speed. 
+
+C.5. Stochastic Gradient Descent Error Dynamics 
+
+With minibatch SGD and perfect gating, the SGD update for Ak depends only on samples assigned to component k. The scalar error in eigen-direction i of component k follows the stochastic recursion 
+
+ek,i,m +1 = (1 − 2ησ k,i (t)) ek,i,m + ζk,i,m , (95) with zero–mean noise ζk,i,m . As in the single-Gaussian case, the stationary variance satisfies 
+
+Var( ek,i, ∞) ∝ ησk,i (t) , (96) so directions with small σk,i (t) exhibit both: 17 Preconditioned Score and Flow Matching 
+
+• extremely slow bias decay (contraction factor near 1), and • large steady–state variance accumulated from SGD noise. Consequently, the global convergence rate and final error are governed by the worst (smallest) eigenvalue among all mixture components. 
+
+Summary. Even when the model has the correct number of components and perfect component allocation, optimization is bottlenecked by the lowest-variance directions of the hardest mixture component. The Gaussian mixture case, therefore, makes the failure mode more pronounced: training cannot converge faster than the most ill-conditioned component permits. 
+
+# D. Preconditioning 
+
+D.1. Proof of Theorem 4.1 – Preconditioning Improves Convergence 
+
+We consider the linear regression objective, 
+
+L(A) = E[∥Ax − y∥2], (97) where Σ = E[xx ⊤] is the input covariance matrix, assumed positive definite with condition number κ(Σ) =
+
+λmax (Σ) /λ min (Σ) .
+
+Non-Preconditioned Case. Let C = E[yx ⊤]. Then the objective expands as, 
+
+L(A) = Tr( AΣA⊤) − 2 Tr( AC ⊤) + E[∥y∥2], (98) and the gradient is, 
+
+∇L (A) = 2 AΣ − 2C. (99) The optimal solution satisfies A∗ = CΣ−1. Define the error matrix Ek = Ak − A∗, and write the gradient descent update as, 
+
+Ek+1 = Ek − 2ηE kΣ. (100) Let Σ = U ΛU ⊤ be the eigendecomposition of Σ with Λ = diag( λ1, . . . , λ d). Let ˜Ek = EkU . Then, 
+
+˜Ek+1 = ˜Ek(I − 2ηΛ) , (101) so each column evolves as, 
+
+˜E(i) 
+
+> k
+
+= (1 − 2ηλ i)k ˜E(i)0 . (102) Thus, 
+
+∥Ek∥F ≤ (1 − 2ηλ min (Σ)) k ∥E0∥F . (103) To achieve ∥Ek∥F ≤ ε, we need, 
+
+k ≥ 12ηλ min (Σ) log 
+
+ ∥E0∥F
+
+ε
+
+
+
+. (104) Since stable convergence requires η ≤ 1/λ max (Σ) (meaning η ∼ O (1 /λ max ), the number of steps scales as, 
+
+k = O(κ log(1 /ε )) . (105) 18 Preconditioned Score and Flow Matching 
+
+Preconditioned Case. Let P = Σ −1/2, and define ˜x = Px. Then E[˜ x˜x⊤] = I, and we minimize, 
+
+˜L(A) = E[∥A˜x − y∥2], (106) whose gradient is ∇ ˜L(A) = 2 A − 2 ˜C, where ˜C = E[y˜x⊤]. The solution is A∗ = ˜C, and gradient descent becomes, 
+
+Ak+1 = Ak − 2η(Ak − A∗) ⇒ Ek+1 = (1 − 2η)Ek. (107) Hence, 
+
+∥Ek∥F = (1 − 2η)k∥E0∥F . (108) This convergence is uniform in all directions and independent of κ. Choosing η = 1 /2 yields, 
+
+k = O(log(1 /ε )) . (109) This completes the proof. 
+
+D.2. Preconditioning for Gaussian Mixtures 
+
+This subsection provides the detailed construction underlying Gaussian mixture preconditioning, referenced in Section 4 of the main text. For a mixture 
+
+x1 ∼
+
+> K
+
+X
+
+> k=1
+
+πk N (0 , H k), (110) the ill-conditioning arises not only from the spread of eigenvalues within each Hk, but also from imbalance across components. A component with small variance in one direction can dominate convergence time, even if all other components are well–conditioned. To address this, we define a blockwise transform that whitens each component individually. For each k, let Hk = UkΛkU ⊤
+
+> k
+
+and define 
+
+Tk = Λ −1/2 
+
+> k
+
+U ⊤ 
+
+> k
+
+. (111) We map the original distribution to 
+
+˜x1 ∼
+
+> K
+
+X
+
+> k=1
+
+πk N (0 , I ), (112) i.e. a mixture with identical isotropic components. Training proceeds on the preconditioned interpolation 
+
+˜xt = (1 − t)x0 + t ˜x1, (113) with a velocity model 
+
+˜vθ (˜ xt, t ) = 
+
+> K
+
+X
+
+> k=1
+
+ˆwk(˜ xt) ˜Ak(t) ˜ xt, (114) and the analytic solution satisfies 
+
+˜A⋆k(t) = t − (1 − t)(1 − t)2 + t2 I for all k. (115) Thus, after preconditioning, all mixture components become identical and perfectly conditioned. The global optimization bottleneck is eliminated: no component can dominate convergence by having unusually small variance in some direction. After learning ˜vθ , the corresponding velocity in the original space is obtained via the inverse transforms: 
+
+vθ (xt, t ) = 
+
+> K
+
+X
+
+> k=1
+
+ˆwk(xt) T −1 
+
+> k
+
+˜Ak(t) Tk xt. (116) 19 Preconditioned Score and Flow Matching 
+
+D.3. Effect on Conditioning and Convergence 
+
+This subsection provides the detailed conditioning and convergence analysis for Gaussian mixture preconditioning referenced in Section 4 of the main text. Let σk,i (t) denote the eigenvalues of the matrices Σt,k in the original space. Let ˜σk,i (t) denote the eigenvalues after preconditioning. By construction, 
+
+˜σk,i (t) = (1 − t)2 + t2 independent of k, i, (117) so 
+
+κ( ˜Σt,k ) = 1 for all k, t. (118) Therefore • gradient descent converges at a uniform rate across all directions, and • the steady–state variance under SGD is the same in every direction. No single mode or mixture component can slow down training. The convergence rate is now determined solely by the learning rate and batch size, rather than by geometric properties of the data distribution. 
+
+# E. Qualitative Comparison of Flow-Based Preconditioning 
+
+E.1. MNIST 
+
+We provide qualitative comparison for the flow matching in the latent space of an MNIST-trained VAE (latent dimension 64, see Section F.1 for details) when the latent space was not preconditioned (left) (FID=13.8269), preconditioned using a normalizing flow (middle) (FID=2.6223), and preconditioned using a flow matching model (right) (FID=6.9544) in Figure 7. The visual quality of the samples is consistent with the FID scores, with sharper and more coherent digits observed in the preconditioned cases. We also analyzed the condition number dynamics as a function of time t during the training of these flow models, which are presented in Figure 12.         
+
+> Figure 7. MNIST qualitative comparison. Comparison of MNIST samples generated by flow matching in latent space under different preconditioning strategies. Left: No preconditioning results in blurry and inconsistent digit shapes (FID = 13.83). Middle: Preconditioning with a normalizing flow improves digit clarity and diversity (FID = 2.62). Right: Preconditioning with a learned flow matching model also improves sample quality over the baseline (FID = 6.95). Visual quality trends align with quantitative FID scores.
+
+E.2. High-Resolution Images 
+
+We provide qualitative comparisons illustrating the effect of flow-based preconditioning on sample quality for Oxford Flowers-102 (Nilsback & Zisserman, 2008), LSUN Churches (Yu et al., 2015), and AFHQ Cats (Choi et al., 2020). As shown in Figures 8 to 10, these examples complement the quantitative improvements reported in Table 3 and illustrate how the additional flow improves sample consistency in cases where standard flow matching remains visually imperfect. 20 Preconditioned Score and Flow Matching 
+
+Figure 8. LSUN Churches qualitative comparison. Samples generated by standard flow matching ( top ) and by flow-based precondition-ing using an additional flow ( bottom ). Preconditioning produces a sharper global structure and more stable spatial layouts. 
+
+Figure 9. Oxford Flowers-102 qualitative comparison. Samples generated by standard flow matching ( top ) and by flow-based preconditioning using an additional flow ( bottom ). Preconditioning yields more coherent structure and improved visual consistency. 
+
+Figure 10. AFHQ Cats qualitative comparison. Samples generated by standard flow matching ( top ) and by flow-based preconditioning using an additional flow ( bottom ). 
+
+# F. Experimental Details 
+
+F.1. MNIST 
+
+We evaluate our preconditioning strategy on MNIST using a two-stage approach in the latent space of a VAE. This VAE consisted of a deep ResNet-based architecture with group normalization, SiLU activations, and was trained using a combination of MSE and perceptual loss. The encoder and decoder consist of multiple downsampling and upsampling ResBlocks, with a latent dimensionality of 64. Training uses cosine learning rate decay, KL regularization with low 
+
+β = 0 .05 .Once trained, the VAE maps MNIST images to latent vectors x1 ∈ R64 , and our goal is to learn a generative model that transports Gaussian noise z ∼ N (0 , 1) to this latent distribution via flow matching. The main flow model is a conditional vector field implemented as a fully connected MLP. It takes as input, (i) a latent vector xt interpolated between x1 and x0
+
+via xt = sin( π 
+
+> 2
+
+t)x1 + cos( π 
+
+> 2
+
+t)x0, (ii) time t, and (iii) one-hot encoded class label y. We compare three variants: 21 Preconditioned Score and Flow Matching 
+
+1. No preconditioning: Standard flow matching from Gaussian to data in the latent space of the trained VAE. 2. Normalizing Flow Preconditioner: A reversible MLP trained with maximum-likelihood to Gaussianize the VAE latent codes. 3. Reduced-capacity Flow Preconditioner: A flow model trained via flow matching using limited training epochs to push the latent codes closer to Gaussian. For quantitative evaluation, we decode generated latent vectors using the VAE decoder and compute FID scores between generated and real MNIST images using our own trained class-conditional MNIST classifier. The architectural details for the preconditioner networks are explained in detail below: • Normalizing Flow Preconditioner. The normalizing flow (NF) preconditioner is implemented as a reversible MLP-based model designed to map the latent distribution of the VAE to a standard Gaussian. Specifically, we use a sequence of affine coupling layers based on the RealNVP architecture (Dinh et al., 2017). Each coupling layer splits the input latent vector into two parts: one half is left unchanged, while the other is transformed via a learnable scale-and-shift operation conditioned on the fixed part. The scale and shift functions are parameterized by shallow MLPs with two hidden layers of 256 units and ReLU activations. To improve expressiveness, we alternate the partitioning pattern across layers and insert random permutations between them. The full NF model consists of 6 such coupling layers. This architecture is trained with maximum-likelihood using the standard change-of-variables formula, optimizing the log-likelihood of the VAE latent codes under the transformed Gaussian distribution (Kobyzev et al., 2020). • Flow Matching Preconditioner. The flow-based preconditioner is implemented as a class-conditional vector field modeled by an MLP with input dimensions corresponding to the latent vector xt, t, and class label y. The MLP uses two hidden layers with 128 units and ReLU activations. This architecture is identical to the main flow model used in stage two. Unlike the normalizing flow, this preconditioner is trained using the flow matching objective to push VAE latents toward Gaussian noise. However, instead of using a smaller architecture, we simulate reduced capacity by limiting the number of training epochs to just 300 (as opposed to 1000 epochs for training the second stage flow model), resulting in a less accurate but computationally inexpensive preconditioner. The training uses sinusoidal interpolation, and samples are matched against Gaussian noise via the standard flow matching loss. The remaining experimental details for training the main flow model for MNIST are summarized in Table 4.  
+
+> Table 4. Experimental settings and hyperparameters for the main flow model in MNIST.
+
+MNIST Model Conditional MLP Image size (1-channel) 28 × 28 
+
+Max Epochs 1000 Learning rate 2 × 10 −4
+
+Optimizer AdamW Batch size 4096 Hidden layers 2Hidden dimensions 128 Interpolation s(t) = sin( π 
+
+> 2
+
+t), c (t) = cos( π 
+
+> 2
+
+t)
+
+F.2. High-Resolution Image Synthesis 
+
+We evaluate our method on the Oxford Flowers-102 (Nilsback & Zisserman, 2008), LSUN Churches (Yu et al., 2015), and AFHQ Cats (Choi et al., 2020) datasets. All experiments are conducted in the latent space of a pretrained VAE, using the Stable Diffusion VAE encoder–decoder (Rombach et al., 2022). This model spatially compresses by a factor of 8, giving a 
+
+4 × 32 latent representation for 256 2 images (Flowers, Churches) and a 4 × 64 × 64 representation for 512 2 images (AFHQ Cats). We compare standard flow matching in latent space with a preconditioned variant that employs an additional flow model. The architecture and training details of the baseline flow model are summarized in Table 5. 22 Preconditioned Score and Flow Matching 
+
+The architectural details for the preconditioner network are explained in detail below: • Flow Matching Preconditioner. Preconditioning is implemented using an additional flow model operating in the same latent space. The preconditioner uses the same UNet architecture as the main flow model, but is trained with reduced accuracy by limiting the number of training epochs to at most one-third of the main flow-matching training budget. This yields a computationally inexpensive transformation that partially Gaussianizes the latent data distribution while preserving semantic structure. A matching-point operator is applied between the preconditioning flow and the main flow to ensure consistent alignment of intermediate distributions and stable composition of the learned transports. The preconditioning flow is trained first and then frozen. The main flow model is subsequently trained on the preconditioned latent distribution using the same optimization settings as the baseline. Sample quality is evaluated by decoding generated latent samples back to image space and computing FID against real images.  
+
+> Table 5. Experimental settings and hyperparameters for LSUN Churches, Oxford Flowers-102, and AFHQ Cats datasets.
+
+LSUN Churches Oxford Flowers-102 AFHQ Cats Model UNet UNet Unet Image size (3-channel) 256 ×256 256 ×256 512 ×512 Max Epochs 150 300 800 Learning rate 5 × 10 −5 5 × 10 −5 1 × 10 −4
+
+Optimizer AdamW AdamW AdamW Batch size 32 32 32 ( 16 × 2)Hidden Layers 256 256 192 Attention heads 4 4 12-24 Blocks 3 3 2
+
+# G. Additional Experiments and Results 
+
+G.1. Transport from Checkerboard to Swiss Roll: 2D → 1D Manifold Transport 
+
+To provide a controlled visualization of the optimization effects discussed above, we consider a two-dimensional transport task from a checkerboard source distribution p0 to a Swiss roll target distribution p1, which lies on a lower-dimensional manifold. This setting isolates geometric and optimization effects independently of high-dimensional model capacity and allows direct inspection of learned transport trajectories. Figure 11 compares flow matching without and with preconditioning. Without preconditioning, the learned transport exhibits distorted and highly anisotropic trajectories, with many samples failing to align with the target manifold. Although the training loss decreases, optimization stagnates early, resulting in poor target coverage and a relatively high final distributional discrepancy. In contrast, preconditioning reshapes the source geometry before transport, yielding smoother and more coherent flow lines and substantially improved alignment of the transported samples ˆp1 with the Swiss roll target. The right panel quantifies this behavior using the MMD metric. While both models initially reduce the discrepancy, the unpreconditioned model plateaus early, whereas the preconditioned model continues to make progress and converges to a significantly lower final MMD. This example illustrates that preconditioning does not necessarily accelerate early convergence, but instead mitigates optimization stagnation by enabling continued progress along directions that are otherwise suppressed by ill-conditioning, consistent with the conditioning-based analysis developed in earlier sections. 
+
+G.2. Condition Number Dynamics for MNIST Training 
+
+To understand how preconditioning impacts the geometry of the transport process, we measure the condition number κ(Σ t)
+
+of the covariance matrix of samples xt from the intermediate distributions pt at various time steps t ∈ (0 , 1) during the flow matching training for the MNIST dataset. A higher condition number indicates stronger anisotropy, which typically hinders optimization during flow matching. Figure 12 shows that without preconditioning, the condition number increases rapidly with time t, indicating poor condi-tioning. Both the normalizing flow and flow matching preconditioners significantly reduce the condition numbers across 23 Preconditioned Score and Flow Matching 
+
+Figure 11. Effect of preconditioning in flow matching for a Checkerboard → Swiss Roll transport (2D →1D manifold transport). 
+
+Flow matching transports samples from a checkerboard source p0 to a Swiss-roll target p1. (a) Without preconditioning, the learned transport shows distorted trajectories and poor target coverage. (b) With preconditioning, the normalized source yields smoother flows and more accurate alignment of the transported samples ˆp1 with p1. (c) Preconditioning prevents early optimization stagnation and enables continued reduction in distributional discrepancy, achieving a substantially lower final MMD than the unpreconditioned model. 
+
+Figure 12. Condition number κ(Σ t) of the intermediate distributions pt over time t during flow matching on MNIST latent space. 
+
+Without preconditioning (blue), the covariance matrices Σt become increasingly ill-conditioned as t → 1, impeding optimization. Both normalizing flow (NF) (orange) and flow matching (green) preconditioning significantly reduce condition numbers, especially for large t,improving numerical stability and convergence. 
+
+all t, with the normalizing flow achieving the most isotropic intermediate representations, which is also reflected in the quantitative results obtained for MNIST in Table 2. These results highlight the effectiveness of preconditioning in improving optimization geometry during training. 24

@@ -1,0 +1,324 @@
+Title: FoSS: Modeling Long Range Dependencies and Multimodal Uncertainty in Trajectory Prediction via Fourier State Space Integration
+
+URL Source: https://arxiv.org/pdf/2603.01284v1
+
+Published Time: Tue, 03 Mar 2026 02:41:56 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# FoSS: Modeling Long-Range Dependencies and Multimodal Uncertainty in Trajectory Prediction via Fourier–State Space Integration 
+
+# Yizhou Huang 1* , Gengze Jiang 1, Yihua Cheng 2, Kezhi Wang 1† 1Brunel University of London, 2University of Birmingham 
+
+# Abstract 
+
+Accurate trajectory prediction is vital for safe autonomous driving, yet existing approaches struggle to balance mod-eling power and computational efficiency. Attention-based architectures incur quadratic complexity with in-creasing agents, while recurrent models struggle to cap-ture long-range dependencies and fine-grained local dy-namics. Building upon this, we present FoSS , a dual-branch framework that unifies frequency-domain reason-ing with linear-time sequence modeling. The frequency-domain branch performs a discrete Fourier transform to decompose trajectories into amplitude components encod-ing global intent and phase components capturing local variations, followed by a progressive helix reordering mod-ule that preserves spectral order; two selective state-space submodules, Coarse2Fine-SSM and SpecEvolve-SSM, re-fine spectral features with O(N ) complexity. In parallel, a time-domain dynamic selective SSM reconstructs self-attention behavior in linear time to retain long-range tem-poral context. A cross-attention layer fuses temporal and spectral representations, while learnable queries gener-ate multiple candidate trajectories, and a weighted fusion head expresses motion uncertainty. Experiments on Argov-erse 1 and Argoverse 2 benchmarks demonstrate that FoSS 
+
+achieves state-of-the-art accuracy while reducing computa-tion by 22.5% and parameters by over 40%. Comprehensive ablations confirm the necessity of each component. 
+
+# 1. Introduction 
+
+Accurate trajectory prediction is essential for safe au-tonomous driving, particularly in dense multi-agent envi-ronments where vehicles and pedestrians interact dynam-ically [5, 12]. Modern prediction systems must simulta-neously satisfy three requirements: modeling long-range dependencies across agents, representing multimodal fu-tures to capture uncertainty, and operating within strict real-  
+
+> *First author: byyh009@brunel.ac.uk
+> †Corresponding author: kezhi.wang@brunel.ac.uk Inputs
+> Map Position
+> Camera
+> Sensor
+> Traffic
+> rule
+> Car
+> status
+> Classical Fourier HelixSort
+> Low High
+> Static vs. Dynamic
+> Radius = frequency order
+> Suitable for SSM modeling
+> Independent
+> Frequency components
+> (no sequential correction)
+
+Figure 1. The relationship between input modalities, classical Fourier decomposition, and our HelixSort progressive scanning. Low-frequency inputs such as traffic rules and maps encode global priors, while high-frequency inputs such as vehicle status and posi-tion contain fine-grained dynamics. HelixSort progressively scans and aligns these heterogeneous frequency cues, forming an or-dered frequency sequence for selective state-space modeling. 
+
+time constraints. Despite substantial progress, existing ap-proaches [2, 4, 6, 27] face inherent trade-offs between ac-curacy, efficiency, and scalability. Methods relying solely on temporal modeling often conflate global motion pat-terns with local dynamics, while transformer-based archi-tectures [14, 28, 40, 42, 44] achieve high accuracy at the cost of quadratic computational complexity, limiting their deployment in resource-constrained systems. In response, we present FoSS , to the best of our knowledge, it is one of the first principled integrations of frequency-domain analysis and linear-complexity sequence modeling in large-scale autonomous driving trajectory pre-diction. We observe that trajectory signals exhibit comple-mentary structures in the spectral and temporal domains: amplitude spectra encode global motion trends, while phase spectra capture fine-grained temporal variations. However, standard Fourier representations lack ordered frequency se-mantics, making it difficult for sequence models to process spectral information effectively [1, 22, 39]. Moreover, con-ventional fusion strategies [29, 30] between temporal and spectral features often suffer from scale mismatches that hinder optimization stability. Our framework employs a dual-branch architecture to 1
+
+> arXiv:2603.01284v1 [cs.CV] 1 Mar 2026
+
+preserve and synergistically combine both representations. The frequency-domain branch performs discrete Fourier decomposition followed by a progressive helix reordering module ( HelixSort ) to impose structural ordering, enabling selective state space modules, namely Coarse2Fine-SSM 
+
+and SpecEvolve-SSM to refine spectral features with linear computational complexity. The time-domain branch applies an input-dependent selective state space model [9, 10, 31] to capture long-range dependencies efficiently. A cross-attention mechanism fuses the two branches, resolving feature-scale mismatches through normalization and resid-ual connections. Finally, a learnable query-based decoder generates multimodal future trajectories through a weighted candidate fusion strategy. Extensive experiments on the Argoverse 1 [3] and Argoverse 2 [15, 37] benchmarks demonstrate that FourierMamba-TP achieves state-of-the-art accuracy while reducing computational cost and parameter count, validat-ing its scalability for real-world autonomous systems. Our contributions are summarized as: 1) We propose a dual-branch framework that integrates Fourier-domain decom-position with selective state space modeling, enabling dis-entangled representation of global and local motion dy-namics. 2) We design two selective SSM submodules, Fourier Coarse-to-Fine Frequency (Coarse2Fine-SSM) and frequency channel evolution (SpecEvolve-SSM), that refine spectral features with linear computational complexity. 3) We improve the cross-attention mechanism for stable fusion between temporal and spectral representations, enabling ef-ficient and multimodal trajectory prediction. 
+
+# 2. Related Work 
+
+2.1. Fourier Transform in Vision Tasks 
+
+The Fourier transform is a classical tool for decompos-ing time- or space-domain signals into frequency com-ponents, separating low-frequency structures from high-frequency details and noise. Such properties have been widely explored in super-resolution [21, 30] and de-raining tasks [16, 29]. Several recent studies [1, 22, 39] have in-vestigated the integration of Fourier-based representations into trajectory prediction. These methods typically em-ploy spectral decomposition to encode motion patterns in the frequency domain, facilitating the separation of global trends from local variations. Unlike prior Fourier-based approaches, our proposed Helix sweeping mechanism ex-plicitly decomposes trajectory signals into low-frequency global trends and high-frequency local variations. By trans-forming these into structured priors for State Space Models (SSMs), we provide essential frequency-domain guidance that complements the long-range dependency modeling of SSMs. This design not only strengthens the representation of complex motion patterns but also successfully extends the Fourier-based reasoning paradigm to the realm of non-linear trajectory prediction. 
+
+2.2. Selective State Space Models (SSMs) 
+
+The selective SSM extends traditional linear SSMs by in-corporating input-dependent parameterization, enabling dy-namic adjustment of state transitions based on varying in-puts [9]. This architecture enhances the model’s ability to capture long-range dependencies across sequences [26]. Recent studies [7, 17, 24, 34] have successfully applied se-lective SSMs to long-range modeling tasks in domains such as video and speech, demonstrating their efficiency and rep-resentational capacity. In autonomous driving scenarios, trajectory data often contain both global motion trends and local dynamic variations. The input-adaptive structure of selective SSMs is well aligned with this dual-level infor-mation, allowing efficient modeling of complex spatiotem-poral patterns. Temporal-only models struggle to capture both global motion trends and local dynamics. This work designs a dual-branch network that embeds selective SSMs in the frequency domain, where spatial- and channel-level spectra are deeply refined, yielding richer multimodal rep-resentations and more effective feature fusion than existing SSM approaches. 
+
+2.3. Multimodal Motion Prediction Model 
+
+Deep learning–based trajectory prediction has seen signif-icant progress through a variety of architectures, includ-ing RNNs, LSTMs, and transformers. Early works such as Social-LSTM and its extensions [18, 25] utilize recur-rent structures to model temporal dependencies but often suffer from vanishing gradients when handling long se-quences, limiting their effectiveness in complex driving sce-narios. Transformer-based approaches [14, 40, 44] im-prove interaction modeling through self-attention mecha-nisms, yet incur quadratic computational complexity with respect to sequence length, making them less suitable for real-time applications involving dense multi-agent interac-tions. To address uncertainty in future motion, several stud-ies [12, 19, 32, 44] have proposed candidate-based predic-tion schemes followed by weighted fusion. While these methods improve multimodal expressiveness, they often rely on heuristics or static fusion weights, which may limit the adaptability of the model under highly dynamic condi-tions. 
+
+# 3. Methodology 
+
+3.1. Problem Formulation 
+
+Let the historical trajectory sequence be denoted as X ∈
+
+RT ×d, where T is the number of observed time steps and 
+
+d is the feature dimension at each step (e.g., 2D or 3D po-sition, velocity, etc.). The goal of trajectory prediction is 2to estimate the future trajectory Y ∈ RT ′×d over T ′ fu-ture time steps based on the observed sequence X. Conven-tional approaches typically model X directly in the time do-main. However, when dealing with complex scenarios and multi-scale information, they often struggle to capture both global motion trends and local dynamic details simultane-ously. This method builds upon the standard problem for-mulation and proposes a dual-branch approach that decom-poses the observed sequence X in the frequency domain and integrates it with time-domain information for predic-tion. This design aims to improve both prediction accuracy and computational efficiency. 
+
+3.2. Fourier Transform with SSMs 
+
+In practical applications, the Fourier transform involves sev-eral important considerations: Normalization factor. The factor 1√T ensures consistency between the forward and in-verse Fourier transforms. It preserves the total energy of the signal across both the time and frequency domains. This property helps maintain numerical stability and facilitates reliable modeling of frequency-domain features. Complex-valued representation. Since F (X)( ω) ∈ C is a com-plex number, its real part ℜ{ F (X)( ω)} and imaginary part 
+
+ℑ{ F (X)( ω)} correspond to the projections of the original signal onto cosine and sine bases, respectively. By analyz-ing these two components, the model can effectively iden-tify behavioral patterns associated with different frequen-cies. This facilitates an explicit decomposition of the signal into global structures and local perturbations. The core idea of the FoSS framework is to represent a time-domain signal as a sum of sinusoidal and cosinusoidal components at different frequencies. This decomposition enables the separation of global trends and local variations based on their frequency characteristics. In trajectory mod-eling tasks, such a representation facilitates the identifica-tion of periodic behavioral patterns and fine-grained dy-namic changes. The standard formulation of the Discrete Fourier Transform (DFT) 1 is given by 
+
+F (X)( ω) = 1
+
+√T 
+
+> T−1
+
+X
+
+> t=0
+
+X(t)e−j2π tω T , ω ∈ { 0, 1, . . . , T −1},
+
+(1) where X(t) ∈ RT ×d denotes the trajectory feature at time step t. ω is the frequency index, and j is the imaginary unit. After obtaining the Fourier transform result F (X)( ω) ∈
+
+C, we further decompose it into amplitude A(X)( ω) and phase P (X)( ω) components to separately model the global trends and local dynamic behaviors in the trajectory. Specif-
+
+> 1For simplicity, we use the term “FFT” throughout this paper to refer broadly to both the Discrete Fourier Transform (DFT) and its fast compu-tational implementation, without distinguishing between their theoretical and algorithmic meanings.
+
+ically, for each frequency index ω,
+
+A(X)( ω) = pℜ{ F (X)( ω)}2 + ℑ{ F (X)( ω)}2,P (X)( ω) = arctan 
+
+ ℑ{ F (X)( ω)}ℜ{ F (X)( ω)}
+
+
+
+, (2) the A(X) captures of the energy distribution of the signal across different frequencies, which is typically associated with global motion trends and periodic behavioral patterns. The P (X) encodes the temporal alignment of individual frequency components, which can reveal fine-grained tem-poral dynamics and local perturbations in the trajectory. Conventional Fourier-transform outputs do not preserve a continuous ordering from low to high frequency, be-cause DFT symmetry, i.e ., ω and T − ω correspond to the same physical frequency. To address this, we introduce HelixSort (·), a helix reordering module inspired by JPEG’s zigzag encoding [13]. For multi-dimensional trajectories (d > 1), HelixSort operates independently along each fea-ture dimension k ∈ { 1, . . . , d }. The detailed steps are as follows: 1. Reshape the 1D DFT coefficients F (k) ∈ CT into a 2D grid F(k) ∈ C√T ×√T , zero-padded to the nearest square dimension to preserve spectral information. 2. Starting from the DC component at the spectral cen-ter (u0, v 0), traverse F(k) in an outward spiral or-der. Coefficients are sorted by ascending spectral radius 
+
+r = p(u − u0)2 + ( v − v0)2, with ties broken by row-major order. 3. Record the index mapping π(k) to produce a reordered 1D sequence bF (k) ∈ CT .This yields a non-decreasing radius sequence, i.e ., ∀i < j, r i ≤ rj , which concentrates low-frequency components (global trends) at the sequence start and high-frequency components (local dynamics) toward the end. This ordered representation enables sequential state-space models to pro-cess spectral information in a coarse-to-fine manner. 
+
+Compatibility with SSMs. Applying SSMs directly to standard DFT outputs is suboptimal, the interleaved low/high-frequency coefficients force the model to con-stantly switch between global and local reasoning, disrupt-ing the state evolution. HelixSort resolves this by pro-viding an ordered spectral sequence. State space models (SSMs) are naturally suited to long-range modeling over one-dimensional sequences. By interpreting the reordered sequence bF from HelixSort as an “artificial temporal axis”, we define the recurrence: 
+
+hs+1 = Ashs + Bs bF (s), Yfreq (s) = Cshs + Ds bF (s),
+
+(3) where the index s reflects the frequency rank (via spec-tral radius rs) rather than real time. As low-frequency com-ponents are processed first, the SSM accumulates global 3SSM                 
+
+> 𝑋 𝑓 =න
+> −∞
+> ∞
+> 𝑥 𝑡 𝑒 −𝑗2 𝜋 𝑓𝑡 𝑑𝑡
+> Norm
+> Conv
+> ℎ𝑡 +1=𝐴 ℎ𝑡 +𝐵 𝑋 𝑡
+> 𝑌 𝑡 =𝐶 ℎ𝑡 +𝐷 𝑋 𝑡
+> SSM
+> Activation
+> MLP MLP
+> A,B,C,D
+> MLP
+> MLP
+> TD -Mamba
+
+× N
+
+SSM 
+
+> Projection
+> Projection
+> Projection
+> Projection
+
+Cross 
+
+Attention   
+
+> FD -Mamba
+> Channel Scan
+> Helix Reordering
+> Conv
+> DFT
+> Conv
+> I-FFT
+> 𝑋 1
+> 𝑋 𝑇
+> 𝑋 T+1𝑋 T+n
+> Historic Trajectories Future Trajectories
+
+× N
+
+× KFigure 2. Overview of the proposed framework. Historical trajectories are processed in two parallel branches: (i) frequency branch (FD-Mamba) applies a DFT and reorders the spectrum with a progressive HelixSort in two selective state-space blocks. Coarse2Fine-SSM for spatial interaction and SpecEvolve-SSM for channel evolution; (ii) time branch (TD-Mamba) passes the raw sequence through an input-dependent selective SSM where each state-transition matrix is dynamically generated from the current observation and its local Conv1D features. This design allows the temporal dynamics to adaptively evolve over time, effectively mimicking self-attention behavior with linear complexity.The resulting features are fused via a cross-attention layer, after which a learnable query set decodes K candidate futures whose uncertainty-aware weights yield the final trajectory prediction. 
+
+trends in its state. When high-frequency components arrive later, the model has already built sufficient context to mod-ulate short-term details—a process aligned with the com-mon coarse-to-fine reasoning strategy. Moreover, the mono-tonicity of HelixSort allows the parameters As, Bs to spe-cialize in low-frequency dynamics, while high-frequency inputs are selectively gated to suppress noise. This sepa-ration significantly reduces the conditioning number of the state transition matrix As, leading to more stable gradient propagation during training. 
+
+Complexity Analysis. HelixSort involves one FFT op-eration ( O(T log T )) and index reordering ( O(T )). It stores a T -dimensional index map π, introducing no learnable parameters and negligible overhead: 0.08 ± 0.015% total FLOPs increase and <0.25MB memory (measured on Ar-goverse 2, T = 50 ). 
+
+3.3. Dual-Branch Network Architecture 
+
+Considering that modeling trajectory data using only time-domain or frequency-domain methods may be insufficient to fully capture its multi-scale characteristics, we propose a dual-branch network architecture. As illustrated in Figure 1, this architecture consists of a time-domain branch and a frequency-domain branch; it respectively models and inter-prets trajectories from the perspectives of temporal evolu-tion and frequency structure. 
+
+TD-Mamba: Selective state space modeling in time-domain branch. In the time domain branch, the input tra-jectory data X ∈ RT ×d is directly used as input. A selective SSM is employed to extract dynamic evolution features of the target’s motion process from it and capture long-range dependencies. In traditional linear SSMs, state updates are typically performed using the following formula: 
+
+h(t + 1) = Ah (t) + BX (t), Y time (t) = Ch (t) + DX (t),
+
+(4) where h(t) ∈ Rn represents the hidden state at time t, and 
+
+A ∈ Rn×n, B ∈ Rn×d, C ∈ Rp×n, D ∈ Rp×d are the state transition, input, output, and feedforward matrices, re-spectively. However, for complex trajectory data, this fixed-parameter approach often struggles to fully suppress noise and capture crucial dynamic information. Therefore, a se-lective state space model is introduced in our model, dy-namically adjusting each parameter matrix based on the cur-rent input X(t) and its local convolutional features ˜X(t) = Conv1D( X(t)) . Specifically, the matrix parameters are de-fined by 
+
+At = fA(X(t), ˜X(t)) , Bt = fB (X(t), ˜X(t)) ,Ct = fC (X(t), ˜X(t)) , Dt = fD (X(t), ˜X(t)) . (5) Where fA, f B , f C , f D all are implemented by lightweight Multilayer Perceptrons (MLPs), used to generate the cor-4responding parameters based on the current input informa-tion. Therefore, the state update formula is rewritten as: 
+
+h(t + 1) = Ath(t) + BtX(t), Ytime (t) = Cth(t) + DtX(t).
+
+(6) This input-dependent parameterization allows the state up-date process to automatically and selectively amplify key motion patterns while suppressing detrimental noise inter-ference based on the input at different time steps. Further-more, during the update process, the input is preprocessed using 1D convolution (Conv1D) to extract local short-term features. The output of this convolution ˜X(t) is integrated into the parameter generation functions ( fA, f B , f C , f D ), thereby enhancing the model’s sensitivity to local dynamic changes. To ensure numerical stability, the hidden state at each time step, after undergoing SiLU activation, is also subjected to layer normalization, specifically, 
+
+ˆh(t + 1) = LayerNorm (SiLU (h(t + 1))) , (7) after undergoing the dynamic state update and normaliza-tion operations described above, the entire time domain branch outputs a series of features Ytime ∈ RT ×p. This fea-ture not only reflects the continuous dynamics of the motion sequence, but also possesses good anti-interference capa-bilities, providing effective temporal priors for frequency-domain feature fusion and candidate trajectory generation. 
+
+FD-Mamba: Spectrum reconstruction and sequential modeling in frequency-domain branch. To effectively capture the global motion trends and local dynamic infor-mation of trajectory data, the data X is first transformed to the frequency domain using Equation (1). Subsequently, the amplitude A(X) and phase P (X) are then calculated separately via Equation (2). Since the frequency components output by the traditional Fourier transform do not directly present a low-frequency to high-frequency order, the progressive helix reordering module HelixSort (·) addresses this limitation. This mod-ule first rearranges the amplitude A(X) and phase P (X)
+
+based on the distance of each frequency component from the spectrum center, thereby concentrating low-frequency information in the initial part of the sequence and ordering high-frequency information subsequently. The rearranged amplitude and phase are denoted by 
+
+A′(X)( ω) = HelixSort (A(X)( ω)) ,P ′(X)( ω) = HelixSort (P (X)( ω)) . (8) Building upon this, we further incorporate two sub-modules to deeply model frequency domain features from spatial and channel perspectives: (a) the Fourier Spatial Interaction State Space Module (Coarse2Fine-SSM) and (b) the Fourier Channel Evolution State Space Module (SpecEvolve-SSM). Both submodules operate in parallel on the shared input Fin (obtained as Fl after LayerNorm trans-formation), modeling spatial and channel spectral depen-dencies, respectively. Firstly, in Coarse2Fine-SSM, Fin undergoes FFT to con-vert to the frequency domain, producing the correspond-ing amplitude spectrum A(Fl) and phase spectrum P (Fl).Subsequently, the progressive helix reordering module sep-arately rearranges these two parts: 
+
+A′(Fl) = HelixSort (A(Fl)) , P ′(Fl) = HelixSort (P (Fl)) .
+
+(9) To further refine the frequency-domain information, the module sequentially processes the rearranged sequences us-ing Depthwise Separable Convolution (DWConv), SiLU ac-tivation, a Selective SSM, and LayerNorm. Finally, restor-ing these processed features back to the time domain via inverse FFT, followed by element-wise multiplication with the original SiLU-activated Fl, forms the spatially interac-tive representation: 
+
+Ff = iFFT  A′(Fl), P ′(Fl) ⊙ SiLU( Fl). (10) Secondly, the SpecEvolve-SSM module processes spec-tral information along the channel dimension. Specifically, the input feature Fin ∈ RH×W ×C undergoes global av-erage pooling to produce Fg ∈ R1×1×C . Fourier Trans-form is applied to Fg , producing channel-wise spectrum 
+
+F (Fg )( z) with amplitude A(Fg )( z) and phase P (Fg )( z).To exploit inter-channel correlations, a one-dimensional progressive helix reordering (Channel Scan) reorders coef-ficients by ascending spectral magnitude |F (Fg )( z)|. The reordered spectra A(Fg )′(z) and P (Fg )′(z) are restored via inverse FFT, yielding processed channel features. These are element-wise multiplied with Fg , activated by SiLU, to pro-duce the evolved channel feature: 
+
+Fa = iFFT  A(Fg )′(z), P (Fg )′(z) ⊙ SiLU( Fg ). (11) The evolved feature Fa is fused with Fin via element-wise gating to obtain the enhanced representation: 
+
+Fenhance = Fa ⊙ Fin . (12) Finally, the output Ff from the Coarse2Fine-SSM and the Fenhance from the SpecEvolve-SSM are concatenated along the channel dimension and passed through a lin-ear projection layer to align their scales and distributions, yielding the final frequency-domain representation Ffreq .This preserves the spatial-interaction cues extracted by Coarse2Fine-SSM and fuses the channel-evolution features produced by SpecEvolve-SSM. Consequently, Ffreq (t) cap-tures both global motion trends and local dynamic details, offering a strong frequency-domain prior for subsequent feature fusion and trajectory generation. 53.4. Candidate Trajectory Generation and Loss Function 
+
+This module introduces the cross-attention–based candidate-trajectory generation process. It directly derives salient information from the features that combine temporal- and frequency-domain cues, yielding future-trajectory predictions. Concretely, the dual-branch fused feature Z ∈ RT ×d interacts with a set of learnable query vectors Q ∈ RK×d, where T is the sequence length, d is the feature dimension, and K is the number of candidate trajec-tories. The queries are initialized, whereas the fused feature 
+
+Z is used as both keys and values, i.e., K = Z and V = Z,with dk denoting the key dimension. This cross-attention mechanism enables each query to aggregate dynamic and structural information relevant to the target motion, producing contextual representations for the candidate trajectories, denoted as: Zatten ∈ RK×d. After obtaining the attention output, the feature tensor Zatten is passed into an MLP to apply nonlinear transformations to project the features into the parameter space of candidate trajectories, denoted as: ˆYk = MLP ( Zattn (k)) , k = 1 , 2, . . . , K.To jointly constrain prediction quality in both temporal and frequency domains, and to optimize candidate trajec-tory generation and fusion, this work proposes a unified loss function. First, in the temporal domain, an L1 loss is used to directly measure the difference between the final predicted trajectory ˆY and ground truth Y . Ltime = ˆYfinal − Y 1
+
+.Secondly, to ensure consistency in the frequency domain, both ˆY and Y are transformed using the Fourier transform. An L1 loss is then computed between their frequency-domain representations. Lfreq = F ( ˆYfinal ) − F (Y ) 1
+
+.And finally, the total loss is defined as: 
+
+Ltotal = Ltime + λLfreq . (13) 
+
+# 4. Experiments 
+
+4.1. Implementation Details 
+
+All experiments in this work are implemented using the PyTorch Lightning framework. For accuracy comparison, training and evaluation are conducted on an NVIDIA A100 GPU. During training, the batch size is set to 128, and the initial learning rate is 0.001. The Adam optimizer is used for weight updates, and the model is trained for a total of 50 epochs. A dynamic learning rate schedule is applied based on validation performance. The learning rate is re-duced to 10% of its original value if the validation met-ric does not improve for 5 consecutive epochs. Inference latency and efficiency are measured on an NVIDIA RTX 3090 GPU, which closely approximates the runtime char-acteristics of embedded devices such as the NVIDIA Jetson Orin. Although RTX 3090 provides higher raw throughput, its shared Ampere architecture with the Jetson Orin allows the results to serve as a reliable proxy for realistic edge de-ployment conditions. 
+
+4.2. Datasets and Evaluation Metrics 
+
+This study is validated on two large-scale datasets. The Argoverse 1 dataset [3], each sample provides 2 seconds of observed trajectory, used to predict the next 3 seconds. The Argoverse 2 dataset [15, 37] offers 5 seconds of history for predicting the following 6 seconds, with more complex scene dynamics. Standard trajectory prediction metrics are used for evaluation. These include the minimum ADE over all time steps (minADE K ) and the minimum FDE at the last time step (minFDE K ). In addition, the miss rate (MR K )measures the proportion of predicted trajectories whose fi-nal point deviates by more than 2 meters. The Brier score variant (b-minFDE K ) is also used to assess the calibration of confidence in predictions. The value of K is set to 1 and 6 following the official prediction protocol. 
+
+4.3. Quantitative Experiments 
+
+The comparison includes several state-of-the-art models. All baselines are evaluated using their publicly released code and official hyperparameter settings or reproduced based on their original papers. 
+
+Result on Argoverse 2. On the 6-second prediction task of Argoverse 2 (Table 1), FoSS (Ours) achieves the best overall performance. It records a b-minFDE 6 (1.69), im-proving upon DenseTNT (1.98) by 14.6% , and a minADE 6
+
+(0.61), outperforming SceneTransformer (0.75) by 18.7% .Its minFDE 6 (1.07) shows an 11.6% improvement over the same baseline, and the MR 6 (0.11) improves from 0.14 by 21.4% . These results confirm that the proposed fre-quency decomposition and selective SSM substantially en-hance long-horizon trajectory accuracy. 
+
+Result on Argoverse 1. On the 3-second prediction task of Argoverse 1 (Table 2), FoSS (Ours) achieves a minADE 1 (1.67), improving over LaneGCN (1.92) by 
+
+13.0% , and a minFDE 1 (2.05), comparable to Wayformer (2.02, ∼1.5% difference). Its MR 1 (0.11) matches the best existing results, indicating strong reliability in short-horizon prediction. Overall, the method demonstrates con-sistent improvements across both datasets with a favorable trade-off between accuracy and efficiency. 
+
+Compatibility with Other Temporal Backbones. We further verify the plug-and-play property of the frequency branch 2. FD-Mamba is combined with two temporal en-coders (Transformer and LSTM) by replacing the time-domain branch while keeping all other settings identical. These variants fine-tune the original backbones without any 
+
+> 2The hybrid variants are reported only to demonstrate FD-Mamba’s adaptability across architectures, not to claim additional performance gains.
+
+6Table 1. Comparison results on the Argoverse 2 dataset [15, 37]. For each metric, the best result is in bold and underline represents the second best. Notably, the reported results reflect the performance of backbone networks only, excluding improvements from engineering techniques such as ensembling. Method b-minFDE ↓ minADE ↓ minFDE ↓ MR ↓ #Params (M) ↓
+
+LaneGCN [19] 2.06 0.87 1.36 0.16 -DenseTNT [11] 1.98 0.88 1.28 0.13 -BANet [36] 1.92 0.71 1.36 0.19 9.49 SceneTransformer [23] 1.89 0.80 1.23 0.13 15.30 GOHOME [8] 1.86 0.89 1.29 0.08 -HiVT [43] 1.84 0.77 1.17 0.13 -MultiPath++ [33] 1.79 0.79 1.21 0.13 -PAGA [38] 1.76 0.80 1.21 0.11 -Wayformer [20] 1.74 0.77 1.16 0.12 -QCNet [44] 1.91 0.65 1.29 0.16 7.71 DeMo [41] 1.84 0.63 1.17 0.13 5.92 
+
+FD-Mamba +Transformer 1.77 0.75 1.21 0.14 21.83 
+
+FD-Mamba +LSTM 1.91 0.85 1.28 0.13 7.89 
+
+FoSS (Ours) 1.69 0.61 1.07 0.11 4.18 
+
+Table 2. Comparison results on the Argoverse 1 dataset [3]. The best result is in bold and underline represents the second best. Performance evaluated on backbone networks without ensembling. 
+
+Method minADE 1 ↓ minFDE 1 ↓ MR 1 ↓
+
+LaneGCN [19] 1.92 2.30 0.18 DenseTNT [11] 1.89 2.20 0.16 SceneTransformer [23] 1.89 2.13 0.13 HiVT [43] 1.84 2.05 0.13 MultiPath++ [33] 1.79 2.08 0.13 PAGA [38] 1.76 2.08 0.11 
+
+Wayformer [20] 1.74 2.02 0.12 QCNet [44] 1.76 2.08 0.11 
+
+DeMo [41] 1.65 3.89 0.14 
+
+FD-Mamba +Transformer 1.81 2.14 0.14 
+
+FD-Mamba +LSTM 1.88 2.27 0.15 
+
+FoSS (Ours) 1.67 2.05 0.11 
+
+Table 3. Ablation study on the Argoverse 2 dataset [15, 37]. F.D.B. refers to the frequency-domain branch; P.H.R.M. is the progressive helix reordering module; Fourier S.S.M. indicates the selective state-space model in both Coarse2Fine-SSM and SpecEvolve-SSM submodules; Replace Concat +MLP is the replacement of cross-attention in time domain for feature fu-sion. The general compatibility of the frequency branch with other temporal backbones (e.g., LSTM and Transformer) is further validated in Table 1, demonstrating FD-Mamba’s plug-and-play performance across different architectures.                         
+
+> Variant minADE ↓minFDE ↓MR ↓
+> w/o F.D.B. 0.71 1.36 0.17
+> w/o P.H.R.M. 0.69 1.32 0.16
+> w/o Fourier S.S.M. 0.70 1.35 0.17 Replace Concat +MLP 0.69 1.33 0.16
+> Full model 0.65 1.29 0.15
+
+structural change. Empirically, FD-Mamba aligns natu-rally with Transformer architectures, as spectral priors com-plement token-wise aggregation, while our full model re-mains specifically optimized for SSMs with dynamic pa-rameter updates and coarse-to-fine frequency routing. 
+
+Efficiency and Inference Latency. Despite its high accuracy, FoSS (Ours) contains only 4.18M parameters, the smallest among all compared models. As shown in Table 4, it achieves an average inference time of 64 ms ,faster than HiVT (82 ms), SceneTransformer (76 ms), QC-Net (71 ms), and MultiPath++ (70 ms). It also requires only 
+
+22.1 G FLOPs, a 51% and 19% reduction compared with QCNet (45.3 G) and Trajectory Mamba (27.3 G). GANet and BANet use CNN- and graph-based encoders derived from LaneGCN; although their FLOPs are lower (15.79 G and 11.93 G), their accuracy drops notably. Overall, the dual-branch design achieves a superior trade-off among ac-curacy, latency, and computational cost. 
+
+4.4. Qualitative Analysis 
+
+Figure 3 illustrates representative prediction cases from the Argoverse 2 dataset, covering diverse driving scenar-ios such as U-turns, lane changes, turns, and straight driv-ing. In each example, the red lines denote historical tra-jectories, orange lines represent ground-truth futures, and green lines are the predictions of FoSS . As shown, FoSS 
+
+produces smooth and accurate trajectories across most sce-narios. Even in challenging cases involving sharp turns or U-turns, the model outputs multiple high-quality pre-dictions that closely follow lane geometry, demonstrating strong multimodal reasoning and adherence to road con-straints. In frequent lane-change scenarios (Fig. 3(f)), per-formance slightly degrades, the predicted trajectories ex-hibit minor jitter. This may be due to the limited abil-7Figure 3. Qualitative results on Argoverse 2 [15, 37], covering U-turn (e), lane change (b,f), turning (a,c,h), and straight-driving scenes (d,g). Red: past trajectories; orange: ground truth; green: predicted trajectories. The model generates smooth and diverse trajectories aligned with road geometry, with slight jitter (f) in frequent lane-change cases, possibly due to transient high-frequency motion cues. Method Online inference (ms) ↓                          
+
+> HiVT [43] 82 ±1
+> SceneTransformer [23] 76 ±1
+> QCNet [44] 71 ±1
+> MultiPath ++ [33] 70 ±1
+> FoSS (Ours) 64 ±1
+> Table 4. Inference latency is evaluated on an NVIDIA RTX 3090 GPU, offering computational characteristics similar to the NVIDIA Jetson Orin developer kit. Performence lower is better. Method FLOPs (G) ↓
+> GANet [35] 15.79 BANet [36] 11.93
+> QCNet [44] 45.3 Trajectory Mamba [12] 27.3 FoSS (Ours) 22.1 Table 5. Computational efficiency on Argoverse 2 [15, 37]. All experiments use an NVIDIA 3090 GPU.
+
+ity to capture transient high-frequency motion cues. Lane boundaries are represented as low-frequency components during spectral decomposition, which may underrepresent rapid lateral maneuvers. Overall, these qualitative results confirm the model’s robustness and its capability to pro-duce diverse and road-compliant future trajectories across complex traffic conditions. 
+
+4.5. Ablation Study 
+
+To quantify the contribution of each key component, we conduct an ablation study on the Argoverse 2 dataset, as summarized in Table 3. Removing the frequency-domain branch (F.D.B.) degrades performance notably, with minADE 6 increasing from 0.65 to 0.71 and minFDE 6
+
+from 1.29 to 1.36, indicating that frequency cues are es-sential for capturing global motion trends and reducing noise in long-horizon prediction. Disabling the progres-sive helix reordering module (P.H.R.M.) causes a moderate drop ( +6.2% minADE, +2.3% minFDE), showing that or-dered spectral traversal enhances structural coherence and fine-grained motion extraction. When the Fourier S.S.M. is removed, performance declines to 0.70/1.35/0.17 on minADE/minFDE/MR, underscoring the selective SSM’s importance for stable spectral–temporal fusion. Replac-ing the cross-attention fusion with a simple Concat+MLP further increases errors (0.69/1.33/0.16), confirming that token-wise cross-state interaction effectively aligns tempo-ral and frequency representations. Overall, the full model achieves the best results (minADE 6=0.65, minFDE 6=1.29, MR 6=0.15), demonstrating the complementary benefits of frequency–time dual-branch modeling. 
+
+# 5. Conclusion and Future Work 
+
+This work present FoSS , a dual-branch framework that combines frequency-domain decomposition and input-dependent state-space modeling to achieve an efficient yet expressive trajectory predictor. With cross-domain atten-tion and adaptive trajectory fusion, the approach maintains robustness and multimodality under linear computational cost. Extensive experiments on Argoverse 1 and 2 demon-strate consistent gains, improving minADE and minFDE by up to 14.8% and 22.5% , while reducing inference latency by 22% and parameter count by 40% . These results con-firm the framework’s effectiveness in complex traffic sce-narios. Future work will focus on long-tail corner cases involving abrupt low-to-high frequency motion changesto ensure robust forecasting in highly dynamic environments. 86. Acknowledgement 
+
+This work was supported in part by UKRI Inno-vate UK projects (10071278, 10099265), as well as UKRI under the Horizon Europe funding guarantee (EP/Y028031/1, EP/U536908/1), as part of the Eu-ropean Commission MSCA COVER (101086228) and ANT (101169439) projects. K. Wang would like to acknowledge the support by Royal Soci-ety Industry Fellow scheme (IF \R2 \23200104). Y. Huang would like to acknowledge the support by Re-search England’s Enhancing Research Culture grant. 
+
+# References 
+
+[1] Defu Cao, Jiachen Li, Hengbo Ma, and Masayoshi Tomizuka. Spectral temporal graph neural network for tra-jectory prediction. In 2021 IEEE International Confer-ence on Robotics and Automation (ICRA) , pages 1839–1845. IEEE, 2021. 1, 2 [2] Sergio Casas, Cole Gulino, Simon Suo, Katie Luo, Renjie Liao, and Raquel Urtasun. Implicit latent variable model for scene-consistent motion forecasting. In Computer Vision– ECCV 2020: 16th European Conference, Glasgow, UK, Au-gust 23–28, 2020, Proceedings, Part XXIII 16 , pages 624– 641. Springer, 2020. 1 [3] Ming-Fang Chang, John W Lambert, Patsorn Sangkloy, Jag-jeet Singh, Slawomir Bak, Andrew Hartnett, De Wang, Peter Carr, Simon Lucey, Deva Ramanan, and James Hays. Argov-erse: 3d tracking and forecasting with rich maps. In Confer-ence on Computer Vision and Pattern Recognition (CVPR) ,2019. 2, 6, 7 [4] Yuxiao Chen, Boris Ivanovic, and Marco Pavone. Scept: Scene-consistent, policy-based trajectory predictions for planning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 17103– 17112, 2022. 1 [5] Yihua Cheng, Yaning Zhu, Zongji Wang, Hongquan Hao, Yongwei Liu, Shiqing Cheng, Xi Wang, and Hyung Jin Chang. What do you see in vehicle? comprehensive vision solution for in-vehicle gaze estimation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 1556–1565, 2024. 1 [6] Nachiket Deo, Eric Wolff, and Oscar Beijbom. Multimodal trajectory prediction conditioned on lane-graph traversals. In Conference on Robot Learning , pages 203–212. PMLR, 2022. 1 [7] Yassir Fathullah, Chunyang Wu, Yuan Shangguan, Jun-teng Jia, Wenhan Xiong, Jay Mahadeokar, Chunxi Liu, Yangyang Shi, Ozlem Kalinli, Mike Seltzer, et al. Multi-head state space model for speech recognition. arXiv preprint arXiv:2305.12498 , 2023. 2 [8] Thomas Gilles, Stefano Sabatini, Dzmitry Tsishkou, Bog-dan Stanciulescu, and Fabien Moutarde. Gohome: Graph-oriented heatmap output for future motion estimation. In 
+
+2022 international conference on robotics and automation (ICRA) , pages 9107–9114. IEEE, 2022. 7 [9] Albert Gu and Tri Dao. Mamba: Linear-time sequence modeling with selective state spaces. arXiv preprint arXiv:2312.00752 , 2023. 2 [10] Albert Gu, Karan Goel, Ankit Gupta, and Christopher R´ e. On the parameterization and initialization of diagonal state space models. Advances in Neural Information Processing Systems , 35:35971–35983, 2022. 2 [11] Junru Gu, Chen Sun, and Hang Zhao. Densetnt: End-to-end trajectory prediction from dense goal sets. In Proceedings of the IEEE/CVF International Conference on Computer Vi-sion , pages 15303–15312, 2021. 7 [12] Yizhou Huang, Yihua Cheng, and Kezhi Wang. Trajectory mamba: Efficient attention-mamba forecasting model based on selective ssm. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 12058–12067, 2025. 1, 2, 8 [13] ISO/IEC. ISO/IEC 10918-1:1994, 1994. Information tech-nology – Digital compression and coding of continuous-tone still images – Requirements and guidelines. 3 [14] Xiaosong Jia, Penghao Wu, Li Chen, Yu Liu, Hongyang Li, and Junchi Yan. Hdgt: Heterogeneous driving graph trans-former for multi-agent trajectory prediction via scene encod-ing. IEEE transactions on pattern analysis and machine in-telligence , 45(11):13860–13875, 2023. 1, 2 [15] John Lambert and James Hays. Trust, but verify: Cross-modality fusion for hd map change detection. In Proceed-ings of the Neural Information Processing Systems Track on Datasets and Benchmarks (NeurIPS Datasets and Bench-marks 2021) , 2021. 2, 6, 7, 8 [16] Dong Li, Yidi Liu, Xueyang Fu, Senyan Xu, and Zheng-Jun Zha. Fouriermamba: Fourier learning integration with state space models for image deraining. arXiv preprint arXiv:2405.19450 , 2024. 2 [17] Kunchang Li, Xinhao Li, Yi Wang, Yinan He, Yali Wang, Limin Wang, and Yu Qiao. Videomamba: State space model for efficient video understanding. In European Conference on Computer Vision , pages 237–255. Springer, 2024. 2 [18] Lin Li, Wanzhong Zhao, Can Xu, Chunyan Wang, Qingyun Chen, and Shijuan Dai. Lane-change intention inference based on rnn for autonomous driving on highways. IEEE Transactions on Vehicular Technology , 70(6):5499–5510, 2021. 2 [19] Ming Liang, Bin Yang, Rui Hu, Yun Chen, Renjie Liao, Song Feng, and Raquel Urtasun. Learning lane graph represen-tations for motion forecasting. In Computer Vision–ECCV 2020: 16th European Conference, Glasgow, UK, August 23– 28, 2020, Proceedings, Part II 16 , pages 541–556. Springer, 2020. 2, 7 [20] Nigamaa Nayakanti, Rami Al-Rfou, Aurick Zhou, Kratarth Goel, Khaled S Refaat, and Benjamin Sapp. Wayformer: Motion forecasting via simple & efficient attention networks. In 2023 IEEE International Conference on Robotics and Au-tomation (ICRA) , pages 2980–2987. IEEE, 2023. 7 [21] Hemkant Nehete, Amit Monga, Partha Kaushik, and Bra-jesh Kumar Kaushik. Fourier prior-based two-stage architec-ture for image restoration. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 6014–6023, 2024. 2 
+
+9[22] Marion Neumeier, Andreas Tollk¨ uhn, Michael Botsch, and Wolfgang Utschick. A multidimensional graph fourier trans-formation neural network for vehicle trajectory prediction. In 2022 IEEE 25th International Conference on Intelligent Transportation Systems (ITSC) , pages 687–694. IEEE, 2022. 1, 2 [23] Jiquan Ngiam, Benjamin Caine, Vijay Vasudevan, Zheng-dong Zhang, Hao-Tien Lewis Chiang, Jeffrey Ling, Rebecca Roelofs, Alex Bewley, Chenxi Liu, Ashish Venugopal, et al. Scene transformer: A unified architecture for predicting mul-tiple agent trajectories. arXiv preprint arXiv:2106.08417 ,2021. 7, 8 [24] Yuta Oshima, Shohei Taniguchi, Masahiro Suzuki, and Yu-taka Matsuo. Ssm meets video diffusion models: Efficient long-term video generation with structured state spaces. 
+
+arXiv preprint arXiv:2403.07711 , 2024. 2 [25] Edoardo Mello Rella, Jan-Nico Zaech, Alexander Liniger, and Luc Van Gool. Decoder fusion rnn: Context and in-teraction aware decoders for trajectory prediction. In 2021 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 5937–5943. IEEE, 2021. 2 [26] Farnoush Rezaei Jafari, Gr´ egoire Montavon, Klaus-Robert M¨ uller, and Oliver Eberle. Mambalrp: Explaining selective state space sequence models. Advances in Neural Informa-tion Processing Systems , 37:118540–118570, 2024. 2 [27] Tim Salzmann, Boris Ivanovic, Punarjay Chakravarty, and Marco Pavone. Trajectron++: Dynamically-feasible tra-jectory forecasting with heterogeneous data. In Computer Vision–ECCV 2020: 16th European Conference, Glasgow, UK, August 23–28, 2020, Proceedings, Part XVIII 16 , pages 683–700. Springer, 2020. 1 [28] Ari Seff, Brian Cera, Dian Chen, Mason Ng, Aurick Zhou, Nigamaa Nayakanti, Khaled S Refaat, Rami Al-Rfou, and Benjamin Sapp. Motionlm: Multi-agent motion forecast-ing as language modeling. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 8579– 8590, 2023. 1 [29] Prasen Kumar Sharma, Sathisha Basavaraju, and Arijit Sur. Deep learning-based image de-raining using discrete fourier transformation: Analyzing behaviour of deep cnns towards uncorrelated transformed domain data. The Visual Com-puter , 37(8):2083–2096, 2021. 1, 2 [30] Abhishek Kumar Sinha, S Manthira Moorthi, and Debajy-oti Dhar. Nl-ffc: Non-local fast fourier convolution for im-age super resolution. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pages 467–476, 2022. 1, 2 [31] Jimmy Smith, Shalini De Mello, Jan Kautz, Scott Linder-man, and Wonmin Byeon. Convolutional state space models for long-range spatiotemporal modeling. Advances in Neural Information Processing Systems , 36, 2024. 2 [32] Xiaolong Tang, Meina Kan, Shiguang Shan, Zhilong Ji, Jin-feng Bai, and Xilin Chen. Hpnet: Dynamic trajectory fore-casting with historical prediction attention. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 15261–15270, 2024. 2 [33] Balakrishnan Varadarajan, Ahmed Hefny, Avikalp Srivas-tava, Khaled S Refaat, Nigamaa Nayakanti, Andre Cornman, Kan Chen, Bertrand Douillard, Chi Pang Lam, Dragomir Anguelov, et al. Multipath++: Efficient information fu-sion and trajectory aggregation for behavior prediction. In 
+
+2022 International Conference on Robotics and Automation (ICRA) , pages 7814–7821. IEEE, 2022. 7, 8 [34] Jue Wang, Wentao Zhu, Pichao Wang, Xiang Yu, Linda Liu, Mohamed Omar, and Raffay Hamid. Selective structured state-spaces for long-form video understanding. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 6387–6397, 2023. 2 [35] Mingkun Wang, Xinge Zhu, Changqian Yu, Wei Li, Yuexin Ma, Ruochun Jin, Xiaoguang Ren, Dongchun Ren, Mingxu Wang, and Wenjing Yang. Ganet: Goal area network for mo-tion forecasting. In 2023 IEEE International Conference on Robotics and Automation (ICRA) , pages 1609–1615. IEEE, 2023. 8 [36] Zhepeng Wang, Feng Chen, Kanokphan Lertniphonphan, Si-wei Chen, Jinyao Bao, Pengfei Zheng, Jinbao Zhang, Kaer Huang, and Tao Zhang. Technical report for argoverse chal-lenges on unified sensor-based detection, tracking, and fore-casting, 2023. 7, 8 [37] Benjamin Wilson, William Qi, Tanmay Agarwal, John Lam-bert, Jagjeet Singh, Siddhesh Khandelwal, Bowen Pan, Rat-nesh Kumar, Andrew Hartnett, Jhony Kaesemodel Pontes, Deva Ramanan, Peter Carr, and James Hays. Argoverse 2: Next generation datasets for self-driving perception and fore-casting. In Proceedings of the Neural Information Process-ing Systems Track on Datasets and Benchmarks (NeurIPS Datasets and Benchmarks 2021) , 2021. 2, 6, 7, 8 [38] F Alexander Wolf, Fiona K Hamey, Mireya Plass, Jordi Solana, Joakim S Dahlin, Berthold G¨ ottgens, Nikolaus Ra-jewsky, Lukas Simon, and Fabian J Theis. Paga: graph abstraction reconciles clustering with trajectory inference through a topology preserving map of single cells. Genome biology , 20:1–9, 2019. 7 [39] Conghao Wong, Beihao Xia, Ziming Hong, Qinmu Peng, Wei Yuan, Qiong Cao, Yibo Yang, and Xinge You. View vertically: A hierarchical network for trajectory prediction via fourier spectrums. In European Conference on Computer Vision , pages 682–700. Springer, 2022. 1, 2 [40] Zhijie Yan, Pengfei Li, Zheng Fu, Shaocong Xu, Yongliang Shi, Xiaoxue Chen, Yuhang Zheng, Yang Li, Tianyu Liu, Chuxuan Li, et al. Int2: Interactive trajectory prediction at intersections. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 8536–8547, 2023. 1, 2[41] Bozhou Zhang, Nan Song, and Li Zhang. Demo: Decoupling motion forecasting into directional intentions and dynamic states. In NeurIPS , 2024. 7 [42] Zhejun Zhang, Alexander Liniger, Christos Sakaridis, Fisher Yu, and Luc V Gool. Real-time motion prediction via het-erogeneous polyline transformer with relative pose encod-ing. Advances in Neural Information Processing Systems ,36:57481–57499, 2023. 1 [43] Zikang Zhou, Luyao Ye, Jianping Wang, Kui Wu, and Ke-jie Lu. Hivt: Hierarchical vector transformer for multi-agent motion prediction. In Proceedings of the IEEE/CVF Con-
+
+10 ference on Computer Vision and Pattern Recognition , pages 8823–8833, 2022. 7, 8 [44] Zikang Zhou, Jianping Wang, Yung-Hui Li, and Yu-Kai Huang. Query-centric trajectory prediction. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pat-tern Recognition , pages 17863–17873, 2023. 1, 2, 7, 8 
+
+11

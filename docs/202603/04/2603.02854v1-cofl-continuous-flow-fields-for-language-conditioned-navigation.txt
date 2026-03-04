@@ -1,0 +1,1323 @@
+Title: CoFL: Continuous Flow Fields for Language-Conditioned Navigation
+
+URL Source: https://arxiv.org/pdf/2603.02854v1
+
+Published Time: Wed, 04 Mar 2026 02:11:12 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# CoFL: Continuous Flow Fields for Language-Conditioned Navigation 
+
+Haokun Liu, Zhaoqi Ma, Yicheng Chen, Masaki Kitagawa, Wentao Zhang, Jinjie Li, Moju Zhao Matterport3D 
+
+(2,056 regions, 40 instance labels) 
+
+ScanNet 
+
+(1,513 regions, 40 instance labels) 
+
+BEV images 
+
+Flow fields and 
+
+trajectories 
+
++
+
+(a) Procedural dataset annotation 
+
+(500k+ paired samples) 
+
+(b) CoFL : language -conditioned 
+
+flow field policy 
+
+(c) Benchmark on the large -scale dataset 
+
+(d) Zero -shot real -world experiments 
+
+(indoor environments) 
+
+CoFL 
+
+Vision -
+
+Language 
+
+Encoder 
+
+CoFL 
+
+Decoder 
+
+BEV 
+
+images 
+
+BEV images 
+
++
+
+Semantic 
+
+maps Queried velocity 
+
+)(+!| I, ℓ)
+
+Euler integration inference 
+
++!"# = +! + )(+!) ∆4! Real -world deployment without any adaptation 
+
+Matterport3D (validation) ScanNet (validation) 
+
+More precise and safer navigation 
+
++
+
+Text instructions 
+
+CoFL 
+
+Baselines 
+
+Query 
+
+positions 
+
+)(+!)+!
+
+Semantic 
+
+instructions 
+
++!"#
+
+Continuous 
+
+flow field 
+
+Fig. 1: Overview of the main contributions. (a) An automated annotation pipeline that constructs a large-scale BEV image– instruction dataset with procedurally generated flow-field and trajectory references (500k+ samples) from indoor 3D scenes. (b) CoFL: a transformer-based language-conditioned policy that predicts continuous flow fields, enabling smooth trajectory rollout with a controllable inference budget. (c) Benchmark results on unseen environments, demonstrating more precise and safer navigation. (d) Zero-shot transfer to real-world robot navigation using a model trained only on the proposed dataset. 
+
+Abstract —Language-conditioned navigation pipelines often rely on brittle modular components or costly action-sequence generation. To address these limitations, we present CoFL, an end-to-end policy that directly maps a bird’s-eye view (BEV) observation and a language instruction to a continuous flow field for navigation. Instead of predicting discrete action tokens or sampling action chunks via iterative denoising, CoFL out-puts instantaneous velocities that can be queried at arbitrary 2D projected locations. Trajectories are obtained by numerical integration of the predicted field, producing smooth motion that remains reactive under closed-loop execution. To enable large-scale training, we build a dataset of over 500k BEV image–instruction pairs, each procedurally annotated with aflow field and a trajectory derived from BEV semantic maps built on Matterport3D and ScanNet. By training on a mixed distribution, CoFL significantly outperforms modular Vision-Language Model (VLM)-based planners and generative policy baselines on strictly unseen scenes. Finally, we deploy CoFL zero-shot in real-world experiments with overhead BEV observations across multiple layouts, maintaining reliable closed-loop control and a high success rate. 
+
+I. I NTRODUCTION 
+
+Language-conditioned navigation seeks to translate high-level semantic instructions into low-level, continuous motion in complex environments. Despite rapid progress, existing pipelines remain fragmented: they either stitch together modu-lar perception–grounding–planning components that are brittle to upstream errors, or learn end-to-end policies that map ego-centric observations to discrete actions with limited geometry, which can yield imprecise and less smooth motion [9, 19]. Bird’s-eye view (BEV) offers a lightweight yet globally consistent workspace for navigation, making metric geometry explicit with increasingly practical acquisition pipelines [25, 28, 31, 32]. This suggests an appealing direction: given a BEV observation and a language instruction, one could directly produce geometry-aware motion with strong smooth-ness and safety margins. However, current ego-centric Vision-Language-Action/Navigation (VLN/VLA) methods are not de-signed to explicitly exploit the workspace’s geometry. Modular hierarchies (e.g., SayCan, LM-Nav) still rely on disjoint per-ception, grounding, and planning stages, where small upstream noise can cascade into catastrophic failures [22, 34]. Early end-to-end token-based policies are appealing for their simplicity, but they discretize actions into tokens [40], limiting the fidelity of continuous and fine-grained motion. More recently, contin-uous generative policies shifted to modeling action chunks, yet 
+
+> arXiv:2603.02854v1 [cs.RO] 3 Mar 2026
+
+often require multi-step denoising at control time [10], increas-ing latency. Subsequent fast-sampling variants [11, 27, 29] reduce this overhead; however, across this line of work, actions are still generated implicitly, without an explicit geometric representation needed for reliable motion execution. To address these challenges, we propose CoFL, atransformer-based policy that reformulates language-conditioned navigation in BEV as flow field estimation. CoFL learns a navigation field v(x | I, ℓ ) that maps an observation I and an instruction ℓ to local motion vectors across the workspace. Trajectories are obtained by simple numerical integration of the predicted field. This formulation enables real-time inference, incorporates geometric awareness via field-level annotations, and yields inherently smooth trajectories in a single forward pass. We summarize our contributions as follows (Fig. 1): 1) We introduce CoFL, a transformer-based policy that predicts language-conditioned flow fields from BEV images, coupling vision-language grounding with con-tinuous motion generation (§III). 2) We construct a large-scale dataset containing over 500,000 samples from a mixture of Matterport3D [7] and ScanNet [12], with BEV images, text instructions, and procedurally annotated flow fields and trajectories (§IV-A). 3) We benchmark the generalization and efficiency of CoFL on the proposed dataset. Evaluating on unseen scenes, CoFL provides more precise and safer navigation than modular VLM planners and generative policies while maintaining real-time performance (§IV-B, §IV-C). 4) We demonstrate zero-shot real-world navigation by de-ploying a model pretrained on the proposed dataset to a physical robot without real-world adaptation, show-casing the transferability and robustness of the learned flow-field representation (§V). II. R ELATED WORK 
+
+A. Bird’s-Eye View Perception for Robotic Navigation 
+
+BEV representations provide a metric, top-down workspace where geometric constraints and action execution can be expressed in a consistent coordinate frame. Compared to ego-centric perspective views, BEV maps reduce scale ambiguity and make free space and obstacle geometry explicit, which is particularly convenient for downstream planning and control. Despite practical challenges in obtaining BEV, several settings and recent advances make it increasingly feasible: (i) In hetero-geneous aerial–ground systems, an aerial teammate can pro-vide top-down context to guide ground robots in cluttered or unknown environments [13, 20, 21, 28, 32, 33]. (ii) In indoor settings, a calibrated overhead camera (or fixed infrastructure sensing) provides a lightweight way to build metric BEV maps for navigation and benchmarking. (iii) Alternatively, BEV can be constructed onboard from multi-view cameras via view transformation and lifting-based perception, enabling a robot-centric BEV interface without external viewpoints [25, 31]. 
+
+B. Vision-Language-Action Policies 
+
+The intersection of robotics and foundation models has moved beyond discrete, graph-structured VLN benchmarks [1] toward continuous sensorimotor control. Currently, approaches typically adopt either a hierarchical or an end-to-end paradigm. 
+
+Hierarchical instruction following. A prevalent line of work leverages LLMs/VLMs to decompose instructions into sub-goals or skill programs. Systems such as SayCan [22] ground language into executable skills via affordance-aware scoring, while other modular pipelines combine semantic grounding with mapping/planning [8, 16, 26, 34]. While such decompo-sition improves interpretability and reuses pre-trained semantic priors, it can introduce a semantic–geometric gap: the high-level reasoner may overlook low-level kinematic constraints. 
+
+End-to-end Vision-Language-Action/Navigation. To unify perception and control, VLA/VLN models learn a direct mapping from observations to actions. Pioneering works such as RT [5, 40] and PaLM-E [15] formulate control as sequence modeling, discretizing the action into categorical tokens. While scalable, discrete tokenization introduces stepwise actions and struggles with motion smoothness due to the discretized nature of the generated actions. To mitigate this, recent genera-tive policies formulate the problem as generating continuous action chunks. Diffusion models [2, 10, 18] treat planning as conditional generation via iterative denoising, achieving state-of-the-art performance in manipulation. However, the requirement for multi-step iterative sampling presents a fun-damental trade-off between trajectory quality and real-time responsiveness [35]. Recently, few-step diffusion policy [11] and flow matching [27, 29] have emerged as appealing al-ternatives to multi-step denoising, offering faster inference or straighter probability flow. While recent works have success-fully applied these frameworks to robot control [3, 4, 23], they still instantiate policies as trajectory samplers: given an observation (and language), the model generates finite-horizon action chunks as an implicit trajectory representation. In such designs, the policies exist as an implicit conditional distribu-tion over trajectories rather than an explicit representation over the workspace, so global structure—such as smoothness and collision geometry—is not directly exposed and can only be inferred indirectly via repeated denoising. 
+
+Positioning of our work. CoFL addresses the limitations of existing methods by reframing language-conditioned naviga-tion as end-to-end, workspace-level guidance. (i) Motivated by flow matching [27, 29] and classical field-based naviga-tion [24], we formulate the policy as a language-conditioned vector field in the explicit workspace. This yields a simple and efficient rollout procedure via field querying and integration, rather than disjoint modular pipelines or iterative denoising. (ii) Instead of encoding the effect of the observation and instruction only implicitly in a start-conditioned trajectory (or chunk) generation, the field makes the conditioned guidance spatially explicit and globally consistent across the scene, facilitating inspection and revealing how the model leverages geometric cues. BEV   
+
+> observation I
+> Language
+> instruction ℓ
+> (e.g., ‘navigate to
+> the sofa’)
+> Vision
+> Encoder
+> "!"#
+> Text
+> Encoder
+> "$%$
+> Language
+> Instruction
+> Projection !
+> Projection "
+
+Vision -Language Encoder                  
+
+> #&∈ℝ'!×)"#$ →#'&∈ℝ'!×)
+> #*∈ℝ'%×)"#$ →#'*∈ℝ'%×)
+> Queries
+> Keys/Values
+> (∈ℝ'!×)
+> )∈0,1'×+
+
+CoFL Decoder     
+
+> …
+> MLP dir
+> Queries
+> Keys/Values
+> ×.'
+> Language -conditioned
+> flow field /(x|I,ℓ)
+
+# …      
+
+> ×.
+> Embedding 5
+> MLP mag
+> 6∈ℝ'×)
+> 7∈ℝ'×+
+> SigLIP 2
+> (400M)
+
+Fig. 2: Overview of the CoFL’s network architecture. Given a RGB BEV observation I and a language instruction ℓ, a SigLIP 2-based [37, 39] vision–language encoder produces language-conditioned context tokens over the BEV image. The decoder then queries this context with 2D normalized spatial coordinates X and outputs the corresponding velocities V, forming a continuous flow field v(x | I, ℓ ) via bilinear interpolation of discrete velocity predictions. III. M ETHOD 
+
+We present CoFL, a vision-language-action policy that formulates semantic navigation as flow field prediction. This section describes our problem formulation (§III-A), network architecture (§III-B), training procedure (§III-C), and infer-ence strategy (§III-D). 
+
+A. Problem Formulation 
+
+Consider a mobile robot operating in a BEV environment 
+
+E = [0 , 1] 2 (using normalized image coordinates: x right, y
+
+down) with free space Xfree ⊂ E and obstacle regions Xobs =
+
+E \ Xfree . Given a top-down RGB observation I ∈ RH×W ×3
+
+and a natural language instruction ℓ specifying a target object (e.g., “navigate to the sofa”), our objective is to learn a policy that generates collision-free paths to the goal from arbitrary initial configurations. We depart from conventional formulations that predict dis-crete action sequences or waypoint trajectories. Instead, we model navigation as learning a goal-conditioned flow field 
+
+vθ : E × I × L → R2, (1) where θ denotes learnable parameters, I is the space of observations, and L is the space of language instructions. We parameterize a planar trajectory τ (t) ∈ E by normalized time t ∈ [0 , 1] . The rollout is obtained by integrating the predicted flow field v ·):
+
+˙τ (t) = v τ (t) | I, ℓ , τ (0) = x0, (2) where x0 ∈ Xfree . We aim for collision-free motion by encoding obstacle awareness in the supervision v∗ (geodesic-to-goal guidance with repulsion, detailed in §IV-A), which steers the rollout away from Xobs .This formulation offers two key advantages over trajectory-based methods: (i) it captures workspace-level geometry, producing globally consistent navigation guidance across the workspace rather than fitting a single path; and (ii) it avoids start-anchored trajectory prediction, allowing the model to roll out a trajectory from any initial position. 
+
+B. Network Architecture 
+
+The CoFL architecture comprises two modules: a vision-language encoder fenc that extracts goal-conditioned scene rep-resentations and a decoder fflow that maps spatial coordinates to velocity vectors (Fig. 2). 
+
+1) Vision-Language Encoder: We leverage SigLIP 2 [37, 39] as the frozen backbone ( fvis , f txt ) for joint vision-language embedding. Given observation I and instruction ℓ, we extract 
+
+Zv = fvis (I) ∈ RNv ×demb , (3) 
+
+Zc = ftxt (ℓ) ∈ RNc×demb , (4) where Nv is the number of visual tokens, Nc is the number of text tokens, including a prepended global token, and demb 
+
+is the embedding dimension. We first project visual and text tokens into a shared hidden dimension d using a linear projection followed by LayerNorm. 
+
+˜Zv = LN  Projection v (Zv ) ∈ RNv ×d, (5) 
+
+˜Zc = LN  Projection c(Zc) ∈ RNc×d. (6) These projected tokens are then fused using L transformer decoder layers [6, 38]. Starting from H(0) = ˜Zv , we apply 
+
+H(l) = D(l) H(l−1) , ˜Zc
+
+, l ∈ { 1 . . . L }, (7) where each decoder layer follows a standard transformer decoder block D, consisting of self-attention (non-causal), cross-attention (with keys/values from ˜Zc), and an FFN, each wrapped with residual connections and normalization. 
+
+C = H(L) ∈ RNv ×d, (8) which provides a task-relevant understanding of the environ-ment. 
+
+2) CoFL Decoder: The decoder adopts a query-based de-sign. Given N spatial coordinates X ∈ [0 , 1] N ×2 (normalized to the image frame), where the i-th row is xi ∈ [0 , 1] 2, we first compute positional embeddings and project them to d-dimensional query tokens: 
+
+Q = ϕpos (X) ∈ RN ×d, (9) where ϕpos is implemented as a Gaussian Fourier encod-ing [36] followed by a linear projection and LayerNorm, pro-viding a rich continuous representation for coordinate queries. The query tokens then attend to the context tokens through 
+
+˜L simplified transformer decoder layers [6, 38]: 
+
+˜H(˜l) = ˜D(˜l)  ˜H(˜l−1) , C, ˜l ∈ { 1, . . . , ˜L}, (10) with ˜H(0) = Q. Each decoder layer follows a simplified transformer decoder block ˜D without query self-attention: it performs cross-attention from ˜H(˜l−1) (queries) to the context tokens C (keys/values), followed by an FFN; both sublayers are wrapped with residual connections and normalization. Instead of regressing (vx, v y ) directly, we predict a non-negative magnitude and a unit direction for each query: 
+
+M(X) = Softplus 
+
+
+
+MLP mag ( ˜H( ˜L))
+
+
+
+∈ RN ×1 
+
+> ≥0
+
+, (11) 
+
+D(X) = MLP dir ( ˜H( ˜L))
+
+MLP dir ( ˜H( ˜L)) 2
+
++ ϵ
+
+∈ RN ×2, (12) and compose the final velocity as 
+
+V(X) = M(X) ⊙ D(X) ∈ RN ×2, (13) where ⊙ denotes broadcasting element-wise multiplication and 
+
+ϵ is a small constant for numerical stability. We interpret 
+
+M(X) as the local motion magnitude implied by the supervi-sion, and D(X) as the corresponding local motion direction. 
+
+C. Training 
+
+We train CoFL by supervising the predicted flow at Ns
+
+query locations per training instance. Given queries xi ∈
+
+[0 , 1] 2, we optimize v(xi) as a continuous-coordinate notation for the discrete samples V ∈ RNs×2, targets v∗(xi) are obtained by bilinearly sampling the annotated field V∗ ∈
+
+RH×W ×2 (See §IV-A for details). 
+
+1) Efficient Sampling: Dense supervision over all pixels is expensive. Instead, the Ns query locations are constructed via stratified sampling. We partition E = [0 , 1] 2 into a g×g grid of cells { Gj }g2 
+
+> j=1
+
+and draw Nbin jittered points uniformly within each cell: 
+
+xj,r ∼ U( Gj ), r = 1 , . . . , N bin , (14) where Nbin = ⌈Ns/g 2⌉. We concatenate all sampled points and keep Ns of them to form X = {xi}Ns
+
+> i=1
+
+.
+
+2) Loss Function: Given the sampled queries X ∼ p(X),the objective combines direction and magnitude supervision: 
+
+L = Ldir + λLmag . (15) The direction loss enforces angular alignment via cosine similarity: 
+
+Ldir = EX
+
+"
+
+1
+
+NsNsX
+
+> i=1
+
+
+
+1 − v(xi)⊤v∗(xi)
+
+∥v(xi)∥2 ∥v∗(xi)∥2 + ϵ
+
+#
+
+,
+
+(16) and the magnitude loss matches velocity norms: 
+
+Lmag = EX
+
+"
+
+1
+
+NsNsX
+
+> i=1
+
+(∥v(xi)∥2 − ∥ v∗(xi)∥2)2
+
+#
+
+. (17) 
+
+D. Inference 
+
+We generate trajectories by numerically integrating the predicted flow field, as illustrated in Fig. 3. For efficiency, we first query the decoder on a ˜g × ˜g coordinate grid to obtain a dense flow grid ˆV ∈ R˜g×˜g×2. Given a start position x0 and a horizon of T steps, we perform forward Euler integration with ∆t = 1 /T and tk = k/T . At step k ∈ { 0, . . . , T − 1},we obtain v(xk | I, ℓ ) by bilinearly sampling ˆV at xk.In our procedural annotations (§IV-A), the field magnitude is constructed to correlate with the remaining normalized distance-to-go (which decays as t → 1). Thus, to obtain a quasi-constant-velocity rollout toward the goal, we apply a deterministic inverse-time rescaling: 
+
+˜vk = v(xk | I, ℓ )(1 − tk) + s(tk) , tk ∈ [0 , 1) , (18) where s(t) is a monotonically increasing stabilizer that pre-vents the denominator from approaching zero (see Appendix B for details). We then update the state by: 
+
+xk+1 = xk + ˜ vk∆t. (19) By predicting both direction and magnitude, trajectories τ
+
+can be generated from arbitrary x0 over tk ∈ [0 , 1) .Start 1                    
+
+> Start 2
+> Obstacles
+> Shared normalized time: !!∈[0,1]
+> Fixed -step rollout: (∈{0,…,+−1}
+> Quasi -constant velocity: /01!="($!)
+> (&'(!))*((!)
+> Goal
+> Local Euler Integration
+> (One Step)
+> /(1!)
+> 1!
+> /0(1!)∆!
+> 1!)&
+> 1!)&=1!+/0(1!)∆!
+
+Fig. 3: Overview of the trajectory inference. The predicted flow field over the workspace guides agents from different starts toward the same goal while smoothly avoiding obstacles. IV. L ARGE -S CALE BEV N AVIGATION BENCHMARK 
+
+We evaluate CoFL on language-conditioned navigation across diverse indoor environments. This section describes our dataset construction strategy (§IV-A) and addresses two ques-tions: (1) How well does CoFL predict fields and generalize to unseen scenes? (2) How does CoFL compare to modular or generative baselines in this task (§IV-B)? 
+
+A. Dataset Construction 
+
+To evaluate our method, we constructed a dataset focusing on language-conditioned navigation. Formally, our dataset consists of N samples D = {(Ii, ℓ i, V∗ 
+
+> i
+
+, τ ∗ 
+
+> i
+
+)}Ni=1 , where I
+
+represents the RGB BEV observation, ℓ is the instruction, and V∗ and τ ∗ denote procedurally generated flow field and trajectory annotations. The pipeline is detailed below. 
+
+1) Visual Observation Generation: We utilize high-quality scenes from two large-scale 3D indoor scene libraries: Mat-terport3D [7] and ScanNet [12]. As detailed in Table I and Fig. 4, for each region, we generate 1 top-view and 8 multi-oblique views with randomized pitch angles ( 45 ◦-80 ◦). Specifically, we render RGB images as observations I and corresponding annotated semantic maps S. The semantic maps are used to instantiate language instructions ℓ and to derive procedural flow field and trajectory annotations ( V∗,τ ∗). For reproducibility, we also record per-view camera calibrations. TABLE I: Statistics of the Implemented Datasets.            
+
+> Dataset # Scenes # Regions # Views # Samples Matterport3D [7] 90 2,056 9245,604 ScanNet [12] 1,513 1,513 342,038
+
+2) Language Instruction Generation: To enable language conditioning, we synthesize instructions using diverse, multi-template patterns. We combine action verbs (e.g., “Navigate to” , “move toward” ) with a target phrase ℓtarget , formed by the target name with optional spatial modifiers (e.g., “left of” ,
+
+“behind” ) and optional relative descriptors when needed (e.g., 
+
+“the second from the upper side” ). We define a dataset-specific label mapping R based on the official taxonomy, partitioning labels into free space and obstacles; the target name in ℓtarget 
+
+is drawn from a targetable subset of obstacle categories in R
+
+for instruction synthesis. 
+
+3) Procedural Annotation: We derive flow fields and tra-jectories using the semantic maps from §IV-A1 and the targets defined in §IV-A2. For each (map, target) pair, the flow field and trajectory are annotated by the pipeline in Algorithm 1 and illustrated in Fig. 5, via combining cost-weighted geodesic distance with obstacle repulsion. Implementation details are provided in Appendix C. 
+
+B. Experimental Setup 1) Implementation Details: CoFL uses a frozen SigLIP-2 Base (ViT-B/16) [37, 39] backbone with 4 additional layers as the encoder, and a 2-layer decoder ( d=768 ). We train it for 50 epochs with AdamW (lr 10 −4, wd 10 −5) on an RTX 4090 (batch 32; 1,000 samples/step) and run 100-step Euler (a) (b) 
+
+(c) (d) 
+
+Fig. 4: Overview of the proposed visual observation gener-ation pipeline. Images are captured from a multi-view camera array. (a)-(b) Top-down view RGB and semantic segmentation maps. (c)-(d) Oblique view sample. 
+
+Algorithm 1 Procedural Annotation Pipeline 
+
+Require: semantic map S, label mapping R, and target ℓtarget 
+
+Ensure: flow field V∗ and trajectory τ ∗
+
+Stage 1: Traversability & Goal  
+
+> 1:
+
+Mfree ← EXTRACT FREE (S, R) ▷ free: 1, obstacle: 0 2: Mobs ← ¬ Mfree  
+
+> 3:
+
+xg ← COMPUTE GOAL (S, ℓ target ) ▷ goal sources from map 
+
+Stage 2: Cost-Weighted Geodesic Distance Field  
+
+> 4:
+
+Dfree ← DTO (Mfree ) ▷ distance-to-obstacle in free space 5: Ccost ← COST MAP (Dfree , λ safe , ρ safe ) ▷ truncated linear penalty if     
+
+> Dfree < ρ safe ;λsafe is the penalty coefficient 6:
+
+(Dwg , pred ) ← GEODESIC (Mfree , C cost , xg ) ▷ cost-weighted distance and predecessor map (Dijkstra [14]) 7: Dpix  
+
+> g
+
+← PIXEL LENGTH FROM PRED (pred ) ▷ pixel length of path 
+
+Stage 3: Obstacle Inner Repulsion  
+
+> 8:
+
+Dobs ← DTF (Mobs ) ▷ distance-to-free in obstacle space 
+
+Stage 4: Potential Field  
+
+> 9:
+
+Φ( x) ←
+
+(
+
+wg Dwg (x), x ∈ Mfree 
+
+wobs Dobs (x) + bobs , x ∈ Mobs     
+
+> ▷ w obs ≫wg;
+> bobs shifts obstacle potential upward at the boundary
+
+Stage 5: Flow Field  
+
+> 10:
+
+u(x) ← −∇ Φ( x)/(∥∇ Φ( x)∥ + ϵ) 
+
+> 11:
+
+if Mfree (x) = 1 then  
+
+> 12:
+
+V∗(x) ← [uxDpix  
+
+> g
+
+/W, u y Dpix  
+
+> g
+
+/H ] ▷ distance-to-go scaling 13: else  
+
+> 14:
+
+V∗(x) ← u(x) ▷ unit-speed escape 15: end if Stage 6: Trajectory  
+
+> 16:
+
+x0 ← SAMPLE START (Mfree , D pix  
+
+> g
+
+) ▷ sample reachable start 17: τraw ← BACKTRACK PRED (pred , x0) ▷ follow pred to goal 18: τ ∗ ← RESAMPLE (τraw ) ▷ fixed-length resampling 19: return (V∗, τ ∗)
+
+rollout at inference. We adopt a strict scene-wise split on Matterport3D/ScanNet with disjoint validation scenes (Fig. 6). 
+
+2) Evaluation Metrics: We evaluate both the predicted trajectories and flow fields. For trajectories, we report FGE 
+
+(final goal error; normalized distance between the end of the trajectory and the annotated trajectory endpoint), CR (collision rate; fraction of episodes with any collision), Curv (curvature; mean turning angle in radians computed from successive segments), and PLR (path length ratio; ratio to the path Geodesic 
+
+> Distance
+> Obstacle
+> Repulsion
+> Potential
+> Field
+> Flow Field
+> & Trajectory
+
+Fig. 5: Overview of the procedural annotation pipeline. 
+
+We combine cost-weighted geodesic distance and obstacle repulsion to derive the field and trajectory annotations. length of the annotated trajectory). For fields, we report AE 
+
+(mean angular error; degrees) and ME (mean magnitude error; normalized norm difference). Details of the calculation are provided in Appendix D. 
+
+3) Baselines: We compare CoFL with representative language-conditioned navigation baselines. All methods are evaluated in an open-loop setting from the same inputs 
+
+(I, ℓ, x0). For a fair comparison within the DP family, all DP variants reuse the same vision–language encoder as CoFL (§III-B1) and differ only in the trajectory generator. 
+
+VLM-based navigation. (i) Pure VLM : a VLM directly predicts a waypoint sequence [17]; (ii) VLM+Planner : a VLM predicts the goal and obstacles followed by a geometric planner [28]. Gemini-2.5-Flash (API) is used as the VLM. 
+
+Trajectory generative policies (DP family). All Diffusion Policy (DP) [10] variants output a horizon T =100 sequence of 2D increments ∆xt, integrated from x0 to obtain positions. All variants are trained with a fixed 100-step diffusion/flow schedule; at test time we vary the number of sampling steps to control latency (Fig. 8). (iii) DP-C-DDPM : temporal 1D U-Net with FiLM-style [30] global conditioning, sampled with 41%         
+
+> 59%
+> Matterport3D
+> ScanNet 88%
+> 12%
+> Training Set Composition
+> (Total Samples: 578,627)
+> Validation Set Composition
+> (Total Samples: 9,015)
+> 3 scenes
+> 60 regions
+> 9 scenes
+> 9 regions
+> 1,504 scenes
+> 1,504 regions
+> 87 scenes
+> 1996 regions
+
+Fig. 6: Overview of the training/validation split. We employ a strict scene-wise split to assess generalization. DDPM [18]. We use a 3-stage U-Net (256/512/1024); x0 is concatenated to the pooled context before FiLM. (iv) DP-T-DDPM : Transformer-based [38] denoiser with token-level conditioning (no pooling), also sampled with DDPM. We use an 8-layer, 4-head Transformer with d=768 ; x0 is projected to d and appended as an extra context token. (v) DP-C-Flow/ODE : same U-Net as (iii), but sampled with a flow/ODE solver [27, 29]. See Appendix E for implementation details and Fig. 7 for qualitative comparisons. 
+
+C. Main Results 
+
+For fairness, trajectories from all methods are resampled to 100 waypoints before computing metrics. All DP family baselines are calculated as the average from 5 different seeds. 
+
+1) Navigation Performance: Table II reveals a persistent decoupling: trajectory baselines can be near-goal yet unsafe. Across Matterport3D and ScanNet, they achieve reasonable endpoint error (FGE ≈0.14–0.25) but collide in most episodes (CR ≥0.68 on Matterport3D; ≥0.86 on ScanNet), indicating that waypoint plausibility does not enforce free-space validity along the rollout. CoFL closes this gap by making the ge-ometry explicit in the output representation. It preserves goal accuracy on Matterport3D (FGE 0.13–0.15) while reducing collisions by ∼4× (CR 0.17–0.22) and maintaining smooth paths (Curv 0.08–0.14). On ScanNet, it is both more accurate and safer (FGE 0.07–0.09; CR 0.35–0.40), despite using a much smaller head (15M vs. 74–81M or heavier API). 
+
+Why does DP struggle in geometry-heavy BEV? DP can fit a start-to-goal displacement sequence from x0 (low FGE), but it lacks an explicit notion of free-space validity along the rollout, resulting in geometric misalignments accumulat-ing into collisions. In contrast, CoFL predicts a workspace-level flow field that makes the conditioned guidance spa-tially grounded and obstacle-aware at every location. Consis-tently, DP collisions remain largely unchanged when swap-ping samplers (DDPM →Flow/ODE) or denoisers/conditioning (U-Net →Transformer), suggesting the gap is representational rather than a sampler/decoder detail. To address concerns that diffusion policies may benefit from closed-loop replanning, we also evaluate DP with a pseudo receding-horizon protocol (Appendix G); the conclusions remain unchanged. 
+
+2) Flow Field Quality and Grid Resolution: The last two columns of Table II measure field fidelity; CoFL attains low AE/ME on both datasets, indicating locally consistent guidance. Fig. 8 shows that grid resolution mainly controls the effective clearance around obstacles. With finer grids, the free/obstacle boundary is represented more precisely, so rollouts can follow narrow corridors and track contours more closely, which increases Curv and PLR. However, CR can slightly rise because the effective safety margin becomes thinner: at higher resolution, the discretized obstacle boundary covers less surrounding area, allowing closer passes. 
+
+3) Computational Efficiency: Fig. 8 reports latency– performance trade-offs ( (I, ℓ, x0) → τ ). For CoFL, inference time depends on the grid resolution; for DP, on denoising steps. CoFL is robust across inference budgets: changing (a) 
+
+Flow field Ground truth Pure VLM VLM + Planner DP -C-DDPM DP -C-Flow/ODE CoFL DP -T-DDPM 
+
+(b) 
+
+F
+
+B
+
+L RFig. 7: Examples of trajectories on validation set. (a) Matterport3D: “Please navigate to the sofa in the upper right” ; (b) ScanNet: “Please go to the toilet” . From left to right: ground truth, pure VLM/VLM+Planner, DP-family and CoFL. More examples are provided in Appendix F. TABLE II: Navigation performance and field quality. We report trajectory metrics (detailed in §IV-B2) aggregated over the validation set for all baselines and CoFL. Field metrics are reported for CoFL only. 
+
+Method Head params (M) Section A ∗ Section B † Section C ‡ Field quality Lat. (ms) FGE ↓ CR ↓ Curv PLR FGE ↓ CR ↓ Curv PLR FGE ↓ CR ↓ Curv PLR AE ↓ ME ↓
+
+Matterport3D (A: 18 regions, 2635 samples; B: 20 regions, 1879 samples; C: 22 regions, 3421 samples) Pure VLM API 0.22 0.90 0.03 0.84 0.25 0.91 0.03 1.13 0.22 0.81 0.03 1.07 – – –VLM+Planner API 0.24 0.84 0.06 1.05 0.25 0.90 0.06 1.35 0.22 0.80 0.06 1.08 – – –DP-C-DDPM 74.02 0.17 0.86 0.06 0.86 0.19 0.79 0.05 0.94 0.16 0.72 0.05 0.88 – – 17.62 DP-T-DDPM 81.21 0.17 0.86 0.08 0.84 0.18 0.80 0.08 0.96 0.16 0.68 0.08 0.87 – – 19.28 DP-C-Flow/ODE 74.02 0.17 0.85 0.03 0.82 0.19 0.78 0.03 0.89 0.16 0.70 0.03 0.84 – – 15.94 CoFL (Ours) 15.36 0.15 0.22 0.11 0.85 0.13 0.21 0.08 0.87 0.14 0.17 0.14 0.87 18.65 ◦ 0.07 15.81 
+
+ScanNet (A: 3 regions, 733 samples; B: 3 regions, 132 samples; C: 3 regions, 215 samples) Pure VLM API 0.24 0.96 0.04 1.30 0.20 0.92 0.04 1.02 0.19 0.97 0.05 1.46 – – –VLM+Planner API 0.25 0.94 0.06 1.38 0.21 0.93 0.06 1.61 0.21 0.92 0.07 1.44 – – –DP-C-DDPM 74.02 0.16 0.88 0.06 1.10 0.21 0.91 0.06 1.21 0.19 0.87 0.06 1.14 – – 17.62 DP-T-DDPM 81.21 0.14 0.88 0.08 1.06 0.19 0.95 0.09 1.25 0.16 0.86 0.09 1.18 – – 19.28 DP-C-Flow/ODE 74.02 0.16 0.88 0.03 1.05 0.20 0.92 0.03 1.17 0.18 0.88 0.02 1.11 – – 15.94 CoFL (Ours) 15.36 0.09 0.39 0.07 0.92 0.07 0.35 0.06 0.91 0.09 0.40 0.09 0.96 14.57 ◦ 0.03 15.81  
+
+> ∗
+
+Matterport3D Scene: ZMojNkEp431; ScanNet Scene: Scan 0700 (Layouts 00–02). † Matterport3D Scene: zsNo4HB9uLZ; ScanNet Scene: Scan 0701 (Layouts 00–02). ‡ Matterport3D Scene: Z6MFQCViBuw; ScanNet Scene: Scan 0702 (Layouts 00–02).          
+
+> 
+> 
+>  
+> 
+>  
+> 
+>  
+> 
+>  
+>   
+> 
+
+0.45 
+
+0.40 
+
+0.25 
+
+0.20 
+
+Inference time ( ms )
+
+10 15 20 25 30 35 40 45 
+
+DP -C-Flow/ODE 
+
+DP -T-DDPM 
+
+CoFL 
+
+50 55 
+
+DP -C-DDPM 
+
+0.15 
+
+0.30 
+
+0.35 
+
+0.50 
+
+(a) FGE ↓     
+
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+
+1.0 
+
+0.8 
+
+0.4 
+
+0.2 
+
+0.6 
+
+Inference time ( ms )
+
+10 15 20 25 30 35 40 45 50 55 (b) CR ↓       
+
+> 
+> 
+> 
+>  
+> 
+> 
+> 
+>  
+> 
+> 
+
+1.50 
+
+1.25 
+
+0.75 
+
+0.50 
+
+1.00 
+
+0.25 
+
+0.00 
+
+Inference time ( ms )
+
+10 15 20 25 30 35 40 45 50 55 (c) Curv (rad)      
+
+> 
+
+8
+
+7
+
+1.0 
+
+0.9 
+
+1.1 
+
+0.8 
+
+0.7 
+
+Inference time ( ms )
+
+10 15 20 25 30 35 40 45 50 55 (d) PLR (broken y-axis) 
+
+Fig. 8: Latency–performance trade-offs of real-time models (DP-family and CoFL). DP-family: {1, 2, 3, 5, 7, 10, 15, 20 }
+
+denoising steps (horizon 100); CoFL: {50, 75, 100, 125, 150, 175, 200 } grid size (100-step Euler rollout). Underlines mark the operating points reported in Table II. grid resolution affects latency but only marginally impacts FGE/CR, indicating stable quality. 
+
+Ablation studies. See Appendix H for CoFL ablations. V. R EAL -W ORLD ZERO -S HOT BEV N AVIGATION 
+
+We deploy CoFL in indoor setups to evaluate closed-loop semantic navigation. Notably, we directly use the model trained in §IV without any real-world fine-tuning. 
+
+A. System Setup 
+
+We evaluate in a 6×4 m indoor arena monitored by a single overhead camera (DJI OSMO ACTION 4, 30 Hz, 1280 ×720 ). At 30 Hz control loop, CoFL takes (I, ℓ, x0): a BEV image 
+
+I, a user-typed instruction ℓ, and the robot position x0 from (a) 
+
+(e) 
+
+(b) 
+
+(f) 
+
+(c) 
+
+(g) 
+
+(d) 
+
+(h)  
+
+> F
+> B
+> LR
+
+Fig. 9: Example trajectories from real-world experiments . (a)–(d) E1 : from left to right, instructions are “ move to the right side of the chair ”, “ move to the left side of the table ”, “ move to the back side of the box ”, and “ move to the front side of the right chair ”. (e)–(h) E2 : three static layouts and one reactive adversary, all with the same instruction “ move to the chair ”. Trajectories are replanned at each control step from the latest observation and visualized in the figure. motion capture, mapped to image coordinates via a calibrated planar homography. To reduce self-occlusion, we blur-mask the robot-body bounding box derived from its footprint. We numerically integrate the predicted flow field to generate a trajectory, which is then tracked by a differential-drive base with a footprint of 0.45 × 0.55 m (length × width). Deployment uses ONNX Runtime on a laptop workstation (Intel Core i9-13900H; RTX 4090 Laptop GPU, 80 W TGP) with a 100 ×100 query grid and a 50-step Euler rollout. Static objects are placed at fixed recorded poses; dynamic obstacles (e.g., robots) are motion-capture tracked; all states share the same world frame. 
+
+B. Tasks and Metrics 
+
+Two navigation settings are evaluated: E1 : without obsta-cles; 20 trials: 4 targets × 5 relative-direction commands ( left ,
+
+right , front , back , NONE ), E2 : with obstacles (20 trials: 1 target × 5 trials × (3 static layouts + 1 reactive adversary)). We report navigation accuracy ( On-target : within 60 s, the robot reaches within 1.0 m of the target and remains sta-tionary (speed < 0.01 m/s) for at least 3 s. If a direction is specified, the robot’s final position must also agree with the desired direction (180° acceptance sectors)), safety ( CR :collision rate, where a collision is triggered when the minimum distance between the robot’s center and obstacle collision volumes falls below rcol = 0 .275 m (half of the robot width); 
+
+¯dmin : averaged minimum distance to the collided obstacle), efficiency ( TTS : time-to-success, PL : path length), and latency (Lat. : average latency measured from image frame reception to trajectory command publication) (See Fig. 9 for examples). 
+
+C. Results 
+
+Table III summarizes the real-world performance. In the obstacle-free setting (E1), CoFL reaches the target in 85% of trials (TTS: 18.67 s, PL: 3.52 m). With obstacles (E2), CoFL achieves a 100% on-target rate while maintaining a mean minimum clearance of ¯dmin = 0 .20 m (CR: 0.35), at the cost of longer routes (TTS: 29.79 s, PL: 4.20 m). Most collisions occur in the reactive-adversary subset, mainly due to (i) the nonholo-nomic differential-drive base that limits rapid lateral evasive maneuvers and (ii) a conservative, width-based collision radius that can flag front cut-ins as collisions even after evasive action. Nevertheless, ¯dmin indicates consistent obstacle-aware behavior. All runs operate at low latency (28.57 ms), enabling stable closed-loop replanning. Detailed failure analyzes are provided in Appendix I. TABLE III: Real-world target navigation . Metrics are aver-aged over trials.                   
+
+> Setting On-Target ↑CR ↓¯dmin (m) TTS (s) PL (m) Lat. (ms) E1 0.85 ––18.67 3.52 28.57 E2 1.00 0.35 0.20 29.79 4.20
+
+VI. C ONCLUSION 
+
+We introduced CoFL, a language-conditioned navigation policy that predicts a continuous flow field over BEV maps and generates trajectories by integrating the field from the current robot state. This field-based formulation yields precise, safe motion and enables simple inference with controllable latency. Across Matterport3D and ScanNet, CoFL achieves strong scene-wise generalization under strict disjoint validation splits, outperforming generative baselines as well as modular VLM pipelines while using substantially fewer parameters. Moreover, the learned policy transfers to real-world setups without any fine-tuning, supporting closed-loop navigation under different conditions. 
+
+Limitations and future work. (i) Our real-world validation currently relies on externally provided BEV/state; future work may evaluate CoFL with BEV from aerial–ground collabo-ration or onboard sensor fusion, testing robustness to more realistic noise and dynamics. (ii) Current semantics-derived supervision fixes a clearance profile; future work may enable safety tuning by training with varied margins and conditioning the model on the desired safety margin at inference. (iii) CoFL currently operates on 2D BEV representations; future work may extend the encoder–decoder to 3D spatial abstractions to transfer the framework to first-person navigation and, ulti-mately, general manipulation. REFERENCES 
+
+[1] Peter Anderson, Qi Wu, Damien Teney, Jake Bruce, Mark Johnson, Niko S¨ underhauf, Ian Reid, Stephen Gould, and Anton Van Den Hengel. Vision-and-language navigation: Interpreting visually-grounded navigation instructions in real environments. In Proceedings of the IEEE confer-ence on computer vision and pattern recognition , pages 3674–3683, 2018. [2] Kevin Black, Michael Janner, Yilun Du, Ilya Kostrikov, and Sergey Levine. Training diffusion models with reinforcement learning. In The Twelfth International Conference on Learning Representations , 2024. [3] Kevin Black, Noah Brown, James Darpinian, Karan Dhabalia, Danny Driess, Adnan Esmail, Michael Robert Equi, Chelsea Finn, Niccolo Fusai, Manuel Y. Galliker, Dibya Ghosh, Lachy Groom, Karol Hausman, brian ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Devin LeBlanc, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Allen Z. Ren, Lucy Xiaoyang Shi, Laura Smith, Jost Tobias Sprin-genberg, Kyle Stachowicz, James Tanner, Quan Vuong, Homer Walke, Anna Walling, Haohuan Wang, Lili Yu, and Ury Zhilinsky. π0.5: a vision-language-action model with open-world generalization. In 9th Annual Confer-ence on Robot Learning , 2025. [4] Kevin Black, Noah Brown, Danny Driess, Adnan Es-mail, Michael Robert Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Lucy Xiaoyang Shi, Laura Smith, James Tanner, Quan Vuong, Anna Walling, Haohuan Wang, and Ury Zhilinsky. π0: A Vision-Language-Action Flow Model for General Robot Control. In Proceedings of Robotics: Science and Systems , LosAngeles, CA, USA, June 2025. doi: 10.15607/RSS.2025.XXI.010. [5] Anthony Brohan, Noah Brown, Justice Carbajal, Yev-gen Chebotar, Joseph Dabis, Chelsea Finn, Keerthana Gopalakrishnan, Karol Hausman, Alexander Herzog, Jas-mine Hsu, Julian Ibarz, Brian Ichter, Alex Irpan, Tomas Jackson, Sally Jesmonth, Nikhil Joshi, Ryan Julian, Dmitry Kalashnikov, Yuheng Kuang, Isabel Leal, Kuang-Huei Lee, Sergey Levine, Yao Lu, Utsav Malla, Deek-sha Manjunath, Igor Mordatch, Ofir Nachum, Carolina Parada, Jodilyn Peralta, Emily Perez, Karl Pertsch, Jor-nell Quiambao, Kanishka Rao, Michael S Ryoo, Grecia Salazar, Pannag R Sanketi, Kevin Sayed, Jaspiar Singh, Sumedh Sontakke, Austin Stone, Clayton Tan, Huong Tran, Vincent Vanhoucke, Steve Vega, Quan H Vuong, Fei Xia, Ted Xiao, Peng Xu, Sichun Xu, Tianhe Yu, and Brianna Zitkovich. RT-1: Robotics Transformer for Real-World Control at Scale. In Proceedings of Robotics: Science and Systems , Daegu, Republic of Korea, July 2023. doi: 10.15607/RSS.2023.XIX.025. [6] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-to-end object detection with transform-ers. In European conference on computer vision , pages 213–229. Springer, 2020. [7] Angel Chang, Angela Dai, Thomas Funkhouser, Maciej Halber, Matthias Niebner, Manolis Savva, Shuran Song, Andy Zeng, and Yinda Zhang. Matterport3d: Learning from rgb-d data in indoor environments. In 2017 Interna-tional Conference on 3D Vision (3DV) , pages 667–676. IEEE Computer Society, 2017. [8] Jiaqi Chen, Bingqian Lin, Ran Xu, Zhenhua Chai, Xiao-dan Liang, and Kwan-Yee Wong. Mapgpt: Map-guided prompting with adaptive path planning for vision-and-language navigation. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 9796–9810, 2024. [9] Shizhe Chen, Pierre-Louis Guhur, Cordelia Schmid, and Ivan Laptev. History aware multimodal transformer for vision-and-language navigation. In Advances in Neural Information Processing Systems , volume 34, pages 5834– 5847. Curran Associates, Inc., 2021. [10] Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau, Yilun Du, Benjamin Burchfiel, Russ Tedrake, and Shuran Song. Diffusion policy: Visuomotor policy learning via action diffusion. The International Journal of Robotics Research , 44(10-11):1684–1704, 2025. [11] Mateo Cl´ emente, Leo Maxime Brunswic, Rui Heng Yang, Xuan Zhao, Yasser H. Khalil, Haoyu LEI, Amir Rasouli, and Yinchuan Li. Two-steps diffusion policy for robotic manipulation via genetic denoising. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. [12] Angela Dai, Angel X Chang, Manolis Savva, Maciej Hal-ber, Thomas Funkhouser, and Matthias Nießner. Scannet: Richly-annotated 3d reconstructions of indoor scenes. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , pages 5828–5839, 2017. [13] Tung Dang, Marco Tranzatto, Shehryar Khattak, Frank Mascarich, Kostas Alexis, and Marco Hutter. Graph-based subterranean exploration path planning using aerial and legged robots. Journal of Field Robotics , 37(8): 1363–1388, 2020. [14] E.W Dijkstra. A note on two problems in connexion with graphs. Numerische Mathematik , 1:269–271, 1959. [15] Danny Driess, Fei Xia, Mehdi SM Sajjadi, Corey Lynch, Aakanksha Chowdhery, Brian Ichter, Ayzaan Wahid, Jonathan Tompson, Quan Vuong, Tianhe Yu, et al. Palm-e: An embodied multimodal language model. In Inter-national Conference on Machine Learning , pages 8469– 8488, 2023. [16] Samir Yitzhak Gadre, Mitchell Wortsman, Gabriel Il-harco, Ludwig Schmidt, and Shuran Song. Cows on pas-ture: Baselines and benchmarks for language-driven zero-shot object navigation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 23171–23181, 2023. [17] Dylan Goetting, Himanshu Gaurav Singh, and Antonio Loquercio. End-to-end navigation with vision-language models: Transforming spatial reasoning into question-answering. In George Pappas, Pradeep Ravikumar, and Sanjit A. Seshia, editors, Proceedings of the International Conference on Neuro-symbolic Systems , volume 288 of 
+
+Proceedings of Machine Learning Research , pages 22– 35. PMLR, 28–30 May 2025. [18] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. Advances in neural infor-mation processing systems , 33:6840–6851, 2020. [19] Yicong Hong, Qi Wu, Yuankai Qi, Cristian Rodriguez-Opazo, and Stephen Gould. Vln ⟳bert: A recur-rent vision-and-language bert for navigation. In 2021 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 1643–1653, 2021. doi: 10.1109/CVPR46437.2021.00169. [20] Shannon Hood, Kelly Benson, Patrick Hamod, Daniel Madison, Jason M O’Kane, and Ioannis Rekleitis. Bird’s eye view: Cooperative exploration by ugv and uav. In 
+
+2017 International Conference on Unmanned Aircraft Systems (ICUAS) , pages 247–255. IEEE, 2017. [21] M Ani Hsieh, Anthony Cowley, James F Keller, Luiz Chaimowicz, Ben Grocholsky, Vijay Kumar, Camillo J Taylor, Yoichiro Endo, Ronald C Arkin, Boyoon Jung, et al. Adaptive teams of autonomous aerial and ground robots for situational awareness. Journal of field robotics ,24(11-12):991–1014, 2007. [22] Brian Ichter, Anthony Brohan, Yevgen Chebotar, Chelsea Finn, Karol Hausman, Alexander Herzog, Daniel Ho, Julian Ibarz, Alex Irpan, Eric Jang, Ryan Julian, Dmitry Kalashnikov, Sergey Levine, Yao Lu, Carolina Parada, Kanishka Rao, Pierre Sermanet, Alexander T Toshev, Vincent Vanhoucke, Fei Xia, Ted Xiao, Peng Xu, Mengyuan Yan, Noah Brown, Michael Ahn, Omar Cortes, Nicolas Sievers, Clayton Tan, Sichun Xu, Diego Reyes, Jarek Rettinghouse, Jornell Quiambao, Peter Pas-tor, Linda Luu, Kuang-Huei Lee, Yuheng Kuang, Sally Jesmonth, Kyle Jeffrey, Rosario Jauregui Ruano, Jasmine Hsu, Keerthana Gopalakrishnan, Byron David, Andy Zeng, and Chuyuan Kelly Fu. Do as i can, not as i say: Grounding language in robotic affordances. In 6th Annual Conference on Robot Learning , 2022. [23] Physical Intelligence, Ali Amin, Raichelle Aniceto, Ash-win Balakrishna, Kevin Black, Ken Conley, Grace Con-nors, James Darpinian, Karan Dhabalia, Jared DiCarlo, Danny Driess, Michael Equi, Adnan Esmail, Yunhao Fang, Chelsea Finn, Catherine Glossop, Thomas God-den, Ivan Goryachev, Lachy Groom, Hunter Hancock, Karol Hausman, Gashon Hussein, Brian Ichter, Szy-mon Jakubczak, Rowan Jen, Tim Jones, Ben Katz, Liyiming Ke, Chandra Kuchi, Marinda Lamb, Devin LeBlanc, Sergey Levine, Adrian Li-Bell, Yao Lu, Vishnu Mano, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Allen Z. Ren, Charvi Sharma, Lucy Xiaoyang Shi, Laura Smith, Jost Tobias Springenberg, Kyle Stachowicz, Will Stoeckle, Alex Swerdlow, James Tanner, Marcel Torne, Quan Vuong, Anna Walling, Haohuan Wang, Blake Williams, Sukwon Yoo, Lili Yu, Ury Zhilinsky, and Zhiyuan Zhou. π∗
+
+> 0.6
+
+: a vla that learns from experience. 
+
+arXiv preprint arXiv:2511.14759 , 2025. [24] Oussama Khatib. Real-time obstacle avoidance for ma-nipulators and mobile robots. The international journal of robotics research , 5(1):90–98, 1986. [25] Zhiqi Li, Wenhai Wang, Hongyang Li, Enze Xie, Chonghao Sima, Tong Lu, Qiao Yu, and Jifeng Dai. Bevformer: learning bird’s-eye-view representation from lidar-camera via spatiotemporal transformers. IEEE Transactions on Pattern Analysis and Machine Intelli-gence , 2024. [26] Jacky Liang, Wenlong Huang, Fei Xia, Peng Xu, Karol Hausman, Brian Ichter, Pete Florence, and Andy Zeng. Code as policies: Language model programs for em-bodied control. In 2023 IEEE International Conference on Robotics and Automation (ICRA) , pages 9493–9500, 2023. doi: 10.1109/ICRA48891.2023.10160591. [27] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maxim-ilian Nickel, and Matt Le. Flow matching for generative modeling. In 11th International Conference on Learning Representations, ICLR 2023 , 2023. [28] Haokun Liu, Zhaoqi Ma, Yunong Li, Junichiro Sugihara, Yicheng Chen, Jinjie Li, and Moju Zhao. Hierarchical language models for semantic navigation and manipu-lation in an aerial-ground robotic system. Advanced Intelligent Systems , page e202500640, 2025. [29] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. In The Eleventh International Con-ference on Learning Representations , 2023. [30] Ethan Perez, Florian Strub, Harm de Vries, Vincent Dumoulin, and Aaron Courville. Film: Visual reasoning with a general conditioning layer. Proceedings of the AAAI Conference on Artificial Intelligence , 32(1), Apr. 2018. doi: 10.1609/aaai.v32i1.11671. [31] Jonah Philion and Sanja Fidler. Lift, splat, shoot: Encoding images from arbitrary camera rigs by implicitly unprojecting to 3d. In European conference on computer vision , pages 194–210. Springer, 2020. [32] Jorge Pena Queralta, Jussi Taipalmaa, Bilge Can Pulli-nen, Victor Kathan Sarker, Tuan Nguyen Gia, Hannu Tenhunen, Moncef Gabbouj, Jenni Raitoharju, and Tomi Westerlund. Collaborative multi-robot search and rescue: Planning, coordination, perception, and active vision. 
+
+Ieee Access , 8:191617–191643, 2020. [33] Zachary Ravichandran, Fernando Cladera, Jason Hughes, Varun Murali, M Ani Hsieh, George J Pappas, Camillo J Taylor, and Vijay Kumar. Deploying foundation model-enabled air and ground robots in the field: Challenges and opportunities. arXiv preprint arXiv:2505.09477 , 2025. [34] Dhruv Shah, Bła˙ zej Osi´ nski, brian ichter, and Sergey Levine. LM-nav: Robotic navigation with large pre-trained models of language, vision, and action. In 6th Annual Conference on Robot Learning , 2022. [35] Yang Song, Prafulla Dhariwal, Mark Chen, and Ilya Sutskever. Consistency models. In International Confer-ence on Machine Learning , pages 32211–32252. PMLR, 2023. [36] Matthew Tancik, Pratul Srinivasan, Ben Mildenhall, Sara Fridovich-Keil, Nithin Raghavan, Utkarsh Singhal, Ravi Ramamoorthi, Jonathan Barron, and Ren Ng. Fourier features let networks learn high frequency functions in low dimensional domains. Advances in neural informa-tion processing systems , 33:7537–7547, 2020. [37] Michael Tschannen, Alexey Gritsenko, Xiao Wang, Muhammad Ferjad Naeem, Ibrahim Alabdulmohsin, Nikhil Parthasarathy, Talfan Evans, Lucas Beyer, Ye Xia, Basil Mustafa, Olivier H´ enaff, Jeremiah Harmsen, An-dreas Steiner, and Xiaohua Zhai. Siglip 2: Multilingual vision-language encoders with improved semantic under-standing, localization, and dense features. arXiv preprint arXiv:2502.14786 , 2025. [38] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Ł ukasz Kaiser, and Illia Polosukhin. Attention is all you need. In I. Guyon, U. Von Luxburg, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett, editors, 
+
+Advances in Neural Information Processing Systems ,volume 30. Curran Associates, Inc., 2017. [39] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer. Sigmoid loss for language image pre-training. In Proceedings of the IEEE/CVF international conference on computer vision , pages 11975–11986, 2023. [40] Brianna Zitkovich, Tianhe Yu, Sichun Xu, Peng Xu, Ted Xiao, Fei Xia, Jialin Wu, Paul Wohlhart, Stefan Welker, Ayzaan Wahid, Quan Vuong, Vincent Vanhoucke, Huong Tran, Radu Soricut, Anikait Singh, Jaspiar Singh, Pierre Sermanet, Pannag R Sanketi, Grecia Salazar, Michael S Ryoo, Krista Reymann, Kanishka Rao, Karl Pertsch, Igor Mordatch, Henryk Michalewski, Yao Lu, Sergey Levine, Lisa Lee, Tsang-Wei Edward Lee, Isabel Leal, Yuheng Kuang, Dmitry Kalashnikov, Ryan Julian, Nikhil J Joshi, Alex Irpan, brian ichter, Jasmine Hsu, Alexander Herzog, Karol Hausman, Keerthana Gopalakrishnan, Chuyuan Fu, Pete Florence, Chelsea Finn, Kumar Avinava Dubey, Danny Driess, Tianli Ding, Krzysztof Marcin Choroman-ski, Xi Chen, Yevgen Chebotar, Justice Carbajal, Noah Brown, Anthony Brohan, Montserrat Gonzalez Arenas, and Kehang Han. RT-2: Vision-language-action models transfer web knowledge to robotic control. In 7th Annual Conference on Robot Learning , 2023. APPENDIX ANOTATION AND HYPERPARAMETERS 
+
+Table IV summarizes the main symbols used in §III and this appendix. We use paper notation throughout; some entries correspond to tunable hyperparameters. APPENDIX BENGINEERING DETAILS FOR TRAJECTORY INFERENCE 
+
+This appendix summarizes the engineering details used to implement the inference procedure in §III-D. 
+
+A. Time-Dependent Magnitude Scaling 
+
+We apply an additional time-dependent scaling inside the Euler loop: 
+
+˜vk = v(xk | I, ℓ )(1 − tk) + β t αk
+
+, tk ∈ [0 , 1] , (20) where α and β are stabilizer parameters. The “soft cap” 
+
+s(tk) = β t αk prevents the 1/(1 − t) factor from exploding as t → 1.
+
+B. Boundary Handling 
+
+CoFL integrates for a fixed number of steps T , and after each Euler update, clamps the state to remain within the normalized image bounds: 
+
+xk+1 ← clip (xk+1 , 0, 1) . (21) This avoids leaving the valid map region during the rollout. APPENDIX CDETAILS OF GROUND -T RUTH FLOW FIELD AND 
+
+TRAJECTORY COMPUTATION 
+
+This appendix describes the implementation details of Al-gorithm 1 for deriving the flow field V∗ and the reference trajectory τ ∗. For clarity, we distinguish pixel-grid coordinates 
+
+p ∈ {0, . . . , W − 1} × { 0, . . . , H − 1} from normalized continuous coordinates x ∈ [0 , 1] 2 used in the main text. Grid-defined maps (masks, distance fields, and potentials) are queried at continuous x via standard bilinear interpolation on the H×W raster. Distances are computed in pixel units and are converted to normalized coordinates when forming V∗ or storing τ ∗.
+
+A. Stage 1: Traversability and Goal Sources 1) Free/Obstacle Masks: Given the semantic map S, EX-
+
+> TRACT
+
+FREE constructs a binary free-space mask Mfree ∈{0, 1}H×W using the predefined dataset-specific label map-ping R. Pixels whose semantic labels belong to the free set are marked as Mfree =1 , and we define Mobs = ¬Mfree .
+
+2) Goal Sources: COMPUTE GOAL returns goal source pixels pg from the target instance specified by ℓtarget , typically as a thin boundary band adjacent to the target in free space. If no valid goal source exists (e.g., the target is fully isolated from free space), we fall back to the nearest free pixel to the target center as a singleton goal source. 
+
+B. Stage 2: Cost-weighted Geodesic Distance Field 1) Distance-to-obstacle Transform: DTO computes the Euclidean distance transform Dfree over free space Mfree = 1 ,where Dfree (p) is the distance (in pixels) from a free pixel p
+
+to the nearest obstacle pixel. 
+
+2) Safety-aware Cost Map: COST MAP converts Dfree into a traversal cost map Ccost ≥ 1 by applying a truncated linear penalty within a safety band of radius ρsafe :
+
+Ccost (p) = 1 + λsafe [ρsafe − Dfree (p)] +, (22) where [z]+ = max(0 , z ). Intuitively, this increases costs near obstacles and encourages paths with larger clearance. 
+
+3) Cost-weighted Geodesic and Predecessor Map: 
+
+GEODESIC runs a multi-source Dijkstra [14] on an 8-connected pixel grid, restricted to free cells ( Mfree =1 ). We treat each free pixel as a graph node. For any two neighboring pixels p and q (axial/diagonal neighbors), we assign an edge cost 
+
+w(p, q) = 12
+
+ Ccost (p) + Ccost (q)∥p − q∥2, (23) where ∥p − q∥2 ∈ { 1, √2} for axial/diagonal moves. Starting from all goal pixels as sources, Dijkstra [14] produces (i) a cost-weighted distance-to-go field Dwg (p) and (ii) a predeces-sor pointer pred( p), which stores the next pixel on the lowest-cost route from p to the goal. Collectively, pred( ·) forms a shortest-path tree rooted at the goal sources. 
+
+4) Pixel Distance-to-go Along the Predecessor Tree: PIX -
+
+> EL
+
+LENGTH FROM PRED computes Dpix  
+
+> g
+
+(p), defined as the geometric remaining path length (in pixels) when repeatedly following the predecessor pointers from p to a goal. Equiva-lently, it is the accumulated step length along the predecessor chain: 
+
+Dpix  
+
+> g
+
+(p) = 
+
+> K(p)−1
+
+X
+
+> k=0
+
+pk − pk+1 2,
+
+p0 = p, pk+1 = pred( pk), (24) where pK(p) is the first goal pixel reached. In implementation, we compute it via the recursion Dpix  
+
+> g
+
+(p) = ∥p − pred( p)∥2 +
+
+Dpix  
+
+> g
+
+(pred( p)) (with Dpix  
+
+> g
+
+(p) = 0 for goal pixels), processing pixels in nondecreasing order of Dwg .
+
+C. Stage 3: Obstacle Inner Repulsion 
+
+DTF computes an obstacle-space distance transform Dobs 
+
+that is positive only inside obstacles (Mobs =1 ), where 
+
+Dobs (x) measures the distance (in pixels) from an obstacle pixel p to the nearest free pixel. This term is used solely to produce outward gradients for pixels that lie inside obstacles. 
+
+D. Stage 4–5: Potential Field and Flow Field 1) Potential Construction: We form a piecewise potential 
+
+Φ following Algorithm 1 
+
+Φ( p) = 
+
+(wg Dwg (p), Mfree (p) = 1 ,wobs Dobs (p) + bobs , Mobs (p) = 1 . (25) TABLE IV: CoFL notation and key hyperparameters.                                                                                  
+
+> Symbol Meaning Where
+> E= [0 ,1] 2Normalized BEV coordinate domain. Method
+> Xfree ,Xobs Free-space / obstacle regions in E.Method
+> I∈RH×W×3BEV observation; H, W are image height/width. Method
+> ℓNatural-language instruction. Method
+> v(x|I, ℓ ),V(x|I, ℓ )∈RN×2Predicted flow field. Method
+> τ, x0Trajectory and start position. Method
+> Ns, g, N bin We set total sample Ns= 1000 , training stratification bins g= 10 , thus samples per bin Nbin = 10 in all trainings. Method
+> ˜gInference query grid resolution, varied for latency–performance trade-off experiments. Method
+> λWeight for magnitude loss in Eq. (15), we set λ= 0 .5in all experiments. Method
+> ϵSmall constant for numerical stability, we set ϵ= 10 −8in all experiments. Both
+> α, β Inverse-time stabilizer parameters in Eq. (20). We set α= 10 , β = 0 .5in all experiments. Appendix
+> ρsafe , λ safe Safety band pixel and penalty coefficient in Eq. (22). We set ρsafe = 50 , λ safe = 1 .0in all experiments. Appendix
+> wg, w obs Weights of the potential field Φin Eq. (25). We set wg= 1 .0,wobs = 10 .0in all experiments. Appendix
+> KResampling waypoint count for trajectory metrics (used for Curv/FGE/CR/PLR), we set K= 100 in all experiments. Appendix
+> RFlow-field evaluation grid resolution (typically matches annotated flow resolution 224 ×224). Appendix
+
+We set wobs ≫ wg and choose bobs =max p : Mfree (p)=1 Dwg (p) such that the obstacle-side potentials dominate around the interface, avoiding discrete gradients that point into obstacles. 
+
+2) Direction and Magnitude: We smooth Φ with a Gaussian filter and compute spatial derivatives using Sobel operators. The unit direction field is 
+
+u(p) = −∇ Φ( p)
+
+∥∇ Φ( p)∥2 + ϵ . (26) In free space, we scale the magnitude by the pixel distance-to-go and convert it to normalized coordinates: V∗(p) =ux(p) · Dpix  
+
+> g
+
+(p)/W, u y (p) · Dpix  
+
+> g
+
+(p)/H , for Mfree (p) = 1 .Inside obstacles, we use unit-speed escape along the same direction: V∗(p) = u(p) for Mobs (p) = 1 .
+
+E. Stage 6: Reference Trajectory Extraction 1) Reachable Free Space and Start Sampling: Although 
+
+Mfree marks all non-obstacle pixels, some free regions may be disconnected from the goal sources (e.g., being fully enclosed by obstacles). Therefore, SAMPLE START samples the start pixel p0 only from the reachable subset, defined by a finite distance-to-go: Dpix  
+
+> g
+
+(p0) < ∞. The sampled start is further required to be sufficiently far from the goal sources and obstacles, according to the dataset generation configuration. 
+
+2) Backtracking and Resampling: Given p0, BACK -
+
+TRACK PRED backtracks predecessors pk+1 = pred( pk) until reaching a goal source to obtain a polyline τraw . RESAMPLE 
+
+then resamples τraw by arc length to a fixed number of way-points to obtain τ ∗, which is stored in normalized coordinates 
+
+(px/W, p y /H ).APPENDIX DDETAILS OF EVALUATION METRICS AND PROTOCOL 
+
+We describe the evaluation protocol and metric implementa-tions used in §IV. A trajectory is a sequence of 2D normalized positions τ = {xi}N −1 
+
+> i=0
+
+, where xi = ( ui, v i) ∈ [0 , 1] 2. Colli-sion checks use a binary obstacle mask Mobs ∈ { 0, 1}H×W ,where Mobs [y, x ] = 1 indicates an obstacle cell. Given a normalized point x = ( u, v ), we first clamp it to [0 , 1] 2 and map it to integer grid indices 
+
+px =clip( ⌊uW ⌋, 0, W −1) ,py =clip( ⌊vH ⌋, 0, H −1) , (27) then query occupancy using row-major indexing Mobs [py , p x].
+
+A. Trajectory Resampling 
+
+To make metrics comparable across methods with different waypoint counts, trajectories are resampled to a fixed number of points K = 100 using piecewise-linear interpolation at uniform arc-length. We denote the resampled predicted trajec-tory by ¯τ = {¯xj }K−1 
+
+> j=0
+
+. Concretely, let the segment lengths be 
+
+di = ∥xi −xi−1∥2 for i = 1 , . . . , N −1, and let the cumulative arc-lengths be s0 = 0 and si = Pik=1 dk. We sample K target arc-lengths uniformly in [0 , s N −1] and linearly interpolate within the corresponding segment. 
+
+B. Trajectory Metrics 
+
+Trajectories are evaluated using common trajectory metrics as follows: 
+
+1) Final Goal Error ( FGE ): Let xg ∈ [0 , 1] 2 be the endpoint of the annotated trajectory τ ∗. FGE is the Euclidean distance between the final resampled point and the endpoint: 
+
+FGE(¯ τ ) = ∥¯xK−1 − xg ∥2 . (28) 
+
+2) Collision Rate ( CR ): CR is a binary indicator of whether the resampled predicted trajectory ever enters an obstacle cell: 
+
+CR(¯ τ ) = I
+
+h
+
+∃ j : Mobs [py (¯xj ), p x(¯xj )] = 1 
+
+i
+
+. (29) The benchmark reports the mean of CR( τ ) across episodes. 
+
+3) Curvature-based Smoothness ( Curv ): Curvature is the mean absolute change in heading angle between consecutive segments of the resampled predicted trajectory. Let segment vectors be ∆j = ¯xj+1 − ¯xj. We discard degenerate segments with ∥∆j ∥2 ≤ ϵ and compute headings 
+
+ψj = atan2(∆ (v) 
+
+> j
+
+, ∆(u) 
+
+> j
+
+). (30) Curv is then 
+
+Curv(¯ τ ) = 1
+
+M − 1
+
+M −2X
+
+j=0 
+
+|WrapToPi( ψj+1 − ψj )| , (31) where M is the number of valid (non-degenerate) segments. 
+
+4) Path Length Ratio ( PLR ): Let the path length of a resampled trajectory be 
+
+L(¯ τ ) = 
+
+K−2X
+
+j=0 
+
+∥¯xj+1 − ¯xj∥2 . (32) PLR is defined as the ratio between predicted and annotated trajectory lengths: 
+
+PLR(¯ τ ) = L(¯ τ )
+
+L(τ ∗) . (33) 
+
+C. Flow Field Metrics 
+
+Flow field metrics are evaluated on the exact grid of the annotated flow. Let the annotated flow have a spatial resolution 
+
+R × R (e.g., 224 × 224 in our real-world setup). We flatten all grid locations into N = R2 points and reshape both predicted and annotated flows into ˆV, V∗ ∈ RN ×2, where 
+
+ˆVn, Vn∗ ∈ R2 denotes the predicted/annotated vectors at the 
+
+n-th annotated grid cell. All field metrics below are computed over the full grid. 
+
+1) Angular Error ( AE ): We compute the clipped cosine similarity 
+
+cn = clip ˆVn
+
+∥ ˆVn∥2 + ϵ · Vn∗
+
+∥Vn∗∥2 + ϵ , −1, 1
+
+!
+
+, (34) and define the per-point angular error as ∆ϕn = arccos( cn) ·
+
+180 
+
+π (degrees). AE is the mean of {∆ϕn} over all evaluated points. 
+
+2) Magnitude Error ( ME ): Magnitude error is 
+
+ME = 1
+
+N
+
+NX
+
+n=1 
+
+∥ ˆVn∥2 − ∥ Vn∗∥2 . (35) APPENDIX EDETAILS OF BASELINE IMPLEMENTATIONS 
+
+This appendix describes baseline formulations and imple-mentation details as a supplement for §IV-B. All baselines operate on the same BEV observation I, language instruction 
+
+ℓ, and start position x0. Unless otherwise stated, learned baselines use the same frozen vision–language encoder as CoFL (§III), and differ only in the prediction head and the trajectory generation procedure. 
+
+A. Pure VLM 
+
+This baseline uses a commercial VLM to directly output a waypoint sequence from an RGB BEV image, a language instruction, and the starting coordinate. No goal location, obstacle mask, or planner is provided. The VLM must infer a plausible target from the instruction and propose a collision-free trajectory in one shot. 
+
+1) Prompt: We use the following system prompt and re-quest a strict JSON response: System prompt for Pure VLM baseline 
+
+You are a robot navigation policy operating on aTOP-DOWN VIEW (bird’s eye view) and a natural-language instruction. INPUTS - Image: a TOP-DOWN VIEW (bird’s eye view) (RGB-only; no explicit obstacle mask). - Text: (1) Instruction and (2) START coordinate in normalized image coordinates. START (AUTHORITATIVE) - The robot START is provided in text. - The image may also show a green dot, but if there is any ambiguity, trust the text START. COORDINATE SYSTEM (NORMALIZED) - (0.00, 0.00) is the TOP-LEFT corner of the image - (1.00, 1.00) is the BOTTOM-RIGHT corner - x increases left -> right; y increases top -> bottom - All output coordinates MUST have exactly 2 digits after the decimal (e.g., 0.37). GOAL Return a smooth 2D trajectory from START to a TARGET consistent with the instruction, while avoiding obstacles inferred from the RGB image. MAP INTERPRETATION (RGB-ONLY) - There is no color-coded traversability. You MUST infer traversable vs obstacle regions from visual cues (e.g., occupied structures, walls, furniture-like shapes, cluttered regions, boundaries of open space). - When uncertain, be conservative: route through visually open, continuous regions and keep margins from occupied structures. INSTRUCTION GROUNDING - Use the instruction to choose a target location on the map. - If the instruction mentions an object category (chair/table/etc.), attempt to locate a plausible instance from the RGB map using shape/position/context cues. - If multiple candidates exist, choose the one you judge most consistent with the instruction and overall scene layout. TARGET REQUIREMENTS (NO FALLBACK; MUST ANSWER) - You MUST always output a target with a valid (x,y) in [0.00, 1.00] x [0.00, 1.00]. - If you are uncertain about the exact target, output your BEST GUESS anyway. - Indicate uncertainty in "notes" using short ASCII words (e.g., "best guess"). TRAJECTORY REQUIREMENTS (STRICT) - Output exactly {N} waypoints. - Waypoint #1 must be at START (exact match preferred; otherwise within 0.02 L2 distance). - Waypoint #{N} must be at TARGET (exact match preferred; otherwise within 0.02 L2 distance). - All waypoints must satisfy: 0.00 <= x <= 1.00 and 0.00 <= y <= 1.00. - Avoid obstacles inferred from the RGB image (do not place waypoints on occupied structures). - Prefer smooth paths with gentle curvature; avoid zig-zags. WAYPOINT SPACING (SOFT) - Prefer roughly even spacing when feasible. Collision avoidance has higher priority. OUTPUT FORMAT (STRICT JSON ONLY) Return ONLY a valid JSON object with double quotes and no trailing commas. No extra text. Schema: 
+
+{{ "target": {{ "name": "<string>", "x": <float>, "y": <float> }} , "trajectory": [ {{ "x": <float>, "y": <float> }} , ... ], "notes": "<max 25 words; ASCII only; no line breaks>" }} 
+
+NOTES (STRICT) - Use only letters/numbers/spaces in notes (no punctuation). - If target is uncertain, include "best guess". - If obstacle inference is uncertain, include "conservative". 
+
+2) Query Format: To reduce ambiguity in the start location, we additionally draw a green dot on the input map, while still providing the authoritative start coordinate in text. The VLM is instructed to trust the text start if the visualization is unclear. 
+
+3) Decoding and API Settings: We use Gemini-2.5-Flash with deterministic decoding (temperature = 0 , top-p = 1 .0) and enforce a JSON-only response format. We set the maximum output budget to 8192 tokens to reduce truncation. If the output is malformed, we retry up to two times. 
+
+4) Output Parsing and Waypoint Normalization: We parse the returned JSON object and extract target and 
+
+trajectory . All coordinates are clamped to [0 , 1] . If the returned trajectory contains fewer than the required number of waypoints, we interpolate along its arclength to obtain exactly N waypoints; if it contains more, we subsample uniformly by index. This post-processing only standardizes the waypoint count and does not enforce feasibility (e.g., no collision repair). The final evaluation uses the same resampling protocol as all methods (100 waypoints) as described in §IV-C. 
+
+B. VLM+Planner 
+
+This baseline decomposes navigation into (i) scene under-standing and (ii) geometric planning. Given a top-down BEV image and an instruction, a commercial VLM first predicts the target object and obstacle bounding boxes in normalized image coordinates; an A* planner then computes a collision-free path on a discretized occupancy grid. 
+
+1) VLM Prediction (Target and Obstacles): The VLM outputs a JSON object containing the target object (center and bounding box), a list of obstacle objects (each with a center and bounding box), and an optional start estimate. We use the following system instruction and request JSON-only output: System prompt for VLM in VLM+Planner baseline                                                                                                                                                                                                      
+
+> You are analyzing aTOP-DOWN VIEW (bird’s eye view) of an indoor environment for robot navigation. INPUTS -Image: aTOP-DOWN VIEW (bird’s eye view) (RGB-only; no explicit obstacle mask). -Text: (1) Instruction. COORDINATE SYSTEM (NORMALIZED) -(0.00, 0.00) is the TOP-LEFT corner of the image -(1.00, 1.00) is the BOTTOM-RIGHT corner -xincreases left -> right; yincreases top -> bottom -All output coordinates MUST have exactly 2digits after the decimal (e.g., 0.37). GOAL Given anavigation instruction, identify: 1. The TARGET OBJECT (the object the instruction refers to) with its center, bounding box, and direction descriptor (left, right, top, bottom, none). 2. Other obstacle objects that might block apath, with their centers and bounding boxes. 3. If multiple candidates exist, choose the one you judge to be most consistent with the instruction and overall scene layout. Output ONLY valid JSON. Required keys are exactly:
+> {{ "target": {{ "name": "object_name", "center": [0.50, 0.70], "bbox": [0.40, 0.60, 0.60, 0.85], "direction": "left/right/top/bottom/none", "confidence": "high/medium/low" }} ,"obstacles": [{{ "name": "obstacle1", "center": [0.30, 0.40], "bbox": [0.25, 0.32, 0.38, 0.48] }} ,... ], "notes": "<max 25 words; ASCII only; no line breaks>" }}
+> NOTES (STRICT) -All coordinates must be between 0.0 and 1.0 -bbox format is [xmin, ymin, xmax, ymax] in normalized coords -Ensure xmin <xmax and ymin <ymax -If uncertain, still provide your best guess and set confidence to "low"
+
+2) Query Format and Side-of-object Handling: The user query provides the instruction and requests (i) a target and (ii) obstacles. If the instruction specifies approaching a side of an object (e.g., left of / right of / above / below ), we treat the target object’s bounding box as an additional forbidden region and set the navigation goal to a point offset from the corresponding side of the target box. Concretely, given target bbox b = [ xmin , y min , x max , y max ] and center (xc, y c), we compute 
+
+(xg , y g ) = 
+
+
+
+(xmin − δ, y c) left ,
+
+(xmax + δ, y c) right ,
+
+(xc, y min − δ) top ,
+
+(xc, y max + δ) bottom ,
+
+(xc, y c) none ,δ = 0 .02 , (36) followed by clamping to [0 , 1] 2.
+
+3) Decoding and API Settings: We use Gemini-2.5-Flash with deterministic decoding (temperature = 0 , top-p = 1 .0)and a maximum output budget of 8192 tokens. If the returned JSON is invalid or missing a target bbox/center, we retry up to two times with an explicit JSON-only reminder. 
+
+4) Geometric Planning (A*): We rasterize the predicted obstacle bounding boxes into a binary occupancy grid of size 
+
+G × G (default G = 128 ) and run A* (8-neighborhood) from the provided start x0 to the derived goal (xg , y g ). To enforce a safety margin, we inflate each obstacle by a fixed pixel radius 
+
+r (10 px in the bbox image space), converted to a normalized margin and then to grid cells before rasterization. Start/goal are required to lie in free space; otherwise they are snapped to the nearest free cell. The resulting grid path is converted back to normalized coordinates and resampled by arclength to obtain a fixed-length waypoint sequence for evaluation. 
+
+C. Diffusion Policy Family 
+
+We adopt the official Diffusion Policy (DP) codebase [10] as representative trajectory generative policies. All DP-family baselines share the same vision–language encoder as CoFL and differ only in the denoiser (trajectory decoder) architecture and the inference-time sampler (Table V). 
+
+1) Problem Formulation and Trajectory Parameterization: 
+
+All DP-family baselines model a trajectory as a length-T
+
+sequence of 2D displacements ∆X ∈ RT ×2 in normalized image coordinates, with T = 100 . Waypoints are recovered by cumulative summation from the initial state: 
+
+X = x0 + cumsum(∆ X). (37) To improve optimization conditioning and keep the diffusion scale roughly unit-variance, we rescale displacements by a dataset-level scalar computed once on the training set: 
+
+s∆ = median ( ∥∆x∥2) , (38) where the median is taken over all per-step displacements ∆x
+
+from all training trajectories (i.e., over all entries of ∆X across the entire training set). This single s∆ is shared by all samples. TABLE V: DP-family baselines used in this work . All variants reuse the same SigLIP-based vision–language encoder and differ in the denoiser architecture and sampler. 
+
+Method Encoder Trajectory denoiser Sampler DP-C-DDPM Vision–Language Encoder same as CoFL Temporal U-Net (1D Conv; FiLM) DDPM (stochastic) DP-T-DDPM Vision–Language Encoder same as CoFL Transformer (token-conditioning) DDPM (stochastic) DP-C-Flow/ODE Vision–Language Encoder same as CoFL Temporal U-Net (1D Conv; FiLM) ODE (deterministic) 
+
+We train the diffusion model on normalized displacements 
+
+∆ ˜X = ∆ X/s ∆ and multiply back by s∆ at inference: 
+
+X = x0 + cumsum 
+
+
+
+s∆ ∆ ˜X
+
+
+
+. (39) 
+
+2) Network Architecture: a) Vision–language encoder (shared): All DP-family baselines reuse the same visual–language encoder as CoFL: SigLIP2-B/16 at 224 ×224 , followed by the same cross-modal fusion stack (model dimension d=768 , 8 heads, 4 fusion layers). The encoder outputs a token sequence C ∈ RNv ×d
+
+that conditions the denoiser. 
+
+b) Conditioning inputs (shared): Both denoisers are con-ditioned on the encoder tokens C, the initial state x0, and a diffusion time embedding, but differ in how the conditioning is injected (pooled FiLM vs. token-level cross-attention). 
+
+c) Temporal U-Net denoiser (DP-C): We use the official 1D temporal U-Net denoiser with diffusion time embedding dimension 128 and three resolution stages with channel widths 256/512/1024. The model uses kernel size 5 and group normalization with 8 groups. Observations are provided as global conditioning: the encoder tokens C are pooled (mean) into a single context vector, concatenated with x0 and the diffusion time embedding, then injected via FiLM modulation at multiple U-Net blocks. 
+
+d) Transformer denoiser (DP-T): We use the official transformer denoiser with 8 layers, 4 heads, and an embedding dimension d=768 . The initial state x0 and the diffusion time embedding are each projected to d=768 and appended as additional context tokens to C, then injected via cross-attention at multiple transformer blocks. 
+
+3) Training Objective and Defaults: All DP variants share the same data preprocessing and displacement normalization, but use different training objectives depending on the sampler family. 
+
+a) DDPM objective (DP-*-DDPM): For stochastic re-verse diffusion, we adopt the standard DDPM noise-prediction parameterization. At a discrete noise level n ∈ { 1, . . . , N diff }
+
+with variance schedule {βn} and ¯αn = Qns=1 (1 − βs), the forward process is 
+
+∆ ˜Xn = √¯αn ∆ ˜X + √1 − ¯αn ϵ, ϵ ∼ N(0 , I). (40) The denoiser predicts the injected noise ˆϵ = ϵθ (∆ ˜Xn, n |
+
+C, x0) and is trained with the classic diffusion policy loss 
+
+LDDPM = E∆ ˜X, n, ϵ 
+
+
+
+ϵ − ϵθ (∆ ˜Xn, n | C, x0) 22
+
+
+
+. (41) 
+
+b) Flow-matching objective (DP-*-Flow/ODE): For ODE-style sampling, we train a velocity field via flow match-ing with a continuous time t ∈ (0 , 1) (sampled per batch). We draw z ∼ N(0 , I) and construct a linear interpolation in displacement space: 
+
+∆ ˜Xt = t z + (1 − t) ∆ ˜X, (42) with the constant target velocity (standard flow matching) 
+
+ut = z − ∆ ˜X. (43) The model predicts velocity vθ (∆ ˜Xt, t | C, x0) and is trained by regression: 
+
+LFM = E∆ ˜X, t, z
+
+
+
+ut − vθ (∆ ˜Xt, t | C, x0) 22
+
+
+
+. (44) All variants use batch size 32 and AdamW (lr 10 −4, weight decay 10 −5) for 50 epochs train, with a cosine learning-rate schedule and 40000 warmup steps. For all reported results, we select the checkpoint with the lowest validation loss. 
+
+4) Inference-Time Sampling: At test time, we sample Gaus-sian noise in displacement space and map it to a displace-ment sequence ∆ ˜X using the sampler corresponding to each training objective, then recover waypoints X by rescaling and cumulative summation. 
+
+a) DP-DDPM (stochastic reverse diffusion): Let ∆ ˜X ∈
+
+RT ×2 denote the full displacement sequence of length T (each step a d-DoF displacement), and diffusion is performed on this entire sequence. We initialize ∆ ˜XNdiff ∼ N(0 , I) and run the standard discrete reverse process for Ndiff steps. At each noise level n ∈ { 1, . . . , N diff }, the denoiser ϵθ (∆ ˜Xn, n | C, x0) is used to compute the reverse transition and obtain ∆ ˜Xn−1,until reaching ∆ ˜X0.
+
+b) DP-Flow/ODE (deterministic ODE integration): Sim-ilarly, Flow/ODE variants operate on the entire length-T
+
+displacement sequence ∆ ˜Xt ∈ RT ×2. The model predicts a velocity field vθ (∆ ˜Xt, t | C, x0) trained by flow matching. We initialize with pure noise ∆ ˜X1 ∼ N(0 , I) and integrate the ODE from t=1 to t=0 :
+
+d ∆ ˜Xt
+
+dt = vθ (∆ ˜Xt, t | C, x0), (45) using Node Euler steps to obtain ∆ ˜X0. We then recover X by multiplying s∆ and applying cumulative summation. APPENDIX FMORE EXAMPLES OF TRAJECTORIES ON VALIDATION SET 
+
+Additional qualitative examples corresponding to Fig. 7 are provided in Fig. 10. (a) 
+
+(b) 
+
+(c) 
+
+(d) 
+
+(e) 
+
+(f)       
+
+> Flow field Ground truth Pure VLM VLM + Planner DP -C-DDPM DP -C-Flow/ODE CoFL DP -T-DDPM
+> F
+> B
+> LR
+
+Fig. 10: More examples of trajectories on validation set. From left to right: ground truth, pure VLM/VLM+Planner, DP-family and CoFL. (a-b) ScanNet: “please walk to the door” and “can you approach the bathtub” ; (c-d) ScanNet: “go to ahead of the table” and “can you approach right side of the table” ; (e-f) Matterport3D: “can you proceed to back of the chair in the lower right” and “please travel to the chair in the lower left” .APPENDIX GPSEUDO RECEDING -H ORIZON PROTOCOL FOR 
+
+DIFFUSION -P OLICY EVALUATION 
+
+A. Motivation 
+
+A potential concern is that DP may be disadvantaged in our benchmark because we execute each predicted action chunk in an open-loop rollout, whereas diffusion-based controllers are often deployed with frequent closed-loop replanning. If this evaluation-mode mismatch were the dominant factor, then increasing the replanning frequency—i.e., reconditioning DP on intermediate states more often—should yield a clear and systematic improvement in accuracy and safety, thereby narrowing the gap to CoFL. To isolate this factor without introducing additional environ-ment feedback, learned critics, or controller-specific heuristics,            
+
+> 
+> 
+> "&',+
+> $  %-$'  **(*1
+
+## Segments n 
+
+## 1 2 45 10 20 50 
+
+## 0.136 
+
+## 0.144 
+
+## 0.152 
+
+## 0.160 
+
+## 0.168 (a) FGE ↓            
+
+> 
+> 
+> "&',+
+> 
+> 
+> 
+> 
+> (%%$+$(',  1
+
+## Segments n 
+
+## 1 2 45 10 20 50 
+
+## 0.30 
+
+## 0.45 
+
+## 0.60 
+
+## 0.75 (b) CR ↓           
+
+> 
+>  
+> "#('
+
+## Segments n 
+
+## 1 2 45 10 20 50 
+
+## 0.1 
+
+## 0.2 (c) Curv (rad; log-scale y-axis)          
+
+> 
+> 
+> #$)(
+
+## Segments n 
+
+## 1 2 45 10 20 50 
+
+## 0.90 
+
+## 0.95 
+
+## 1.00 
+
+## 1.05 (d) PLR 
+
+Fig. 11: Effect of pseudo receding-horizon segmentation n on DP (DP-T-DDPM, 5 denoising steps, fixed seed 42). The red horizontal line indicates CoFL with a fixed 100 × 100 query grid. we design a fully offline pseudo receding-horizon (pseudo-RH) protocol. Crucially, pseudo-RH does not alter the observation stream or add extra supervision; it only changes how often DP is re-queried from updated states during the offline rollout. This turns replanning into a controlled variable for diagnosing whether DP’s weakness is primarily an artifact of open-loop execution. 
+
+B. Protocol 
+
+Let DP output an T -step action chunk per query (we use 
+
+T =100 throughout). We split the rollout into n segments. For segment i ∈ { 1, . . . , n −1}, we query DP conditioned on the current segment start state and execute only the first 
+
+h = ⌊T /n ⌋ actions, discarding the remainder; the next segment then re-queries DP from the resulting state. For the final segment, we execute the full T -step prediction rather than a truncated prefix, avoiding an artificial shortening of goal-reaching behavior and allowing DP to terminate at its own predicted endpoint. We sweep n and report FGE, CR, Curv, and PLR under this protocol (Fig. 11). 
+
+C. Model/Configuration Details 
+
+CoFL serves as a fixed reference (red horizontal line in Fig. 11) using a dense query grid of 100 × 100 and 100-step Euler rollout. For DP, we use the DP-T-DDPM variant and sample with 5 denoising steps for all n. To reduce stochastic variation as a confounder, we fix the diffusion noise seed to 
+
+42 for all runs reported in this appendix. All other settings follow those used in the main experiments. 
+
+D. Interpretation 
+
+If DP were substantially hindered by open-loop execution, increasing n would be expected to yield a marked and mono-tonic improvement: lower FGE and CR, reduced curvature, and higher path-length progress. Instead, we observe that DP’s metrics change only mildly with n, without a consistent trend indicating that replanning is the missing ingredient. CoFL remains advantageous under its fixed inference configuration. These results suggest that the primary performance gap in our main results is unlikely to be explained by evaluating DP in an overly open-loop regime. Beyond serving as a diagnostic control, the pseudo-RH re-sults further corroborate our main text analysis: diffusion-style trajectory generation operates through iterative denoising over action sequences in a latent/noise parameterization, which may provide weaker spatial inductive bias and enforce geometric constraints only indirectly. This representation–execution gap can make the rollout sensitive to small geometric misalign-ments even when replanning is frequent, consistent with the limited gains observed under pseudo-RH. In contrast, CoFL represents control directly in the workspace can exploit these regularities via dense, locally consistent queries. APPENDIX HABLATION STUDIES OF COFL We ablate several architectural hyperparameters of CoFL. All variants are trained and evaluated under the same protocol as the main paper. For all ablation experiments, the inference query grid size is set to 100, and the Euler rollout step is set to 100, unless otherwise specified. 
+
+A. Encoder Fusion Depth 
+
+We vary the fusion depth L of the vision–language encoder stack while keeping the decoder query depth ˜L = 2 and hidden dimension d = 768 . Encoder parameters are varied and are thus reported here as Encoder param (Table VI). This ablation isolates how much encoder-side capacity is needed to form instruction-aligned BEV context. We report the impact on FGE/CR, AE/ME, and latency. TABLE VI: Encoder Fusion Depth                             
+
+> LEncoder param (M) FGE ↓CR ↓AE ↓ME ↓Lat. (ms) 2395.28 0.14 0.22 18.73 ◦0.06 15.08 4414.18 0.13 0.22 18.16 ◦0.06 15.81 6433.08 0.13 0.24 18.76 ◦0.06 16.21
+
+B. Decoder Query Depth 
+
+We vary the query depth ˜L of the coordinate-conditioned query decoder while keeping the encoder fusion depth L = 4 
+
+and hidden dimension d = 768 . Decoder parameters are varied and are thus reported here as Head param (Table VII). This controls how much computation is spent per queried location when producing v(x | I, ℓ ). We report the impact on FGE/CR, AE/ME, and latency. TABLE VII: Decoder Query Depth                            
+
+> ˜LHead param (M) FGE ↓CR ↓AE ↓ME ↓Lat. (ms) 18.27 0.14 0.23 18.55 ◦0.06 12.41 215.36 0.13 0.22 18.16 ◦0.06 15.81 322.45 0.14 0.22 18.01 ◦0.06 20.69
+
+C. Hidden Dimension 
+
+We vary the model width (hidden dimension) of CoFL while keeping the encoder fusion depth L = 4 and decoder query depth ˜L = 2 . Overall (encoder and decoder) parameters are varied and are thus reported here as Overall param 
+
+(Table VIII). This changes the representational capacity and parameter count while keeping the architecture/topology fixed. We report the impact on FGE/CR, AE/ME, and latency. TABLE VIII: Hidden Dimension                             
+
+> LOverall param (M) FGE ↓CR ↓AE ↓ME ↓Lat. (ms) 512 399.63 0.13 0.26 18.67 ◦0.07 12.29 768 429.54 0.13 0.22 18.16 ◦0.06 15.81 1024 471.25 0.13 0.22 17.90 ◦0.06 22.55
+
+D. Self-Attention in CoFL Decoder 
+
+Our default CoFL decoder disables self-attention among query tokens. We ablate an augmented variant that enables query self-attention (Table IX). All variants use the same trained CoFL model (encoder depth L = 4 , decoder depth 
+
+˜L = 2 , and hidden dimension d = 768 ). We keep the inference query grid fixed at 100 × 100 . Evaluating AE/ME at the original 224 × 224 annotated field resolution would require substantially denser query tokens and become infeasible on a single RTX 4090 when combined with quadratic self-attention memory; therefore, we compute AE/ME on a 100 × 100 
+
+evaluation grid obtained by downsampling the 224 × 224 
+
+annotated field to ensure a stable and fair comparison across variants. Thus, AE/ME in Table IX are not directly comparable to Table II or other ablation results (only used for within-table comparison). Decoder parameters are varied and are thus reported as Head param .As shown in Table IX, query self-attention does not improve performance in our setting: Given this unfavorable efficiency– accuracy trade-off under dense grid querying (self-attention scales as O(Q2)), we omit query self-attention by default. TABLE IX: Self-Attention in CoFL Decoder                       
+
+> LHead param (M) FGE ↓CR ↓AE ↓ME ↓Lat. (ms) W/O 15.36 0.13 0.22 17.89 ◦0.07 15.93 With 20.09 0.14 0.23 18.30 ◦0.07 49.34
+
+E. Rollout Time-Parameterization (Time Rescaling and Unit-Speed) 
+
+We ablate the inference-time rollout parameterization used to integrate the predicted flow field into a fixed-horizon trajectory (Eq. 18). All variants use the same trained CoFL model (encoder depth L = 4 , decoder depth ˜L = 2 , and hidden dimension d = 768 ) and differ only in the integration rule, isolating the effect of time rescaling from magnitude learning. TABLE X: Rollout Time-Parameterization                         
+
+> Variant FGE ↓CR ↓Curv PLR with stabilizer ( v
+> (1 −tk)+ s(tk))0.13 0.22 0.11 0.87 W/O stabilizer ( v
+> 1−tk)0.75 1.00 0.18 4.57 Unit-speed rollout ( v/∥v∥)0.12 0.57 1.68 3.70
+
+As shown in Table X, our default rollout with a stabilizer achieves the best overall trade-off (FGE 0.13, CR 0.22) while keeping the trajectory shape consistent (low Curv and stable PLR). In contrast, removing the stabilizer and using v/(1 − tk)
+
+makes the rollout numerically brittle near the end of the hori-zon: as tk → 1, the denominator becomes very small and any local error is amplified into an excessive step size. This effect is particularly harmful once the rollout deviates into obstacle regions, where even obstacle-aligned velocities get magnified, leading to catastrophic failures (FGE 0.75, CR 1.00) and a severely distorted path-length ratio (PLR 4.57). Notably, Curv increases only moderately (0.18), consistent with the instability being concentrated in the late-stage segment rather than throughout the entire trajectory. Finally, the unit-speed rollout v/∥v∥ discards magnitude information and preserves direction only. While it can still progress toward the goal, it lacks a mechanism to terminate smoothly under a fixed rollout horizon. For shorter paths (normalized distance < 1 when 100-step Euler rollout), the trajectory tends to overshoot and oscillate around the goal region, repeatedly crossing between free space and non-free space. This yields a smaller apparent goal error (FGE 0.12) but degrades safety (CR 0.57) and dramatically harms geometric regularity: oscillations induce frequent direction reversals, inflating curvature (Curv 1.68) and path length (PLR 3.70). Overall, these results suggest that (i) time rescaling is nec-essary for stable fixed-horizon execution, and (ii) magnitude information is not only about speed but also about suppressing overshoot/oscillation and improving feasibility near the goal. APPENDIX IFAILURE ANALYSIS OF REAL -W ORLD ZERO -S HOT 
+
+SEMANTIC NAVIGATION 
+
+A. Case Definitions (C1–C8) 
+
+We index real-world task conditions as C1–C8 (Fig. 9: (a)-(h)) to avoid ambiguity across experiments. E1 comprises 20 trials (4 target types × 5 relative-direction commands), where each case C1–C4 corresponds to one target type and aggregates the five direction commands (left/right/front/back/NONE). In particular, C4 contains two visually identical chairs and thus requires language grounding with a relative-position descriptor to disambiguate the correct target. E2 comprises 20 trials (1 target type × 5 trials × (3 static layouts + 1 reactive adversary)), where cases C5–C7 correspond to the three static obstacle layouts, and C8 uses a reactive adversary (dynamic obstacle). Across all cases, all metrics follow the main-text protocol. TABLE XI: Real-world target navigation with different task conditions (detailed breakdown) . Each setting contains four real-world cases (C1–C8; 5 trials per case).                                                               
+
+> Setting Case On-Target ↑CR ↓¯dmin (m) TTS (s) PL (m) E1: W/O Obstacles C1: Target = chair 1.00 ––14.13 2.83 C2: Target = table 0.80 ––13.37 2.79 C3: Target = box 0.60 ––33.88 4.79 C4: Target = chair pair (language disambiguation) 1.00 ––18.33 4.04
+> Avg 0.85 ––18.67 3.52
+> E2: With Obstacles C5: Static layout A 1.00 0.20 0.07 22.69 3.78 C6: Static layout B 1.00 0.20 0.25 28.32 4.06 C7: Static layout C 1.00 0.20 0.25 34.39 4.90 C8: Reactive adversary 1.00 0.80 0.21 33.78 4.05
+> Avg 1.00 0.35 0.20 29.79 4.20
+
+B. E1 (W/O Obstacles) 
+
+As shown in Table XI, the dominant failure mode in E1 concentrates on C3 (target= box ) and is primarily time-related, reflected by the largest TTS among C1–C4 and a reduced On-Target rate. C3 also shows a substantially longer PL yet does not translate into faster completion; the effective progress rate (PL/TTS) decreases, indicating that the robot spends more time with limited net advancement. In practice, we observe frequent heading changes and occasional turn-backs, suggesting that the policy “hesitates” near decision points and accumulates delay, increasing the likelihood of exceeding the 60 s budget. We attribute this to the box category being both small (harder to disambiguate in the overhead view) and more weakly supervised in our training data, leading to less decisive goal evidence and oscillatory corrections under closed-loop execution. As a practical mitigation, we can collect a small amount of task-specific data in the target environment and perform lightweight fine-tuning (or adapter-based tuning) to strengthen category-level recognition and reduce oscillatory corrections for small objects such as box .
+
+C. E2 (With Obstacles) 
+
+All E2 cases achieve 100% On-Target, while collisions are largely concentrated in C8 (reactive adversary; CR=0.80). The effective progress rate (PL/TTS) decreases due to the complex-ity of the environment (more obstacle avoidance). As discussed in the main text, a key factor is the nonholonomic differential-drive base, which limits rapid lateral evasive maneuvers when the obstacle reacts at close range. In addition, our collision metric uses a conservative, width-based collision radius, which can still flag front cut-ins as collisions even after a successful evasive action. Moreover, the current perception pipeline in-troduces extra latency due to image relaying (camera → edge computer → ROS forwarding → inference workstation), which can delay short-horizon reactions; in future work, we plan to run inference at the image-receiving edge to reduce end-to-end perception-to-trajectory latency.

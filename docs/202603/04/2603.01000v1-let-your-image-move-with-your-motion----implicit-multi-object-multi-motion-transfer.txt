@@ -1,0 +1,576 @@
+Title: Let Your Image Move with Your Motion! -- Implicit Multi-Object Multi-Motion Transfer
+
+URL Source: https://arxiv.org/pdf/2603.01000v1
+
+Published Time: Tue, 03 Mar 2026 02:32:54 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Let Your Image Move with Your Motion! – Implicit Multi-Object Multi-Motion Transfer 
+
+## Yuze Li 1 Dong Gong 2 Xiao Cao 3 Junchao Yuan 1 Dongsheng Li 1 Lei Zhou 4
+
+## Yun Sing Koh 5 Cheng Yan 1† Xinyu Zhang 5♠
+
+> 1
+
+Tianjin University 2University of New South Wales 3University of Electronic Science and Technology of China 4Hainan University 
+
+> 5
+
+University of Auckland 
+
+https://ethan-li123.github.io/FlexiMMT_page/ Our FlexiMMT         
+
+> <raise hands> +<exercise>
+> <exercise >+<do yoga >+<raise hands >
+> <do yoga>
+> <do yoga> <exercise> <raise hands>
+
+Reference Videos       
+
+> <do yoga> +<exercise >+<raise hands >
+> 1 object 2objects
+> 3 objects 3 objects
+
+Figure 1. Illustration of FlexiMMT. Given multiple reference videos, our FlexiMMT independently extracts each motion and applies them to images with any number of objects, enabling precise and compositional multi-object multi-motion transfer. For clarity, we show only simplified motion labels here; full text prompts and vivid videos are provided in the Supplementary Material. 
+
+## Abstract 
+
+Motion transfer has emerged as a promising direction for controllable video generation, yet existing methods largely focus on single-object scenarios and struggle when multiple objects require distinct motion patterns. In this work, we present FlexiMMT, the first implicit image-to-video (I2V) motion transfer framework that explicitly enables multi-object, multi-motion transfer. Given a static multi-object image and multiple reference videos, FlexiMMT indepen-dently extracts motion representations and accurately as-signs them to different objects, supporting flexible recom-  
+
+> ♠Project Lead.
+> †Corresponding Author
+
+bination and arbitrary motion-to-object mappings. To ad-dress the core challenge of cross-object motion entangle-ment, we introduce a Motion Decoupled Mask Attention Mechanism that uses object-specific masks to constrain at-tention, ensuring that motion and text tokens only influence their designated regions. We further propose a Differen-tiated Mask Propagation Mechanism that derives object-specific masks directly from diffusion attention and pro-gressively propagates them across frames efficiently. Ex-tensive experiments demonstrate that FlexiMMT achieves precise, compositional, and state-of-the-art performance in I2V-based multi-object multi-motion transfer. 
+
+1
+
+> arXiv:2603.01000v1 [cs.CV] 1 Mar 2026
+
+## 1. Introduction 
+
+Recent advancements in video diffusion models [3, 10, 21, 39, 45, 47] have significantly accelerated the devel-opment of controllable video generation [4, 7, 8, 11– 13, 16, 17, 23, 48, 55, 56]. Among various controllable tasks, motion transfer has emerged as a key direction, aim-ing to capture motion dynamics from reference guidances and apply them to target subjects. Some motion trans-fer methods use explicit motion guidance, such as pose [6, 12, 24, 40, 46], optical flow [4, 26, 36], or trajectories [8, 15, 25, 44, 52, 55]. While effective, these approaches rely on additional estimators and require accurate motion extraction, which can be computationally expensive. In contrast, implicit-motion methods encode motion directly from reference videos into latent embeddings or learned pa-rameters [2, 16, 19, 23, 29, 41, 48, 51, 56]. This paradigm avoids explicit motion preprocessing and provides greater flexibility and ease of use. In this paper, we focus on im-plicit motion transfer from reference videos. Based on the type of input conditions, existing motion transfer methods can be grouped into two major directions, 
+
+i.e ., text-to-video (T2V) [7, 13, 16, 23, 48, 56] and image-to-video (I2V) [4, 8, 12]. T2V methods typically trans-fer motion from reference sequences while synthesizing se-mantic content guided by text descriptions. I2V methods are more challenging as they must simultaneously preserve the appearance of a given first-frame image and follow the reference motion, requiring much stronger spatial and struc-tural consistency. Most recent studies [7, 19, 27, 51] fo-cus on single-concept ( i.e ., one object or one motion) mo-tion transfer. However, simultaneously transferring distinct motions to multiple objects within the same image remains largely unexplored and continues to be an open challenge. In this paper, we propose FlexiMMT , a novel implicit motion transfer framework that, to the best of our knowl-edge, is the first to explicitly tackle multi-object, multi-motion challenges in I2V generation. Given a multi-object input image and multiple reference videos, our method in-dependently extracts each motion and accurately assigns it to the corresponding target object, supporting flexible, com-positional, and arbitrary motion–object rearrangements. The central challenge in this setting is the motion entan-glement across different objects. To this end, we introduce a Motion Decoupled Mask Attention Mechanism (MDMA), which leverages object-specific masks to perform explicit motion disentanglement within the attention layers. This mechanism enforces that text and motion tokens exclusively attend to their corresponding objects from video tokens rather than interfering with others, thereby enabling pre-cise and independent motion control. To efficiently obtain object-specific masks, we introduce a Differentiated Mask Extraction Mechanism (DMEM). Unlike approaches that rely on external segmentation models [18, 32, 33], DMEM directly derives object masks from the model’s own atten-tion activations, providing an efficient training-time solu-tion. At inference, we further mitigate cross-object mask confusion through a dynamic Regressive Mask Propaga-tion Mechanism (RMPM) that progressively and efficiently transfers first-frame masks to subsequent frames, maintain-ing clean and consistent object boundaries throughout the generation process. Quantitative and qualitative experiments on 200 video-image pairs demonstrate that our FlexiMMT enables in-dependent and flexible motion assignment across multiple objects. As illustrated in Fig. 1, different motion patterns extracted from multiple reference videos can be accurately transferred to distinct objects in the input image, and these motions can be arbitrarily swapped or recombined across objects. Our contributions are as follows: • We introduce FlexiMMT, the first implicit-motion I2V framework capable of multi-object, multi-motion trans-fer. • We design a Motion Decoupled Mask Attention Mecha-nism that uses object-specific masks to disentangle mo-tion across objects, enabling precise and flexible per-object motion assignment. • We present a Differentiated Mask Extraction Mechanism that derives object-specific masks directly from diffusion attention with dynamic progressive propagation scheme for stable multi-object control. • Extensive experiments demonstrate that FlexiMMT of-fers strong flexibility, compositionality, and state-of-the-art performance in multi-object I2V motion transfer. 
+
+## 2. Related Work 
+
+2.1. Explicit Motion Representation Models 
+
+Explicit motion representation models achieve controllable video generation through predefined motion signals such as pose skeletons, optical flow fields, and trajectories. The core idea is to enforce explicit constraints to ensure that the generated motion aligns with the desired behavior. In the T2V domain, methods are categorized by motion signals: pose-driven method like FollowYourPose [24] fo-cus on fusing text and pose sequences to address the lim-itation of text in specifying fine-grained human motion; depth/edge-based methods like ControlVideo [54] and Spar-seCtrl [9] adopt ControlNet-like [50] structures to condition generation on text and depth/edge signals for temporal co-herence; trajectory-based method like Peekaboo [15] use in-teractive frameworks with text and foreground trajectories to guide target motion along predefined paths. In the I2V domain, models emphasize appearance-motion synergy: pose-driven methods such as AnimateAny-one [12] and MagicAnimate [46] fuse pose and refer-ence image features, with enhancements to temporal con-2Differentiated Mask Extraction Mechanism (DMEM) 
+
+> ×L
+
+· Norm+Sim threshold    
+
+> ℳ௞ଵ ෣
+> ℱୟ୬ୡ
+> ℱ௟
+> ℳୟ୬ୡ ௞ଵ ෣ࣝ௞ଵ ࣭௟௞ଵ ℳ௟௞ଵ ܳ෣ ܳ୷ ௬௞ܭ௩்
+> reshape threshold
+> ℳ௞෢
+> Inference (Dynamic RMPM) Training
+> Motion Decoupled Mask Attention (MDMA)
+
+MM-DiT Block × NAttention (DMEM+MDMA) Feed-Forward Denoised Latents               
+
+> A dog stands up.
+> Training Inference
+> A capybara stands up. A man gestures refusal. Grounding SAM
+> {ℳ ଵ௞෢ }௞ୀଵ ௄
+> Trainable ܶ ௠ܶ௠ܶ௞ଵ ௠௞ଶ
+> Text Tokens Motion Tokens Video Tokens
+> Capybara man
+> ݔ௥௘௙ ܫ௧௔௥
+> KQܶܶ௬ ܶ௩ ܶ௬ ௠ܶ௞ଵ ௠ܶ௞ଶ ௩
+> T - T T - M T - V
+> M - T M - M M - V
+> V - T V - M
+> OR
+> ℳ௞ଵ ෣
+> ℳ௞ଶ ෣
+> Tܶ௠ܶ௞ଵ ௠௞ଶ
+> dynamic
+
+Figure 2. Overview of FlexiMMT. (a) Training: Given one reference video, insert trainable motion tokens into text and video tokens. Get the object mask through a simple QK multiplication method, then mask out M2M, M2V and T2M parts in attention map. (b) Inference: Given a multi-object conditional image, we first segment each object’s mask with semantic segmentation model [33]. Concatenate pre-trained motion tokens into text and video tokens for inference. Extract each object’s latent-space mask in subsequent frames via Dynamic Regressive Mask Propagation Mechanism (Dynamic RMPM), and apply it to Motion parts and Text parts in attention map. 
+
+sistency; optical-flow-driven methods like Go-with-the-Flow [4] and MotionI2V [36] leverage optical flow for noise warping and spatial alignment with appearance; trajectory-driven methods such as DragAnything [44], S 2V2V [52], ReVideo [25], and MotionPro [55] use predefined trajecto-ries or trajectory-matching losses to control motion from reference images; other structure-signal-driven methods like Keyframe [11], VideoRepainter [2], MotionBooth [42], and VACE [17] rely on edited keyframes, pose/trajectory integration, or multi-task control signals for guided gener-ation. Some works [1, 34, 53] leverage multimodal signals to guide and control video motion. Explicit models require manual annotations or complex preprocessing and are often restricted by the geometry of the source objects. In contrast, our I2V-based method au-tomatically extracts implicit motion from reference videos, eliminating the need for manual labeling and enabling flex-ible motion transfer across diverse objects and scenes. 
+
+2.2. Implicit Motion Representation Models 
+
+Implicit motion representation models extract motion-related vectors, attention maps, or parameters from refer-ence videos to achieve motion capture and transfer. In the T2V domain, two categories prevail: direct motion feature extraction methods such as VMC [16], DMT [48], and AMF [29] capture dynamic cues, relative motion vari-ations, or patch-level flow via temporal attention or in-termediate features; LoRA-based methods like MotionDi-rector [56], VideoMage [13], and DIVE [14] disentangle appearance and motion using spatiotemporal LoRA, with adaptations for concept-specific transfer. In the I2V domain, models focus on decoupling ap-pearance and motion: feature-based methods such as AnyV2V [19] and FlexiAct [51] construct guidance sig-nals from reference videos’ spatiotemporal attention or fre-quency features; LoRA-based methods like I2VEdit [27] and LoRA-Edit [7] train motion LoRA modules on tempo-ral attention layers to enhance long-term consistency. However, most implicit methods remain limited to single-object or fixed-layout motion transfer. Our approach overcomes these constraints by extracting implicit represen-tations that scale to multiple objects and generalize across diverse spatial configurations. 
+
+## 3. Method 
+
+3.1. Preliminary 
+
+Problem definition. The multi-object, multi-motion I2V task aims to transfer distinct motion patterns to a given multi-object image, such that each object in the image “moves” according to its corresponding reference motion. Let {xi 
+
+> ref
+
+}Ni=1 denote a set of reference videos, each with corresponding caption {yi 
+
+> ref
+
+}Ni=1 , where N is the total num-ber of these videos. Given a user-specified target image Itar 
+
+containing multiple objects {ok
+
+> tar
+
+}Kk=1 , where K denotes the 3number of objects, our objective is to generate a target video 
+
+xtar . The generated video should preserve the appearance of the input image in its first frame, while ensuring that each object in Itar follows the motion pattern extracted from its designated reference video. 
+
+Image-to-Video (I2V) diffusion model. I2V diffusion models generate videos by iteratively denoising a sequence of Gaussian-noise latents, conditioned on a first-frame im-age and a text prompt. They are commonly parameterized as ϵθ (zt, t, c, I0), using a 3D U-Net or a Transformer. At each diffusion step t, the model predicts the noise added to a noisy latent zt, conditioned on text prompt y and the la-tent of first-frame image I0. The training objective follows the standard noise-prediction loss: 
+
+L = Ey, I0,ϵ,t 
+
+h
+
+∥ϵθ (zt, y, t, I0) − ϵ∥22
+
+i
+
+. (1) 
+
+Motion-based DiT methods. For video diffusion mod-els [47] using the MM-DiT [28] architecture, video to-kens Tv and text tokens Ty interact within the 3D full-attention layers. Similar to recent works [5, 20, 51], we introduce trainable tokens called motion tokens Tm to model motion-specific features. After linear projection, the model produces separate query, key, and value repre-sentations for text, video, and motion tokens, denoted as: 
+
+(Qy , K y , V y ); ( Qv , K v , V v ); ( Qm , K m , V m ). The at-tention computation is thus formulated as: 
+
+A = [Qc ⊕ Qm ⊕ Qv ][ Kc ⊕ Km ⊕ Kv ]⊤
+
+√d , (2) where ⊕ denotes token-wise concatenation. A is the atten-tion map. Although motion tokens learned from reference videos can be injected into the 3D full-attention layers dur-ing inference to achieve motion transfer, this naive strategy cannot assign different motions to different objects within the same image, as the interactions among tokens remain globally entangled. 
+
+3.2. Motion Decoupled Mask Attention 
+
+To address the issue of cross-object motion entangle-ment, we introduce the Motion Decoupled Mask Attention 
+
+(MDMA) mechanism, enforcing that motion and text to-kens interact only with the video tokens belonging to their designated object regions. Specially, MDMA constructs an object-specific mask matrix M, activating only the token pairs relevant to the target object. This mask is applied to the raw attention map via A ← A ⊙ M , where ⊙ de-notes element-wise multiplication. By suppressing irrele-vant cross-object interactions, MDMA explicitly disentan-gles motion at the attention level. Given a target object ok
+
+> tar
+
+, the k-th object in Itar , we pre-defined notations to clearly distinguish its associated to-kens. Specifically, we denote the text, motion, and video tokens for the k-th object ok 
+
+> tar
+
+as T ky , T km, and T kv , respec-tively. Since only a subset of text tokens encodes actual motion semantics, we further denote T ky,mo as text tokens that correspond to the motion description of the k-th object. To obtain the video tokens corresponding to object k: T kv ,a spatial mask cMk is required to isolate the video tokens of object ok
+
+> tar
+
+. Details of constructing cMk are provided in Section 3.3. For clarity, we illustrate the formulation using two objects, i.e ., ok1tar and ok2tar , which can be easily extended to multiple objects. Here, K = 2 .The object-specific mask matrix M in our MDMA is built with two main parts, including Motion-to-[X] (M2X) mask and Text-to-[X] (T2X) mask. 
+
+Motion-to-[X] (M2X) mask. M2X aims to make motion-related tokens only focus on the specified object, including Motion-to-Video, Video-to-Motion, and Motion-to-Motion. For Motion-to-Video mask, we generate Mm→v where if and only if both motion and video tokens belong to this object. Given the k-th object, this mask is formulated as: 
+
+Mkm→v [p, q ] = 
+
+(
+
+1, if Tm[p] ∈ T km ∧ Tv [q] ∈ T kv
+
+0, otherwise ,
+
+(3) where p and q are the relative position in motion and video tokens, respectively. If we have two objects, the Mm→v is the union of each mask, represented as: 
+
+Mm→v [p, q ] = Mk1 
+
+> m→v
+
+[p, q ] ∪ M k2 
+
+> m→v
+
+[p, q ], (4) based on the symmetry propority, Video-to-Motion mask is the transpose of Motion-to-Video mask, i.e ., 
+
+Mv→m[q, p ] = Mm→v [p, q ].To prevent motion tokens from affecting each other, we enfore the Motion-to-Motion Mask ( Mm→m) to be a zero matrix as: 
+
+Mm→m = 0(K·dm)×(K·dm), (5) where dm is the length of the motion tokens T km.
+
+Text-to-[X] (T2X) mask. T2X ensures that motion-related text tokens attend only to the video tokens of their corre-sponding object, preventing cross-object motion interfer-ence. It contains Text-to-Video, Video-to-Text, Text-to-Text, Text-to-Motion and Motion-to-Text. For Text-to-Video mask My→v , similar as Motion-to-Video mask, it enforces that only text tokens describing the motion of object k can attend to video tokens belonging to that same object. Formally, for the k-th object: 
+
+Mky→v [p, q ] = 
+
+(
+
+1, if Ty [p] ∈ T ky,mo ∧ Tv [q] ∈ T kv
+
+0, otherwise ,
+
+(6) 4capybara man dog Figure 3. Overview of the simple method for training and in-ference. Single object can be extracted through a simple QK mul-tiplication method. However, different objects cannot be extracted through this simple method due to feature entanglement. 
+
+where p and q here denote relative positions in text and video tokens, respectively. For two objects, the overall mask My→v is obtained by merging the per-object masks: 
+
+My→v [p, q ] = Mk1 
+
+> y→v
+
+[p, q ] ∪ M k2 
+
+> y→v
+
+[p, q ], (7) the corresponding Video-to-Text mask is symmetric: 
+
+Mv→y [q, p ] = My→v [p, q ].Text-to-Text mask My→y prevents motion-related text tokens of different objects from attending to each other. For two objects, the formulation is defined as: 
+
+My→y [p, q ] = 
+
+(
+
+0, if Ty [p] ∈ T k1 
+
+> y,mo
+
+∧ Ty [q] ∈ T k2
+
+> y,mo
+
+1, otherwise .
+
+(8) Text-to-Motion Mask My→m is designed to ensure that each text tokens interacts only with the motion tokens of its corresponding object: 
+
+Mky→m[p, q ] = 
+
+(
+
+1, if Ty [p] ∈ T ky,mo ∧ Tm[q] ∈ T km
+
+0, otherwise ,
+
+(9) for two objects, the final mask is obtained by taking the union of object-specific masks: 
+
+My→m[p, q ] = Mk1
+
+> y→m
+
+[p, q ] ∪ M k2
+
+> y→m
+
+[p, q ], (10) the symmetric Motion-to-Text mask is thus defined as 
+
+Mm→y [q, p ] = My→m[p, q ].
+
+Overall. The object-specific attention mask M is con-structed by combining the M2X and T2X sub-masks as: 
+
+M =
+
+
+
+My→y My→m My→v
+
+Mm→y Mm→m Mm→v
+
+Mv→y Mv→m Idv ×dv
+
+ , (11) where I is the identity matrix, and dv is the number of video tokens Tv . The mask M is applied to attention map during Step=759  
+
+> capybara man
+> Step=179
+
+Figure 4. Illustration of the propagate feature and mask changes during denoising steps. We found that the transfer of motion can be completed in the early stage of denoising steps. 
+
+both inference and training. Since training video contains only a single object, we only active M2M, M2V and T2M sub-masks, while others blocks leave the corresponding at-tention values unchanged. 
+
+3.3. Differentiated Mask Extraction Mechanism 
+
+Recall that for the k-th object, the object-specific video tokens T kv require a spatial mask cMk to isolate the cor-responding object region. To obtain such object-specific masks cM = { cMk}Kk=1 for all objects, we propose a Dif-ferentiated Mask Extraction Mechanism (DMEM), which employs two complementary mask extraction strategies for the training and inference stages. 
+
+Training stage. During training, each video contains only one single object; therefore, we set the object index to 
+
+k = 1 . Specifically, we first localize the object region and extract its object-specific text query representation Qky . Us-ing Qky , we compute an attention map by multiplying Qky
+
+and K⊤ 
+
+> v
+
+, where larger values indicate a higher likelihood that a video token corresponds to the target object. We then obtain the mask cMk by applying a hard threshold to this attention map: values above the threshold are set to 1, and the rest to 0. For simplicity, we use the mean value of the attention map as the threshold. 
+
+Discussion. An alternative way to obtain cM is to use se-mantic segmentation methods such as SAM [18, 32]. How-ever, we adopt our lightweight attention-based strategy for two reasons: i) segmentation introduces substantial compu-tational training overhead, while DiT attention already pro-vides reliable object cues; ii) applying segmentation only during training leads to a train-test inconsistency, as it can-not be used at inference time, potentially harming perfor-mance. We leave more explorations for future work. 
+
+Inference stage. At inference time, we should distinguish different objects in Itar . A straightforward solution is to reuse the simple attention-based mask extraction from the 5training stage. However, it fails to distinguish different ob-jects, as shown in Fig. 3, replecting that text-driven local-ization no longer provides reliable object when multiple ob-jects appear in a single image. To this end, we introduce a Regressive Mask Propaga-tion Mechanism (RMPM), which progressively propagates masks from the first frame to all subsequent frames, inspired by [37]. We begin by using an off-the-shelf segmentation model [33] to extract object-specific masks { cMk 
+
+> 1
+
+}Kk=1 for the first frame Itar . We also extract latent features for all frames F = {F l}Ll=1 , where L is the number of frames. For each object ok
+
+> tar
+
+, RMPM recursively propagates its mask from frame 1 to frame L. As the l-th frame, we maintain a small set of anchor features Fanc and corresponding an-chor masks cMk
+
+> anc
+
+. These anchors include the first-frame and a subset of nearby frames within a local temporal win-dow. We first compute the correlation matrix Ckl :
+
+Ckl = Norm( Fl) · Norm( Fanc ⊙ cMk
+
+> anc
+
+)⊤, (12) where Fanc and cMk 
+
+> anc
+
+are constructed by concatenating the first-frame feature/mask F1/ cMk 
+
+> 1
+
+with anchor features/-masks. Norm is the L2 normalization operation. The propagated feature Skl and mask cMkl for the l-th frame of the k-th object are then computed as: 
+
+Skl = Mk 
+
+> anc
+
+· C kl
+
+> ⊤
+
+,
+
+cMkl =
+
+(
+
+1, if Skl > mean( Skl )0, otherwise . (13) After cMkl , we update the anchor set by appending the current frame’s feature and mask, removing the oldest ones when exceeding a predefined window size. RMPM ensures that the mask for each object evolves consistently over time, enabling reliable separation of objects throughout the video. The details of RMPM are presented in Algorithm 1. 
+
+Dynamic RMPM. As pointed out in [22, 43], early denois-ing steps in diffusion models primarily recover coarse struc-tural information. Similarly, in our RMPM, we observe that applying mask propagation during the early denoising steps is sufficient for accurate mask estimation, as illustrated in Fig. 4. This motivates us to propose a dynamic RMPM, a more efficient variant of RMPM. Specifically, at each diffu-sion step t, we compute the difference between the current mask and the mask from the previous step t − 1. If this difference falls below a pre-defined threshold α, we termi-nate further mask updates and reuse the most recent stable mask for all subsequent steps. This significantly improves inference efficiency without compromising mask quality. 
+
+Algorithm 1: RMPM                                                                         
+
+> Input :First frame mask for Kobjects: {cMk
+> 1}Kk=1 ; Features for all frames F={F l}Ll=1 ; Local temporal window size W; Object number K; Frame number L.
+> Output: Object-specific masks {cMkl}k=1 ,...,K,l =1 ,...,L .
+> Initialization: Anchor features Fanc ; Anchor masks for the k-th object cMk
+> anc .
+> 1for k= 1 to Kdo
+> 2Fanc ←[ ] ;cMk
+> anc ←[ ]
+> 3for l= 1 to Ldo
+> 4if l= 1 then
+> 5cMkl←cMk
+> 1
+> 6end
+> 7else
+> 8if |F anc | ≥ Wthen
+> 9Fanc .pop (1) ;cMk
+> anc .pop (1)
+> 10 end
+> 11 else
+> 12 Compute correlation matrix Cklvia Eq. (12);
+> 13 Compute propagated mask cMklvia Eq. (13);
+> 14 end
+> 15 end
+> 16 Fanc .append (Fl);cMk
+> anc .append (cMkl))
+> 17 end
+> 18 end
+
+## 4. Experiment 
+
+4.1. Experimental Settings 
+
+Datasets. To ensure diversity, we collect and generate paired videos and images from multiple sources, including FlexiAct [51], Pexels -1 , the DAVIS 2017 dataset [30], and Seedream [35]. In total, we construct a dataset containing 200 video–image pairs covering 20 distinct types of motion. Each image contains single or multi objects, enabling eval-uation under multi-object multi-motion transfer scenarios. 
+
+Baselines. We compare our approach against several repre-sentative baselines, including FlexiAct [51], I2VEdit [27], AnyV2V [19], Go-with-the-Flow [4], and CogVideoX-5B-I2V [47], which together cover both first-frame-guided and multimodal-guided paradigms. For a fair comparison, we adapt each baseline to enable multi-object, multi-motion transfer. Details of these modifications are provided in the Supplementary Material. 
+
+Evaluation metrics. For automatic evaluations, following [16, 49, 51], we evaluate generated videos with four met-rics: Appearance Consistency (AC), Temporal Consistency (TC), Text Similarity (TS), and Trajectory Fidelity (TF) 0,measuring appearance preservation, temporal stability, se-mantic alignment, and motion coherence, respectively. To better quantify motion alignment, we further intro-duce a new metric, Flow Fidelity (FF). We use the RAFT 
+
+> -1 https://www.pexels.com/
+> 0Referred to as Motion Fidelity in FlexiAct [51]
+
+6Table 1. Quantitative comparison. We compared the effectiveness of different methods with our method. There are five metrics for Automatic Evaluations and four for Human Evaluations, among which Human Evaluations score are in percentage. 
+
+Method Automatic Evaluations Human Evaluations (%) 
+
+AC ↑ TC ↑ TS ↑ TF ↑ FF ↑ AC ↑ TC ↑ TS ↑ MF ↑
+
+AnyV2V [19] 0.749 0.890 0.275 0.422 0.562 0.000 0.000 0.000 0.000 Flexiact [51] 0.939 0.954 0.281 0.279 0.609 15.750 11.550 6.475 6.500 I2VEdit [27] 0.915 0.932 0.267 0.395 0.521 2.000 0.575 0.000 0.000 Go-with-the-Flow [4] 0.774 0.881 0.277 0.488 0.648 0.000 0.000 0.500 0.525 CogVideoX-5B-I2V [47] 0.948 0.956 0.293 0.292 0.607 5.500 4.000 3.475 3.500 
+
+Our FlexiMMT 0.904 0.932 0.286 0.577 0.723 76.750 83.875 89.550 89.475 <Walk> <crouch>  
+
+> AnyV2V FlexiAct I2VEdit Go-with-the-Flow CogVideoX-5B-I2V
+> Our FlexiMMT
+> <stand up> <do yoga>
+> A tiger walks on the snow ground with rocks. A man wearing a gray sweater and dark pants is crouching. A rabbit stands up. A cat is doing yoga.
+
+Figure 5. Qualitative comparison. We compared the effects of different methods on transferring multi-object motions. The first row is the referenced motion, and the next six rows are the results of different methods. 
+
+[38] optical flow estimator to compute the similarity be-tween the flow fields of corresponding objects in the gener-ated and reference videos. FF evaluates both the similarity of motion-magnitude distributions and the histogram simi-larity of motion directions within the object masks. Com-pared with TF, FF can measure the similarity of motion from a more holistic dimension. For human evaluations, we adopt four criterias, i.e ., Ap-pearance Consistency (AC), Temporal Consistency (TC), Text Similarity (TS), Motion Fidelity (MF), to capture ap-pearance preservation, temporal stability, semantic align-ment, and motion coherence. We recruited 20 raters, each randomly assigned 200 video sequences. For each criterion, raters were asked to select the best-performing video. Ad-ditional details are provided in the Supplementary Material. 
+
+Implementation details. We adopt CogVideoX-5B-I2V [47] as our base I2V diffusion model. All videos and images are resized to 720 × 480 , and each video contains 49 frames. Motion tokens is trained for 2,000 steps using AdamW optimizer with a learning rate of 3e-3 and batch size of 1. We use [33] for first-frame mask extraction. Ad-ditionally, we set the local temporal window size to W = 2 
+
+in RMPM and the threshold to α = 5% in dynamic RMPM. All experiments are conducted on six NVIDIA A800 GPUs. 
+
+4.2. Main Results 
+
+Quantitative Evaluation. As shown in Tab. 1, our Flex-iMMT performs the best in both Trajectory Fidelity (TF) and Flow Fidelity (FF), demonstrating its superior ability to accurately transfer motion. Compared with [4], which achieves the best results on TF and FF among all base-lines, our method further obtains higher Appearance Con-sistency (AC), Temporal Consistency (TC), and Text Simi-larity (TS). This indicates that our FlexiMMT not only pre-serves motion most faithfully but also maintains superior overall generation quality. It is noting that our FlexiMMT achieves comparable or slightly lower performance on AC, TC and TS compared with previous methods [27, 47, 51]. The underlying rea-son is that AC and TC measure inter-frame similarity us-7Table 2. Impact of M2X and T2X masks in MDMA. “w/o M2X” denotes removing all Motion-to-[X] masks and “w/o T2X” de-notes removing all Text-to-[X] masks during inference. 
+
+Method AC ↑ TC ↑ TS ↑ TF ↑ FF ↑
+
+w/o M2X 0.910 0.940 0.284 0.381 0.618 w/o T2X 0.926 0.946 0.284 0.461 0.665 
+
+Our FlexiMMT 0.904 0.932 0.286 0.577 0.723 <stand up> <bow head>   
+
+> w/o M2X w/o T2X
+> Our FlexiMMT
+> w/o Train w/o Infer
+> w/o RMPM
+
+Figure 6. Qualitative comparison of each component in Flex-iMMT. The caption for the generated videos is: “A beer bows head. A hedgehog stands up.” 
+
+ing CLIP [31]. These metrics favor videos with minimal changes and therefore become uninformative when a model fails to transfer motion. That is to say, high AC/TC may simply indicate static or weakly animated outputs, reflecting by TF and FF, and qualitative and human evaluation. Sim-ilarly, TS cannot reliably reflect motion accuracy because text descriptions inadequately express fine-grained motion details. Hence, these quality metrics are meaningful only when motion fidelity is sufficiently high. Overall, Flex-iMMT shows the strongest motion transfer capability while maintaining high and comparable generation quality. 
+
+Human evaluation. The right side of Tab. 1 shows that our method achieves the best performance across all human-evaluated metrics. 
+
+Qualitative results. Results in Fig. 5 shows our qualita-tive results. It can be seen that none of the existing meth-ods can transfer the motion of multiple objects. In contrast, our method faithfully transfers: “walk” motion to tiger and “crouch” motion to man, “stand up” motion to rabbit and “do yoga” motion to cat. 
+
+4.3. Ablation Studies 
+
+Impact of M2X and T2X masks in MDMA. As shown in the upper block of Tab. 2, removing either the M2X or T2X mask leads to a significant drop in TF and FF, indicating that both components are essential for effective motion dis-entanglement across objects. Fig. 6 further illustrates that, without M2X and T2X, motion cannot be correctly trans-
+
+Table 3. Impact of DMEM and RMPM. “w/o Train” and “w/o Infer” indicate disabling mask extraction during training and infer-ence, respectively. “w/o RMPM” denotes removing the regressive mask extraction mechanism (RMPM) at inference. 
+
+Method AC ↑ TC ↑ TS ↑ TF ↑ FF ↑
+
+w/o Train 0.925 0.945 0.285 0.440 0.656 w/o Infer 0.884 0.924 0.285 0.373 0.602 w/o RMPM 0.895 0.924 0.285 0.377 0.607 
+
+Our FlexiMMT 0.904 0.932 0.286 0.577 0.723 0.902 0.931 0.932 0.286 0.286 0.725 0.723 0.579 0.577       
+
+> 0.902 0.931 0.286 0.579 0.725 977s 0.904 0.932 0.286 0.577 0.723 564s 0% 20% 40% 60% 80% 100% AC TC TS TF FF
+> Time
+> w/o Dynamic w/ Dynamic
+> 1.6
+> ×
+
+Figure 7. Comparison of RMPM (w/o Dynamic) and Dynamic RMPM (w/ Dynamic). Dynamic RMPM substantially accelerates inference without compromising performance. 
+
+ferred to multiple objects. More ablations for each part of M2X and T2X masks are in Supplementary Material. 
+
+Impact of DMEM. DMEM includes both training-stage and inference-stage mask extraction strategies. As shown in the first two rows of Tab. 3, both stages are crucial for effective motion transfer. The qualitative results in Fig. 6 further illustrate that: i) without the training-stage mask, the object fails to accurately learn the reference motion; ii) without the inference-stage mask, multiple motions become entangled. 
+
+Impact of RMPM. RMPM is the key inference-stage component in DMEM for achieving object-specific masks. Without RMPM, the model reduced to using only the simple training-stage mask extraction during inference. As shown in the third row of Tab. 3 and in the visualizations of Fig. 6, removing RMPM leads to entangled motions across objects, causing the model to fail in accurately following the pre-scribed motion patterns. 
+
+RMPM vs . Dynamic RMPM. We tested the impact of Dy-namic RMPM. As shown in Fig. 7, Dynamic RMPM sig-nificantly reduces the inference time. 
+
+## 5. Conclusion 
+
+In this paper, we propose FlexiMMT, the first implicit I2V motion transfer framework capable of handling multi-8object, multi-motion scenarios. We introduce a motion decoupled mask attention mechanism and a differentiated mask extraction mechanism to effectively resolve cross-object motion entanglement issue, ensuring precise, inde-pendent motion assignment to each object. The progressive and dynamic mask extraction strategies further ensure sta-ble multi-object control and efficient inference. Extensive experiments demonstrate that our FlexiMMT offers flexi-ble, compositional, and high-fidelity motion transfer across diverse objects. 
+
+## References 
+
+[1] Simon Alexanderson, Rajmund Nagy, Jonas Beskow, and Gustav Eje Henter. Listen, denoise, action! audio-driven motion synthesis with diffusion models. ACM Transactions on Graphics (TOG) , pages 1–20, 2023. 3 [2] Yuxuan Bian, Zhaoyang Zhang, Xuan Ju, Mingdeng Cao, Liangbin Xie, Ying Shan, and Qiang Xu. Videopainter: Any-length video inpainting and editing with plug-and-play con-text control. In Proceedings of the Special Interest Group on Computer Graphics and Interactive Techniques Conference Conference Papers , pages 1–12, 2025. 2, 3 [3] Andreas Blattmann, Tim Dockhorn, Sumith Kulal, Daniel Mendelevitch, Maciej Kilian, Dominik Lorenz, Yam Levi, Zion English, Vikram Voleti, Adam Letts, et al. Stable video diffusion: Scaling latent video diffusion models to large datasets. arXiv preprint arXiv:2311.15127 , 2023. 2 [4] Ryan Burgert, Yuancheng Xu, Wenqi Xian, Oliver Pilarski, Pascal Clausen, Mingming He, Li Ma, Yitong Deng, Lingx-iao Li, Mohsen Mousavi, et al. Go-with-the-flow: Motion-controllable video diffusion models using real-time warped noise. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 13–23, 2025. 2, 3, 6, 7, 1 [5] Yuqing Chen, Junjie Wang, Lin Liu, Ruihang Chu, Xiaopeng Zhang, Qi Tian, and Yujiu Yang. O-disco-edit: Object distor-tion control for unified realistic video editing. arXiv preprint arXiv:2509.01596 , 2025. 4 [6] Gang Cheng, Xin Gao, Li Hu, Siqi Hu, Mingyang Huang, Chaonan Ji, Ju Li, Dechao Meng, Jinwei Qi, Penchong Qiao, et al. Wan-animate: Unified character animation and replacement with holistic replication. arXiv preprint arXiv:2509.14055 , 2025. 2 [7] Chenjian Gao, Lihe Ding, Xin Cai, Zhanpeng Huang, Zibin Wang, and Tianfan Xue. Lora-edit: Controllable first-frame-guided video editing via mask-aware lora fine-tuning. arXiv preprint arXiv:2506.10082 , 2025. 2, 3 [8] Daniel Geng, Charles Herrmann, Junhwa Hur, Forrester Cole, Serena Zhang, Tobias Pfaff, Tatiana Lopez-Guevara, Yusuf Aytar, Michael Rubinstein, Chen Sun, et al. Motion prompting: Controlling video generation with motion trajec-tories. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 1–12, 2025. 2 [9] Yuwei Guo, Ceyuan Yang, Anyi Rao, Maneesh Agrawala, Dahua Lin, and Bo Dai. Sparsectrl: Adding sparse controls to text-to-video diffusion models. In European Conference on Computer Vision , pages 330–348. Springer, 2024. 2 [10] Yuwei Guo, Ceyuan Yang, Anyi Rao, Zhengyang Liang, Yaohui Wang, Yu Qiao, Maneesh Agrawala, Dahua Lin, and Bo Dai. Animatediff: Animate your personalized text-to-image diffusion models without specific tuning. In ICLR ,2024. 2 [11] Yuwei Guo, Ceyuan Yang, Anyi Rao, Chenlin Meng, Omer Bar-Tal, Shuangrui Ding, Maneesh Agrawala, Dahua Lin, and Bo Dai. Keyframe-guided creative video inpainting. In 
+
+Proceedings of the Computer Vision and Pattern Recognition Conference , pages 13009–13020, 2025. 2, 3 [12] Li Hu. Animate anyone: Consistent and controllable image-to-video synthesis for character animation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8153–8163, 2024. 2 [13] Chi-Pin Huang, Yen-Siang Wu, Hung-Kai Chung, Kai-Po Chang, Fu-En Yang, and Yu-Chiang Frank Wang. Video-mage: Multi-subject and motion customization of text-to-video diffusion models. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 17603– 17612, 2025. 2, 3 [14] Yi Huang, Wei Xiong, He Zhang, Chaoqi Chen, Jianzhuang Liu, Mingfu Yan, and Shifeng Chen. Dive: Taming dino for subject-driven video editing. arXiv preprint arXiv:2412.03347 , 2024. 3 [15] Yash Jain, Anshul Nasery, Vibhav Vineet, and Harkirat Behl. Peekaboo: Interactive video generation via masked-diffusion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8079– 8088, 2024. 2 [16] Hyeonho Jeong, Geon Yeong Park, and Jong Chul Ye. Vmc: Video motion customization using temporal attention adap-tion for text-to-video diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 9212–9221, 2024. 2, 3, 6 [17] Zeyinzi Jiang, Zhen Han, Chaojie Mao, Jingfeng Zhang, Yulin Pan, and Yu Liu. Vace: All-in-one video creation and editing. arXiv preprint arXiv:2503.07598 , 2025. 2, 3 [18] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer White-head, Alexander C Berg, Wan-Yen Lo, et al. Segment any-thing. In Proceedings of the IEEE/CVF international confer-ence on computer vision , pages 4015–4026, 2023. 2, 5 [19] Max Ku, Cong Wei, Weiming Ren, Huan Yang, and Wenhu Chen. Anyv2v: A tuning-free framework for any video-to-video editing tasks. Transactions on Machine Learning Re-search , 2024. Reproducibility Certification. 2, 3, 6, 7, 1 [20] Baolu Li, Yiming Zhang, Qinghe Wang, Liqian Ma, Xi-aoyu Shi, Xintao Wang, Pengfei Wan, Zhenfei Yin, Yun-zhi Zhuge, Huchuan Lu, et al. Vfxmaster: Unlocking dy-namic visual effect generation via in-context learning. arXiv preprint arXiv:2510.25772 , 2025. 4 [21] Mingxiang Liao, Hannan Lu, Xinyu Zhang, Fang Wan, Tianyu Wang, Yuzhong Zhao, Wangmeng Zuo, Qixiang Ye, and Jingdong Wang. Evaluation of text-to-video gen-eration models: A dynamics perspective. arXiv preprint arXiv:2407.01094 , 2024. 2 [22] Shanchuan Lin, Bingchen Liu, Jiashi Li, and Xiao Yang. Common diffusion noise schedules and sample steps are 
+
+9flawed. In Proceedings of the IEEE/CVF winter conference on applications of computer vision , pages 5404–5411, 2024. 6[23] Pengyang Ling, Jiazi Bu, Pan Zhang, Xiaoyi Dong, Yuhang Zang, Tong Wu, Huaian Chen, Jiaqi Wang, and Yi Jin. Motionclone: Training-free motion cloning for controllable video generation. In The Thirteenth International Confer-ence on Learning Representations , 2025. 2 [24] Yue Ma, Yingqing He, Xiaodong Cun, Xintao Wang, Siran Chen, Xiu Li, and Qifeng Chen. Follow your pose: Pose-guided text-to-video generation using pose-free videos. In 
+
+Proceedings of the AAAI Conference on Artificial Intelli-gence , pages 4117–4125, 2024. 2 [25] Chong Mou, Mingdeng Cao, Xintao Wang, Zhaoyang Zhang, Ying Shan, and Jian Zhang. Revideo: Remake a video with motion and content control. Advances in Neural Information Processing Systems , 37:18481–18505, 2024. 2, 3[26] Muyao Niu, Xiaodong Cun, Xintao Wang, Yong Zhang, Ying Shan, and Yinqiang Zheng. Mofa-video: Controllable image animation via generative motion field adaptions in frozen image-to-video diffusion model. In European Con-ference on Computer Vision , pages 111–128. Springer, 2024. 2[27] Wenqi Ouyang, Yi Dong, Lei Yang, Jianlou Si, and Xingang Pan. I2vedit: First-frame-guided video editing via image-to-video diffusion models. In SIGGRAPH Asia 2024 Confer-ence Papers , pages 1–11, 2024. 2, 3, 6, 7, 1 [28] William Peebles and Saining Xie. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF inter-national conference on computer vision , pages 4195–4205, 2023. 4 [29] Alexander Pondaven, Aliaksandr Siarohin, Sergey Tulyakov, Philip Torr, and Fabio Pizzati. Video motion transfer with diffusion transformers. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 22911– 22921, 2025. 2, 3 [30] Jordi Pont-Tuset, Federico Perazzi, Sergi Caelles, Pablo Ar-bel´ aez, Alex Sorkine-Hornung, and Luc Van Gool. The 2017 davis challenge on video object segmentation. arXiv preprint arXiv:1704.00675 , 2017. 6 [31] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervi-sion. In International conference on machine learning , pages 8748–8763. PmLR, 2021. 8 [32] Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman R¨ adle, Chloe Rolland, Laura Gustafson, Eric Mintun, Junt-ing Pan, Kalyan Vasudev Alwala, Nicolas Carion, Chao-Yuan Wu, Ross Girshick, Piotr Doll´ ar, and Christoph Feicht-enhofer. Sam 2: Segment anything in images and videos, 2024. 2, 5 [33] Tianhe Ren, Shilong Liu, Ailing Zeng, Jing Lin, Kun-chang Li, He Cao, Jiayu Chen, Xinyu Huang, Yukang Chen, Feng Yan, Zhaoyang Zeng, Hao Zhang, Feng Li, Jie Yang, Hongyang Li, Qing Jiang, and Lei Zhang. Grounded sam: Assembling open-world models for diverse visual tasks, 2024. 2, 3, 6, 7 [34] Ludan Ruan, Yiyang Ma, Huan Yang, Huiguo He, Bei Liu, Jianlong Fu, Nicholas Jing Yuan, Qin Jin, and Baining Guo. Mm-diffusion: Learning multi-modal diffusion mod-els for joint audio and video generation. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10219–10228, 2023. 3 [35] Team Seedream, Yunpeng Chen, Yu Gao, Lixue Gong, Meng Guo, Qiushan Guo, Zhiyao Guo, Xiaoxia Hou, Weilin Huang, Yixuan Huang, et al. Seedream 4.0: Toward next-generation multimodal image generation. arXiv preprint arXiv:2509.20427 , 2025. 6 [36] Xiaoyu Shi, Zhaoyang Huang, Fu-Yun Wang, Weikang Bian, Dasong Li, Yi Zhang, Manyuan Zhang, Ka Chun Cheung, Simon See, Hongwei Qin, et al. Motion-i2v: Consistent and controllable image-to-video generation with explicit motion modeling. In ACM SIGGRAPH 2024 Conference Papers ,pages 1–11, 2024. 2, 3 [37] Quanjian Song, Mingbao Lin, Wengyi Zhan, Shuicheng Yan, Liujuan Cao, and Rongrong Ji. Univst: A unified framework for training-free localized video style transfer. arXiv preprint arXiv:2410.20084 , 2024. 6 [38] Zachary Teed and Jia Deng. Raft: Recurrent all-pairs field transforms for optical flow. In European conference on com-puter vision , pages 402–419. Springer, 2020. 7 [39] Team Wan, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianx-iao Yang, et al. Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 , 2025. 2[40] Tan Wang, Linjie Li, Kevin Lin, Yuanhao Zhai, Chung-Ching Lin, Zhengyuan Yang, Hanwang Zhang, Zicheng Liu, and Lijuan Wang. Disco: Disentangled control for realistic human dance generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 9326–9336, 2024. 2 [41] Wenchuan Wang, Mengqi Huang, Yijing Tu, and Zhen-dong Mao. Dualreal: Adaptive joint training for loss-less identity-motion fusion in video customization. arXiv preprint arXiv:2505.02192 , 2025. 2 [42] Jianzong Wu, Xiangtai Li, Yanhong Zeng, Jiangning Zhang, Qianyu Zhou, Yining Li, Yunhai Tong, and Kai Chen. Mo-tionbooth: Motion-aware customized text-to-video genera-tion. Advances in Neural Information Processing Systems ,37:34322–34348, 2024. 3 [43] Tianxing Wu, Chenyang Si, Yuming Jiang, Ziqi Huang, and Ziwei Liu. Freeinit: Bridging initialization gap in video dif-fusion models. In European Conference on Computer Vision ,pages 378–394. Springer, 2024. 6 [44] Weijia Wu, Zhuang Li, Yuchao Gu, Rui Zhao, Yefei He, David Junhao Zhang, Mike Zheng Shou, Yan Li, Tingting Gao, and Di Zhang. Draganything: Motion control for any-thing using entity representation. In European Conference on Computer Vision , pages 331–348. Springer, 2024. 2, 3 [45] Jinbo Xing, Menghan Xia, Yong Zhang, Haoxin Chen, Wangbo Yu, Hanyuan Liu, Gongye Liu, Xintao Wang, Ying 
+
+10 Shan, and Tien-Tsin Wong. Dynamicrafter: Animating open-domain images with video diffusion priors. In Eu-ropean Conference on Computer Vision , pages 399–417. Springer, 2024. 2 [46] Zhongcong Xu, Jianfeng Zhang, Jun Hao Liew, Hanshu Yan, Jia-Wei Liu, Chenxu Zhang, Jiashi Feng, and Mike Zheng Shou. Magicanimate: Temporally consistent human im-age animation using diffusion model. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 1481–1490, 2024. 2 [47] Zhuoyi Yang, Jiayan Teng, Wendi Zheng, Ming Ding, Shiyu Huang, Jiazheng Xu, Yuanming Yang, Wenyi Hong, Xiao-han Zhang, Guanyu Feng, Da Yin, Yuxuan.Zhang, Weihan Wang, Yean Cheng, Bin Xu, Xiaotao Gu, Yuxiao Dong, and Jie Tang. Cogvideox: Text-to-video diffusion models with an expert transformer. In The Thirteenth International Con-ference on Learning Representations , 2025. 2, 4, 6, 7, 1 [48] Danah Yatim, Rafail Fridman, Omer Bar-Tal, Yoni Kasten, and Tali Dekel. Space-time diffusion features for zero-shot text-driven motion transfer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 8466–8476, 2024. 2, 3 [49] Danah Yatim, Rafail Fridman, Omer Bar-Tal, Yoni Kasten, and Tali Dekel. Space-time diffusion features for zero-shot text-driven motion transfer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 8466–8476, 2024. 6 [50] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. Adding conditional control to text-to-image diffusion models. In 
+
+Proceedings of the IEEE/CVF international conference on computer vision , pages 3836–3847, 2023. 2 [51] Shiyi Zhang, Junhao Zhuang, Zhaoyang Zhang, Ying Shan, and Yansong Tang. Flexiact: Towards flexible action control in heterogeneous scenarios. In Proceedings of the Special Interest Group on Computer Graphics and Interactive Tech-niques Conference Conference Papers , pages 1–11, 2025. 2, 3, 4, 6, 7, 1 [52] Xinyu Zhang, Zicheng Duan, Dong Gong, and Lingqiao Liu. S2v2v: Training-free video-to-video with sparse points and motion guidance. BMVC , 2025. 2, 3 [53] Xinyu Zhang, Dong Gong, Zicheng Duan, Anton van den Hengel, and Lingqiao Liu. Let your video listen to your music!–beat-aligned, content-preserving video editing with arbitrary music. In Proceedings of the 33rd ACM Inter-national Conference on Multimedia , pages 12140–12149, 2025. 3 [54] Yabo Zhang, Yuxiang Wei, Dongsheng Jiang, XIAOPENG ZHANG, Wangmeng Zuo, and Qi Tian. Controlvideo: Training-free controllable text-to-video generation. In The Twelfth International Conference on Learning Representa-tions , 2024. 2 [55] Zhongwei Zhang, Fuchen Long, Zhaofan Qiu, Yingwei Pan, Wu Liu, Ting Yao, and Tao Mei. Motionpro: A precise mo-tion controller for image-to-video generation. In Proceed-ings of the Computer Vision and Pattern Recognition Con-ference , pages 27957–27967, 2025. 2, 3 [56] Rui Zhao, Yuchao Gu, Jay Zhangjie Wu, David Jun-hao Zhang, Jia-Wei Liu, Weijia Wu, Jussi Keppo, and Mike Zheng Shou. Motiondirector: Motion customization of text-to-video diffusion models. In European Conference on Computer Vision , pages 273–290. Springer, 2024. 2, 3 
+
+11 Let Your Image Move with Your Motion! – Implicit Multi-Object Multi-Motion Transfer 
+
+# Supplementary Material 
+
+## A. More Details 
+
+A.1. Full Text Prompts in Fig. 1 
+
+For the left-top image containing a single object with the motion <do yoga >, the full text prompt is: “A man is doing yoga.” For the right-top image containing 2 objects with mo-tions <raise hands > and <exercise >, the full text prompt is: “A female cartoon character in armor raised his hands above his head while placing his right foot against his left knee. A shirtless man with a muscular build and a beard is performing a fitness exercise.” For the left-bottom image containing 3 objects with mo-tions <exercise >, <do yoga >, and <raise hands >, the full text prompt is: “The left man is performing a fitness exer-cise. The middle man is doing yoga. The right man raised his hands above his head while placing his right foot against his left knee.” For the right-bottom image containing 3 objects with motions <do yoga >, <exercise >, and <raise hands >, the full text prompt is: “The left man is doing yoga. The mid-dle man is performing a fitness exercise. The right man raised his hands above his head while placing his right foot against his left knee.” Note that the order of motions is dif-ferent from the above one, showing that our FlexiMMT is able to support flexible, compositional, and arbitrary mo-tion–object rearrangements. 
+
+A.2. Details of Baseline Modifications 
+
+We evaluate five representative image-to-video (I2V) base-lines, including FlexiAct [51], I2VEdit [27], AnyV2V [19], Go-with-the-Flow [4], and CogVideoX-5B-I2V [47]. To ensure a fair comparison and enable multi-object, multi-motion transfer across all methods without altering their core contributions, we introduce minimal adjustments to their implementations. The details are as follows: 
+
+AnyV2V [19]. We aggregate information from multiple source videos by averaging their inverted noise and interme-diate feature representations to support multi-object multi-motion transfer. 
+
+FlexiAct [51]. FlexiAct trains an individual Freq-aware Embedding (Motion Tokens in our paper) for each motion from a single object. To enable multi-object, multi-motion transfer, we simply concatenate multiple motion tokens ex-tracted from different reference videos. 
+
+I2VEdit [27]. I2VEdit trains a distinct LoRA module to represent each specific motion. Accordingly, during infer-ence, we enable multi-object, multi-motion transfer by aver-aging and average the LoRA weights corresponding to dif-ferent motions. 
+
+Go-with-the-Flow [4]. For Go-with-the-Flow, we use its first-frame editing (I2V) functionality. To achieve multi-object multi-motion transfer, we first align object features from the source video’s initial frame to their correspond-ing locations in the target image. We then apply geometric transformations derived from the source masks to the target masks to localize each object, and use the extracted flow fields to guide the motion. 
+
+CogVideoX-5B-I2V [47]. CogVideoX-5B-I2V is designed solely for image-to-video generation and does not inher-ently support motion transfer. Therefore, for this baseline, we simply use the first frame and its corresponding caption to generate the video. In contrast, our FlexiMMT is built upon CogVideoX-5B-I2V and equips it with the capability for multi-object, multi-motion transfer. 
+
+A.3. Details of Human Evaluation 
+
+As shown in Fig. 8, we use the Gradio 1 toolbox to build a web interface that allows raters to perform annotation. In our human evaluation, we recruited 20 raters, each of whom was assigned 200 video sequences presented in random or-der. The interface first displays the reference motions, cor-responding to the reference videos, followed by 6 video pairs generated by the five baseline models and our Flex-iMMT using the same initial frame, caption, and reference motions. For fairness, we shuffled the order of the videos, and each is anonymized as the N -th candidate video. At the bottom of the interface, raters select the best video among the six candidates for each of the four evaluation indicators, including Appearance Consistency (AC), Temporal Consis-tency (TC), Text Similarity (TS), and Motion Fidelity (MF), through a single-choice scoring module. The definitions of these four indicators are provided in Fig. 9. 
+
+## B. Additional Experiments 
+
+Impact of each mask part in MDMA. Our MDMA frame-work consists of two major components, i.e ., Motion-to-[X] (M2X) mask and Text-to-[X] (T2X) mask. The M2X masks ensure that motion-related tokens focus only on the speci-fied object. This includes the Motion-to-Video and its sym-
+
+> 1Abid, Abubakar, Ali Abdalla, Ali Abid, Dawood Khan, Abdulrahman Alfozan, and James Zou. “Gradio: Hassle-free sharing and testing of ML models in the wild.” arXiv preprint arXiv:1906.02569 (2019).
+
+1Figure 8. Visulization of human evaluation interface 
+
+• Motion Fidelity (MF) : Which video has objects whose movements are most similar to the Reference Motions? • Temporal Consistency (TC) : Which video is the smoothest and more realistic? • Text Similarity (TS) : Which video is most consistent with the description in the text? • Appearance Consistency (AC) : Which video has subsequent frames that are more consistent in appearance with the first frame?                                         
+
+> Figure 9. Detail of four indicators. Table 4. Impact of each mask part in MDMA.
+> Method AC ↑TC ↑TS ↑TF ↑FF ↑
+> w/o M2V 0.907 0.938 0.285 0.383 0.616 w/o M2M 0.902 0.931 0.286 0.576 0.723 w/o T2V 0.900 0.931 0.287 0.572 0.720 w/o T2T 0.903 0.931 0.286 0.573 0.722 w/o T2M 0.928 0.948 0.284 0.476 0.663
+> Ours 0.904 0.932 0.286 0.577 0.723
+
+metric Video-to-Motion masks (collectively referred to as M2V), as well as the Motion-to-Motion (M2M) mask. The T2X masks guarantee that motion-related text tokens at-tend only to the video tokens corresponding to their associ-ated object, thereby preventing cross-object motion interfer-ence. This category includes the Text-to-Video and Video-to-Text (T2V), Text-to-Text (T2T), and Text-to-Motion and Motion-to-Text (T2M) masks. We conduct detailed ablation studies on each component of MDMA, as shown in Tab. 4. Using all mask compo-nents yields consistently strong performance across metrics, particularly in Trajectory Fidelity (TF) and Flow Fidelity (FF), demonstrating that every component contributes to ac-celerating multi-object, multi-motion transfer. There is a slight decrease in Text Similarity (TS) compared with the w/o T2V setting (0.286 vs. 0.287). This is because non-motion tokens in the text description may provide addi-tional cues that enhance text–video alignment, but at the same time introduce motion entanglement that degrades TF and FF. The w/o M2V and w/o T2M settings yield higher Appearance Consistency (AC) and Temporal Consistency (TC); however, they severely impair TF and FF. This oc-curs because these settings mix motion tokens across dif-2ferent objects, and in some cases even produce static or low-motion videos—leading to artificially high AC and TC but extremely low TF and FF. Given the objective of multi-object, multi-motion transfer, we adopt all mask compo-nents as our final FlexiMMT.                                
+
+> Table 5. Anchor frames Win RMPM. Time represents the time required for each step of denoising.
+> WAC ↑TC ↑TS ↑TF ↑FF ↑Time
+> 10.901 0.931 0.288 0.575 0.718 17.39s 30.904 0.932 0.286 0.577 0.723 17.81s
+> 50.903 0.932 0.287 0.582 0.724 18.60s
+
+Effect of W in RMPM. In RMPM, we maintain a small set of anchor features and corresponding anchor masks to calculate the correlation matrix. We use a local temporal window size W to control the number of anchor frames in-cluded. In this subsection, we evaluate the impact of vary-ing the number of anchor frames. The results are shown in Tab. 5. When W = 1 , our method drops to only using the first frame as the anchor frame, i.e ., the anchor set contains only the initial frame. Increasing W to 3, i.e ., using the two nearest frames in addition to the first frame, improves performance across all metrics, although training efficiency decreases slightly. Further increasing W yields marginal additional performance gains but leads to higher inference cost. Considering the trade-off between effectiveness and efficiency, we set W to 2 in all experiments by default.                                
+
+> Table 6. Effect of αin Dynamic RMPM.
+> αAC ↑TC ↑TS ↑TF ↑FF ↑Time
+> w/o 0.902 0.931 0.286 0.579 0.725 977s 5% 0.904 0.932 0.286 0.577 0.723 564s
+> 10% 0.902 0.930 0.286 0.577 0.722 530s
+
+Effect of α in Dynamic RMPM. In Dynamic RMPM, α
+
+is a pre-defined threshold used to determine mask stability. If the difference between the current mask and the mask from the previous step falls below α, further mask updates are terminated, and the most recent stable mask is reused for all subsequent steps. In Tab. 6, we evaluate the impact of different α values. The results show that α = 5% yields the best overall per-formance while maintaining balanced computational effi-ciency. Thus, we set α to 5 in all experiments by default. 
+
+More results. Fig. 11 presents additional qualitative re-sults. The results demonstrate that our method can sup-port flexible, compositional, and arbitrary motion–object <jump> <bow head> <do yoga> <bow head> + <jump> <bow head> + <do yoga>   
+
+> Figure 10. Limitation. Visualization of failure cases in our Flex-iMMT. The caption for the correctly generated video is: “An ele-phant bows its head. A tiger jumps up while barking.” The caption for the incorrectly generated video is: “An elephant bows its head. A tiger is doing yoga.”
+
+rearrangements, effectively handling arbitrary multi-object, multi-motion transfer scenarios. Full text prompts in Fig. 11 are: • <bow head > + <exercise > : “A brown bear bows its head. A character dressed in a Superman costume is ex-ercising with a resistance machine.” • <exercise > + <stand up > : “A man is exercising with a resistance machine. A dog stands up.” • <stand up > + <do yoga > : “A dog stands up. A girl is doing yoga.” • <exercise > + <walk > : “A girl is exercising with a re-sistance machine. A dog walks on the street.” • <walk > + <do yoga > : “A tiger walks on the snow ground with rocks. A woman wearing a light beige blouse and a delicate necklace is doing yoga.” • <crouch > + <exercise > : “A female cartoon character in armor is exercising with a resistance machine. A shirtless man wearing black shorts is crouching.” • <crouch > + <exercise > + <do yoga > : “The left man is crouching. The middle man is performing a fitness ex-ercise. The right man is doing yoga.” • <exercise > + <do yoga > + <stand up > : “A elderly man with gray hair and a beard is performing a fitness exercise. A man wearing blue suit is doing yoga. A capy-bara stands up.” 
+
+## C. Limitation 
+
+Although our method can transfer multiple motions to im-ages with multiple objects, due to the limitation of the model’s capabilities, it is difficult to complete the transfer of motion when the structural differences between objects are too large. As shown in Fig. 10, our FlexiMMT failed to transfer the human motion <do yoga > to the tiger. This deficiency is common in existing models. Therefore, the fu-ture goal is to explore better ways to solve the problem of structural adaptability, such as using models with stronger structural compatibility. 3<bow head> 
+
+<exercise> 
+
+<stand up> 
+
+<do yoga> 
+
+<walk> 
+
+<do yoga> 
+
+<crouch> 
+
+<bow head> + <exercise> 
+
+<exercise> + <stand up> 
+
+<Stand up> + <do yoga> 
+
+<exercise> + <walk> 
+
+<walk> + <do yoga> 
+
+<crouch> + <exercise> 
+
+# Reference Videos Generated Videos 
+
+<exercise> 
+
+<crouch> + <exercise> + <do yoga> 
+
+<exercise> + <do yoga> + <stand up> Figure 11. More qualitative comparisons. The left row shows reference videos. The right row shows generated videos. 
+
+4
