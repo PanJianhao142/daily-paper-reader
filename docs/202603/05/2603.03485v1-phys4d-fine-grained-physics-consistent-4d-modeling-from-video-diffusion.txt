@@ -1,0 +1,940 @@
+Title: Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion
+
+URL Source: https://arxiv.org/pdf/2603.03485v1
+
+Published Time: Thu, 05 Mar 2026 01:10:07 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+Haoran Lu * 1 Shang Wu * 1 Jianshu Zhang 1 Maojiang Su 1 Guo Ye 1 Chenwei Xu 1 Lie Lu 2
+
+Pranav Maneriker 2 Fan Du 2 Manling Li 1 Zhaoran Wang 1 Han Liu 1
+
+## Abstract 
+
+Recent video diffusion models have achieved impressive capabilities as large-scale generative world models. However, these models often strug-gle with fine-grained physical consistency, ex-hibiting physically implausible dynamics over time. In this work, we present Phys4D , a pipeline for learning physics-consistent 4D world repre-sentations from video diffusion models. Phys4D adopts a three-stage training paradigm that progressively lifts appearance-driven video dif-fusion models into physics-consistent 4D world representations. We first bootstrap robust geom-etry and motion representations through large-scale pseudo-supervised pretraining, establishing a foundation for 4D scene modeling. We then perform physics-grounded supervised fine-tuning using simulation-generated data, enforcing tem-porally consistent 4D dynamics. Finally, we ap-ply simulation-grounded reinforcement learning to correct residual physical violations that are difficult to capture through explicit supervision. To evaluate fine-grained physical consistency be-yond appearance-based metrics, we introduce a set of 4D world consistency evaluation that probe geometric coherence, motion stability, and long-horizon physical plausibility. Experimen-tal results demonstrate that Phys4D substantially improves fine-grained spatiotemporal and phys-ical consistency compared to appearance-driven baselines, while maintaining strong generative performance. Our project page is available at https://sensational-brioche-7657e7.netlify.app/. 
+
+> 1
+
+Northwestern University 2Dolby Laboratories. Correspon-dence to: Haoran Lu <HaoranLu2030@u.northwestern.edu >,Shang Wu <ShangWu2028@u.northwestern.edu >, Zhaoran Wang <zhaoran.wang@u.northwestern.edu >, Han Liu <han-liu@northwestern.edu >.
+
+Preprint. March 5, 2026. 
+
+## 1. Introduction 
+
+Recent video generation models (OpenAI, 2024; Google DeepMind, 2024; Polyak et al., 2024) and current gener-ative world models(Chen et al., 2025c; Yu et al., 2024a; 2023; Huang et al., 2025b) have achieved impressive visual realism and large-scale physics. Yet their success does not imply physical understanding: most are trained to match ap-pearances rather than to model underlying physical state and dynamics. As a result, they frequently fail at fine-grained physics, producing locally inconsistent geometry, unstable object motion, and non-causal dynamics over time (Singer et al., 2022; Zhou et al., 2024). A faithful world model should instead represent how the environment evolves, re-quiring physics-consistent 4D representations. A key challenge in physics-consistent 4D world modeling is the lack of scalable supervision for f ine-grained physical dynamics. Learning such models requires dense, tempo-rally aligned signals of geometry and motion, which are extremely difficult to obtain from real-world data at scale. Existing 4D datasets(Wen et al., 2025a; Zhai et al., 2024) therefore tend to be appearance-rich but physics-poor, often dominated by camera motion. To address this limitation, we leverage the diversity and controllability of physics-based simulation to obtain large amounts of dynamic video data with accurate ground-truth geometry and motion, pro-viding supervision that is otherwise inaccessible. However, data alone are insufficient to learn physics-consistent 4D world models. Motivated by the maturity of large-scale video generation pipelines, we ground physi-cal reasoning within models that are both scalable and well pretrained. To this end, we adopt RGB-D video as a 2.5D representation , which explicitly encodes scene geometry and motion while remaining compatible with modern video diffusion architectures. Building on this representation, we introduce Phys4D (Fig. 1), which integrates fine-grained physics into video diffusion models through explicit depth supervision for geometric consistency and motion supervi-sion for dynamic coherence. To bring a pretrained video diffusion model to a 4D dynamics model, Phys4D employs a three-stage training pipeline that progressively injects physical structure while preserving generative capacity. In the first stage, we lift a pretrained video diffusion model 1
+
+> arXiv:2603.03485v1 [cs.CV] 3 Mar 2026
+
+Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 5    
+
+> 10
+> 15
+> 20
+> 30
+> 35
+> 25
+> Ours
+> Ours
+> Ours
+> OpenSora Wan2.2 CogVideoX
+> W/O W/O
+> W/O
+> 6 Neural3DV
+> 4 D-NeRF
+> 4 HyperNeRF
+> 26 FSSVD
+> 200 Ours
+> generated ground truth
+
+Figure 1. Phys4D Our three-stage training paradigm lifts a pretrained video diffusion model into a physics-consistent 4D world model. 
+
+Bottom-left: a scalable physics-simulation data collection pipeline with diverse camera view control. Top-right: Our 4D physics benchmark and diagnostics that evaluate geometric coherence, motion stability beyond appearance-based metrics. 
+
+from pure 2D appearance modeling toward an explicit 4D spatio-temporal representation by augmenting RGB videos with geometric and motion supervision. Concretely, we apply strong off-the-shelf monocular estimators to anno-tate large-scale videos generated by the pretrained model, together with carefully curated in-the-wild internet videos. This mixed supervision preserves the robustness of large-scale video generation, while providing dense depth and motion signals that initialize a coherent 4D understanding of scene geometry and dynamics in a domain-agnostic man-ner. In the second stage, we selectively finetune the high-noise components of the diffusion process with physics-grounded warp-based consistency constraints, coupling ge-ometry and motion to reinforce temporally coherent 3D structure and physically plausible dynamics over long hori-zons, ultimately transforming the video diffusion model into a physics-consistent 4D world model. However, su-pervision in the first two stages remains largely pixel- and correspondence-based, which can produce results that are still physically inconsistent at the level of 4D scene dy-namics. To address this limitation, the third stage intro-duces simulation-grounded reinforcement learning, where the model is optimized directly on generated 4D scene tra-jectories using object-centric, motion-based rewards, explic-itly aligning video generation with fine-grained physical outcomes over long horizons. To evaluate whether a model behaves as a physics-consistent 4D world model, we introduce a comprehensive evaluation protocol that combines content-level physics assessment and 4D world-level physics analysis. Specifically, in addi-tion to established video-based physics benchmarks such as PhysicsIQ(Motamed et al., 2025b), which evaluate physical plausibility from visual and semantic cues, we propose a 4D evaluation suite that probes geometry and motion world representations through trajectory-based analysis. Together, these complementary evaluations assess physical plausibil-ity from what a model shows to how the underlying world evolves, providing a holistic diagnosis of physics-consistent 4D modeling beyond appearance and reconstruction quality. 
+
+In summary, our contributions are as follows: 
+
+• We propose Phys4D , a physics-aware training framework for improving fine-grained physical consistency in video diffusion models, focusing on coherent geometry and motion over time. • We propose a three-stage training pipeline that inte-grates physics understanding into video diffusion models. • We show how physics-based simulation can be leveraged as a high-fidelity source of geometric, motion, and reward supervision, enabling fine-grained physical alignment that is difficult to obtain from real-world video data alone. • We present a set of 4D world consistency diagnostics that evaluate geometric coherence, motion stability, and long-horizon physical plausibility beyond appearance-based video metrics. 2Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+## 2. Related Work 
+
+Physics-Aware Video Generation and Evaluation Re-cent video generation models(OpenAI, 2024; Google Deep-Mind, 2024) achieve strong visual realism and temporal coherence, but are largely optimized for appearance rather than physical world modeling. Several works attempt to introduce physical cues into video generation, such as mod-eling object dynamics(Zhang et al., 2024; Aira et al., 2024) or action-conditioned motion(Chang et al., 2024; Yuan et al., 2025), and a number of benchmarks(Motamed et al., 2025b; Meng et al., 2025a; Bansal et al., 2024b) evaluate physical plausibility based on visual or semantic signals. While these approaches can improve or assess appearance-level physi-cal realism, they operate primarily in image space and do not evaluate whether a model maintains coherent geometry, motion, or a consistent physical state over time. In contrast, our work focuses on physics consistency at the level of a 4D world, motivating geometry- and time-aware evaluation be-yond appearance-centric video physics assessment. Detailed discussion please refer to Appendix G.1 G.2 G.3 
+
+Physics-Aware 4D Modeling A growing body of work explores incorporating physical priors into generative mod-els, including post hoc physical simulation after genera-tion (Stomakhin et al., 2013a; Chen et al., 2025a; Xie et al., 2024), simulation-guided generation with predefined dy-namics (Yuan et al., 2023; Liu et al., 2024a; Li et al., 2025), and learning physical priors from data (Li et al., 2024; Xu et al., 2024; Yang et al., 2025a). These methods typically focus on object-level or short-horizon dynamics, rely on spe-cialized 3D representations, or remain optimization-based, limiting scalability and generalization. In contrast, our work leverages pretrained video diffusion models and treats fine-grained physics as a property of an evolving 4D world. For a detailed discussion, please refer to Appendix G.4 
+
+## 3. Problem Formulation 
+
+Given a first-frame RGB image I0 ∈ RH×W ×3 and an op-tional text prompt p, our goal is to generate a temporally coherent video together with an explicit, physically consis-tent 4D world representation that captures the evolving scene geometry and motion over time. Rather than treating video generation as a purely image-level task, we model the underlying scene as a time-varying 3D world whose state evolves across frames. We represent per-frame scene geometry using depth maps 
+
+Dt ∈ RH×W in the camera coordinate system, and de-scribe scene dynamics through inter-frame motion. Specif-ically, we model 2D motion using optical flow Ft→t+1 ∈
+
+RH×W ×2, and, when necessary, consider full 3D motion in the form of scene flow St→t+1 ∈ RH×W ×3, which captures per-pixel 3D displacement in camera space. Our model learns a conditional generative mapping 
+
+(I0, p ) 7 −→ 
+
+
+
+{It}Tt=0 , {Dt}Tt=0 , {Ft→t+1 }T −1
+
+> t=0
+
+
+
+,
+
+optionally producing {St→t+1 }T −1 
+
+> t=0
+
+, where the generated video frames are treated as observations of an underlying 
+
+4D scene evolution . Beyond visual realism, we require 
+
+world-level physical consistency , such that geometry and motion predictions remain mutually consistent over time (e.g., warping Dt under Ft→t+1 agrees with Dt+1 ), and collectively describe a physically plausible evolution of the scene state. More detailed discussion is given at App F 
+
+## 4. Simulation Data Collection 
+
+We present a physics-based simulation pipeline designed to address the limited physical fidelity and diversity of existing training data for 4D world modeling. In contrast to prior datasets that focus on narrow physical regimes or specific simulation paradigms (Huang et al., 2025a; Chang et al., 2024), Phys4D supports large-scale data generation with diverse object types, rich physical interactions, and accu-rate geometry and motion supervision. Figure 2 provides an overview of the simulation pipeline and the range of supported object categories. 
+
+Diverse Object Types and Physics Models Based on Isaac Sim (NVIDIA Corporation, 2024; Lu et al., 2024), our simulation pipeline supports a broad range of object categories and physical phenomena to enable fine-grained physical interactions. We adopt tailored simulation meth-ods according to object-specific physical characteristics: rigid and articulated objects are modeled with rigid-body dynamics, large garments and fluid materials are simulated using Position-Based Dynamics (Bender et al., 2015), and small elastic garments (e.g., gloves and socks) as well as deformable everyday objects (e.g., toys and sponges) are simulated using the Finite Element Method (Ciarlet, 2002). Additional object types such as ropes, inflatables, granular materials, and thermodynamic effects are handled by appro-priate physics solvers, collectively exposing the model to diverse fine-grained physical regimes. Detailed simulation method please refer to Appendix H 
+
+Systematic Physical Parameterization To disentangle physical phenomena for effective learning, we decompose generation into nine distinct categories (e.g., Rigid Body, Fluids, Soft Bodies, Thermodynamics). This supports cur-riculum learning where models progress from mastering individual laws to complex compositional scenarios. As detailed in Table 1, we enforce systematic randomization across material, environmental, and geometric attributes. We structure the datasets with progressive complexity (sin-gle to multi-object) (Bengio et al., 2009) and introduce 3Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion Rigid Articulated Garment 
+
+Thermodynamics Deformable Fluid 
+
+Inflatable Rope Sand 
+
+Figure 2. Overview of Phys4D simulation framework. (a) Left A Large-scale async data collection pipeline. (b) Right Supported physical objects: rigid and articulated structures, garments, fluids, thermodynamics, deformable, inflatables, ropes, and granular materials. 
+
+parameter perturbation to prevent homogeneity, resulting in over 20000 unique physical configurations. 
+
+Table 1. Simulation Parameter & Curriculum Configuration. 
+
+We structure the dataset with progressive complexity and random-ize physical attributes to ensure diverse and robust data generation.                                                                
+
+> Category Parameters Range / Configuration Curriculum Complexity Dist. Single (30%), Two-body (35%), Multi-object (35%) Material Density ( ρ), Young’s Mod. ( E)ρ∈[100 ,10 000] kg/m 3,E∈[10 6,10 11 ]Pa Poisson ( ν), Friction ( μs,k )ν∈[0 .2,0.5] ,μs,k ∈[0 .1,1.0]
+> Restitution ( e)e∈[0 .1,0.95]
+> Environment Gravity ( g), Lighting g∈[5 ,15] m/s 2, Intensity ∈[100 ,100 000] lux Variables Air viscosity, Temperature gradients, 1000+ HDRIs
+> Geometry Shape Types Cubes, spheres, cylinders, complex meshes Scale ( s), Aspect Ratio s∈[0 .1,5.0] m, Randomized aspect ratios
+> Perturbation Perturbation Ratio ( δ)δ∈[0 .05 ,0.25] (Randomized around base values)
+> Visuals Reflectance (Roughness, Metallic) Roughness ∈[0 .05 ,0.95] , Metallic ∈[0 ,1]
+> Appearance Randomized RGB ∈[0 ,1] 3, Surface textures
+
+Multi-Modal Camera Strategies We employ two com-plementary camera strategies. Fixed multi-view cameras 
+
+provide dense spatial coverage by placing multiple static cameras around each scene, while dynamic trajectory cam-eras simulate realistic cinematography by sampling con-tinuous camera motions along parameterized trajectories, producing frame-level pose annotations. 
+
+Asynchronous Parallel Data Collection To overcome the single-scene bottleneck of standard simulators, we im-plement asynchronous parallel execution . By eliminating global synchronization, multiple independent scenes run concurrently within a unified instance, allowing immediate resource recycling upon scene completion. This architecture achieves near-linear scaling efficiency .Consequently, Phys4D generates data at an unprecedented scale: We construct a base set of 200 simulation scenes and expand it to approximately 250000 distinct environments through domain randomization over initial object configura-tions, physical parameters, and surface textures, leading to 
+
+1,250,000 videos totaling 20,800 hours across 9 categories at 1920 ×1080 (60 FPS). With over 15 TB of multi-modal annotations, this constitutes the largest physics-grounded synthetic video dataset to date. Detailed discussion please refer to Appendix A.1, Appendix H 
+
+## 5. Method 
+
+5.1. Method Overview 
+
+Phys4D converts a pretrained video diffusion model into a physics-consistent 4D world model via a three-stage train-ing paradigm (Fig. 3). Starting from a standard text- and image-conditioned video diffusion architecture, we attach lightweight auxiliary heads for depth and motion predic-tion, enabling explicit supervision of scene geometry and dynamics. The three stages—pretraining (Sec 5.2), super-vised fine-tuning (Sec 5.3), and reinforcement learning (Sec 5.4) —progressively enforce geometry–motion consistency and fine-grained physical plausibility. 
+
+5.2. Pseudo-Supervised Pretraining Data Sources. In the first stage, we bootstrap geome-try and motion representations using large-scale pseudo-supervision. We employ off-the-shelf depth (Chen et al., 2025b) and optical flow (Teed & Deng, 2020) estimators to annotate (i) videos generated by the pretrained video dif-4Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion        
+
+> Figure 3. Overview of the Phys4D training pipeline. Our three-stage paradigm progressively injects physics into a pretrained video diffusion model. Stage 1 (blue): The DiT backbone is frozen while depth and motion heads are trained on pseudo-labeled RGB videos.
+> Stage 2 (green): The backbone is adapted via LoRA using physics simulation data with ground-truth annotations; a warp consistency loss couples depth and motion predictions. Stage 3 (orange): Generated RGB-D-motion outputs are lifted to 4D point clouds and compared against simulator ground-truth via 4D Chamfer Distance; PPO optimization uses this reward to correct residual physical violations. The output is a generated video with temporally consistent depth maps and motion fields.
+
+fusion model and (ii) curated internet videos, preserving visual diversity while injecting geometric and motion cues. Detailed data info please refer to Appendix A.2 
+
+Model Architecture. We build on a pretrained video diffu-sion model with a DiT-style backbone and augment it with two lightweight auxiliary heads for explicit geometry and motion prediction. A motion head is attached to diffusion features via a forward hook at the DiT output layer, consist-ing of LayerNorm followed by a linear projection, and pre-dicts a patchified motion representation that is unpatchified into a multi-channel optical flow field for adjacent frames. In parallel, a depth head with the same feature interface pre-dicts per-frame depth maps Dt ∈ RH×W ; following (Chen et al., 2025b), the depth head incorporates temporal atten-tion and multi-scale feature fusion to encourage temporally coherent depth estimation across video frames. During this stage, the DiT backbone is frozen and only the auxiliary heads are optimized. For Details, please refer to Supp B.1 
+
+Training Objective. We adopt flow matching to parame-terize the underlying video generative process. Flow-based generative models learn a time-dependent velocity field 
+
+vθ (zt, t ) that transforms noise samples z0 ∼ N (0 , I ) into data samples z1 ∼ q by solving the ordinary differential equation 
+
+dzt
+
+dt = vθ (zt, t ). (1) Following the flow matching framework (Lipman et al., 2023; Liu et al., 2023), the model is trained by directly re-gressing the predicted velocity field onto a target conditional vector field ut(· | z1):
+
+LFM = Et, z0,z1
+
+h
+
+∥vθ (zt, t ) − ut(zt | z1)∥22
+
+i
+
+, (2) where zt is sampled from a predefined conditional proba-bility path. A commonly used choice is linear interpolation between noise and data: 
+
+zt = tz1 + (1 − t)z0, ut(zt | z1) = z1 − z0. (3) To enable explicit supervision over scene geometry and motion, we attach auxiliary depth and motion heads to the frozen diffusion backbone. Given diffusion features at time 
+
+t, the heads predict per-frame depth ˆDt and inter-frame op-tical flow ˆFt→t+1 . The supervision signals Dt and Ft→t+1 
+
+are obtained as described above. The auxiliary heads are trained using supervised regression losses: 
+
+Ldepth = X
+
+> t
+
+ℓ(Dt, ˆDt), Lmotion = X
+
+> t
+
+ℓ(Ft→t+1 , ˆFt→t+1 ).
+
+(4) where ℓ denotes a combination of L1 and ˆDt, ˆFt→t+1 are ground-truth depth and optical flow respectively. During Stage I, the video backbone is kept fixed and only the auxiliary heads are optimized, yielding a stable initialization for subsequent physics-aware fine-tuning stages. Detailed prelinminary and proof please refer to Supp F.1 
+
+5.3. Physics-Grounded Supervised Fine-Tuning 
+
+In the second stage, we perform physics-grounded super-vised fine-tuning using simulation-generated data with ac-curate ground-truth geometry and motion. Unlike pseudo labels from real videos, simulation provides physically valid supervision derived from underlying dynamics, enabling di-rect enforcement of world-level consistency. We selectively fine-tune the high-noise regime of the diffusion model using lightweight LoRA adapters, while continuing to train the auxiliary heads. 5Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+Overall Objective. The Stage II objective augments the original diffusion loss with physics-aware consistency terms: 
+
+L = LFM + λwLwarp + λrgb Lrgb-warp , (5) where LFM denotes the rectified flow matching loss used by the base video generation model (Eq 2). Supervised depth and motion losses (Eq 4) remain active as defined in Stage I, but are omitted here for brevity. 
+
+Warp-Based Geometry–Motion Consistency. Per-frame supervision alone does not guarantee temporal coherence of the underlying 3D structure. To explicitly couple geom-etry and motion across time, we introduce a warp-based consistency loss: 
+
+Lwarp = X
+
+> t
+
+W(Dt, F t→t+1 ) − Dt+1 1, (6) where W(·) denotes backward warping using the predicted motion field. This loss enforces that the depth map at time t,when transported according to the predicted motion, agrees with the depth at time t+1 , directly operationalizing tempo-ral geometry–motion consistency. We optionally include an RGB warp loss Lrgb-warp to encourage photometric consis-tency via flow-based warping. By enforcing physics-grounded temporal consistency using simulation supervision, this stage transforms the model from frame-wise estimation toward a coherent 4D representation. 
+
+5.4. Simulation Grounded RL Fine-Tuning 
+
+The final stage applies reinforcement learning to correct 
+
+4D residual physical inconsistencies that persist after su-pervised fine-tuning and are difficult to capture through 2D differentiable losses. While Stage II enforces geometry– motion consistency at the pixel level, subtle violations of object motion and interaction dynamics may still arise. To address this gap, we leverage simulation-provided visual ground truth to define reward signals that explicitly align generated videos with physically valid motion patterns. 
+
+Denoising as Sequential Decision Making. Following prior work (Wallace et al., 2023; Liu et al., 2025a), we view the reverse denoising process as a sequential decision process, where each denoising step corresponds to an action that transitions the latent state toward the final video sample. For details please refer to the Supp F.2 
+
+Flow-SDE for Stochastic Exploration. The flow-matching video model in Eq. (1) defines a deterministic probability flow ODE, which produces a single sampling trajectory and thus lacks stochastic exploration. To intro-duce exploration while preserving the same marginals, we adopt the probability flow formulation (Song et al., 2020) and convert the ODE into an equivalent SDE: 
+
+dzt =
+
+
+
+vθ (zt, t ) − 12 g2(t) ∇ log qt(zt)
+
+
+
+dt + g(t) dwt,
+
+(7) where qt(zt) denotes the marginal density and wt is a stan-dard Wiener process. Leveraging the rectified-flow score–velocity identity, we substitute the induced closed-form score into Eq. (7) and choose g(t) = σt, yielding the final Flow-SDE: 
+
+dzt =
+
+
+
+vθ (zt, t ) + σ2
+
+> t
+
+2t (zt + (1 − t) vθ (zt, t )) 
+
+
+
+dt +σt dwt.
+
+(8) Discretizing Eq. (8) induces a Gaussian transition 
+
+pθ (zt−∆t | zt), which we interpret as a stochastic denoising policy for RL fine-tuning. Detailed derivations are provided in Supp. F.3. 
+
+Reward from Simulation-Grounded 4D Motion Con-sistency. To encourage fine-grained physical plausibility beyond image-level alignment, we define a terminal reward that directly operates on the generated 4D scene dynamics .Given a generated video, we first lift them into a sequence of spatio-temporal point clouds using the predicted geom-etry and motion. This yields a set of generated 4D points 
+
+Pgen = {(x, y, z, τ )} describing object trajectories over time. In parallel, we obtain a physically ground-truth 4D point set Pphys from simulation. We then define the reward as the negative 4D Chamfer Distance between the two point sets: 
+
+r(z0, c ) = −CD 4D 
+
+ Pgen , Pphys  , (9) where the 4D distance jointly measures spatial deviation and temporal misalignment. This reward explicitly penal-izes physically implausible object trajectories and aligns generation with coherent 4D scene evolution. Detailed Im-plementation please refer to Supp B.2 
+
+Policy Optimization. We optimize the resulting stochas-tic policy using Proximal Policy Optimization (PPO). For brevity, we omit the optimization objective and training details here and provide a full description in the Supp F.4 
+
+## 6. 4D World Model Benchmark 
+
+In order to comprehensively evaluate 4D world model gener-ation quality, our benchmark is organized along two axes: (i) 
+
+video-based physics assessment , which measures physical plausibility from visual and semantic cues using established benchmarks, and (ii) 4D world-level evaluation , which ex-amines the consistency of geometry, motion, and temporal evolution in the generated scene. 6Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion Prompt:  A glass beverage dispenser pouring grapefruit juice into a glass that has some water inside. Static shot with no camera movement.      
+
+> Juice pours from the wrong side of the dispenser. Phys4D produces correct fluid flow consistent with gravity and container geometry. The tennis ball deforms unnaturally during placement. Phys4D preserves consistent object geometry throughout the manipulation sequence.
+> Initial Frame Frame Generated by Wan2.2-5b Frame Generated by Wan2.2-5b + Phy4D Prompt: A grabber arm is holding a tennis ball above a piece of cardstock propped up on a rotating platform sitting on a table that rotates clockwise. The grabber lowers the ball and places is on the table as the cardstock rotates. Static shot with no camera movement.
+> Prompt: A light-colored wooden coffee table with a few small objects on it including a tennis ball and a smaller red ball. An orange ball rolls out of a black pipe that is sitting on the table towards the right side. Static shot with no camera movement. Multiple balls appear during rolling. Phys4D maintains correct object count and coherent motion trajectories.
+
+Figure 4. Qualitative comparison on Physics-IQ scenarios. We compare Wan2.2-5b baseline (middle) with Wan2.2-5b + Phys4D (right) across three physical interaction types: object placement on a rotating platform (top), ball rolling dynamics (middle), and fluid pouring (bottom). Phys4D produces more consistent object geometry, physically plausible motion, and stable temporal dynamics compared to the baseline, which exhibits shape distortion and incoherent physical behavior. 
+
+Table 2. Performance on the Physics-IQ benchmark. We report reconstruction error (MSE), motion consistency metrics (IoU), and the overall Physics-IQ score. Commercial models only report the aggregate score. 
+
+Group Model Params MSE ↓ ST-IoU ↑ S-IoU ↑ WS-IoU ↑ Score (%) ↑
+
+Ours 
+
+CogVideoX + Phys4D 5B 0.009 0.169 0.252 0.157 30.2 
+
+WAN2.2 + Phys4D 5B 0.014 0.107 0.214 0.122 25.6 Open-Sora V1.2 + Phys4D 1.1B 0.016 0.098 0.195 0.112 22.4 
+
+Open-source 
+
+CogVideoX 5B 0.013 0.116 0.222 0.142 18.8 WAN2.2 5B 0.016 0.088 0.150 0.105 16.8 Open-Sora V1.2 1.1B 0.021 0.072 0.135 0.092 14.5 
+
+Commercial VideoPoet / Pika 1.0 / Sora – – 20.3 / 13.0 / 10.0 
+
+6.1. Video-Based Physics Evaluation Benchmark. We evaluate on Physics-IQ (Motamed et al., 2025a), a benchmark designed to assess physical understand-ing in generative video models. The benchmark comprises 198 test scenarios covering diverse physical phenomena. Each scenario includes three camera viewpoints and two natural variations, yielding 1,188 test videos. 
+
+Metrics. Following the standard Physics-IQ protocol, we evaluate physical consistency through four complementary measures: SpatialIoU metrics and MSE , which quantifies pixel-level reconstruction error. Lower MSE and higher IoU values indicate better physical plausibility. 
+
+Implementation. We apply Phys4D to three backbone: WAN2.2-5b (Wan et al., 2025), CogVideoX-5b (Yang et al., 2025b), and Open-Sora V1.2 (Zheng et al., 2024). For evaluation, we generate 5-second videos conditioned on the switch frame following the Physics-IQ protocol. 
+
+Results. Fig. 4 and Table 2 presents our results on the Physics-IQ benchmark. Phys4D consistently improves the overall Physics-IQ score across multiple backbones. 
+
+On CogVideoX-5b, Phys4D increases the score from 18.8 to 30.2 (+11.4 absolute), with similarly strong gains on WAN2.2-5b (16.8 → 25.6) and Open-Sora V1.2 (14.5 →
+
+22.4). These results demonstrate that our physics-grounded training paradigm robustly enhances physical understanding in an architecture-agnostic manner, substantially elevating open-source video diffusion models. 
+
+Table 3. Per-frame 3D Geometry and Video Quality. Our model demonstrates superior geometric correctness (lower Ab-sRel) while maintaining high visual quality (lower FVD). DAV2 
+
+denotes DepthAnythingV2.(Yang et al., 2024)                                                  
+
+> Depth Accuracy Video Quality Model AbsRel ↓RMSE ↓δ1↑δ2↑δ3↑FVD ↓SSIM ↑PSNR ↑
+> WAN + DAV2 0.3929 0.9012 26.00 52.69 75.95 140.02 84.02 20.80 CogVideoX + DAV2 0.3483 0.7854 32.45 68.97 84.35 130.03 84.98 20.34 Phys4D + DAV2 0.3694 0.8429 27.38 55.42 80.29 135.46 84.93 20.76
+> Phys4D (Ours) 0.2711 0.6604 43.64 80.04 95.77 124.52 85.98 21.89
+
+6.2. 4D World Consistency Evaluation 
+
+To assess whether Phys4D internalizes a coherent world representation beyond pixel-level synthesis, we introduce a three-tier 4D world-level evaluation protocol that probes spatiotemporal reasoning at increasing temporal scales: per-frame 3D geometry , short-term geometry and motion con-sistency , and long-horizon 4D world evolution . This hier-archy disentangles frame-level, local temporal, and global world-level errors, enabling a comprehensive evaluation of physically plausible 4D scene consistency over time. 7Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion                                                              
+
+> Figure 5. Qualitative Results on 4D Experiment. From left to right: the ground-truth 4D point cloud and the generated 4D point cloud at
+> 1/4of the sequence; the generated 4D point cloud at 1/2of the sequence; the novel-time generated 4D point cloud at 3/4of the sequence; and the generated 4D point cloud at the final frame. This visualization highlights the model’s ability to maintain coherent geometry and object motion over long horizons, as well as to interpolate consistent 4D structure at unseen timestamps.
+> Table 4. Full 4D World Evaluation. We report 4D Chamfer Distance (Geometry), Worldline/Trajectory metrics (Dynamics), and Novel Time Interpolation error (Continuity). Detailed metrics info please refer to E.3
+> Geometry Trajectory / Worldline Dynamics Novel Time Model Chamfer ↓L2 Error ↓Mean Drift ↓Final Drift ↓Fail Rate ↓Length ↑Depth Err ↓Warp Err ↓
+> WAN + OTF 0.5058 0.5367 0.5369 0.5576 12.38% 83.18 0.5841 1.1076
+> CogVideoX + OTF 0.4923 0.5239 0.5239 0.5348 11.34% 84.67 0.5432 1.1254 OpenSora + OTF 0.5286 0.5694 0.5637 0.5834 13.54% 80.24 0.6534 1.1573
+> Phys4D (Ours) 0.4626 0.4928 0.4829 0.5078 9.54% 87.21 0.5340 1.1288
+
+Per-frame 3D Geometry Accuracy. A coherent 4D world model must first capture accurate instantaneous 3D geom-etry . We evaluate per-frame depth accuracy by comparing predicted depth maps against simulation ground truth under a fixed camera setting. This isolates geometric understand-ing from temporal reasoning. As shown in Table 3, Phys4D achieves better depth accuracy across all metrics while main-taining strong video quality. These results indicate that Phys4D learns more accurate per-frame 3D structure with-out sacrificing perceptual fidelity. 
+
+Temporal Geometry & Motion Consistency. Beyond per-frame geometry, a physical world model must maintain 
+
+spatiotemporal self-consistency between geometry, appear-ance, and motion. We evaluate this property using two complementary warp-based tests: (i) depth warping with ground-truth flow and (ii) RGB/latent warping with pre-dicted flow . Table 5 summarizes depth warp errors, RGB warp reconstruction, and optical flow accuracy. Phys4D consistently achieves lower warp errors and substantially better motion metrics, indicating improved alignment be-tween geometry and motion over time. These results show that Phys4D produces temporally coherent dynamics rather than frame-wise plausible but inconsistent motion. 
+
+World-level Evolution As shown in Table 4, We evaluate global 4D geometry using the 4D Chamfer Distance . For object dynamics, we construct worldlines by first sampling pixels at the initial frame, tracking their 2D trajectories over time using ground-truth optical flow, and back-projecting these trajectories into 3D using the predicted depth maps. The resulting 3D trajectories are compared against ground-truth worldlines obtained from simulation, yielding world-line and trajectory errors . We further test temporal con-tinuity at unseen timestamps. Given only observed frames, the model reconstructs a partial 4D scene and is queried at novel time steps via flow-based interpolation. We measure novel-time depth and warp errors to evaluate whether the inferred geometry remains consistent across time, indicat-ing a continuous underlying (x, y, z, t ) world rather than frame-local predictions. Overall, Phys4D yields more stable worldlines and lower trajectory drift while maintaining ac-curate global geometry. Detailed Experiment setting please refer to Appendix E.3. Qualitative result is shown on Fig. 5 8Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+Table 5. Temporal Warp and Motion Consistency. We report reconstruction errors for both depth and RGB warping, alongside optical flow endpoint error (EPE). OTF refers to the optical flow estimation method from SEA-RAFT (Wang et al., 2024)                                             
+
+> Temporal Warp Consistency Motion Dynamics
+> Depth Warp RGB Warp
+> Model L1 ↓Charb. ↓LPIPS ↓Charb. ↓EPE ↓Fl-all ↓1px Out ↓
+> WAN+OTF 0.7990 0.7898 0.2409 0.0507 1.2516 6.2173 15.69 CogVideoX+OTF 0.7054 0.7893 0.2564 0.0527 1.2343 4.3243 12.34 OpenSora+OTF 0.7436 0.8534 0.2783 0.0589 1.2718 7.2343 18.96
+> Phys4D (Ours) 0.5141 0.5240 0.1818 0.0518 0.5054 1.3013 4.35
+
+6.3. Ablation Studies 
+
+We ablate key components of Phys4D to understand their individual contributions to physical consistency. Table 6 reports an ablation study on the effect of each training stage measured by Physics-IQ. Starting from the pretrained base-line, Stage 2 yields the largest performance gain by incor-porating simulation-grounded supervision and warp-based consistency. Stage 3 further improves physical plausibility through reinforcement learning. Overall, the monotonic improvements across stages validate the effectiveness of our curriculum-style training pipeline. More ablation studies please refer to Appendix D.2 
+
+Table 6. Ablation on training stages. Each stage contributes incre-mentally to physical consistency, with Stage 2 (physics-grounded fine-tuning) providing the largest improvement.         
+
+> Configuration Score (%) ∆
+> Base (WAN2.2-5b) 16.8 –+ Stage 2 (Physics-Grounded SFT) 22.6 +5.8 + Stage 3 (RL Fine-tuning) 25.6 +3.0
+
+## 7. Conclusion 
+
+We presented Phys4D, a three-stage framework that lifts pre-trained video diffusion models into physics-consistent 4D world models. Our results highlight the importance of ex-plicit 4D world-level training and evaluation for advancing generative world models. 
+
+## 8. Impact Statements 
+
+This paper presents work whose goal is to advance the field of machine learning. There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. 
+
+## References 
+
+Agarwal, N. et al. Cosmos world foundation model platform for physical ai. arXiv preprint arXiv:2501.03575 , 2025. URL https://arxiv.org/abs/2501.03575 .Aira, L. S., Montanaro, A., Aiello, E., Valsesia, D., and Magli, E. Motioncraft: Physics-based zero-shot video generation. ArXiv , abs/2405.13557, 2024. URL https://api.semanticscholar. org/CorpusID:269982890 .Albergo, M. S. and Vanden-Eijnden, E. Stochastic inter-polants: A unifying framework for flows and diffusions. 
+
+arXiv preprint arXiv:2303.08797 , 2023. Bansal, H., Lin, Z., Xie, T., Zong, Z., Yarom, M., Bit-ton, Y., Jiang, C., Sun, Y., Chang, K.-W., and Grover, A. Videophy: Evaluating physical commonsense for video generation. arXiv preprint arXiv:2406.03520 , 1(1), 2024a. Bansal, H., Lin, Z., Xie, T., Zong, Z., Yarom, M., Bitton, Y., Jiang, C., Sun, Y., Chang, K.-W., and Grover, A. Videophy: Evaluating physical commonsense for video generation. arXiv preprint arXiv:2406.03520 , 2024b. Bender, J., M ¨uller, M., and Macklin, M. Position-based sim-ulation methods in computer graphics. In Eurographics ,2015. URL https://api.semanticscholar. org/CorpusID:28559386 .Bengio, Y., Louradour, J., Collobert, R., and Weston, J. Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning , pp. 41– 48, 2009. Bertiche, H., Madadi, M., Escalera, S., Black, M. J., and Mu ˜noz, X. Behave: Dataset and method for track-ing human-object interactions. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022. Black, K. et al. Training diffusion models with reinforce-ment learning. arXiv preprint arXiv:2305.13301 , 2023. Chang, R., Chen, W., Xu, H., Yang, X., and Li, Y. Physctrl: Generative physics for controllable and physics-grounded video generation. arXiv preprint arXiv:2509.20358 ,2024. Chefer, H. et al. Physics-guided video generation via learned dynamics priors. arXiv preprint arXiv:2501.XXXX , 2025. Chen, B., Jiang, H., Liu, S., Gupta, S., Li, Y., Zhao, H., and Wang, S. Physgen3d: Crafting a miniature interac-tive world from a single image. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025a. Chen, S., Guo, H., Zhu, S., Zhang, F., Huang, Z., Feng, J., and Kang, B. Video depth any-thing: Consistent depth estimation for super-long videos. 2025 IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition (CVPR) , pp. 22831–22840, 2025b. URL https://api.semanticscholar. org/CorpusID:275790004 .9Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+Chen, Y., Liang, Y., Wang, J., Chen, T., Cheng, J., Gu, Z., Huang, Y., Jiang, Z., Li, W., Li, T., Li, W., Li, Z., Liu, G., Liu, J., Liu, J., Wang, H., Weng, Q., Wu, X., Xiang, X.-Y., Yang, X., Zhang, X., Zhang, S., Zhou, J., gang Zhou, C., Huang, H., Zhang, C., and Li, X. Teleworld: Towards dynamic multimodal synthesis with a 4d world model. 2025c. URL https://api.semanticscholar. org/CorpusID:284475753 .Chen, Y., Liang, Y., Wang, J., Chen, T., Cheng, J., Gu, Z., Huang, Y., Jiang, Z., Li, W., Li, T., et al. Teleworld: Towards dynamic multimodal synthesis with a 4d world model. arXiv preprint arXiv:2601.00051 , 2025d. URL 
+
+https://arxiv.org/abs/2601.00051 .Ciarlet, P. G. The finite element method for ellip-tic problems. In Classics in applied mathematics ,2002. URL https://api.semanticscholar. org/CorpusID:110509160 .Google DeepMind. State-of-the-art video and im-age generation with veo 2 and imagen 3. https: //blog.google/technology/google-labs/ video-image-generation-update-december-2024/ ,2024. Grauman, K., Westbury, A., Byrne, D., Chuang, C.-J., et al. Ego-exo4d: Understanding skilled human activity from first- and third-person perspectives. arXiv preprint arXiv:2311.16430 , 2023. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. NeurIPS , 2020. Hsu, Y.-C. et al. Learning physically plausible motion for video synthesis. arXiv preprint arXiv:2407.XXXX , 2024. Huang, T., Zhang, H., Zeng, Y., Zhang, Z., Li, H., Zuo, W., and Lau, R. W. Dreamphysics: Learning physical properties of dynamic 3d gaussians with video diffusion priors. Proceedings of the AAAI Conference on Artificial Intelligence , 2025a. Huang, T., Zheng, W., Wang, T., Liu, Y., Wang, Z., Wu, J., Jiang, J., Li, H., Lau, R. W. H., Zuo, W., and Guo, C. Voyager: Long-range and world-consistent video diffusion for explorable 3d scene generation. 
+
+ACM Transactions on Graphics (TOG) , 44:1 – 15, 2025b. URL https://api.semanticscholar. org/CorpusID:279155015 .Huang, W., Zhang, H., Guo, Y., and Xu, Y. Intercap: Joint markerless 3d tracking of humans and objects in inter-action. In Proceedings of the European Conference on Computer Vision (ECCV) , 2022. Huang, Z. et al. Vbench: Comprehensive bench-marking of video generation models. arXiv preprint arXiv:2401.03899 , 2024. Joo, H., Simon, T., Li, X., Liu, H., Tan, L., Gui, L., Banerjee, S., Godisart, T., Nabbe, B., Matthews, I., Kanade, T., and Sheikh, Y. Panoptic studio: A massively multiview system for social motion capture. In Proceedings of the IEEE International Conference on Computer Vision (ICCV) , 2015. Li, Z., Xu, J., and Wang, X. Dynamic 3d scene dataset for 4d reconstruction. arXiv preprint arXiv:2311.02814 ,2023. Li, Z., Tucker, R., Snavely, N., and Holynski, A. Genera-tive image dynamics. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. Li, Z., Yu, H.-X., Liu, W., Yang, Y., Herrmann, C., Wet-zstein, G., and Wu, J. Wonderplay: Dynamic 3d scene generation from a single image and actions. In Proceed-ings of the IEEE/CVF International Conference on Com-puter Vision (ICCV) , 2025. Liao, M. et al. Paddleocr: An ultra lightweight op-tical character recognition system. arXiv preprint arXiv:2203.08550 , 2022. Liao, Y. et al. Devil: Benchmarking dynamic realism in video generation. arXiv preprint arXiv:2408.04112 ,2024. Lin, Z., Wang, W., and Liu, F. Neu3d: Neural reconstruction of dynamic scenes from multi-view video. arXiv preprint arXiv:2303.11343 , 2023. Lin, Z. et al. Physically simulated 3d scene generation for video synthesis. arXiv preprint arXiv:2403.XXXX , 2024a. Lin, Z. et al. Videocrafter: Open diffusion models for high-quality video generation. arXiv preprint arXiv:2401.12268 , 2024b. Lipman, Y., Chen, R. T. Q., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2023. Liu, J., Liu, G., Liang, J., Li, Y., Liu, J., Wang, X., Wan, P., Zhang, D., and Ouyang, W. Flow-grpo: Training flow matching models via online rl, 2025a. URL https: //arxiv.org/abs/2505.05470 .Liu, X., Gong, C., and Liu, Q. Rectified flow: A marginal preserving approach to generative modeling. arXiv preprint arXiv:2209.03003 , 2023. Liu, X. et al. Flow-grpo: Reinforcement learning fine-tuning for flow models. arXiv preprint arXiv:2502.01476 ,2025b. 10 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+Liu, Y., Liu, Y., Jiang, C., Lyu, K., Wan, W., Shen, H., Liang, B., Fu, Z., Wang, H., and Yi, L. Hoi4d: A 4d egocentric dataset for category-level human-object interaction. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022. Liu, Y. et al. Physgen: Rigid-body physics-grounded text-to-video generation. arXiv preprint arXiv:2409.12118 ,2024a. Liu, Z. et al. Evalcrafter: Benchmarking and evaluating open-source video generation models. arXiv preprint arXiv:2405.03645 , 2024b. Lu, H., Wu, R., Li, Y., Li, S., Zhu, Z., Ning, C., Shen, Y., Luo, L., Chen, Y., and Dong, H. Garmentlab: A uni-fied simulation and benchmark for garment manipulation. In Advances in Neural Information Processing Systems ,2024. Meng, F., Liao, J., Tan, X., Shao, W., Lu, Q., Zhang, K., Yu, C., Li, D., Qiao, Y., and Luo, P. Towards world simula-tor: Crafting physical commonsense-based benchmark for video generation. In International Conference on Machine Learning , 2025a. Meng, Y. et al. Phygenbench: A physical common-sense benchmark for video generation. arXiv preprint arXiv:2407.08956 , 2024. Meng, Y. et al. Benchmarking video generation under di-verse physical laws. arXiv preprint arXiv:2507.13428 ,2025b. Motamed, S., Culp, L., Swersky, K., Jaini, P., and Geirhos, R. Do generative video models understand physical prin-ciples? arXiv preprint arXiv:2501.09038 , 2025a. Motamed, S., Culp, L., Swersky, K., Jaini, P., and Geirhos, R. Do generative video models understand physical prin-ciples? arXiv preprint arXiv:2501.09038 , 2025b. NVIDIA Corporation. Isaac sim: A robotics simula-tion and synthetic data generation platform. https: //developer.nvidia.com/isaac/sim , 2024. NVIDIA Isaac Lab. Tiled rendering in isaac lab. https:// docs.nvidia.com/learning/physical-ai/ getting-started-with-isaac-lab/ latest/an-introduction-to-robot-learning-and-isaac-lab/ 03-available-robots-and-environments/ 03-tiled-rendering.html . Accessed: 2026-01. OpenAI. Sora: Creating video from text. https:// openai.com/sora , 2024. Papamakarios, G., Nalisnick, E., Rezende, D., Mohamed, S., and Lakshminarayanan, B. Normalizing flows for probabilistic modeling and inference. JMLR , 2021. Peng, Z. et al. Open-sora: Democratizing efficient video pro-duction for everyone. arXiv preprint arXiv:2412.00131 ,2025. Polyak, A., Zohar, A., Brown, A., Tjandra, A., Sinha, A., Lee, A., Vyas, A., Shi, B., Ma, C.-Y., Chuang, C.-Y., et al. Movie gen: A cast of media foundation models. arXiv preprint arXiv:2410.13720 , 2024. Ren, A. Z., Lidard, J., Ankile, L. L., Simeonov, A., Agrawal, P., Majumdar, A., Burchfiel, B., Dai, H., and Simchowitz, M. Diffusion policy policy optimization, 2024a. URL 
+
+https://arxiv.org/abs/2409.00588 .Ren, Y. et al. Dppo: Reinforcement learning fine-tuning for diffusion models. arXiv preprint arXiv:2403.08768 ,2024b. Schuhmann, C. et al. Improving image generation with better captions. arXiv preprint arXiv:2209.07753 , 2022. Schulman, J. et al. Proximal policy optimization algorithms. 
+
+arXiv preprint arXiv:1707.06347 , 2017. Singer, U., Polyak, A., Hayes, T., Yin, X., An, J., Zhang, S., Hu, Q., Yang, H., Ashual, O., Gafni, O., Parikh, D., Gupta, S., and Taig-man, Y. Make-a-video: Text-to-video generation without text-video data. ArXiv , abs/2209.14792, 2022. URL https://api.semanticscholar. org/CorpusID:252595919 .Sohl-Dickstein, J., Weiss, E., Maheswaranathan, N., and Ganguli, S. Deep unsupervised learning using nonequi-librium thermodynamics. ICML , 2015. Song, Y. and Ermon, S. Generative modeling by estimating gradients of the data distribution. NeurIPS , 2019. Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Er-mon, S., and Poole, B. Score-based generative modeling through stochastic differential equations. arXiv preprint arXiv:2011.13456 , 2020. Song, Y. et al. Score-based generative modeling through stochastic differential equations. ICLR , 2021. Stomakhin, A., Schroeder, C., Chai, L., Teran, J., and Selle, A. A material point method for snow simulation. ACM Transactions on Graphics , 2013a. Stomakhin, A., Schroeder, C., Chai, L., Teran, J., and Selle, A. A material point method for snow simulation. ACM Transactions on Graphics , 2013b. Sun, J. et al. T2v-compbench: Benchmarking com-positional text-to-video generation. arXiv preprint arXiv:2403.15642 , 2024. 11 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+Team, H. et al. Hunyuanworld 1.0: Generating immer-sive, explorable, and interactive 3d worlds from im-ages. arXiv preprint arXiv:2507.21809 , 2025. URL 
+
+https://arxiv.org/abs/2507.21809 .Teed, Z. and Deng, J. Raft: Recurrent all-pairs field transforms for optical flow. ArXiv , abs/2003.12039, 2020. URL https://api.semanticscholar. org/CorpusID:214667893 .Wallace, B., Dang, M., Rafailov, R., Zhou, L., Lou, A., Pu-rushwalkam, S., Ermon, S., Xiong, C., Joty, S., and Naik, N. Diffusion model alignment using direct preference op-timization, 2023. URL https://arxiv.org/abs/ 2311.12908 .Wan, T., Wang, A., Ai, B., Wen, B., Mao, C., Xie, C.-W., Chen, D., Yu, F., Zhao, H., Yang, J., Zeng, J., Wang, J., Zhang, J., Zhou, J., Wang, J., Chen, J., Zhu, K., Zhao, K., Yan, K., Huang, L., Feng, M., Zhang, N., Li, P., Wu, P., Chu, R., Feng, R., Zhang, S., Sun, S., Fang, T., Wang, T., Gui, T., Weng, T., Shen, T., Lin, W., Wang, W., Wang, W., Zhou, W., Wang, W., Shen, W., Yu, W., Shi, X., Huang, X., Xu, X., Kou, Y., Lv, Y., Li, Y., Liu, Y., Wang, Y., Zhang, Y., Huang, Y., Li, Y., Wu, Y., Liu, Y., Pan, Y., Zheng, Y., Hong, Y., Shi, Y., Feng, Y., Jiang, Z., Han, Z., Wu, Z.-F., and Liu, Z. Wan: Open and advanced large-scale video generative models, 2025. URL https: //arxiv.org/abs/2503.20314 .Wang, T. et al. Voyager: Long-range and world-consistent video diffusion for 3d point-cloud sequence generation. 
+
+arXiv preprint arXiv:2506.04225 , 2025. URL https: //arxiv.org/abs/2506.04225 .Wang, Y., Lipson, L., and Deng, J. Sea-raft: Simple, ef-ficient, accurate raft for optical flow. arXiv preprint arXiv:2405.14793 , 2024. Wen, K., Huang, Y., Chen, R., Zheng, H., Lin, Y., Pan, P., Li, C., Cong, W., Zhang, J., Lu, J., Lin, C., Wang, D., Yan, Z., Xu, H., Theiss, J., Huang, Y., Ding, X., Ranjan, R., and Fan, Z. Dynamicverse: A physically-aware multimodal framework for 4d world modeling. 2025a. URL https://api.semanticscholar. org/CorpusID:283226736 .Wen, K., Huang, Y., Chen, R., Zheng, H., Lin, Y., Pan, P., Li, C., Cong, W., Zhang, J., Lu, J., et al. Dynamicverse: A physically-aware multimodal framework for 4d world modeling. arXiv preprint arXiv:2512.03000 , 2025b. Xie, T., Zong, Z., Qiu, Y., Li, X., Feng, Y., Yang, Y., and Jiang, C. Physgaussian: Physics-integrated 3d gaussians for generative dynamics. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. Xu, T., Chen, Z., Wu, L., Lu, H., Chen, Y., Jiang, L., Liu, B., and Chen, Y. Motion dreamer: Realizing physically coherent video generation through scene-aware motion reasoning. arXiv preprint arXiv:2412.00547 , 2024. Xu, Y., Xiao, T., Kreis, K., and Vahdat, A. Generative stochastic differential models. ICLR , 2022. Xue, Q., Yin, X., Yang, B., and Gao, W. Phyt2v: Llm-guided iterative self-refinement for physics-grounded text-to-video generation, 2025. URL https://arxiv. org/abs/2412.00596 .Yang, L., Kang, B., Huang, Z., Zhao, Z., Xu, X., Feng, J., and Zhao, H. Depth anything v2. arXiv:2406.09414 ,2024. Yang, X., Li, B., Zhang, Y., Yin, Z., Bai, L., Ma, L., Wang, Z., Cai, J., Wong, T.-T., Lu, H., and Jia, X. Vlipp: To-wards physically plausible video generation with vision and language informed physical prior. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2025a. Yang, Z., Teng, J., Zheng, W., Ding, M., Huang, S., Xu, J., Yang, Y., Hong, W., Zhang, X., Feng, G., Yin, D., Zhang, Y., Wang, W., Cheng, Y., Xu, B., Gu, X., Dong, Y., and Tang, J. Cogvideox: Text-to-video diffusion models with an expert transformer, 2025b. URL https: //arxiv.org/abs/2408.06072 .Yu, H.-X., Duan, H., Hur, J., Sargent, K., Rubinstein, M., Freeman, W. T., Cole, F., Sun, D., Snavely, N., Wu, J., and Herrmann, C. Wonderjourney: Going from anywhere to everywhere. 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 6658–6667, 2023. URL https://api.semanticscholar. org/CorpusID:266044186 .Yu, H.-X., Duan, H., Herrmann, C., Freeman, W. T., and Wu, J. Wonderworld: Interactive 3d scene generation from a single image. 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 5916–5926, 2024a. URL https://api.semanticscholar. org/CorpusID:270440501 .Yu, H.-X., Duan, H., Herrmann, C., Freeman, W. T., and Wu, J. Wonderworld: Interactive 3d scene generation from a single image. arXiv preprint arXiv:2406.09394 , 2024b. URL https://arxiv.org/abs/2406.09394 .Yuan, Y., Song, J., Iqbal, U., Vahdat, A., and Kautz, J. Phys-diff: Physics-guided human motion diffusion model. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2023. 12 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+Yuan, Y., Wang, X., Wickremasinghe, T., Nadir, Z., Ma, B., and Chan, S. Newtongen: Physics-consistent and con-trollable text-to-video generation via neural newtonian dynamics. arXiv preprint arXiv: 2509.21309 , 2025. Zhai, A. J., Shen, Y., Chen, E. Y., Wang, G. X., Wang, X., Wang, S., Guan, K., and Wang, S. Physical property understanding from language-embedded feature fields. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024. Zhang, K. et al. Think before you diffuse: Llms-guided physics-aware video generation. arXiv preprint arXiv:2505.21653 , 2025. Zhang, T., Yu, H.-X., Wu, R., Feng, B. Y., Zheng, C., Snavely, N., Wu, J., and Freeman, W. T. Physdreamer: Physics-based interaction with 3d ob-jects via video generation. ArXiv , abs/2404.13026, 2024. URL https://api.semanticscholar. org/CorpusID:269282774 .Zheng, Z., Peng, X., Yang, T., Shen, C., Li, S., Liu, H., Zhou, Y., Li, T., and You, Y. Open-sora: Democratizing efficient video production for all, 2024. URL https: //arxiv.org/abs/2412.20404 .Zhou, Y., Zhou, D., Cheng, M.-M., Feng, J., and Hou, Q. Storydiffusion: Consistent self-attention for long-range image and video generation. ArXiv , abs/2405.01434, 2024. URL https://api.semanticscholar. org/CorpusID:269502120 .Zhou, Y., Wang, Y., Zhou, J., Chang, W., Guo, H., et al. Omniworld: A multi-domain and multi-modal dataset for 4d world modeling. arXiv preprint arXiv:2509.12201 ,2025. 13 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+## Appendix Overview 
+
+This appendix provides supplementary materials that support the main paper and improve clarity, completeness, and reproducibility. Specifically, it expands on data construction, extended experiments, qualitative analyses, theoretical details, and physics-based simulation settings that are not fully described in the main text due to space constraints.  
+
+> Figure 6. Qualitative Result Of Phys4D Generated Scene.
+
+Appendix A: Data. We describe the data sources used throughout training, including internet videos, model-generated samples, and simulation-generated data. This section details data preprocessing, filtering strategies, and annotation procedures for depth and motion supervision, clarifying how diverse supervision signals are constructed across different stages of training. 
+
+Appendix B: Implementation This appendix provides implementation details for the proposed Phys4D framework, covering data preparation, model training, and reinforcement learning fine-tuning. Our implementation follows the three-stage training paradigm described in the main paper and is designed to progressively lift video diffusion models from appearance-level generation to physically consistent 4D world modeling .
+
+Appendix C: Qualitative Results. We present additional qualitative results to complement the quantitative evaluations in the main paper. This section includes visual demonstrations of generated videos, depth maps, and motion fields, highlighting improvements in fine-grained physical consistency, temporal coherence, and long-horizon stability. 
+
+Appendix D: Experiments. We report extended experimental results and ablation studies that are omitted from the main paper for brevity. These experiments further analyze the effects of different training stages, supervision signals, and design choices, providing deeper insight into the behavior of the proposed method. 
+
+Appendix E: 4D Physics Consistency Benchmarks and Metrics. We provide additional details on benchmark settings and evaluation protocols. This section elaborates on the computation of 4D world consistency metrics and discusses their relationship to standard appearance-based video evaluation measures. 
+
+Appendix F: Preliminaries and Theory. We include mathematical preliminaries and theoretical details underlying our approach, including flow matching, deterministic ODE sampling, and the stochastic formulations used for reinforcement learning fine-tuning. This section contains derivations and clarifications that support the methodology presented in the main paper. 
+
+Appendix G: Additional Related Work. We discuss related work that could not be fully covered in the main paper, providing further context on physics-aware video generation, 4D modeling, and learning-based world representations. 
+
+Appendix H: Physics Simulation. We describe the physics simulation settings used for supervision and reward con-struction, including scene configurations, object properties, and motion extraction procedures. This section explains how simulation is leveraged as a source of high-fidelity geometric and motion information for fine-grained physical alignment. 14 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+## A. Data 
+
+A.1. Simulation Data 
+
+To enable large-scale 4D data collection at high throughput and low cost, we build our simulation pipeline on an asynchronous parallel execution framework. Our system collects data from a large number of simulation sub-environments concurrently, significantly improving GPU utilization and simulation throughput compared to sequential or synchronously parallel simulators. This design allows us to generate large-scale, diverse simulation data at substantially higher speed and lower computational cost. 
+
+Tiled Rendering for Efficient Visual Simulation. To further improve rendering efficiency, we adopt tiled camera rendering , where multiple camera views from different simulation sub-environments are rendered within a single large framebuffer. This approach amortizes rendering overhead across environments and avoids redundant GPU context switching. We follow the tiled rendering strategy provided by Isaac Lab (NVIDIA Isaac Lab), which enables scalable visual data generation with minimal performance degradation as the number of parallel environments increases. 
+
+Asynchronous Execution. While parallelism is critical for simulator efficiency, na ¨ıve synchronous execution leads to significant idle time when sub-environments exhibit heterogeneous dynamics. In vision-based control and data collection, a policy typically performs inference once to generate a target pose or waypoint, after which the robot executes a trajectory of variable length. Synchronizing such trajectories across environments results in unnecessary blocking and under-utilization of computational resources. To address this challenge, our simulator supports fully asynchronous execution . Each policy-driven motion is encapsulated as an atomic action with a well-defined interface, allowing high-level policies to invoke and monitor actions independently across environments. This design eliminates global synchronization barriers and maximizes hardware utilization, enabling efficient closed-loop data collection under heterogeneous execution. 
+
+Data Management and Asynchronous Control. Supporting asynchronous execution is non-trivial, as the underlying simulator operates in a SIMD (Single Instruction, Multiple Data) paradigm, whereas asynchronous execution requires MIMD (Multiple Instruction, Multiple Data) semantics. To bridge this gap, we introduce a motion-planning-based abstraction layer that translates high-level asynchronous commands into low-level, time-continuous trajectories. This abstraction allows each sub-environment to progress independently while preserving simulator stability. 
+
+Scene Management and Heterogeneous Environments. To support heterogeneous parallel simulation, different sub-environments may require distinct scene configurations. We address this by introducing a Layout Manager that programmat-ically controls asset placement across environments. The Layout Manager imports user-specified objects with configurable randomization, enabling diverse, controllable, and reproducible scene layouts. This design allows us to efficiently scale data collection across a wide range of scene configurations within a single simulator instance. 
+
+Multi-Modal Camera Strategies We employ two complementary camera strategies to balance static scene coverage and dynamic viewpoint variation. Fixed multi-view cameras provide dense spatial coverage by placing multiple static cameras around each scene, capturing aligned RGB images together with calibrated intrinsics and extrinsics and dense geometric annotations such as depth and optical flow. In parallel, dynamic trajectory cameras simulate realistic cinematography by sampling continuous camera motions (e.g., orbit, dolly, crane, tracking, and first-person) along parameterized trajectories, producing frame-level pose annotations for training trajectory-aware video generation models. 
+
+Simulation Throughput and Data Scale. Our data collection pipeline is optimized for high-throughput simulation. On a single NVIDIA RTX 4090 GPU with 24 GB memory, we run up to 1,024 simulation environments in parallel. Each environment is simulated for 10 seconds of effective interaction time, resulting in approximately 5000 video clips collected per hour on a single GPU. This efficiency enables large-scale data generation at low computational cost. We construct a base set of 200 simulation scenes and expand it to approximately 250,000 distinct environments through domain randomization over initial object configurations, physical parameters, and surface textures. For each environment, we collect five camera trajectories, including three fixed-view cameras and two dynamic camera motions, providing diverse spatial and temporal observations of the same underlying physical scene. 15 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+A.2. Internet Video Pretraining Data Motivation. To improve the robustness and generalization of the depth and motion heads, we leverage large-scale real-world videos for pseudo-supervised pretraining. Compared to simulation data, Internet videos exhibit substantially greater diversity in scene layout, appearance, and motion patterns, which is critical for learning domain-agnostic geometry and motion representations. This pretraining stage equips the model with strong visual and geometric priors before introducing physics-grounded supervision. 
+
+Data Sources. We assemble the pretraining corpus using a hybrid collection strategy that combines automated web crawling with selective manual curation. Videos are sourced from multiple public platforms, including YouTube, Pexels, Pixabay, Mixkit, and Bilibili, ensuring broad coverage of real-world environments and camera motions. 
+
+Automated Quality Filtering. To maintain data quality at scale, we apply a multi-stage automated filtering pipeline. We first use the LAION aesthetic scorer (Schuhmann et al., 2022) to remove visually low-quality or noisy clips. Next, we employ an OCR-based text detector based on PaddleOCR (Liao et al., 2022) to identify and discard videos containing prominent overlaid text, watermarks, or subtitles that may interfere with depth and motion estimation. Finally, videos that are extremely short, corrupted, or visually inconsistent are automatically removed. This filtering process yields a large-scale, diverse, and high-quality video dataset suitable for robust geometry and motion pretraining. 
+
+Final Dataset Curation. Starting from an initial pool of approximately 100,000 candidate video clips, our automated filtering pipeline retains about 5,000 high-quality videos that satisfy our fine-grained requirements. These selected clips exhibit sufficient motion diversity, clear object boundaries, and stable visual quality, making them suitable for robust depth and motion pretraining. This curated subset forms the final Internet video dataset used in our pseudo-supervised pretraining stage. 
+
+## B. Implementation 
+
+B.1. Model Architecture 
+
+We augment the pretrained DiT backbone with two auxiliary prediction heads that extract physics-aware signals from the diffusion features. 
+
+Motion Head. We attach a motion prediction head to DiT features captured via a forward hook at the DiT output layer. The head applies LayerNorm followed by a linear projection with modulation, producing patchified motion outputs that are unpatchified to a 4-channel motion field (dx, dy, c 2, c 3) per frame, where (dx, dy ) represents optical flow and (c2, c 3)
+
+encode auxiliary motion information. 
+
+Depth Head. We attach a depth prediction head following the spatiotemporal head design of Video Depth Anything (Chen et al., 2025b). The head builds on the DPT architecture with four temporal attention layers inserted at low-resolution stages to enable cross-frame reasoning. Each temporal layer applies multi-head self-attention along the temporal dimension with absolute positional embeddings. The head uniformly samples four feature maps from the DiT backbone, processes them through Reassemble and Fusion layers to produce a multi-scale feature pyramid, and outputs per-frame depth maps 
+
+Dt ∈ RH×W .
+
+B.2. RL Reward Implementation: Simulation-Grounded 4D Chamfer 4D point distance and 4D Chamfer. We measure spatio-temporal alignment between two 4D points p = ( x, y, z, τ ) and 
+
+q = ( x′, y ′, z ′, τ ′) in the camera coordinate system using 
+
+d4D (p, q ) = ∥(x, y, z ) − (x′, y ′, z ′)∥22 + α2 (τ − τ ′)2, (10) where α converts a unit time difference (one frame) into an equivalent spatial scale (meters). Given two 4D point sets Pgen 
+
+and Pgt , the symmetric 4D Chamfer Distance is defined as 
+
+CD 4D (Pgen , Pgt ) = 1
+
+|P gen |
+
+X
+
+> p∈P gen
+
+min  
+
+> q∈P gt
+
+d4D (p, q ) + 1
+
+|P gt |
+
+X
+
+> q∈P gt
+
+min  
+
+> p∈P gen
+
+d4D (p, q ). (11) 16 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+We define the terminal RL reward as the negative 4D Chamfer Distance: 
+
+r(z0, c ) = −CD 4D 
+
+ Pgen , Pgt  . (12) 
+
+Generated 4D point construction. The model outputs video frames {It}T −1 
+
+> t=0
+
+, depth maps {Dt}T −1 
+
+> t=0
+
+(in camera coordi-nates), and motion predictions in the form of 2D optical flow {Ft→t+1 }T −2 
+
+> t=0
+
+or 3D scene flow {St→t+1 }T −2 
+
+> t=0
+
+. We construct the generated 4D point set Pgen as follows. 
+
+(i) Depth unprojection. Using the camera intrinsics K, each pixel (u, v ) at frame t is back-projected to 3D: 
+
+Xgen  
+
+> t
+
+(u, v ) = Dt(u, v ) K−1
+
+
+
+uv
+
+1
+
+ ∈ R3. (13) We form a 4D point by appending the discrete timestamp τt ∈ { 0, . . . , T − 1}: pgen  
+
+> t
+
+(u, v ) = ( Xgen  
+
+> t
+
+(u, v ), τ t).
+
+(ii) Moving-object selection via motion. To focus the reward on object dynamics, we select moving regions using the predicted motion. When using optical flow, we compute a magnitude map from Ft→t+1 and define 
+
+M gen  
+
+> t
+
+(u, v ) = I ∥Ft→t+1 (u, v )∥2 > δ .
+
+When 3D scene flow St→t+1 is available, we analogously threshold its magnitude. Only 4D points with M gen  
+
+> t
+
+(u, v ) = 1 are retained, forming Pgen over all frames. 
+
+Simulation-derived ground-truth 4D points. From simulation, we obtain ground-truth 3D point clouds and motion in the world coordinate system. For each frame t, ground-truth points Xgt,w  
+
+> t
+
+are transformed into the camera coordinate system using camera extrinsics (Rt, tt):
+
+Xgt  
+
+> t
+
+= Rt Xgt,w  
+
+> t
+
++ tt. (14) We construct 4D points pgt  
+
+> t
+
+= ( Xgt  
+
+> t
+
+, τ t) with the same discrete timestamp τt. Moving-object points are selected using simulator-provided ground-truth motion (e.g., per-point 3D displacement), thresholded by the same δ, yielding the set Pgt .
+
+Temporal weight α. The temporal weight α balances spatial error (meters) and temporal misalignment (frames) in Eq. (10). As our environments are room-scale, we set α = 0 .03 m, corresponding to the typical per-frame displacement of moving objects in the simulator. This choice makes a one-frame temporal mismatch comparable to a few centimeters of spatial error, and we observe stable behavior under moderate variations of α.
+
+## C. Qualitative Result 
+
+Figure 7 and Figure 4 qualitatively compare Phys4D with the base video diffusion model across a diverse set of physical interaction scenarios under static camera settings, including rigid-body manipulation, multi-object dynamics, soft-body deformation, fluid flow, and contact-rich interactions. While the baseline model often generates visually coherent frames, it frequently violates object-level physical constraints, leading to shape distortion, object duplication, incorrect interaction outcomes, or implausible motion patterns over time. In manipulation scenarios, such as object placement and grasping, baseline models tend to introduce non-physical defor-mations or geometry drift, even for nominally rigid objects. Phys4D, in contrast, preserves object integrity throughout the interaction, maintaining consistent geometry and contact behavior as objects are manipulated or released. For multi-object scenes, baseline generations commonly suffer from object count inconsistencies and unstable trajectories, whereas Phys4D maintains correct object identities and produces smooth, coherent motion consistent with the underlying scene layout. We further observe substantial improvements in fluid–object interactions. In pouring scenarios, baseline models often violate basic physical principles, such as gravity alignment or container geometry, resulting in fluid emerging from incorrect locations. Phys4D generates fluid motion that is directionally consistent with gravity and constrained by the container structure, yielding more realistic flow behavior over time. Across all scenarios, these qualitative results highlight that Phys4D goes beyond frame-wise visual plausibility, enforcing object-level continuity, interaction consistency, and physically grounded dynamics. This supports the claim that Phys4D captures a coherent 4D world representation, rather than synthesizing isolated, appearance-consistent frames. 17 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion Prompt:  A 30lb kettlebell and a green piece of paper are lowered onto two pillows. Static shot with no camera movement.          
+
+> Pillows fail to deform realistically under the heavy kettlebell. Phys4D generates proper soft-body compression consistent with object weight and material properties.
+> Initial Frame Frame Generated by Wan2.2-5b Frame Generated by Wan2.2-5b + Phy4D Prompt: A piece of folded paper is placed on a glass cutting board. The paper is being burnt and white smoke is emitting from it. Static shot with no camera movement..
+> Prompt: A small white lampshade is on a light wood surface. A grey tennis ball rolls out of the black tube sitting on the table and rolls on the table towards the right. Static shot with no camera movement. The tennis ball deforms as it rolls across the surface. Phys4D maintains consistent ball geometry with smooth rolling dynamics.
+> Prompt: A tangerine that has been cut in half is placed on a glass cutting board. A knife is slicing through the tangerine. Static shot with no camera movement.
+> The tangerine morphs and distorts during cutting rather than separating cleanly. Phys4D generates physically consistent slicing dynamics with proper object segmentation.
+> Prompt: A blue rectangular wooden block is placed on a black rotating turntable that rotates clockwise illuminated by a spotlight casting a long shadow on the wall behind it. Static shot with no camera movement.
+> The blue block's shadow deforms and loses geometric consistency during rotation. Phys4D maintains rigid-body integrity and produces coherent shadow dynamics aligned with object motion.
+> Prompt: A grabber tool holds a piece of paper towel over a shallow dish of light blue liquid on a wooden table. The grabber releases the paper towel on the dish. Static shot with no camera movement.
+> The paper towel fails to interact properly with the liquid surface. Phys4D generates good soft-body dynamics and plausible liquid contact.
+> The paper shape varies across frames and flames fail to burn the material. Phys4D generates correct fire dynamics with realistic burning.
+
+Figure 7. Qualitative Result Of Phys4D Generated Scene. 
+
+## D. Experiment 
+
+D.1. Physics-IQ 
+
+For evaluation, we generate 5-second videos conditioned on the switch frame following the Physics-IQ protocol. We use nucleus sampling with temperature 1.0 and top-p = 0.95 for all experiments. Phys4D achieves substantial improvements over base video diffusion models across multiple backbones. When applied to CogVideoX-5b, Phys4D improves the Spatiotemporal IoU from 0.116 to 0.169 (+45.7% relative) and the Spatial IoU from 0.222 to 0.252 (+13.5% relative), while simultaneously reducing MSE from 0.013 to 0.009 (30.8% reduction). Similarly, Phys4D boosts WAN2.2-5b’s Spatiotemporal IoU from 0.088 to 0.107 (+21.6% relative) and Open-Sora V1.2 from 0.072 to 0.098 (+36.1% relative). These consistent improvements across different backbones demonstrate that our physics-grounded training paradigm is architecture-agnostic and effectively transfers to various video diffusion models. Notably, Phys4D (CogVideoX-5b) achieves the best performance across all metrics, with a Spatiotemporal IoU of 0.169, Spatial IoU of 0.252, and Weighted Spatial IoU of 0.157, substantially outperforming all baseline models. These results indicate that our simulation-grounded training approach can elevate open-source models to achieve significantly improved physical understanding. 
+
+D.2. Ablation Loss Components. Table 7 ablates individual loss terms in our training objective. The warp consistency loss Lwarp provides the most significant contribution by explicitly coupling geometry and motion predictions, enforcing that warped depth maps align temporally. Removing depth supervision ( Ldepth ) or motion supervision ( Lmotion ) both degrade performance substantially, confirming that joint supervision over both signals is necessary for physics-consistent generation. The RGB warp loss ( Lrgb-warp ) provides complementary photometric consistency, with its removal causing moderate performance degradation. 
+
+## E. Benchmark 
+
+We introduce a structured 4D benchmark Fig. 6 to evaluate whether a video generation model internalizes a coherent 
+
+(x, y, z, t ) world representation beyond per-frame appearance. The benchmark is organized into three complementary 18 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion   
+
+> Table 7. Ablation on loss components. Warp consistency and joint depth-motion supervision are critical for physics-consistent generation.
+
+Configuration Physics-IQ (%) 
+
+Full model 25.6 
+
+w/o Lwarp 21.3 w/o Ldepth 19.8 w/o Lmotion 20.5 w/o Lrgb-warp 24.1 evaluation tiers that progressively increase the level of spatiotemporal reasoning required. The first tier assesses per-frame 3D geometry accuracy , measuring whether each generated frame exhibits correct static geometry under a fixed camera setting. The second tier evaluates temporal geometry and motion consistency , probing whether predicted geometry remains self-consistent across adjacent frames under motion. The final tier focuses on explicit 4D reconstruction , testing the model’s ability to recover continuous 4D scene structure and object trajectories over extended time horizons, including reasoning at unseen timestamps. Together, these three tiers provide a comprehensive and diagnostic evaluation of geometry, motion, and world-level coherence, enabling fine-grained analysis of where and how video generation models succeed or fail in representing dynamic 4D worlds. 
+
+E.1. Per-frame 3D Geometry Evaluation 
+
+This experiment evaluates whether the generated videos exhibit accurate per-frame 3D geometry under a fixed camera setting. Our goal is to assess static geometric correctness independently of temporal effects, focusing on whether each frame reflects proper 3D scene understanding rather than purely appearance-level realism. E.1.1. E XPERIMENTAL SETTING 
+
+We evaluate per-frame geometry using simulation data with ground-truth depth annotations. For each method, we generate videos conditioned on the same initial frames and prompts, and extract the predicted depth maps from the corresponding depth heads. All evaluations are conducted frame-wise, without enforcing temporal consistency, to isolate static 3D geometry accuracy. To ensure a fair comparison, all models are evaluated on identical test scenes with fixed camera intrinsics and viewpoints. Video quality metrics are computed on the generated RGB frames, while depth accuracy is measured by comparing predicted depth against simulation ground truth. E.1.2. E VALUATION METRICS 
+
+We assess per-frame 3D geometry accuracy using standard depth estimation metrics, including Absolute Relative Error (AbsRel), Root Mean Squared Error (RMSE), and threshold accuracy metrics δ1, δ2, and δ3. Lower AbsRel and RMSE indicate more accurate depth prediction, while higher δ scores reflect better geometric correctness. In addition to geometric accuracy, we report common video quality metrics to verify that improvements in depth estimation do not come at the cost of visual fidelity. Specifically, we measure Fr ´echet Video Distance (FVD), Structural Similarity Index (SSIM), and Peak Signal-to-Noise Ratio (PSNR) on the generated RGB videos. E.1.3. R ESULTS AND ANALYSIS 
+
+Table 3 reports per-frame depth accuracy and video quality results. Phys4D achieves substantially lower AbsRel and RMSE compared to all baselines, indicating more accurate per-frame 3D geometry reconstruction. Notably, Phys4D also attains significantly higher δ1, δ2, and δ3 scores, suggesting improved geometric correctness across a wide range of depth thresholds. Importantly, these gains in geometric accuracy do not compromise visual quality. Phys4D maintains competitive or superior FVD, SSIM, and PSNR scores relative to baseline video generation models. These results demonstrate that Phys4D improves per-frame 3D understanding while preserving high-quality video synthesis, validating the effectiveness of our 19 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+geometry-aware training strategy. 
+
+E.2. Temporal Geometry & Motion Consistency 
+
+This experiment evaluates whether the predicted geometry and motion remain temporally self-consistent across adjacent frames. Under a fixed camera setting, temporal consistency provides a strong test of whether the model captures coherent scene evolution rather than producing individually plausible but temporally inconsistent frames. E.2.1. E XPERIMENTAL SETTING 
+
+We evaluate temporal geometry and motion consistency on video sequences generated by different models. For baseline methods, depth and optical flow are obtained using off-the-shelf estimators (OTF), specifically DepthAnythingV2 for depth and RAFT for optical flow. Phys4D directly predicts depth and motion using its learned geometry and motion heads. All evaluations are conducted under fixed camera intrinsics and viewpoints. Temporal consistency is assessed between consecutive frames by warping predicted quantities from time t to t+1 and comparing them against corresponding targets. This setting isolates temporal coherence from viewpoint changes and emphasizes consistency in geometry and motion prediction. E.2.2. E VALUATION METRICS 
+
+We consider two complementary aspects of temporal consistency. 
+
+Depth Warp Consistency. We warp the predicted depth map Dpred  
+
+> t
+
+to the next frame using ground-truth optical flow 
+
+F gt 
+
+> t→t+1
+
+, and compare it against the ground-truth depth Dgt 
+
+> t+1
+
+. Warping error is measured using both L1 and Charbonnier losses. To ensure a rigorous evaluation, errors are reported separately for occluded and non-occluded regions. 
+
+RGB / Latent Warp Consistency. We evaluate appearance-level temporal coherence by warping RGB frames or latent features using the predicted optical flow F pred 
+
+> t→t+1
+
+. The warped result is compared against the next-frame target using LPIPS and Charbonnier distances. Latent-space metrics are included to provide a more stable measure of temporal consistency that is less sensitive to pixel-level noise. E.2.3. R ESULTS AND ANALYSIS 
+
+Table 5 summarizes temporal warp consistency and motion dynamics results. Phys4D achieves substantially lower depth warp errors than all baselines, indicating more consistent geometric prediction across frames. This improvement holds for both L1 and Charbonnier losses and across occluded and non-occluded regions. Phys4D also outperforms baseline methods in RGB and latent warp consistency, achieving lower LPIPS and Charbonnier distances. These results suggest that Phys4D produces smoother and more coherent temporal evolution at both geometric and appearance levels. In addition, Phys4D exhibits significantly improved motion dynamics, with lower endpoint error (EPE), reduced outlier rates, and fewer large-motion failures. Overall, these results demonstrate that Phys4D enforces strong temporal self-consistency in geometry and motion, beyond what can be achieved by post-hoc off-the-shelf depth and flow estimation. 
+
+E.3. Full 4D Reconstruction Evaluation 
+
+This experiment evaluates whether a model represents an explicit 4D world with coherent geometry and dynamics, rather than a sequence of independently plausible frames. Given generated videos, we lift predicted depth and motion into a unified 
+
+(x, y, z, t ) representation and assess geometric accuracy, object-level dynamics, and temporal continuity over extended horizons. E.3.1. E XPERIMENTAL SETTING 
+
+All evaluations are conducted under a fixed-camera setting. Using predicted depth and motion, each video is lifted into a spatio-temporal point cloud or trajectory representation in camera coordinates. Simulation ground truth provides aligned depth, optical flow, and scene flow, allowing direct comparison in 3D space and time. Baselines rely on off-the-shelf depth and flow estimators (OTF), while Phys4D directly predicts geometry and motion through learned heads. 20 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+E.3.2. 4D G EOMETRY CONSISTENCY 
+
+Overview. This sub-experiment evaluates whether the model reconstructs a globally consistent 4D scene geometry across space and time. 
+
+Metric. We measure 4D Chamfer Distance between predicted and ground-truth spatio-temporal point sets. Each 4D point is represented as (x, y, z, τ ), where τ denotes normalized time. The metric penalizes both spatial misalignment and temporal inconsistency, providing a holistic measure of 4D geometric accuracy. 
+
+Results and Analysis. As shown in Table 4, Phys4D achieves the lowest 4D Chamfer Distance among all methods, indicating more accurate and temporally aligned 4D geometry. This suggests that Phys4D maintains coherent scene structure over time, rather than reconstructing geometry independently at each frame. E.3.3. W ORLDLINE AND TRAJECTORY DYNAMICS 
+
+Overview. This sub-experiment evaluates object-level motion consistency by examining 3D worldlines over time. The goal is to test whether a model preserves coherent object trajectories in (x, y, z, t ) space, rather than producing temporally unstable geometry that appears plausible only at individual frames. 
+
+Worldline Construction. We adopt a reviewer-safe protocol to construct worldlines that is independent of the model’s predicted motion. At the initial frame t = 1 , we uniformly sample N pixels {p1,i }Ni=1 from the valid object mask or depth-valid region. Each pixel is then tracked in 2D using ground-truth optical flow :
+
+pt+1 ,i = pt,i + F gt 
+
+> t→t+1
+
+(pt,i ), (15) yielding a stable and unambiguous 2D trajectory {pt,i }Tt=1 .The 2D trajectories are lifted into 3D using the model-predicted depth: 
+
+xpred  
+
+> t,i
+
+= Π −1(pt,i , D pred  
+
+> t
+
+), (16) where Π−1 denotes back-projection using known camera intrinsics. Ground-truth 3D worldlines xgt  
+
+> t,i
+
+are constructed analogously using ground-truth depth or scene flow from simulation. 
+
+Metrics. We report several complementary worldline metrics. The Worldline L2 Error measures the average 3D deviation over time: 
+
+WorldlineErr = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+1
+
+T
+
+> T
+
+X
+
+> t=1
+
+xpred  
+
+> t,i
+
+− xgt  
+
+> t,i 2
+
+. (17) To characterize temporal accumulation of errors, we report the Trajectory Drift as a function of time: 
+
+Drift( t) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+xpred  
+
+> t,i
+
+− xgt  
+
+> t,i 2
+
+. (18) We summarize this curve using both the mean drift and the final-time drift. We additionally report a Failure Rate , defined as the fraction of worldlines whose deviation exceeds a threshold τ at any time step, indicating track breakage or physically implausible motion. Finally, we report the average valid trajectory length ,which reflects how long worldlines remain stable before failure. We report several complementary worldline metrics: Worldline L2 Error measures the average 3D positional deviation between predicted and ground-truth trajectories across all time steps. Mean Drift quantifies the average accumulated deviation over time, while Final Drift captures long-horizon error at the end of the sequence. Fail Rate measures the fraction of trajectories that deviate beyond a predefined threshold, indicating track breakage or physically implausible motion. Finally, Trajectory Length reports the average valid duration of tracked worldlines, reflecting temporal stability. 21 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+Results and Analysis. As shown in Table 4, Phys4D achieves lower worldline error, reduced drift accumulation, and fewer trajectory failures than all baselines. These results indicate improved long-horizon motion coherence and object identity preservation in 3D space. E.3.4. N OVEL -T IME INTERPOLATION 
+
+Overview. This sub-experiment evaluates temporal continuity by testing whether the learned representation supports coherent geometry at unseen timestamps . Unlike C.3, which evaluates consistency at observed frames, C.4 probes whether the model encodes a continuous underlying 4D world. 
+
+Protocol. Given a video sequence, we split the timeline into observed and novel timestamps: 
+
+Tobs = {0, 2, 4, . . . }, Tnovel = {1, 3, 5, . . . }. (19) Only observed frames are used to construct the 4D representation. For each novel time t + 1 ∈ T novel , we estimate geometry via flow-based interpolation. Specifically, we warp predicted depth from the previous observed frame: 
+
+˜Dt+1 = warp 
+
+
+
+Dpred  
+
+> t
+
+, F pred 
+
+> t→t+1
+
+
+
+, (20) where F pred  
+
+> t→t+1
+
+is the predicted optical flow. This yields an interpolated depth estimate at the novel timestamp. 
+
+Metrics. We report two primary metrics. The Novel-Time Depth Error measures geometric accuracy at unseen times: 
+
+DepthErr novel = 1
+
+|T novel |
+
+X
+
+> t∈T novel
+
+˜Dt − Dgt  
+
+> t1
+
+. (21) The Novel-Time Warp Error evaluates temporal consistency by comparing the interpolated depth against a motion-warped reference: 
+
+WarpErr novel = warp( Dpred  
+
+> t−1
+
+, F gt 
+
+> t−1→t
+
+) − ˜Dt 1
+
+. (22) Lower values indicate better temporal continuity of the reconstructed 4D scene. 
+
+Results and Analysis. Phys4D achieves lower novel-time depth error than all baselines (Table 4), indicating more accurate interpolation at unseen timestamps. Warp error remains comparable to strong baselines, suggesting that Phys4D maintains temporal consistency while improving geometric fidelity. 
+
+## F. Preliminary and Theory 
+
+F.1. Flow Matching for Video Generation 
+
+Flow-based generative models provide a continuous alternative to diffusion models for learning complex data distributions. Similar to diffusion models (Sohl-Dickstein et al., 2015; Song & Ermon, 2019; Ho et al., 2020), flow generative models aim to transform samples from a simple noise distribution into data samples by learning a time-dependent velocity field that governs a deterministic probability flow (Papamakarios et al., 2021; Song et al., 2021; Xu et al., 2022; Lipman et al., 2023; Liu et al., 2023). Specifically, given an initial noise sample z0 ∼ N (0, I) and a target data sample z1 ∼ q(z), flow-based models define a continuous trajectory zt evolving according to an ordinary differential equation (ODE): 
+
+dzt
+
+dt = vt(zt), (23) where vt denotes a time-dependent velocity field parameterized by a neural network. Recent works propose flow matching as a simulation-free training framework for learning such velocity fields (Albergo & Vanden-Eijnden, 2023). Instead of solving stochastic differential equations or estimating score functions, flow matching directly regresses the model-predicted velocity field onto a target conditional vector field that defines a probability path 22 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+toward data samples. Following the flow matching framework (Lipman et al., 2023; Liu et al., 2023), the model is trained by minimizing 
+
+LFM = Et, z0,z1
+
+h
+
+∥vθ (zt, t ) − ut(zt | z1)∥22
+
+i
+
+, (24) where ut(· | z1) is a predefined conditional vector field and zt is sampled from the corresponding conditional probability path. A commonly used and effective choice is linear interpolation between noise and data: 
+
+zt = tz1 + (1 − t)z0, ut(zt | z1) = z1 − z0, (25) which induces a Gaussian conditional distribution zt ∼ N (tz1, (1 − t)2I). Notably, flow matching is not restricted to Gaussian endpoints or linear paths and can be generalized to interpolate between arbitrary distributions (Albergo & Vanden-Eijnden, 2023; Liu et al., 2023). This flexibility has recently enabled efficient large-scale generative modeling, including applications to high-dimensional and structured data such as videos, where flow-based formulations offer favorable trade-offs between sampling efficiency and temporal coherence (Xu et al., 2022; Lin et al., 2024b; Peng et al., 2025). 
+
+F.2. Denoising as a Markov Decision Process 
+
+We view the iterative denoising procedure of video generative models as a sequential decision-making problem. Following prior work on reinforcement learning for generative diffusion and flow models (Wallace et al., 2023; Ren et al., 2024a), we cast the reverse generative process as a finite-horizon Markov Decision Process (MDP). At each timestep, the state is defined as 
+
+st ≜ (c, t, zt), (26) where c denotes the conditioning prompt, t the current reverse-time index, and zt the latent variable. An action corresponds to producing the next latent state, 
+
+at ≜ zt−1, (27) and the policy is induced by the generative model, 
+
+πθ (at | st) ≜ pθ (zt−1 | zt, c ). (28) The transition dynamics are deterministic and enforce consistency between consecutive states: 
+
+P (st−1 | st, a t) = δ(c) δ(t − 1) δ(zt−1), (29) where δ(·) denotes the Dirac delta distribution. Trajectories terminate after T denoising steps, starting from the initial distribution 
+
+ρ0(sT ) = p(c) δ(T ) N (0, I). (30) Rewards are only assigned upon completion of the denoising process: 
+
+R(st, a t) = 
+
+(
+
+r(z0, c ), t = 0 ,
+
+0, otherwise , (31) where r(z0, c ) is given by our simulation grounded reward function. This formulation enables direct optimization of sample-level objectives without modifying the generative architecture. 
+
+F.3. Stochasticizing Flow-Based Generative Processes 
+
+Flow matching and rectified flow models define deterministic sampling trajectories governed by ordinary differential equations (ODEs). Specifically, the reverse-time evolution of the latent variable is given by 
+
+dzτ = vθ (zτ , τ ) dτ, (32) where vθ is the learned velocity field. While such deterministic dynamics yield efficient sampling, they are insufficient for policy exploration in reinforcement learning. 23 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+To enable exploration while preserving the marginal distribution of generated samples, we convert the ODE into an equivalent stochastic differential equation (SDE). This construction follows the probability flow principle, which establishes that a suitable SDE can share the same marginal densities as the original deterministic flow (Song et al., 2021; Liu et al., 2023; Albergo & Vanden-Eijnden, 2023). The resulting Flow-SDE takes the form 
+
+dzτ =
+
+
+
+vθ (zτ , τ ) − 12 g2(τ ) ∇ log qτ (zτ )
+
+
+
+dτ + g(τ ) dwτ , (33) where qτ denotes the marginal density of zτ , g(τ ) controls the noise magnitude, and wτ is a Wiener process. For rectified flows, the score function admits a closed-form expression in terms of the velocity field (Liu et al., 2023): 
+
+∇ log qτ (zτ ) = − 1
+
+τ
+
+ zτ + (1 − τ )vθ (zτ , τ ). (34) Substituting this relation into Eq. (7) and choosing g(τ ) = στ , we obtain 
+
+dzτ =
+
+h
+
+vθ (zτ , τ ) + σ2
+
+> τ
+
+2τ
+
+ zτ + (1 − τ )vθ (zτ , τ )i
+
+dτ + στ dwτ . (35) This stochastic formulation introduces controlled exploration into the generative process while retaining the original marginal distributions, making it well suited for reinforcement learning fine-tuning. 
+
+F.4. Policy Optimization with PPO 
+
+Given the MDP formulation and the stochastic sampling dynamics, we optimize the generative policy using Proximal Policy Optimization (PPO) (Schulman et al., 2017). At each timestep, the policy ratio is defined as 
+
+rt(θ) = πθ (at | st)
+
+πθold (at | st) , (36) and the clipped PPO objective is 
+
+LPPO = Et
+
+h
+
+min  rt(θ) ˆAt, clip( rt(θ), 1 − ϵ, 1 + ϵ) ˆAt
+
+i
+
+, (37) where ˆAt denotes the estimated advantage. This objective stabilizes policy updates and has been shown effective for fine-tuning diffusion- and flow-based generative models (Black et al., 2023; Ren et al., 2024b; Liu et al., 2025b). 
+
+## G. Related Work 
+
+G.1. Large-Scale Video Generation and World Models 
+
+Recent large-scale video generation models, such as Sora (OpenAI, 2024), Veo (Google DeepMind, 2024), and MovieDiffu-sion (Polyak et al., 2024), have achieved impressive visual realism and long-horizon coherence, motivating their use as foundations for generative world modeling. Recent world model systems further extend these capabilities toward persistent and interactive environments, either by explicitly constructing 3D scenes or by augmenting video generation with memory and feedback mechanisms (Chen et al., 2025d; Agarwal et al., 2025; Yu et al., 2024b; Wang et al., 2025; Team et al., 2025). While these approaches emphasize scalability, global coherence, and interactivity, the underlying physical state is often implicit, making fine-grained physical consistency —such as local geometry–motion coupling and precise object interactions—difficult to enforce. In contrast, our work explicitly targets fine-grained physics as a core objective, complementing large-scale world modeling with geometry- and motion-consistent 4D representations. G.2. 4D Datasets for Dynamic World Modeling 
+
+Datasets that jointly capture spatial geometry and temporal dynamics are essential for studying 4D world modeling. Early efforts focus on controlled environments or specific interaction settings. For example, HOI4D provides large-scale egocentric 24 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+RGB-D sequences with dynamic point clouds, semantic labels, and pose annotations for category-level human–object interaction analysis (Liu et al., 2022). Similarly, BEHAVE and InterCap capture human–object interactions using multi-view RGB-D systems, enabling detailed reconstruction of articulated motion and object dynamics (Bertiche et al., 2022; Huang et al., 2022). While these datasets offer high-quality annotations, they are limited in scene diversity and scale. To improve realism and coverage, several datasets adopt multi-view capture systems to reconstruct dynamic scenes in a 4D setting. Panoptic Studio and subsequent extensions provide synchronized multi-camera recordings for full-body motion capture and free-viewpoint reconstruction (Joo et al., 2015). More recent datasets such as Neu3D and Dynamic3DScenes leverage multi-view video to recover time-varying geometry and appearance of dynamic scenes (Lin et al., 2023; Li et al., 2023). These datasets support 4D reconstruction benchmarks but are typically restricted to studio environments and short temporal spans. Recent works further scale up 4D datasets by exploiting in-the-wild videos and automatic annotation pipelines. Dynamic-Verse introduces a large-scale multimodal 4D dataset derived from internet videos, providing metric-scale geometry, camera parameters, instance-level masks, motion cues, and hierarchical textual descriptions across over 100K dynamic scenes (Wen et al., 2025b). Complementary datasets such as OmniWorld and Ego-Exo4D extend this direction by covering diverse environments, viewpoints, and sensor modalities, facilitating evaluation of general-purpose 4D world understanding models (Zhou et al., 2025; Grauman et al., 2023). Collectively, these datasets form the foundation for benchmarking models that jointly reason about geometry, motion, and semantics in dynamic real-world scenes. 
+
+G.3. Benchmarks for Physics-Aware Video Generation 
+
+To facilitate standardized evaluation, several benchmarks have been proposed to assess general video generation quality. VBench (Huang et al., 2024) and EvalCrafter (Liu et al., 2024b) provide comprehensive evaluation frameworks covering dimensions such as visual fidelity, diversity, temporal coherence, and scalability. T2V-CompBench (Sun et al., 2024) further focuses on compositionality, testing whether generated videos faithfully follow complex and multi-object textual prompts. While these benchmarks are effective for measuring appearance-level and semantic alignment, they do not explicitly evaluate physical plausibility. Recent studies highlight the importance of physical realism in video generation and propose dedicated physics-oriented benchmarks. VideoPhy (Bansal et al., 2024a) evaluates physical commonsense reasoning in generated videos, while PhyGenBench (Meng et al., 2024) assesses adherence to basic physical laws such as object permanence and gravity. DEVIL (Liao et al., 2024) emphasizes dynamic realism, focusing on motion continuity and temporal consistency, and Physics-IQ (Motamed et al., 2025b) further probes understanding of fundamental physical principles including fluid dynamics and thermodynamics. Despite these advances, existing benchmarks are often limited in scenario diversity or focus on a narrow set of physical laws. Motivated by these limitations, recent efforts introduce substantially expanded benchmarks that evaluate video generation models across a broader range of physical phenomena, including both realistic and deliberately unphysical dynamics (Meng et al., 2025b). Empirical results show that state-of-the-art models perform significantly worse under identical settings, revealing the increased difficulty and diagnostic value of physics-aware benchmarks and underscoring the need for models that reason about physical consistency beyond visual realism. 
+
+G.4. Physics-Aware Generation 
+
+To address the lack of physical plausibility in video generation, recent works have explored incorporating explicit physical knowledge into generative pipelines. Depending on when and how physical priors are injected, existing methods can be broadly categorized into three types. 
+
+Generation then Physical Simulation. This line of work first generates static images or 3D assets using generative models, and subsequently applies external physics simulators to animate them into dynamic scenes or videos. Representative approaches employ particle- or continuum-based simulators, such as the Material Point Method (MPM), to model object deformation and motion (Stomakhin et al., 2013b). Recent studies adopt this paradigm to produce physically plausible dynamics by post-processing generated content with physics engines (Lin et al., 2024a; Hsu et al., 2024). While this approach offers explicit and controllable physical behavior, it typically requires substantial manual effort and task-specific simulator design, limiting scalability and generalization. 25 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+Physical Simulation then Generation. Another category of methods first performs physical simulation to obtain plausible motion trajectories or object states, which are then used as conditional inputs for video generation models. For example, PhysGen (Lin et al., 2024a) segments dynamic objects from an input image, simulates their motion using Newtonian mechanics, and conditions a video generator on both simulated trajectories and static backgrounds. Although this strategy improves controllability and motion realism, the generative model itself does not possess intrinsic physical reasoning capability, and physical rules and parameters must be manually specified for each scenario. 
+
+Generation with Learned Physics Priors. More recent approaches aim to incorporate physics priors directly into the generative process by leveraging learned or pretrained models (Chang et al., 2024; Zhang et al., 2025; Chefer et al., 2025). These methods encode physical knowledge as latent dynamics, auxiliary supervision, or physics-aware evaluators. For instance, PhysT2V (Xue et al., 2025) employs large language models and vision–language models to iteratively evaluate and refine generated videos for improved physical consistency. However, such approaches often rely on implicit physical understanding acquired through data fitting, which may fail under physically challenging or out-of-distribution scenarios. Our method broadly follows this paradigm while grounding learned physics priors with physics-clean supervision to improve robustness and generalization. 
+
+## H. Physics Simulation 
+
+H.1. Simulation Methodology 
+
+Our simulation pipeline incorporates multiple physics solvers to model diverse physical phenomena encountered in complex interactive scenes, including cloth, fluids, deformable objects, rigid bodies, and environmental flow. Each component is selected to balance physical realism, numerical stability, and large-scale data generation efficiency. H.1.1. C LOTH SIMULATION VIA POSITION -B ASED DYNAMICS 
+
+We simulate garments using a Position-Based Dynamics (PBD) formulation, which represents cloth as a set of particles connected by geometric constraints. The cloth surface is discretized into a triangular mesh, where each vertex corresponds to a particle with associated position, velocity, and mass properties. Physical behavior emerges from enforcing constraints that regulate stretching, bending, and collisions. Stretching constraints preserve local distances between neighboring particles, preventing excessive elongation, while bending constraints maintain angular relationships across adjacent mesh elements to model resistance to folding. Collision constraints ensure non-penetration between cloth particles and other objects in the scene. Rather than integrating forces explicitly, PBD iteratively projects particle positions to satisfy these constraints at each time step, yielding stable and efficient cloth dynamics even under large deformations. H.1.2. F LUID SIMULATION WITH PARTICLE -B ASED CONSTRAINTS 
+
+Fluid behavior is simulated using a particle-based PBD framework, where each particle represents a small volume of fluid. The primary objective is to enforce approximate incompressibility while maintaining stable interactions with solid boundaries. This is achieved by imposing density constraints that regulate local particle concentration, together with collision constraints that handle fluid–solid interactions. At each simulation step, particles are advanced under external forces, then iteratively corrected to satisfy density and collision constraints. This approach enables visually plausible fluid motion with high numerical stability, making it suitable for large-scale data generation. H.1.3. D EFORMABLE OBJECT SIMULATION VIA FINITE ELEMENTS 
+
+For volumetric deformable objects, we employ a Finite Element Method (FEM) formulation that captures elastic and damping effects under external forces. Objects are discretized into tetrahedral meshes, with material behavior governed by elasticity, density, and damping parameters. The simulation separates meshes used for visualization, collision detection, and physical computation, allowing efficient resolution of contact and deformation. By solving the equations of motion over finite elements, the simulator produces realistic volumetric deformations while maintaining controllable computational cost. 26 Phys4D: Fine-Grained Physics-Consistent 4D Modeling from Video Diffusion 
+
+H.1.4. E NVIRONMENTAL FLOW AND WIND EFFECTS 
+
+To model environmental forces such as wind, we incorporate flow-based models that approximate the interaction between moving air and scene objects. These models capture directional flow, turbulence, and pressure-induced forces that influence both rigid and deformable bodies. Wind effects are specified through configurable flow fields that define direction and magnitude, and their influence is applied consistently across interacting objects. This enables dynamic responses such as cloth fluttering and object deflection under varying environmental conditions. H.1.5. R IGID BODY DYNAMICS 
+
+Rigid objects are simulated using standard rigid body dynamics, where objects are assumed to maintain fixed internal geometry. Their motion is governed by linear and angular dynamics under external forces and collision impulses. Collision handling relies on geometric approximations such as convex hulls or signed distance representations to balance accuracy and efficiency. Constraint solvers ensure stable resolution of contacts and joint limits, allowing reliable simulation of complex multi-object interactions. 
+
+H.2. Parameterization and Physical Diversity 
+
+Rather than tuning individual parameters for specific outcomes, we adopt broad parameter ranges to encourage physical diversity across scenes. Within each physics module, parameters controlling stiffness, damping, friction, density, and interaction strength are randomized within physically plausible bounds. This strategy enables the simulator to generate a wide spectrum of behaviors for cloth, fluids, deformable objects, and rigid bodies, while avoiding overfitting to narrow physical regimes. As a result, the collected data exhibits substantial variability in geometry, motion patterns, and interaction dynamics, which is critical for training robust 4D world models. 27

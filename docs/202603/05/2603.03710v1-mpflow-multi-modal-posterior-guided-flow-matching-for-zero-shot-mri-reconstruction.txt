@@ -1,0 +1,332 @@
+Title: MPFlow: Multi-modal Posterior-Guided Flow Matching for Zero-Shot MRI Reconstruction
+
+URL Source: https://arxiv.org/pdf/2603.03710v1
+
+Published Time: Thu, 05 Mar 2026 01:31:00 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# MPFlow: Multi-modal Posterior-Guided Flow Matching for Zero-Shot MRI Reconstruction 
+
+Seunghoi Kim 1,2⋆ Chen Jin 4 Henry F. J. Tregidgo 1,2 Matteo Figini 1,3
+
+Daniel C. Alexander 1,3 
+
+> 1
+
+Hawkes Institute, UCL 2 Dept. of Medical Physics and Biomedical Engineering, UCL  
+
+> 3
+
+Dept. of Computer Science, UCL 4 Centre for AI, DS&AI, AstraZeneca, UK 
+
+Abstract. Zero-shot MRI reconstruction relies on generative priors, but single-modality unconditional priors produce hallucinations under severe ill-posedness. In many clinical workflows, complementary MRI acquisi-tions (e.g. high-quality structural scans) are routinely available, yet exist-ing reconstruction methods lack mechanisms to leverage this additional information. We propose MPFlow , a zero-shot multi-modal reconstruc-tion framework built on rectified flow that incorporates auxiliary MRI modalities at inference time without retraining the generative prior to improve anatomical fidelity. Cross-modal guidance is enabled by our pro-posed self-supervised pretraining strategy, Patch-level Multi-modal MR Image Pretraining (PAMRI) , which learns shared representations across modalities. Sampling is jointly guided by data consistency and cross-modal feature alignment using pre-trained PAMRI , systematically sup-pressing intrinsic and extrinsic hallucinations. Extensive experiments on HCP and BraTS show that MPFlow matches diffusion baselines on image quality using only 20% of sampling steps while reducing tumor halluci-nations by more than 15% (segmentation dice score). This demonstrates that cross-modal guidance enables more reliable and efficient zero-shot MRI reconstruction. Code will be released upon acceptance. 
+
+Keywords: MRI reconstruction · Generative models · Multi-modal 
+
+## 1 Introduction 
+
+Magnetic resonance imaging (MRI) reconstruction from low-quality measure-ments is an important inverse problem in medical imaging. MRI data are often sub-sampled or acquired with thick slices to reduce acquisition time or improve signal-to-noise ratio, resulting in substantial information loss. Recent deep learning methods have achieved strong performance in MRI re-construction [1, 8, 10, 17, 19, 28, 26, 31], with diffusion models emerging as pow-erful generative priors for inverse problems in medical imaging. These diffusion-based approaches have been extended to zero-shot reconstruction [6, 12, 29, 15,  
+
+> ⋆
+
+Correspondence to: seunghoi.kim.17@ucl.ac.uk 
+
+> arXiv:2603.03710v1 [cs.CV] 4 Mar 2026
+
+2 Kim et al. (a) Training  PAMRI      
+
+> Patch-wise
+> Adaptive NCE
+> Recon. Loss
+> Feature Extractor
+> (Auxiliary)
+> Decoder
+> Decoder
+> Flow Matching
+> Model
+> PAMRI
+> Loss
+> Data
+> Consistency
+> Feat. Extractor
+> (Target)
+> Feat. Extractor
+> (Auxillary)
+> (b) Image reconstruction with MPFlow
+> Data Consistency
+> Forward
+> Model
+> Patchify
+> Patchify
+> Feature Extractor
+> (Target)
+> Recon. Loss
+> ...
+> ... ... ... ...
+> ...
+> ...
+> ...
+> ... ...
+> ...
+> Paired Patches
+> Noise opt.
+> Target
+> Auxiliary
+
+Fig. 1: Schematic diagram of the proposed framework. (a) PAMRI : cross-modal feature alignment by learning a shared representation space across dif-ferent MRI contrasts, (b) MPFlow : flow-matching prior is guided by both data consistency and PAMRI , to reduce intrinsic and extrinsic hallucinations. 20], where a learned prior is guided by data consistency during sampling, elim-inating the need for paired supervision. More recently, flow matching has been explored to improve sampling efficiency within the natural image domain [23, 13]. However, these methods rely on unconditional priors, which may produce anatomically plausible yet incorrect reconstructions under severe ill-posedness. This limitation manifests as hallucinations , which can be categorized as in-trinsic , violating measurement consistency, or extrinsic , remaining measurement-consistent but unsupported by the ground truth (e.g. within the measurement null space) [2, 15]. Importantly, extrinsic hallucinations may persist even when data-consistency errors are small. Single-modality priors lack a mechanism to re-solve ambiguity among multiple plausible null-space solutions without updating its prior or providing additional information. In clinical practice, multi-sequence protocols, such as multi-parametric imaging (diffusion, perfusion MRI) or multi-contrast structural scans, are routinely acquired and provide complementary anatomical information. Although conditional approaches have explored multi-modal MRI reconstruction [5, 11, 18, 7], they do not offer a principled mechanism to incorporate auxiliary modalities when the generative prior is unconditional. To address this limitation, we introduce MPFlow , a zero-shot multi-modal MRI reconstruction framework based on flow matching that incorporates aux-iliary MRI acquisitions at inference time without updating its unconditional prior. As illustrated in Fig. 1, we first train PAMRI , a self-supervised frame-work that learns patch-level cross-modal correspondences between target (e.g. T2) and auxiliary (e.g. T1) modalities via a patch-wise adaptive InfoNCE loss. The temperature is dynamically chosen by normalized mutual information of paired patches to relax the contrastive penalty for augmentation-distorted pos-itive pairs, preserving modality-specific structural details. At inference, the rec-tified flow prior is jointly guided by data consistency and PAMRI , reducing 
+
+intrinsic and extrinsic hallucinations . To the best of our knowledge, this is the first zero-shot MRI reconstruction framework incorporating auxiliary imaging modalities at inference time. Our contributions are threefold: (1) We formulate multi-modal zero-shot MRI reconstruction, where an unconditional prior leverages auxiliary modalities at in-Title Suppressed Due to Excessive Length 3
+
+ference without modifying the prior, and show theoretically and empirically that such conditioning reduces hallucinations. (2) We propose MPFlow , a zero-shot multi-modal flow-matching framework, integrating PAMRI , our self-supervised patch-level cross-modal alignment strategy, into a posterior update with noise optimization to mitigate poor trajectory initialization. (3) We demonstrate that MPFlow matches diffusion baselines in image quality with only 20% of the sam-pling steps, while reducing hallucinations by 15% in tumor segmentation (Dice score) and 26% in hallucination score (SHAFE) on BraTS and HCP. 
+
+## 2 Method 
+
+2.1 Problem Formulation 
+
+Let X ∈ RN for spatial domain tasks (e.g. super-resolution) and X ∈ CN for k-space tasks (e.g. subsampling), and let xtrue ∈ X denote the target high-quality MRI scan. We consider the general degradation model: 
+
+y = F(xtrue ) + η, (1) where y ∈ Y are the acquired measurements, η ∼ N (0 , σ 2I) is additive Gaussian measurement noise, and F : X → Y is the forward operator (e.g. k-space sub-sampling, spatial downsampling, or blurring). Generative priors such as diffusion or flow models regularize reconstruction via posterior inference, ˆx ∼ p(x | y),combining data consistency with a learned prior. However, when F is highly ill-posed, the posterior may assign probability mass to anatomically plausible but incorrect solutions, leading to hallucinations. While data consistency re-duces intrinsic hallucinations, extrinsic hallucinations can still persist without prior-update or injecting additional information. 
+
+2.2 Hypothesis and Justification 
+
+We hypothesize that when registered modalities encode the same anatomy with complementary information, joint conditioning on measurements and an auxil-iary modality reduces both intrinsic and extrinsic hallucinations. 
+
+Justification Let x denote the target-modality image, and xaux a high-quality auxiliary modality. In a unimodal setting, the posterior p(x | y) ∝ p(y | x) p(x) is typically broad due to the weakly informative likelihood (under highly ill-posed setting), leading to extrinsic hallucinations. From an information-theoretic perspective, the remaining uncertainty is quan-tified by the conditional entropy H(x | y). When additionally conditioning on an auxiliary modality, the posterior becomes p(x | y, x aux ) ∝ p(y | x) p(x | xaux ),
+
+and the uncertainty satisfies: 
+
+H(x | y, x aux ) = H(x | y) − I(x; xaux | y), (2) where I(x; xaux | y) denotes the conditional mutual information provided by the auxiliary modality beyond the measurement. Since registered MR modalities 4 Kim et al. 
+
+share overlapping but non-identical anatomical information, I(x; xaux | y) >
+
+0, implying H(x | y, x aux ) < H (x | y). Thus, data consistency and auxiliary conditioning can suppress intrinsic and extrinsic hallucinations, respectively. 
+
+2.3 Rectified Flow 
+
+We use rectified flow [21] from flow-matching as the generative prior. Rectified flow defines a continuous-time probability flow from a simple base distribution (e.g. Gaussian noise) to the data distribution via the ODE: 
+
+dx t
+
+dt = vθ (xt, t ), t ∈ [0 , 1] , (3) where vθ is a learned velocity field. We adopt a straight-line interpolation be-tween noise z ∼ N (0 , I ) at t = 0 and data x1 at t = 1 :
+
+xt = (1 − t)z + tx 1, v(xt, t ) = dx t
+
+dt = x1 − z. (4) The rectified flow objective minimizes 
+
+LFM = Et,z,x 1
+
+∥vθ (xt, t ) − (x1 − z)∥22
+
+. (5) Through this objective, rectified flow learns to approximate linear transport from noise to data. The near-linear and deterministic trajectories enable high-quality image generation with substantially fewer sampling steps than diffusion models. 
+
+2.4 Patch-level Multi-modal MR Image Pretraining (PAMRI) 
+
+We establish PAMRI , a contrastive feature alignment framework for multi-modal MR images. PAMRI uses independent encoders, ϕ(·) for the target and ψ(·)
+
+for the auxiliary modality, to map them into a shared latent space. This in-dependence disentangles modality-specific appearance from shared anatomical semantics. We adopt a lightweight yet effective ResNet18 [9] architecture for both encoders to minimize computational overhead at inference. MRI reconstruction is a dense task requiring fine-grained structural infor-mation, but conventional contrastive learning discards spatial detail. To pre-serve it, we operate on patches (e.g. 32 × 32 pixels) and introduce an auxil-iary reconstruction task. Given a batch of B paired patches {(ptar  
+
+> i
+
+, p aux  
+
+> i
+
+)}Bi=1 ,we compute normalized latent embeddings ui = ϕ(ptar  
+
+> i
+
+)/∥ϕ(ptar  
+
+> i
+
+)∥2 and wi =
+
+ψ(paux  
+
+> i
+
+)/∥ψ(paux  
+
+> i
+
+)∥2. This alignment is driven by our proposed adaptive con-trastive objective. Building upon InfoNCE loss [4], our loss evaluates both inter-and intra-modal negatives: LNCE = 12B
+
+PBi=1 (ℓ(ui, w i) + ℓ(wi, u i)) . The loss for a specific positive pair (zi, z j ), where zi ∈ { ui, w i}, is defined as: 
+
+ℓ(zi, z j ) = − log exp( z⊤ 
+
+> i
+
+zj /τ i,j )
+
+PBk=1 exp( z⊤ 
+
+> i
+
+uk/τ i,k ) + PBk=1 exp( z⊤ 
+
+> i
+
+wk/τ i,k ) − exp( z⊤ 
+
+> i
+
+zi/τ i,i ) .
+
+(6) Title Suppressed Due to Excessive Length 5
+
+Here, τi,j is an adaptive temperature scaled by the Normalized Mutual Infor-mation (NMI) between their corresponding raw patches: τi,j = τmin + ( τmax −
+
+τmin )(1 − NMI( pi, p j )) . This dynamically adjusts the contrastive penalty based on the inherent multi-modal information overlap. Specifically, for positive pairs substantially distorted by augmentations, the temperature increases, relaxing the pull to preserve modality-specific structural details crucial for downstream dense reconstruction. Lightweight decoders dtar , d aux are attached to regularize the representations via patch reconstruction: 
+
+Lrec = 1
+
+B
+
+> B
+
+X
+
+> i=1
+
+
+
+∥dtar (ϕ(ptar  
+
+> i
+
+)) − ptar  
+
+> i
+
+∥1 + ∥daux (ψ(paux  
+
+> i
+
+)) − paux  
+
+> i
+
+∥1
+
+
+
+. (7) The final objective becomes LSSL = LNCE + λrec Lrec . Rather than using mu-tual information as a direct pixel-level alignment loss, which struggles with multi-modal intensity variations (e.g. a tumor is bright in FLAIR but nearly isointense in T1), PAMRI elegantly uses it to weight the latent contrastive space. By dy-namically adjusting the temperature for naturally dissimilar patches, PAMRI 
+
+learns robust, modality-invariant representations that enable spatially structured and semantically meaningful posterior guidance. 
+
+2.5 Multi-modal Posterior-Guided Flow Matching 
+
+We perform posterior inference by guiding rectified flow with data consistency (DC) and cross-modal alignment using pre-trained PAMRI encoders from Sec. 2.4. At each timestep t, we project the current state to the clean image manifold via the estimate ˆx1|t = xt − (1 − t) vθ (xt, t ) to drive the posterior update. Over T
+
+sampling steps, the update in each time step becomes: 
+
+v(xt|y) = vθ (xt, t )
+
+| {z }
+
+> Prior
+
+−αt∇xt ∥F (ˆ x1|t) − y∥22
+
+| {z }
+
+> Intrinsic Reduction
+
++ λPLP(ϕ(P(ˆ x1|t)) , ψ (P(xaux ))) 
+
+| {z }
+
+> Extrinsic Reduction
+
+!
+
+,
+
+(8) where vθ (xt, t ) and αt denote the prior drift and step size. λP controls the LP’s strength. LP is MSE between normalized latent features of patches extracted via 
+
+P(·) from the current estimate ˆx1|t and the auxiliary xaux . DC reduces measure-ment space deviation, and LP minimizes deviations from the auxiliary image in the latent space, tackling both intrinsic and extrinsic hallucinations. 
+
+Initial noise optimization The initial noise z can influence the reconstruc-tion quality of flow-matching. To mitigate poor initializations, we sample S
+
+candidate seeds {z(s)}Ss=1 ∼ N (0 , I ) and perform a short warm-start of tnoise 
+
+steps in parallel. Each candidate is evaluated using the composite objective 
+
+Φ(x) = ∥F (x) − y∥22 + λPLP(x, x aux ), and we select: 
+
+s⋆ = arg min  
+
+> s∈{ 1,...,S }
+
+Φ
+
+
+
+ˆx(s)1|tnoise 
+
+
+
+. (9) 6 Kim et al. 
+
+Sampling then continues only with the selected seed. Unlike previous method [30] that optimize via DC only, Φ(·) jointly uses DC and PAMRI to select the candi-date with lowest intrinsic and extrinsic hallucinations, yielding better posterior trajectories with minimal overhead. 
+
+## 3 Experiments 
+
+3.1 Experimental Setup Datasets We evaluate our method on two widely used datasets: the Human Connectome Project (HCP) [25] and BraTS [22]. We perform T2 super-resolution (4×) on HCP, and FLAIR k-space reconstruction ( 8×) on BraTS, both using fully sampled T1 as the auxiliary modality. For HCP, we follow prior work [15] for the testing (N=200) and for BraTS, we use the official validation set (N=250) to follow the standard protocol. Experiments are conducted on axial slices. 
+
+Implementation Details Diffusion and rectified flows are trained on same dataset for 100k iterations. For MPFlow , we set λP = 0 .1, λrec = 0 .5, S = 8 , and 
+
+tnoise = 0 .2T . Patch size 32 × 32 is used for PAMRI pretraining. 
+
+Baselines & Metrics We compare against DIP [27], DPS [6], DiffDeuR [20], and DynamicDPS [15] (without warm-start). Since no existing zero-shot method incorporates auxiliary imaging modalities, all baselines are unimodal. Recon-struction quality is evaluated using PSNR, SSIM, and LPIPS [32]. Hallucina-tions are assessed via (i) measurement-space error, (ii) tumor segmentation Dice score, and (iii) SHAFE (Semantic Hallucination Assessment via Feature Evalua-tion) [16]. For Dice score, a Swin-UNet [3] trained on BraTS FLAIR is applied to both ground-truth and reconstructed images. SHAFE measures semantic feature discrepancies via a pre-trained vision encoder (DINO [24]) with exponentially weighted aggregation to emphasize hallucinated structures. Table 1: Quantitative comparisons on HCP (SR ×4) and BraTS (Acc. 
+
+×8). T denotes total time steps; DDIM used for T = 100 . p-values are calculated against the second-best baseline for each metric.                                                                               
+
+> HCP (SR ×4) BraTS (Acc. ×8)
+> Method TPSNR (↑)SSIM (↑)LPIPS (↓)PSNR (↑)SSIM (↑)LPIPS (↓)DIP [27] 3K 24 ±.7 .66 ±.03 .30 ±.03 25 ±2.4 .57 ±.10 .19 ±.01 DiffDeuR [20] .5K 23 ±1.6 .78 ±.04 .23 ±.04 30 ±1.9 .88 ±.02 .12 ±.02 DPS [6] .1K 23 ±1.4 .69 ±.16 .20 ±.08 23 ±5.8 .65 ±.27 .23 ±.12 DPS [6] .5K 24 ±1.0 .79 ±.03 .15 ±.01 25 ±2.4 .89 ±.01 .09 ±.02 DynamicDPS [15] .1K 23 ±1.8 .69 ±.18 .21 ±.09 24 ±5.6 .68 ±.16 .22 ±.12 DynamicDPS [15] .5K 24 ±.9 .79 ±.03 .15 ±.02 31 ±1.9 .89 ±.02 .09 ±.02 MPFlow (Ours) .1K 23 ±.9 .78 ±.03 .16 ±.02 31 ±1.8 .90 ±.02 .08 ±.01 MPFlow (Ours) .5K 25 ±.9 .82 ±.03 .14 ±.02 31 ±.9 .91 ±.02 .07 ±.01 p-value -<.001 <.001 .031 .016 .001 <.001 Title Suppressed Due to Excessive Length 7
+
+3.2 Main Results 
+
+Tab. 1 presents quantitative comparisons under varying sampling budgets. Across all tasks and metrics, MPFlow consistently outperforms zero-shot baselines, with all improvements statistically significant ( p < 0.05 ). At T = 500 , MPFlow out-performs the second best baseline (DynamicDPS) by 2–4% in SSIM and 6–22% in LPIPS, despite DynamicDPS requiring multiple inner steps per timestep, demonstrating MPFlow ’s efficiency. The improvements are more pronounced in the time-constrained setting ( T = 100 ). Diffusion-based methods suffer large degradation with SSIM and LPIPS dropping 15–83% and increased variance, indicating unstable inference due to large discretization errors from DDIM sam-pling. In contrast, MPFlow exhibits marginal performance reduction (2.5–14%), demonstrating superior efficiency and robustness as the near-linear trajectories of rectified flow permit larger step sizes without significant discretization er-ror. Remarkably, MPFlow matches the reconstruction quality of diffusion-based baselines at T = 500 using only T = 100 steps. Fig. 2 presents visual comparisons of MPFlow against baseline methods. As highlighted in the red boxes, baselines introduce hallucinated structures includ-ing distorted sulci and incorrect tumor morphology, which can directly compro-mise clinical decisions such as surgical planning and radiotherapy contouring. In contrast, MPFlow preserves anatomically faithful structures with notably sharper tumor boundaries, demonstrating the benefit of cross-modal alignment via PAMRI . These qualitative results further demonstrate MPFlow ’s ability to reduce hallucinations and improve structural fidelity in clinically critical regions. DIP  DiffDeuR  DPS  DynamicDPS  MPFlow  Ground Truth 
+
+Fig. 2: Visual comparisons on HCP (top), BraTS (bottom). Highlighted red boxes show MPFlow clearly reduces hallucinations compared to the baselines. 
+
+3.3 Further Analysis 
+
+Global image quality metrics (e.g. PSNR, SSIM) often fail to capture halluci-nations, as they prioritize global fidelity while overlooking sparse, localized fail-ures [14, 16]. Instead, we evaluate hallucinations in Tab. 2 using measurement-space loss, SHAFE, and tumor segmentation Dice score. Across both datasets, 
+
+MPFlow substantially outperforms DynamicDPS in all hallucination metrics. Compared to vanilla MPFlow , MPFlow (full) reduces measurement-space loss 8 Kim et al. 
+
+Table 2: Quantitative hallucination evaluation on HCP and BraTS (T=100). We evaluate hallucination across baselines using measurement-space loss, SHAFE (HCP) and dice score on tumor segmentation (BraTS).                       
+
+> (a) Hallucination Analysis (HCP)
+> Method Meas. L ↓SHAFE ↓
+> DPS 3.84 ×10 −30.278 DynamicDPS 3.44 ×10 −30.274 MPFlow (vanilla) 1.60 ×10 −30.223 MPFlow (full) 5.86 ×10 −40.197
+> (b) Tumor Segmentation (BraTS)
+> Method Meas. L ↓Dice ↑
+> DPS 4.20 ×10 −20.618 DynamicDPS 4.51 ×10 −20.639 MPFlow (vanilla) 2.42 ×10 −30.695 MPFlow (full) 4.85 ×10 −40.740
+
+by 63% and 80% on HCP and BraTS respectively, while SHAFE and Dice fur-ther improve by 11% and 6.5%, confirming that jointly guiding the prior with data consistency and PAMRI suppresses both intrinsic and extrinsic hallucina-tions. Ablation results in Tab. 3a shows each component consistently improves re-construction quality and hallucination score, validating the effectiveness of our proposed modules. To assess PAMRI ’s role in reducing extrinsic hallucinations, we expect its benefit to scale with task severity, as greater ill-posedness yields larger null-space ambiguity. Tab. 3b supports this: ∆SSIM grows from 3.81% at 4× SR to 6.02% at 8 × SR, confirming that cross-modal guidance becomes in-creasingly crucial as data consistency alone cannot resolve null-space ambiguity. Table 3: Further analysis of MPFlow on HCP (T=100) . (Left) Component ablation on image quality and hallucination metrics, (Right) PAMRI’s benefit grows with task severity, confirming its role under severe ill-posedness.                    
+
+> (a) Component ablation on image qual-ity and hallucination metrics
+> Method SSIM ↑SHAFE ↓
+> Base. (T=100) 0.745 0.223 + PAMRI 0.774 0.200 + Noise Opt. 0.779 0.197
+> (b) Effect of PAMRI under varying SR task difficulty, measured by SSIM
+> Method 4x 6x 8x
+> w/o PAMRI 0.745 0.713 0.680 w PAMRI 0.774 0.741 0.721
+> ∆SSIM (%) 3.81 3.93 6.02
+
+## 4 Conclusion 
+
+We propose MPFlow , a multi-modal posterior-guided flow-matching framework for zero-shot MRI reconstruction. The auxiliary image is leveraged at inference time via PAMRI , our self-supervised contrastive pretraining strategy that learns shared cross-modal representations. At inference, the unconditional flow prior is jointly guided by data consistency and PAMRI , suppressing both intrinsic and extrinsic hallucinations without updating the prior. Experiments on HCP and BraTS across super-resolution and k-space subsampling tasks demonstrate consistent improvements in reconstruction fidelity and hallucination reduction, Title Suppressed Due to Excessive Length 9
+
+with all improvements statistically significant. Future work explores extending this framework to non-imaging modalities and adaptive guidance schemes. More broadly, our results show that auxiliary modalities can reshape posterior geom-etry at inference time under unconditional generative priors, enabling robust multi-modal inverse reconstruction without paired supervision. 
+
+## References 
+
+1. Alexander, D.C., Darko, Z., Ghosh, A., Tanno, R., Wottschel, V., et al.: Image quality transfer and applications in diffusion mri. NeuroImage 152 , 283–298 (2017) 2. Bhadra, S., Kelkar, V.A., Brooks, F.J., Anastasio, M.A.: On hallucinations in to-mographic image reconstruction. IEEE Transactions on Medical Imaging 40 (11), 3249–3260 (2021) 3. Cao, H., Wang, Y., Chen, J., Jiang, D., Zhang, X., Tian, Q., Wang, M.: Swin-unet: Unet-like pure transformer for medical image segmentation. In: Proceedings of the European Conference on Computer Vision Workshops(ECCVW) (2022) 4. Chen, T., Kornblith, S., Norouzi, M., Hinton, G.: A simple framework for con-trastive learning of visual representations. arXiv preprint arXiv:2002.05709 (2020) 5. Choi, Y., Jung, S., Al-masni, M.A., Yang, M.H., Kim, D.H.: TESLA: Test-time Reference-free Through-plane Super-resolution for Multi-contrast Brain MRI . In: proceedings of Medical Image Computing and Computer Assisted Intervention – MICCAI 2025 (2025) 6. Chung, H., Kim, J., Mccann, M.T., Klasky, M.L., Ye, J.C.: Diffusion posterior sam-pling for general noisy inverse problems. In: The Eleventh International Conference on Learning Representations (2023) 7. Cicimen, A.G., Tregidgo, H.F.J., Figini, M., Messaritaki, E., B. McNabb, C., Palombo, M., Evans, C.J., Cercignani, M., Jones, D.K., C. Alexander, D.: Im-age quality transfer of diffusion mri guided by high-resolution structural mri. In: Computational Diffusion MRI (2025) 8. Gopinath, K., Hoopes, A., Alexander, D.C., Arnold, S.E., Balbastre, Y., et al.: Syn-thetic data in generalizable, learning-based neuroimaging. Imaging Neuroscience 
+
+2, 1–22 (2024) 9. He, K., Zhang, X., Ren, S., Sun, J.: Deep residual learning for image recognition. arXiv preprint arXiv:1512.03385 (2015) 10. Iglesias, J.E., Billot, B., Balbastre, Y., Magdamo, C., Arnold, S.E., et al.: Synthsr: A public ai tool to turn heterogeneous clinical brain scans into high-resolution t1-weighted images for 3d morphometry. Science Advances 9(5) (2023) 11. Kang, L., Tang, B., Huang, J., Li, J.: 3d-mri super-resolution reconstruction using multi-modality based on multi-resolution cnn. Computer Methods and Programs in Biomedicine 248 , 108110 (2024) 12. Kawar, B., Elad, M., Ermon, S., Song, J.: Denoising diffusion restoration models. In: Advances in Neural Information Processing Systems (2022) 13. Kim, J., Kim, B.S., Ye, J.C.: Flowdps: Flow-driven posterior sampling for inverse problems (2025) 14. Kim, S., Jin, C., Diethe, T., Figini, M., Tregidgo, H.F.J., et al.: Tackling structural hallucination in image translation with local diffusion. In: European Conference on Computer Vision (ECCV) (2024) 10 Kim et al. 15. Kim, S., Tregidgo, H.F.J., Figini, M., Jin, C., Joshi, S., Alexander, D.C.: Tackling Hallucination from Conditional Models for Medical Image Reconstruction with Dy-namicDPS . In: proceedings of Medical Image Computing and Computer Assisted Intervention – MICCAI 2025 (2025) 16. Kim, S., Tregidgo, H.F.J., Jin, C., Figini, M., Alexander, D.C.: Hallugen: Syn-thesizing realistic and controllable hallucinations for evaluating image restoration (2025) 17. Kim, S., Tregidgo, H.F., Eldaly, A.K., Figini, M., Alexander, D.C.: A 3d conditional diffusion model for image quality transfer–an application to low-field mri. arXiv preprint arXiv:2311.06631 (2023) 18. Li, G., Zhao, L., Sun, J., Lan, Z., Zhang, Z., Chen, J., Lin, Z., Lin, H., Xing, W.: Rethinking multi-contrast mri super-resolution: Rectangle-window cross-attention transformer and arbitrary-scale upsampling. In: 2023 IEEE/CVF International Conference on Computer Vision (ICCV) (2023) 19. Lin, H., Figini, M., D’Arco, F., Ogbole, G., Tanno, R., et al.: Low-field magnetic resonance image enhancement via stochastic image quality transfer. Medical Image Analysis 87 , 102807 (2023) 20. Lin, X., Du, C., Wu, Q., Tian, X., Yu, J., et al.: Zero-shot Low-field MRI En-hancement via Denoising Diffusion Driven Neural Representation . In: proceedings of Medical Image Computing and Computer Assisted Intervention – MICCAI 2024 (2024) 21. Liu, X., Gong, C., Liu, Q.: Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 (2022) 22. Menze, B.H., Jakab, A., Bauer, S., Kalpathy-Cramer, J., Farahani, K.e.a.: The multimodal brain tumor image segmentation benchmark (brats). IEEE Transac-tions on Medical Imaging 34 (10), 1993–2024 (2015) 23. Patel, M., Wen, S., Metaxas, D.N., Yang, Y.: Steering rectified flow models in the vector field for controlled image generation. arXiv preprint arXiv:2412.00100 (2024) 24. Siméoni, O., Vo, H.V., Seitzer, M., Baldassarre, F., Oquab, M., Jose, C., Khalidov, V., Szafraniec, M., Yi, S., Ramamonjisoa, M., Massa, F., Haziza, D., Wehrstedt, L., Wang, J., Darcet, T., Moutakanni, T., Sentana, L., Roberts, C., Vedaldi, A., Tolan, J., Brandt, J., Couprie, C., Mairal, J., Jégou, H., Labatut, P., Bojanowski, P.: DINOv3 (2025) 25. Sotiropoulos, S.N., Jbabdi, S., Xu, J., Andersson, J.L.R., Moeller, S., et al.: Advances in diffusion mri acquisition and processing in the human connectome project. NeuroImage 80 , 125–143 (2013) 26. Sriram, A., Zbontar, J., Murrell, T., Defazio, A., Zitnick, C.L., Yakubova, N., Knoll, F., Johnson, P.M.: End-to-end variational networks for accelerated mri re-construction. ArXiv (2020) 27. Ulyanov, D., Vedaldi, A., Lempitsky, V.: Deep image prior. Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2018) 28. Wang, J., Chen, Y., Wu, Y., Shi, J., Gee, J.: Enhanced generative adversarial net-work for 3d brain mri super-resolution. In: IEEE/CVF Winter Conference (WACV) (2020) 29. Wang, Y., Yu, J., Zhang, J.: Zero-shot image restoration using denoising diffusion null-space model. The Eleventh International Conference on Learning Representa-tions (2023) 30. Wu, H., He, L., Zhang, M., Chen, D., Luo, K., Luo, M., Zhou, J.Z., Chen, H., Lv, J.: Diffusion posterior proximal sampling for image restoration. In: Proceedings of the 32nd ACM International Conference on Multimedia (2024) Title Suppressed Due to Excessive Length 11 31. Zhang, K., Hu, H., Philbrick, K.A., Conte, G.M., Sobek, J.D., et al.: Soup-gan: Super-resolution mri using generative adversarial networks. Tomography 8, 905 – 919 (2021) 32. Zhang, R., Isola, P., Efros, A.A., Shechtman, E., Wang, O.: The unreasonable effec-tiveness of deep features as a perceptual metric. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) (2018)

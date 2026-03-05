@@ -1,0 +1,470 @@
+Title: EgoPoseFormer v2: Accurate Egocentric Human Motion Estimation for AR/VR
+
+URL Source: https://arxiv.org/pdf/2603.04090v1
+
+Published Time: Thu, 05 Mar 2026 02:06:28 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# EgoPoseFormer v2: Accurate Egocentric Human Motion Estimation for AR/VR 
+
+## Zhenyu Li 12 †
+
+## , Sai Kumar Dwivedi 13 †
+
+## , Filip Maric 1, Carlos Chac´ on 1,Nadine Bertsch 1, Filippo Arcadu 1, Tomas Hodan 1, Michael Ramamonjisoa 1,Peter Wonka 2, Amy Zhao 1, Robin Kips 1, Cem Keskin 1, Anastasia Tkach 1*, Chenhongyi Yang 1*
+
+> 1
+
+## Meta, 2KAUST, 3Max Planck Institute for Intelligent Systems 
+
+Figure 1. Results on an in-the-wild sequence. Top to bottom: (1) input egocentric images with 2D projections of estimated body joints, (2) outside-in capture, and (3) renderings of estimated body motion. EPFv2 demonstrates accurate and temporally-consistent estimates. 
+
+## Abstract 
+
+Egocentric human motion estimation is essential for AR/VR experiences, yet remains challenging due to limited body coverage from the egocentric viewpoint, frequent occlu-sions, and scarce labeled data. We present EgoPoseFormer v2, a method that addresses these challenges through two key contributions: (1) a transformer-based model for tem-porally consistent and spatially grounded body pose estima-tion, and (2) an auto-labeling system that enables the use of large unlabeled datasets for training. Our model is fully dif-ferentiable, introduces identity-conditioned queries, multi-view spatial refinement, causal temporal attention, and sup-ports both keypoints and parametric body representations under a constant compute budget. The auto-labeling sys-
+
+> *Equal supervision.
+> †Work done during internship at Meta.
+
+tem scales learning to tens of millions of unlabeled frames via uncertainty-aware semi-supervised training. The sys-tem follows a teacher–student schema to generate pseudo-labels and guide training with uncertainty distillation, en-abling the model to generalize to different environments. On the EgoBody3M benchmark, with a 0.8 ms latency on GPU, our model outperforms two state-of-the-art methods by 12.2% and 19.4% in accuracy, and reduces temporal jit-ter by 22.2% and 51.7%. Furthermore, our auto-labeling system further improves the wrist MPJPE by 13.1%. 
+
+## 1. Introduction 
+
+Egocentric 3D motion estimation is an essential task for AR/VR, enabling input and interaction with virtual con-tent [1, 3, 42]. However, recovering full 3D body mo-tion solely from head-mounted cameras remains challeng-1
+
+> arXiv:2603.04090v1 [cs.CV] 4 Mar 2026
+
+ing. The egocentric viewpoint offers only limited coverage of the body, suffers from frequent self-occlusions, and pro-vides limited scene context [8, 34]. Moreover, egocentric data are often device-specific and sparsely annotated, mak-ing large-scale supervised training infeasible. As a result, existing pose estimation methods often produce inaccurate and jittery motion estimates and generalize poorly to new devices and in-the-wild scenarios. Despite recent improvements in egocentric motion es-timation, most existing methods still struggle to produce smooth and plausible poses when the body is occluded or out of sight. Early approaches like EgoGlass and Un-realEgo [5, 29, 55, 73] rely on single-frame heatmap re-gression, often leading to poor accuracy [65] and tempo-ral inconsistencies. LSTM-based EgoBody3M [72] im-prove temporal smoothness but lack explicit modeling of 3D geometric relationships between joints and image fea-tures. EgoPoseFormer [65], a more recent transformer-based model improves 3D accuracy by projecting estimated 3D joints onto 2D images and using these projections to guide where features are extracted from each camera view via deformable attention. However, this design uses a sepa-rate representation for each joint (scaling linearly with each joint), and the two-stage architecture prevents gradients from flowing back to the initial coarse pose estimate, limit-ing end-to-end learning. Another approach [6] incorporates temporal information by conditioning the initial pose esti-mate on temporal features and applying self-attention mod-ules, but it requires additional depth and segmentation mod-ules, limiting the real-time applicability. We introduce EgoPoseFormer v2 (EPFv2) , motivated by recent advances in foundation models [32, 44, 47, 50, 60] driven by two key factors: effective model design and scal-able training data. EPFv2 tackles the challenging egocentric motion estimation by two distinct innovations: 1) an end-to-end transformer architecture designed for joint spatio-temporal reasoning, and 2) a scalable semi-supervised train-ing approach that leverages large-scale unlabeled egocen-tric videos through automatic labeling. These two compo-nents are complementary and together enable accurate and temporally-consistent motion estimation. The EPFv2 model is a fully differentiable, end-to-end transformer architecture. Unlike EgoPoseFormer [65] that uses separate learnable representation (query) for each joint, EPFv2 uses a single holistic query, which is conditioned on pose-dependent metadata like user identity and headset pose, to represent the entire body state. This design makes computation independent to the body representation being predicted, improving efficiency and flexibility. Our model consists of two architecturally identical transformer decoder blocks with full gradient flow between stages. The first de-coder predicts an initial 3D pose from temporal multi-view features. The second decoder refines this estimation by projecting the coarse 3D keypoints onto image planes and using these 2D positions as spatial conditioning for cross-attention, guiding where to extract refinement features. This achieves accurate geometric reasoning without computa-tionally expensive deformable attention blocks [65]. Cou-pled with causal temporal attention, EPFv2 produces accu-rate, temporally-consistent motion even for invisible body parts, e.g., those under occlusion. In addition to our model design, we propose a scalable semi-supervised learning pipeline that effectively leverages large collections of unlabeled egocentric videos. While prior work has mitigated data scarcity using synthetic ren-derings or weak supervision [5, 6, 58], such approaches re-main limited in realism or scale. Instead, EPFv2 leverages unlabeled in-the-wild data through semi-supervised learn-ing, preserving real-world fidelity while drastically reduc-ing labeling cost. Specifically, we train teacher model on a small labeled subset and then use it to generate pseudo la-bels for a large pool of unlabeled data [16, 32, 50, 67]. The student is then trained jointly on labeled and pseudo-labeled samples using an uncertainty-guided distillation loss, which enables the student to recognize and down-weight unre-liable pseudo-labels. This design makes EPFv2’s perfor-mance scalable to the size of unlabeled data. The resulted method achieves accurate, temporally-consistent, and generalizable human motion estimation. On the EgoBody3M benchmark [72], EPFv2 demonstrates strong quantitative and qualitative gains, highlighting the benefits of combining expressive model design with scal-able data learning. Specifically, EPFv2 achieves a mean per-joint position error (MPJPE) of 4.02cm, representing a 22.4% and 15.4% improvement over EgoBody3M [72] and EgoPoseFormer [65], respectively. EPFv2 also significantly improves temporal consistency, reducing MPJVE by 22.2% and 51.7% compared to the same baselines. Finally, with a full-model 0.8 ms GPU latency, our model is perfectly suit-able for real-time VR devices. In summary, we make the following contruibutions: 1. A transformer-based architecture that is end-to-end dif-ferentiable and performs efficient spatio–temporal rea-soning from multi-view cameras. 2. A scalable semi-supervised pipeline that leverages large unlabeled egocentric videos through uncertainty-guided teacher-student training. 3. Extensive quantitative and qualitative evaluation demon-strates significant gains in accuracy, temporal consis-tency, and generalization on EgoBody3M benchmark. 
+
+## 2. Related work 
+
+2.1. Egocentric motion estimation 
+
+Early approaches for estimating egocentric pose relied primarily on heatmap-based methods [5, 29, 55, 56, 59, 63, 73, 73], where a dual-branch architecture predicts 2D joint heatmaps and regresses to 3D pose. While effective in constrained settings, these methods lack temporal con-sistency and suffer from jitter and instability during motion. To address this issue, EgoSTAN [40] incorporated temporal context into the visual encoder, whereas EgoBody3M [72] proposed an LSTM-based model to leverage sequence-level multi-view features for smoother predictions. More recently, transformer-based models [6, 7, 12, 65] have been adopted for egocentric motion estimation. These ap-proaches reformulate the task as a direct set prediction prob-lem [13], assigning each joint to a learned query token. UnrealEgo-2 [6] applies standard cross-attention for spa-tial reasoning, while EgoPoseFormer [65] and [7] lever-age deformable cross-attention to enhance geometric align-ment via learned 2D projections. While achieving satis-factory accuracy, their disadvantages include: 1) lack of temporal modeling, 2) requiring memory-intensive multi-query mechanisms and additional models (e.g., segmen-tation), and 3) relying on operations that are challenging to be lowered to edge-computing devices [64] (e.g., de-formable attention). Our method improves upon these by using identity-conditioned single-query transformers with efficient, projection-based conditioned multi-view cross-attention and full temporal integration. In addition to camera-based approaches, other works estimate body pose from alternative modalities [9, 20, 25–27, 39, 48, 52, 61, 69] (e.g . from wearable devices). 
+
+2.2. Datasets for egocentric motion estimation 
+
+EgoCap [46] achieved egocentric motion capture using two fisheye cameras mounted on rigid rods extending from a helmet. Although effective for research, the setup was un-suitable for consumer devices. EgoGlass [73] later adopted a more realistic configuration with two temple-mounted cameras on glasses, but the data set was not publicly re-leased. Given the difficulty of collecting real-world data with accurate 3D ground truth, several works turned to sim-ulation. Mo 2Cap 2 [63] created synthetic single-camera data to predict 3D joint distances, while xR-EgoPose [55] and UnrealEgo [5, 6] generated large-scale synthetic imagery under headset-like camera placements. EgoRear [7] adds rear views to the frontal inputs, improving body coverage during occlusions. EgoBody3M [72] represents the first large-scale real-world dataset captured directly on a VR headset using four synchronized cameras, providing mil-lions of frames with accurate 3D ground truth. It enabled benchmarking under realistic optics and head motion, but the collection process required extensive and non-trivial la-bor, making large-scale expansion impractical. Other con-current works, such as EgoHumans [30] and Ego4D [23], captured naturalistic egocentric scenes but lacked dense and accurate 3D body labels. Nymeria [38] and EMHI [22] pro-vided large-scale real-world datasets. 
+
+2.3. Auto-labeling 
+
+Our auto-labeling system follows the semi-supervised learning (SSL) paradigm [16], which aims to leverage large volumes of unlabeled data to improve model performance. Among various SSL approaches [17, 31, 37, 45, 49], auto-labeling ( i.e ., pseudo-labeling) has shown its advantage be-cause of its simplicity, scalability, and strong empirical re-sults. The core idea is firstly training a teacher model on labeled data, then using it to generate pseudo labels for unlabeled inputs, and finally training a student model with both ground-truth and pseudo supervision [28, 68]. Tremendous progress has been achieved by investigating sample scheduling [10, 11, 18], confidence-based selec-tion [51, 75], curriculum learning [15, 70], etc . Importantly, this strategy has been successfully applied to various com-puter vision tasks [32, 36, 54, 66, 71, 74]. Surprisingly, we notice that this line of research remains under-explored for egocentric motion estimation, likely due to the scarcity of large-scale egocentric datasets. The most relevant work is by EgoPW [58], which introduces an in-the-wild egocentric dataset paired with external-view images to generate pseudo labels via multi-view optimization. Their model is trained using adversarial domain adaptation with features extracted from an off-the-shelf external pose estimator [62]. In con-trast, our system relies solely on egocentric inputs without any auxiliary outside-in views, multi-view optimization, or external networks, making it more scalable and applicable to real-world deployment scenarios. 
+
+## 3. Method 
+
+We define real-time egocentric motion capturing as follows: given the synchronized input stream It ={Ivt }Vv=1 , Ht at timestamp t, where Iv denotes the cal-ibrated image captured by the v-th camera, and H denotes the 6DoF headset pose provided by the headset system [72], the goal is to reconstruct the user’s pose in the world space. Here we consider two types of pose representations . The first type is the keypoint pose pt ∈ RJ × 3 where J denotes the number of body keypoints; the second type of poses are joint rotations and body scales θt ∈ RK where K is prede-fined by the body model [2]. Note that we can also compute keypoints from joint rotations through forward kinematics .
+
+3.1. Prelimilary 
+
+Our model architecture is built upon the state-of-the-art EgoPoseFormer model (shorten as EPFv1). Below, we will provide a brief recap of the baseline architecture. 
+
+Overview. Given the multi-view images {Iv }Vv=1 *, EPFv1 first uses an image encoder to extract the multi-view fea-                       
+
+> *EPFv1 is a single-frame model so we omit the temporal footnote here. -Gravity Vector
+> -Headset rotation
+> -…
+> MLP
+> Per -View
+> Encoder Multi -View
+> Images
+> Multi -View
+> Features
+> Conditioned Multi -View
+> Cross attention
+> Causal Temporal Attention
+> Feed -Forward Network
+> Auxiliary Information
+> Query
+> Vector
+> Conditioned Multi -View
+> Cross Attention
+> Causal Temporal Attention
+> Feed -Forward Network
+> Proposal
+> Head
+> 3D Keypoints
+> (Proposal)
+> NULL
+> 3D Keypoints
+> Pose Parameters
+> Per -Joint Uncertainty
+> Query
+> Vector
+> Query
+> Vector
+> 𝐹 !+•View Identifier
+> •Cond. PE (Optional)
+> Multi -Head
+> Attention
+> 2D PE +
+> 𝑉 !Result
+> {𝑉 ",𝑉 #,𝑉 $} Result
+> Concat & Linear
+> Keys & Values Query
+> Conditioned Multi -View
+> Cross Attention
+> Causal Temporal Attention
+> …
+> TT-1T-2T-3T-N
+> 3D Keypoints
+> (Proposal)
+> 3Dto 2D
+> Projection
+> {(𝑥 !,𝑦 !)}
+> 2D Coordinates
+> Concat
+> MLP
+> PE Vector
+> Condition Positional Encoding (PE)
+> Conditioned Multi -View
+> Cross Attention
+> Causal Temporal Attention
+> Feed -Forward Network
+> Condition
+> Encoding
+
+Figure 2. Architecture overview (left). We stack two transformer decoders for coarse-to-fine pose estimation. A single holistic query, initialized from auxiliary metadata, attends to multi-view features and historic information to estimate 3D keypoints, pose parameters, and per-joint uncertainty in an end-to-end differentiable architecture. Illustration of the two core attention modules (right) . Causal temporal attention enables each frame to attend to its temporal history. Conditioned multi-view cross attention incorporates both view identity and optional 2D keypoint projections of pose proposal to guide spatial feature aggregation across views. 
+
+tures {Fv }Vv=1 , then it computes the pose proposal ˜p ∈
+
+RJ × 3, i.e ., the roughly estimated 3D positions of body key-points, from the pooled image features using a 2-layer MLP: 
+
+˜p = MLP 
+
+
+
+Concat {v}
+
+ AvgPool( Fv )
+
+. (1) Then, EPFv1 encodes each body keypoints into a Joint Query Token (JQT) , which servers as the query token to in-teract with the image features and other body joints. Specif-ically, for the j-th keypoint, its JQT is computed by: 
+
+˜qj = MLP JQT 
+
+ ηj , ˜xj , ˜yj , ˜zj
+
+, (2) where ηj is an scalar keypoint identifier. Then, the JQTs are input into the Pose Refinement transformer (PRFormer) to extract useful information. Finally, a 3D refinement offset is predicted for each keypoint, and its final 3D position is computed by adding the offset to the proposal: 
+
+q = RefineTransformer  ˜q, {Fv }Vv=1 
+
+, (3) 
+
+∆pj = MLP offset 
+
+ qj
+
+, p = ˜ p + ∆ p (4) 
+
+Deformable stereo attention. EPFv1 uses a special atten-tion mechanism called Deformable Stereo Attention inside each layer of its PRFormer, which serves as the key factor to EPFv1’s good accuracy over previous works. Specifically, each 3D proposal ˜pj is first projected to each image plane to compute its 2D coordinates {ovj }Vv=1 . Those 2D keypoints then serve as the anchor point, based on which deformable attention [77] is used to extract information from each im-age features. Finally a linear layer is used to fuse the multi-view information: 
+
+qj = Linear 
+
+
+
+Concat {v}
+
+ DeformAttn (qj , ovj , Fv )
+
+. (5) Through this process, the multi-view stereo features are ef-fectively exploited by the attention mechanism, thus the model can achieve accurate 3D keypoints localization. 
+
+Discussion. Although EPFv1 [65] and the follow-up meth-ods (e.g., EgoRear [7]) achieved good accuracy on open-sourced benchmarks [5, 59], several remaining limitations still hinder their usage on real XR devices [72]. Specif-ically: 1) Their prediction lack temporal smoothness be-cause they do not have any temporal modeling [72], 2) Their one-to-one correspondence between body-keypoints and joint query tokens limit the model efficiency, i.e ., the model’s computation cost grows linearly with the number of predicted keypoints; 3) This one-to-one correspondence also limits the model’s flexibility to be used for different body representations, e.g ., pose parameters [2, 41], because they are not able to project those parameters into 2D planes. 4) The models are not fully end-to-end trainable, for exam-ple, there is no gradient flow from the EPFv1’s pose refine-ment transformer to the pose proposal network, thereby lim-iting the model’s capacity. In the next section, we demon-strate how EPFv2 overcomes those challenges and enables accurate body motion estimation for real XR-devices. 
+
+3.2. EgoPoseFormer v2 
+
+As shown in Fig. 2, our model has an encoder-decoder structure. At timestamp t, the encoder separately encodes the images {Ivt }Vv=1 into feature maps {Fvt }Vv=1 , and head-set pose Ht and other optional auxiliary information into a holistic pose query token qt ∈ RC . Our pose decoder share a similar design to EPFv1, which also has a pose proposal stage and a pose refinement stage. However, unlike EPFv1’s MLP + Transformer design, here we stack two architec-turally identical transformer decoders for both stages, mak-ing the architecture even simpler. After each transformer, we use MLP heads to compute the task results, e.g ., key-points, pose parameters and uncertainties. 
+
+3.2.1. Pose query token 
+
+As discussed in Sec. 3.1, EPFv1’s 1:1 correspondence between body keypoints and transformer queries limits its computation efficiency and flexibility. Therefore, in EPFv2, we turn to using a single holistic pose query token to serve as an information aggregator, and all task predictions are computed from it, decoupling the model efficiency from the body representation and task definition. Moreover, this de-sign also allows us to seamlessly inject auxiliary informa-tion into the model, e.g ., headset poses, which can be incor-porated simply by encoding them with an MLP: 
+
+qt = MLP query (Ht). (6) If no auxiliary information is accessible, we modify qt to be a learnable and randomly initialized embedding. 
+
+3.2.2. Pose decoding transformer 
+
+Shown in Fig. 2, each pose decoding transformer layer has three modules: 1) a conditioned multi-view cross-attention, 2) a causal temporal attention, and 3) a feedfor-ward network (FFN). As FFN is a standard block in trans-formers, we will only explain the attention modules. 
+
+Conditioned multi-view cross-attention. EPFv2 uses standard ‘query to image’ cross-attention [14, 32] instead of deformable attention used by EPFv1, whose deployment on edge-computing devices is challenging [64]. To make our cross-attention handle multi-view images, we simply do multi-head attention on each images independently, and fuse the multi-view information using the output linear layer. Formally, given the pose query token qt and image features {Fvt }Vv=1 , the result token q′ 
+
+> t
+
+is computed by:            
+
+> q′
+> t= Linear
+> 
+> Concat {v}
+>  ˆMHA( qt+σvt,Fvt+Ψ,Fvt)
+> .
+
+(7) Here, ˆMHA( q, k, v ) is the multi-head attention but without the output linear layer [57], Ψ is the 2D image positional encoding [19], and σvt is the query conditional embedding, which is used to achieve conditioned attention . Specifically, we consider two types of conditions: 1) camera identities in both pose proposal stage and pose refinement stage, 2) projected 2D keypoints only in the pose refinement stage:       
+
+> σvt=
+> (
+> ξvPose proposal
+> ξv+ MLP  Concat {j}(ovt,j )Pose refinement
+
+(8) where ξv is a learnable camera embedding for the v-th cam-era, and ovt,j is the 2D position of the j-th keypoint on the 
+
+v-th image, computed by projecting 3D proposal keypoints onto the 2D plane. Here, by encoding the concatenated 2D keypoints into a latent conditional vector, we achieve a sim-ilar effect to EPFv1’s deformable stereo attention but in a hardware-friendly way, in which our model also exploit the stereo information to predict 3D pose accurately. 
+
+Causal temporal attention. To ensure EPFv2 can output smooth body poses, we use a causal temporal attention to enable the pose query token to attend to its history. This temporal attention also enables the model to infer plausible   
+
+> Figure 3. Per-keypoint uncertainty predicted by EPFv2. Larger ellipse extent and higher transparency indicate higher predicted uncertainty. Prediction is in green whereas GT is in red.
+
+body poses from temporal clues when certain body-parts are invisible, e.g ., when they leave the camera FoV. Specif-ically, at timestamp t, the query token qt attends to the past query tokens in a pre-defined window size w:    
+
+> q′
+> t= MHA
+> 
+> RoPE( qt),RoPE( {qk}tk=t−w),{qk}t−1
+> k=t−w
+> 
+> .
+
+(9) Here RoPE() is the transformation of rotational positional encoding [53]. Similar to the auto-regressive language models [4, 21], during training the model receives a se-quence of images, thus the temporal attention becomes a standard self-attention, and we use attention masks to mask out the invalid attention weights, e.g ., past to future. During inference, we use KV-Cache [21] to store the historical keys and values, saving computational resources. 
+
+3.2.3. Task heads 
+
+After each pose decoder stage, we feed the pose query token into parallel MLP heads to compute task predictions. 
+
+Pose proposal. For the pose proposal stage, we follow EgoBody3M [72] to directly regress the 3D body keypoints in the headset space, which we found is good enough for the pose refinement transformer to be conditioned on. 
+
+Pose refinement. The pose refinement decoder computes the final body pose in the world coordinate space, for which we first predict body poses in the headset space and convert them to world space using the 6-DoF headset poses [72]. As a flexible architecture, EPFv2 supports predicting both 3D keypoints and pose parameters [2]. For 3D keypoints, we follow EPFv1 [65] to predict a refinement offset w.r.t. each pose proposal keypoint, then the final 3D keypoints in the headset space are computed by adding the offset to the proposal 3D keypoints. When using pose parameters, the model make three predictions: 1) joint rotations, 2) body scales, and 3) 6-DoF transformation from head to headset, for which the model predict 3D translations and 6D rota-tions [76]. Then, we run Forward Kinematics to compute the 3D joint positions and rotations in the world space. 
+
+Per-keypoint uncertainty. Apart from the body poses, EPFv2 also supports predicting per-joint uncertainty in the headset pace, which improves the model’s accuracy and helps with the auto-labeling system (Sec. 3.3). Specifically, we extend the LUVLi loss [33] to 3D space. For each key-point, the model predicts a 6D uncertainty s ∈ R6, repre-senting the lower-triangular Cholesky factor L of the co-Unlabeled 𝑥 !            
+
+> Augmented "𝑥 !
+> Labeled 𝑥 "
+> Augmentation
+> ℒ!(#𝑥 !,#𝑦 !)
+> ℒ!"#$%&'("&)
+> ℒ*(𝑥 *,𝑦 *)
+> Pseudo Label #𝒚 𝒖
+> GT 𝒚 𝒍
+> Teacher 𝑀 𝒯
+> Student 𝑀 𝒮
+> Head
+> Head
+> Larger
+> Backbone
+> Smaller
+> Backbone
+
+Figure 4. Overview of the mixture training in auto-labeling sys-tem. We adopt a stronger teacher model for pesudo labeling and apply an uncertainty distillation loss to facilitate the knowledge transfer. The teacher model is pre-trained with the labeled dataset 
+
+Dl = {(xl, y l)} before this stage. 
+
+variance Σ = LL T. The likelihood loss is formulated as 
+
+δj = ˆ pj − pj , m = δTΣ−1δ, (10) 
+
+LtNLL = (ν + d)2 log(1 + m
+
+ν ) + 12 log |Σ| (11) where ˆpj and pj are the ground-truth and predicted 3D po-sitions, and dimensionality d = 3 . The first term is a scaled Mahalanobis distance, whereas the second term serves as a regularization that ensures that the uncertainty distribu-tion does not get too large. Different from LUVLi [33] we consider the student-t distribution where ν controls the tail heaviness. It has the same properties as the Laplacian distri-bution used in [33], but is smoother at the origin and more heavy-tailed for large residuals. As shown in Fig. 3, EPFv2 produces meaningful uncertainty estimates, particularly for invisible keypoints, e.g., feets and legs. 
+
+Losses : EPFv2 outputs the pose proposal Pp, the refined pose Pr (from keypoint refinement or forward kinematics), and the per-keypoint uncertainty Σ for the refined pose. Given the ground-truth pose ˆP, the overall training objec-tive is defined as a weighted sum of several loss terms: 
+
+L =λpos wdLmse (Pr , ˆP) + λpos (1 − wd)LtNLL (Pr , ˆP, Σ)+ λpos Lmse (Pp, ˆP) + λjerk Ljerk (Pr ) + λjerk Ljerk (Pp) (12) 
+
+where we follow EgoBody3M [72] to adopt the constant pose jerk loss Ljerk to encourage temporally smooth pre-dictions. In practice, we set λpos = 1 and λjerk = 0 .8,respectively. During training, we combine the MSE and un-certainty Log-Likelihood losses with a dynamic weight wd
+
+that follows a cosine schedule. It gradually increases the contribution of the Log-Likelihood term while decreasing the MSE term as training progresses. In practice, we start with a detached uncertainty head and gradually reduce the degree of detach using soft detach to stabilize training. 
+
+3.3. Auto-labeling system 
+
+Collecting large-scale, labeled egocentric motion data remains costly and labor-intensive, especially under real-world capture conditions [8, 34]. Therefore, we adopt an auto-labeling system that fully utilize the data to improve the model performance through semi-supervised learning (SSL) [16]. This design enables us to benefit from high-capacity models and large training corpora without requir-ing additional human annotations. Formally, let Dl = {(xl, y l)} denote the labeled source dataset and Du = {(xu)} the unlabeled dataset. The system operates in two stages: (1) training a high-quality teacher model MT on Dl using vision foundation models [44, 50], and (2) using it to supervise a student model MS with a combination of labeled and pseudo-labeled samples. As shown in Fig. 4, each batch during the SSL training consists of labeled data (xl, y l) and unlabeled data xu. We generate a strongly augmented version ˆxu of each unlabeled input. The teacher model receives the original input xu and predicts pseudo labels ˆyu = MT (xu). These pseudo labels are then used to supervise the student model MS , which processes the corresponding augmented input ˆxu. This asymmetric design, following previous work [35, 54, 74], ensures that the teacher generates stable targets while the student learns to generalize under appearance variation. In addition to pose supervision, we introduce an aux-iliary uncertainty distillation loss between the teacher and student predictions. Specifically, we treat each model’s un-certainty output as a soft confidence map over keypoints and minimize a MSE loss between their predicted uncertainties: 
+
+Luncertainty = || sT − sS || , (13) where sT and sS denote the predicted per-joint uncer-tainty vectors from the teacher and student models, re-spectively. This regularization encourages the student to mimic not only the pose estimates but also the teacher’s confidence structure, facilitating effective knowledge trans-fer from teacher to student. The total training objective for the student model can be formulated as: 
+
+Lsemi = Ll(xl, y l) + λ1 · L u(ˆ xu, ˆyu) + λ2 · L uncertainty , (14) where λ1 = 0 .5 and λ2 = 0 .1 balance the contributions of different loss terms. Both Ll and Lu follow the same multi-term pose loss formulation defined in Eq. 12, applied respectively on labeled and pseudo-labeled samples. 
+
+## 4. Experiments 
+
+4.1. Experimental setup 
+
+Implementation details: We adopt a single-view encoder to extract per-frame image features. Following EPFv1 [65], the encoder is first pre-trained on a 2D joint heatmap predic-tion task to enhance spatial awareness. For our teacher mod-els, we initialize our ViT-based encoder with DINOv3 [50] Table 1. Quantitative comparison on Egobody3M benchmark. The percentage in parentheses denotes how much worse each baseline is compared to our method. †: indicates our reproduced results. ‡: presents results reported in the Egobody3M paper with missing metric numbers filled in with −. ALS is short for our Auto-Labeling System.                                                                      
+
+> Method Reference Overall Overall Wrists Overall Shoulders Overall Legs Overall Feet MPJPE MPJVE MPJPE MPJPE MPJPE MPJPE UnrealEgo ‡[5] ECCV2022 7.41 (+84 .3%) 1.27 (+202 .4%) −−−−
+> Egobody3M †[72] ECCV2024 5.18 (+28 .9%) 0.54 (+28 .6%) 6.14 (+23 .0%) 2.80 (+19 .9%) 8.40 (+26 .1%) 10.25 (+17 .9%)
+> EgoPoseFormer †[65] ECCV2024 4.75 (+18 .1%) 0.87 (+107 .1%) 6.01 (+20 .4%) 2.72 (+16 .5%) 7.95 (+19 .4%) 10.16 (+17 .0%)
+> EPFv2 w/o ALS -4.17 (+3 .2%) 0.42 (+0 .0%) 5.74 (+15 .3%) 2.38 (+2 .1%) 6.91 (+3 .8%) 9.11 (+4 .8%)
+> EPFv2 with ALS -4.02 0.42 4.99 2.33 6.66 8.69
+
+weights to improve representation quality. For a fair comparison with prior approaches, we implement ResNet-18 [24] as the default backbone for benchmarking. In ex-periments, we also consider a smaller model MobileNetv4-S [43] and larger variant ResNet-50 [24]. All models are trained with a batch size of 16 for 40k optimization steps. We present more details in our supplementary materials ,including detailed speed benchmark and how we build the auto labeling system. 
+
+Datasets: We use Egobody3M [72] to benchmark our pro-posed method. It contains 3.4M real-domain frames cap-tured by 4 synchronized monochrome global-shutter cam-eras. We use the standard training set with 2.4M frames to train our model and evaluate the model using the test set with 426k frames. In addition, as EgoBody3M only have keypoints annotations, we compute all model parameters by running inverse kinematics using the momentum tool [2]. We report the Mean Per Joint Position Error (MPJPE) and Mean Per-Joint Velocity Error (MPJVE) as evaluation met-rics following the official paper. To show the effective-ness of our auto-labeling system, we collect a large in-the-wild (ITW) private dataset without ground-truth labels, us-ing the same hardware settings as EgoBody3M [72]. This dataset, called EGO-ITW-70M, contains 70M frames of im-ages with a diverse environment and human motions. Fi-nally, to assess real-world generalization, we run our model on the in-the-wild XR-MBT dataset [48] and show qualita-tive results in Fig. 1. 
+
+4.2. Comparison with the state of the art 
+
+In Tab. 1, we compare EPFv2 with prior SoTA ap-proaches on the EgoBody3M benchmark [72]. We repro-duce the results of EgoBody3M and EgoPoseFormer [65], while the result for UnrealEgo is taken from the original EgoBody3M paper. Our method outperforms all competing methods across all metrics with a clear margin. Specifically, EPFv2 achieves a mean per-joint position error (MPJPE) of 4.02cm, improving upon EgoBody3M and EgoPoseFormer by 22.4% and 15.4%, respectively. We also report the MPJPE for wrist joints, which are challenging due to fre-quent occlusions and rapid motion. Our method achieves a wrist MPJPE of 4.99cm, significantly outperforming prior works by more than 15%. In terms of temporal stability, our 
+
+Table 2. Ablation study. We remove or modify each module to assess its contribution. These results demonstrate that each com-ponent yields a measurable improvement in accuracy and our auto-labeling system further boosts the model performance.                                          
+
+> #Variants Overall Wrists Legs
+> ①use kpt head 4.35 6.02 7.17
+> ②w/o temporal attention 4.35 6.04 7.21
+> ③w/o projection condition 4.30 5.96 7.15
+> ④w/o auxiliary information 4.39 5.98 7.34
+> ⑤w/o uncertainty 4.25 5.83 7.00
+> ⑥EPFv2 w/o ALS 4.17 5.74 6.91
+> ⑦+ ALS (w/o Luncertainty )4.08 5.07 6.74
+> ⋆+ ALS + Luncertainty 4.02 4.99 6.66
+
+model achieves an MPJVE reduction of 22.2% compared to EgoBody3M and 51.7% compared to EgoPoseFormer. This highlights the importance of temporal modeling for egocen-tric pose tracking and demonstrates the effectiveness of our causal temporal attention design. Fig. 5 showcases qualita-tive examples of EPFv2 in challenging scenarios with oc-clusion, fast motion, and body truncation. These visualiza-tions confirm the robustness and precision of our approach for egocentric full-body pose estimation. 
+
+4.3. Ablation study and discussion 
+
+We conduct several ablation experiments to analyze the contribution of each component in EPFv2. Unless other-wise stated, we adopt ResNet-18 as backbone and use the Egobody3M dataset by default. 
+
+Architecture design: Table 2 presents ablations on the main architectural components of EPFv2. We ablate each module by removing it from the comprehensive architec-ture ( ⑥) alternately. Specifically, we examine the follow-ing settings: ① direct keypoint prediction through a kpt 
+
+head ( i.e ., use kpt head) instead of leveraging joint angle prediction in combination with Forward Kinematics , ② re-moving the temporal attention module ( i.e ., w/o temporal attention), ③ removing the projected 2D keypoints as con-dition for the multi-view cross-attention in the pose refine-ment stage ( i.e ., w/o projection condition), ④ replacing the query encoding auxiliary information with a standard learn-able one ( i.e ., w/o auxiliary information), ⑤ removing the uncertainty head ( i.e ., w/o uncertainty). Each component yields a measurable improvement in ac-Figure 5. Qualitative results on Egobody3M. Predictions are colored in green and ground-truths are colored in orange. 
+
+curacy. Specifically, ① highlights the effectiveness of pre-dicting full body pose parameters over directly regressing joint positions. Using forward kinematics (FK) allows the model to provide more structured and physically plausible pose predictions. Removing temporal attention ( ②) reduces the model to a single-frame variant, resulting in a substan-tial accuracy drop, underscoring the importance of tempo-ral modeling for accurate egocentric 3D motion estimation. Ablating the projection-conditioned cross-attention in the refinement transformer ( ③) causes the module to degenerate into a generic attention mechanism, as in the proposal stage. The model then lacks spatial anchoring cues and loses the ability to refine joint localization effectively. The auxiliary metadata used to initialize the body query ( ④) provides crit-ical context for egocentric perception. Replacing this with a generic learnable token significantly impairs performance, indicating that this conditioning is key for learning pose-aware priors. Finally, ⑤ demonstrates that incorporating per-joint uncertainty helps the model focus on reliable joints during training, improving robustness and overall accuracy. 
+
+Auto-labeling system (ALS): We evaluate the proposed ALS under the data scaling setting: we use ITW-70M as the unlabeled dataset, and adopt the Egobody3M as the labeled dataset for mixture training. Fig. 6 presents that ALS improves model performance as more unlabeled data is incorporated. We further examine the impact of different student models under a fixed DINOv3-L teacher. Interest-ingly, MobileNetV4-S, despite being smaller than ResNet-18, benefits more proportionally from pseudo-label super-vision, suggesting that ALS is particularly effective for lightweight models in low-capacity regimes. As shown in   
+
+> Figure 6. ALS effectiveness in in-domain scaling. As more unla-beled data is used, both students achieve improved accuracy. No-tably, the MobileNetv4-S-based model benefits more proportion-ally from ALS despite having lower model capacity, indicating the pipeline’s suitability for lightweight deployment models.
+
+Tab. 2, ALS ( ⑦) yields an 11.7% reduction in wrist MPJPE. Adding the uncertainty distillation further enhances perfor-mance slightly, indicating its complementary benefit. 
+
+## 5. Conclusion 
+
+We presented EgoPoseFormer v2 (EPFv2), a method for egocentric 3D motion estimation that combines an advanced transformer architecture with a scalable auto-labeling system. We introduced a full end-to-end spatiotem-poral transformer with identity-conditioned queries and ef-ficient 3D-aware refinement. Through the uncertainty-aware auto-labeling system, EPFv2 effectively leverages unlabeled data to scale-up its ability. Experiments on the EgoBody3M benchmark demonstrate SoTA accuracy, vali-dating the power of combining architectural advances with scalable data-driven learning. EPFv2 offers an extensible foundation for real-world AR/VR applications. References 
+
+[1] Apple vision pro. https://www.apple.com/apple-vision-pro/ . 1 [2] Momentum. https : / / facebookresearch . github.io/momentum/ . 3, 4, 5, 7 [3] Meta quest 3. https://www.meta.com/quest/ quest-3/ . 1 [4] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ah-mad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 ,2023. 5 [5] Hiroyasu Akada, Jian Wang, Soshi Shimada, Masaki Taka-hashi, Christian Theobalt, and Vladislav Golyanik. Un-realego: A new dataset for robust egocentric 3d human mo-tion capture. In ECCV , pages 1–17. Springer, 2022. 2, 3, 4, 7[6] Hiroyasu Akada, Jian Wang, Vladislav Golyanik, and Chris-tian Theobalt. 3d human pose perception from egocentric stereo videos. In CVPR , pages 767–776, 2024. 2, 3 [7] Hiroyasu Akada, Jian Wang, Vladislav Golyanik, and Chris-tian Theobalt. Bring your rear cameras for egocentric 3d human pose estimation. arXiv preprint arXiv:2503.11652 ,2025. 3, 4 [8] Md Mushfiqur Azam and Kevin Desai. A survey on 3d ego-centric human pose estimation. In CVPR , pages 1643–1654, 2024. 2, 6 [9] German Barquero, Nadine Bertsch, Manojkumar Marram-reddy, Carlos Chac´ on, Filippo Arcadu, Ferran Rigual, Nicky Sijia He, Cristina Palmero, Sergio Escalera, Yuting Ye, et al. From sparse signal to smooth motion: Real-time motion generation with rolling prediction models. In CVPR ,pages 1850–1860, 2025. 3 [10] David Berthelot, Nicholas Carlini, Ekin D Cubuk, Alex Kurakin, Kihyuk Sohn, Han Zhang, and Colin Raffel. Remixmatch: Semi-supervised learning with distribution alignment and augmentation anchoring. arXiv preprint arXiv:1911.09785 , 2019. 3 [11] David Berthelot, Nicholas Carlini, Ian Goodfellow, Nicolas Papernot, Avital Oliver, and Colin A Raffel. Mixmatch: A holistic approach to semi-supervised learning. NeurIPS , 32, 2019. 3 [12] Andrea Boscolo Camiletto, Jian Wang, Eduardo Alvarado, Rishabh Dabral, Thabo Beeler, Marc Habermann, and Chris-tian Theobalt. Frame: Floor-aligned representation for avatar motion from egocentric video. In CVPR , pages 17497– 17507, 2025. 3 [13] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-to-end object detection with transformers. In ECCV , pages 213–229. Springer, 2020. 3 [14] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-to-end object detection with transformers. In ECCV , pages 213–229. Springer, 2020. 5 [15] Paola Cascante-Bonilla, Fuwen Tan, Yanjun Qi, and Vicente Ordonez. Curriculum labeling: Revisiting pseudo-labeling for semi-supervised learning. In AAAI , pages 6912–6920, 2021. 3 [16] Olivier Chapelle, Bernhard Scholkopf, and Alexander Zien. Semi-supervised learning (chapelle, o. et al., eds.; 2006)[book reviews]. IEEE Transactions on Neural Net-works , 20(3):542–542, 2009. 2, 3, 6 [17] Peibin Chen, Tao Ma, Xu Qin, Weidi Xu, and Shuchang Zhou. Data-efficient semi-supervised learning by reliable edge mining. In CVPR , pages 9192–9201, 2020. 3 [18] Ekin D Cubuk, Barret Zoph, Dandelion Mane, Vijay Vasude-van, and Quoc V Le. Autoaugment: Learning augmentation strategies from data. In CVPR , pages 113–123, 2019. 3 [19] Alexey Dosovitskiy. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 , 2020. 5 [20] Yuming Du, Robin Kips, Albert Pumarola, Sebastian Starke, Ali Thabet, and Artsiom Sanakoyeu. Avatars grow legs: Generating smooth human motion from sparse tracking in-puts with diffusion model. In CVPR , pages 481–490, 2023. 3[21] Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Ab-hishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. The llama 3 herd of models. arXiv e-prints , pages arXiv–2407, 2024. 5 [22] Zhen Fan, Peng Dai, Zhuo Su, Xu Gao, Zheng Lv, Jiarui Zhang, Tianyuan Du, Guidong Wang, and Yang Zhang. Emhi: A multimodal egocentric human motion dataset with hmd and body-worn imus. In AAAI , pages 2879–2887, 2025. 3[23] Kristen Grauman, Andrew Westbury, Eugene Byrne, Zachary Chavis, Antonino Furnari, Rohit Girdhar, Jackson Hamburger, Hao Jiang, Miao Liu, Xingyu Liu, et al. Ego4d: Around the world in 3,000 hours of egocentric video. In 
+
+CVPR , pages 18995–19012, 2022. 3 [24] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In CVPR ,pages 770–778, 2016. 7, 3 [25] Fangzhou Hong, Vladimir Guzov, Hyo Jin Kim, Yuting Ye, Richard Newcombe, Ziwei Liu, and Lingni Ma. Egolm: Multi-modal language model of egocentric motions. In 
+
+CVPR , pages 5344–5354, 2025. 3 [26] Jiaxi Jiang, Paul Streli, Huajian Qiu, Andreas Fender, Larissa Laich, Patrick Snape, and Christian Holz. Avatarposer: Ar-ticulated full-body pose tracking from sparse motion sens-ing. In ECCV , pages 443–460. Springer, 2022. [27] Jiaxi Jiang, Paul Streli, Manuel Meier, and Christian Holz. Egoposer: Robust real-time egocentric pose estimation from sparse and intermittent observations everywhere. In ECCV ,pages 277–294, 2024. 3 [28] Patrick Kage, Jay C Rothenberger, Pavlos Andreadis, and Dimitrios I Diochnos. A review of pseudo-labeling for com-puter vision. arXiv preprint arXiv:2408.07221 , 2024. 3 [29] Taeho Kang, Kyungjin Lee, Jinrui Zhang, and Youngki Lee. Ego3dpose: Capturing 3d cues from binocular egocentric views. In SIGGRAPH Asia 2023 Conference Papers , pages 1–10, 2023. 2 [30] Rawal Khirodkar, Aayush Bansal, Lingni Ma, Richard New-combe, Minh Vo, and Kris Kitani. Ego-humans: An ego-centric 3d multi-human benchmark. In ICCV , pages 19807– 19819, 2023. 3 [31] Diederik P Kingma, Danilo J Rezende, Shakir Mohamed, and Max Welling. Semi-supervised learning with deep gen-erative models. NeurIPS , 27, 2014. 3 [32] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer White-head, Alexander C Berg, Wan-Yen Lo, et al. Segment any-thing. In ICCV , pages 4015–4026, 2023. 2, 3, 5 [33] Abhinav Kumar, Tim K Marks, Wenxuan Mou, Ye Wang, Michael Jones, Anoop Cherian, Toshiaki Koike-Akino, Xi-aoming Liu, and Chen Feng. Luvli face alignment: Esti-mating landmarks’ location, uncertainty, and visibility like-lihood. In CVPR , pages 8236–8246, 2020. 5, 6 [34] Xiang Li, Heqian Qiu, Lanxiao Wang, Hanwen Zhang, Chenghao Qi, Linfeng Han, Huiyu Xiong, and Hongliang Li. Challenges and trends in egocentric vision: A survey. 
+
+arXiv preprint arXiv:2503.15275 , 2025. 2, 6 [35] Zhenyu Li, Zehui Chen, Ang Li, Liangji Fang, Qinhong Jiang, Xianming Liu, and Junjun Jiang. Unsupervised do-main adaptation for monocular 3d object detection via self-training. In ECCV , pages 245–262. Springer, 2022. 6 [36] Zhenyu Li, Shariq Farooq Bhat, and Peter Wonka. Patchre-finer: Leveraging synthetic data for real-domain high-resolution monocular metric depth estimation. In ECCV ,pages 250–267. Springer, 2024. 3 [37] Zhiyue Liu, Jiahai Wang, and Zhiwei Liang. Catgan: Category-aware generative adversarial networks with hierar-chical evolutionary learning for category text generation. In 
+
+AAAI , pages 8425–8432, 2020. 3 [38] Lingni Ma, Yuting Ye, Fangzhou Hong, Vladimir Guzov, Yifeng Jiang, Rowan Postyeni, Luis Pesqueira, Alexander Gamino, Vijay Baiyya, Hyo Jin Kim, et al. Nymeria: Amassive collection of multimodal egocentric daily motion in the wild. In ECCV , pages 445–465, 2024. 3 [39] Mathias Parger, Joerg H Mueller, Dieter Schmalstieg, and Markus Steinberger. Human upper-body inverse kinematics for increased embodiment in consumer-grade virtual reality. In Proceedings of the 24th ACM symposium on virtual reality software and technology , pages 1–10, 2018. 3 [40] Jinman Park, Kimathi Kaai, Saad Hossain, Norikatsu Sumi, Sirisha Rambhatla, and Paul Fieguth. Building spatio-temporal transformers for egocentric 3d pose estimation. 
+
+arXiv preprint arXiv:2206.04785 , 2022. 3 [41] Georgios Pavlakos, Vasileios Choutas, Nima Ghorbani, Timo Bolkart, Ahmed AA Osman, Dimitrios Tzionas, and Michael J Black. Expressive body capture: 3d hands, face, and body from a single image. In CVPR , pages 10975– 10985, 2019. 4 [42] Chiara Plizzari, Gabriele Goletto, Antonino Furnari, Sid-dhant Bansal, Francesco Ragusa, Giovanni Maria Farinella, Dima Damen, and Tatiana Tommasi. An outlook into the fu-ture of egocentric vision. IJCV , 132(11):4880–4936, 2024. 1[43] Danfeng Qin, Chas Leichner, Manolis Delakis, Marco Fornoni, Shixin Luo, Fan Yang, Weijun Wang, Colby Ban-bury, Chengxi Ye, Berkin Akin, et al. Mobilenetv4: Univer-sal models for the mobile ecosystem. In ECCV , pages 78–96. Springer, 2024. 7 [44] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learn-ing transferable visual models from natural language super-vision. In ICML , pages 8748–8763. PmLR, 2021. 2, 6 [45] Antti Rasmus, Mathias Berglund, Mikko Honkala, Harri Valpola, and Tapani Raiko. Semi-supervised learning with ladder networks. NeurIPS , 28, 2015. 3 [46] Helge Rhodin, Christian Richardt, Dan Casas, Eldar Insafut-dinov, Mohammad Shafiei, Hans-Peter Seidel, Bernt Schiele, and Christian Theobalt. Egocap: egocentric marker-less mo-tion capture with two fisheye cameras. ACM TOG , 35(6): 1–11, 2016. 3 [47] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bj¨ orn Ommer. High-resolution image syn-thesis with latent diffusion models. In CVPR , pages 10684– 10695, 2022. 2 [48] Denys Rozumnyi, Nadine Bertsch, Othman Sbai, Filippo Arcadu, Yuhua Chen, Artsiom Sanakoyeu, Manoj Kumar, Catherine Herold, and Robin Kips. Xr-mbt: Multi-modal full body tracking for xr through self-supervision with learned depth point cloud registration. In WACV , pages 5041–5050, 2025. 3, 7 [49] Mehdi Sajjadi, Mehran Javanmardi, and Tolga Tasdizen. Regularization with stochastic transformations and perturba-tions for deep semi-supervised learning. NeurIPS , 29, 2016. 3[50] Oriane Sim´ eoni, Huy V Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Micha¨ el Ramamonjisoa, et al. Dinov3. arXiv preprint arXiv:2508.10104 , 2025. 2, 6, 3 [51] Kihyuk Sohn, David Berthelot, Nicholas Carlini, Zizhao Zhang, Han Zhang, Colin A Raffel, Ekin Dogus Cubuk, Alexey Kurakin, and Chun-Liang Li. Fixmatch: Simplifying semi-supervised learning with consistency and confidence. 
+
+NeurIPS , 33:596–608, 2020. 3 [52] Sebastian Starke, Paul Starke, Nicky He, Taku Komura, and Yuting Ye. Categorical codebook matching for embodied character controllers. ACM TOG , 43(4):1–14, 2024. 3 [53] Jianlin Su, Murtadha Ahmed, Yu Lu, Shengfeng Pan, Wen Bo, and Yunfeng Liu. Roformer: Enhanced transformer with rotary position embedding. Neurocomputing , 568:127063, 2024. 5 [54] Antti Tarvainen and Harri Valpola. Mean teachers are better role models: Weight-averaged consistency targets improve semi-supervised deep learning results. NeurIPS , 30, 2017. 3, 6 [55] Denis Tome, Patrick Peluse, Lourdes Agapito, and Hernan Badino. xr-egopose: Egocentric 3d human pose from an hmd camera. In ICCV , pages 7728–7738, 2019. 2, 3 [56] Denis Tome, Thiemo Alldieck, Patrick Peluse, Gerard Pons-Moll, Lourdes Agapito, Hernan Badino, and Fernando De la Torre. Selfpose: 3d egocentric pose estimation from a head-set mounted camera. IEEE TPAMI , 45(6):6794–6806, 2020. 2[57] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-reit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. NeurIPS , 30, 2017. 5 [58] Jian Wang, Lingjie Liu, Weipeng Xu, Kripasindhu Sarkar, Diogo Luvizon, and Christian Theobalt. Estimating egocen-tric 3d human pose in the wild with external weak supervi-sion. In CVPR , pages 13157–13166, 2022. 2, 3 [59] Jian Wang, Diogo Luvizon, Weipeng Xu, Lingjie Liu, Kri-pasindhu Sarkar, and Christian Theobalt. Scene-aware ego-centric 3d human pose estimation. In CVPR , pages 13031– 13040, 2023. 2, 4 [60] Jianyuan Wang, Minghao Chen, Nikita Karaev, Andrea Vedaldi, Christian Rupprecht, and David Novotny. Vggt: Vi-sual geometry grounded transformer. In CVPR , pages 5294– 5306, 2025. 2 [61] Jian Wang, Rishabh Dabral, Diogo Luvizon, Zhe Cao, Lingjie Liu, Thabo Beeler, and Christian Theobalt. Ego4o: Egocentric human motion capture and understanding from multi-modal input. In CVPR , pages 22668–22679, 2025. 3 [62] Bin Xiao, Haiping Wu, and Yichen Wei. Simple baselines for human pose estimation and tracking. In ECCV , pages 466–481, 2018. 3 [63] Weipeng Xu, Avishek Chatterjee, Michael Zollhoefer, Helge Rhodin, Pascal Fua, Hans-Peter Seidel, and Christian Theobalt. Mo 2 cap 2: Real-time mobile 3d motion cap-ture with a cap-mounted fisheye camera. IEEE transactions on visualization and computer graphics , 25(5):2093–2101, 2019. 3 [64] Chenhongyi Yang, Tianwei Lin, Lichao Huang, and Elliot J Crowley. Widthformer: Toward efficient transformer-based bev view transformation. In IROS , pages 8457–8464. IEEE, 2024. 3, 5, 1 [65] Chenhongyi Yang, Anastasia Tkach, Shreyas Hampali, Lin-guang Zhang, Elliot J Crowley, and Cem Keskin. Egopose-former: A simple baseline for stereo egocentric 3d human pose estimation. In ECCV , pages 401–417, 2024. 2, 3, 4, 5, 6, 7, 1 [66] Lihe Yang, Wei Zhuo, Lei Qi, Yinghuan Shi, and Yang Gao. St++: Make self-training work better for semi-supervised se-mantic segmentation. In CVPR , pages 4268–4277, 2022. 3 [67] Lihe Yang, Bingyi Kang, Zilong Huang, Zhen Zhao, Xiao-gang Xu, Jiashi Feng, and Hengshuang Zhao. Depth any-thing v2. NeurIPS , 37:21875–21911, 2024. 2 [68] Xiangli Yang, Zixing Song, Irwin King, and Zenglin Xu. A survey on deep semi-supervised learning. IEEE transac-tions on knowledge and data engineering , 35(9):8934–8954, 2022. 3 [69] Brent Yi, Vickie Ye, Maya Zheng, Yunqi Li, Lea M¨ uller, Georgios Pavlakos, Yi Ma, Jitendra Malik, and Angjoo Kanazawa. Estimating body and hand motion in an ego-sensed world. In CVPR , pages 7072–7084, 2025. 3 [70] Bowen Zhang, Yidong Wang, Wenxin Hou, Hao Wu, Jin-dong Wang, Manabu Okumura, and Takahiro Shinozaki. Flexmatch: Boosting semi-supervised learning with curricu-lum pseudo labeling. NeurIPS , 34:18408–18419, 2021. 3 [71] Jiacheng Zhang, Xiangru Lin, Wei Zhang, Kuo Wang, Xiao Tan, Junyu Han, Errui Ding, Jingdong Wang, and Guanbin Li. Semi-detr: Semi-supervised object detection with detec-tion transformers. In CVPR , pages 23809–23818, 2023. 3 [72] Amy Zhao, Chengcheng Tang, Lezi Wang, Yijing Li, Mi-hika Dave, Lingling Tao, Christopher D Twigg, and Robert Y Wang. Egobody3m: Egocentric body tracking on a vr head-set using a diverse dataset. In ECCV , pages 375–392, 2024. 2, 3, 4, 5, 6, 7, 1 [73] Dongxu Zhao, Zhen Wei, Jisan Mahmud, and Jan-Michael Frahm. Egoglass: Egocentric-view human pose estimation from an eyeglass frame. In 3DV , pages 32–41. IEEE, 2021. 2, 3 [74] Hongyu Zhou, Zheng Ge, Songtao Liu, Weixin Mao, Zeming Li, Haiyan Yu, and Jian Sun. Dense teacher: Dense pseudo-labels for semi-supervised object detection. In ECCV , pages 35–50. Springer, 2022. 3, 6 [75] Tianyi Zhou, Shengjie Wang, and Jeff Bilmes. Time-consistent self-supervision for semi-supervised learning. In 
+
+ICML , pages 11523–11533. PMLR, 2020. 3 [76] Yi Zhou, Connelly Barnes, Jingwan Lu, Jimei Yang, and Hao Li. On the continuity of rotation representations in neural networks. In CVPR , pages 5745–5753, 2019. 5 [77] Xizhou Zhu, Weijie Su, Lewei Lu, Bin Li, Xiaogang Wang, and Jifeng Dai. Deformable detr: Deformable trans-formers for end-to-end object detection. arXiv preprint arXiv:2010.04159 , 2020. 4 EgoPoseFormer v2: Accurate Egocentric Human Motion Estimation for AR/VR 
+
+# Supplementary Material Query (B, J, C)     
+
+> sampling_offsets value projection attention_weights
+> Visual Features (View 1)
+> (B, HW, C)
+> q (B, J, h, num_pts )o (B, J, h, num_pts , 2) v (B, HW, h, C/h)
+
+Deformable Attention    
+
+> output (B, J, C)
+> output projection
+> Output Query
+> (B, J, C)
+> View 1
+> sampling_o ff sets value projection attention_weights
+> q (B, J, h, num_pts )o (B, J, h, num_pts , 2) v (B, HW, h, C/h)
+
+Deformable Attention   
+
+> output (B, J, C)
+> output projection
+> Output Query
+> (B, J, C)
+> View 2
+> Updated Query
+> (B, J, C)
+> concate &fuse _mlp
+
+Needs custom device -
+
+specific kernels 
+
+Figure 7. Deformable stereo attention module used in EPFv1 [65]. Each joint query independently attends to sampled image features via learned offsets and attention weights. Outputs from different views are sequentially fused using an MLP. This design introduces the specialized component with higher development complexity [64] and suboptimal hardware utilization. B, J, C, num pts , and h denote batch size, number of joints, feature channels, reference points, and attention heads, respectively. Learnable layers are highlighted in red, with layer names matching Tab. 3. 
+
+## A. Efficiency Analysis 
+
+This section provides a detailed efficiency compari-son between EPFv2 and other models like EgoPoseFormer (EPFv1) [65] and EgoBody3M [72]. 
+
+A.1. Cross-attention in EPFv1 and EPFv2 
+
+The key architectural difference lies in how spatial fea-tures are aggregated from multi-view images. EPFv1 uses deformable attention, which dynamically samples image features around projected keypoint locations using learned offsets. While deformable attention benefits from optimized CUDA kernels during training, achieving similar efficiency during on-device inference would incure a large amount of random memory reads [64], limiting its efficiency on edge-computing devices, i.e ., the AR/VR headset in our case. In contrast, EPFv2 employs standard cross-attention con-ditioned on concatenated projected 2D keypoints (Eq. 7 in the main paper), encoding multi-view information through the conditioning mechanism rather than explicit deformable sampling. We visualize both architectures in Fig. 7 and Fig. 8, with red labels denoting trainable components. Cor-responding FLOPs and parameter breakdowns are summa-rized in Tab. 3. Apart from its simplicity, our method achieves even smaller cost (in terms of FLOPs and param-eters) while offering significantly better deployment friend-liness because of its reliance on standard operations. 
+
+A.2. The Impact of Joint Count 
+
+An efficiency bottleneck in prior transformer-based models such as EPFv1 is the one-to-one correspondence between body keypoint and query tokens. Specifically, the model uses a separate query per keypoint and each query independently attends to the feature maps. This design in-troduces computational overhead that scales linearly with the number of keypoints. In contrast, our method adopts a single holistic pose query that aggregates all necessary information. This de-sign decouples the model’s computational complexity from the number or type of predicted joints. As a result, our ar-chitecture improves inference efficiency while also enabling seamless support for different parametric body models. Query (BV, J, C)   
+
+> key projection value projection query projection
+> Visual Features
+> (BV, HW, C)
+> q (BV, J, h, C/h) k(BV, HW, h, C/h) v (BV, HW, h, C/h)
+
+Standard Attention 
+
+> output (BV, J, C)
+> Updated Query
+> (B, J, C)
+> output_projection
+> reshape
+> reshaped output (B, J, VC)
+> Conditioned
+> Position Encoding
+> Query (B, J, C)
+> repeat
+
+Figure 8. Our simplified multi-view cross-attention module built on standard attention. A single holistic query attends to all view features using conditioned positional encoding in a batch manner, enabling more efficient and scalable spatial fusion. V denotes the number of views. Learnable layers are highlighted in red, with naming aligned to Tab. 3. 
+
+Tab. 3 quantifies the benefits of this design. Compared to a 16-query baseline using standard attention, our single-query variant reduces FLOPs by over 4 × (622K vs. 131K) while maintaining the same number of parameters. The re-duced computational cost makes the model more suitable for deployment on edge devices, and the unified query de-sign simplifies implementation and integration across dif-ferent body models. 
+
+A.3. Efficiency Comparison with EgoBody3M 
+
+EPFv2 and EgoBody3M [72] are both temporal models, enabling a fair, end-to-end efficiency comparison. Here, we focus the comparison on the pose estimation head as the image encoders are subject to change. As shown in Tab. 4, our transformer-based design significantly reduces the parameter count from 14.96M to 0.83M and FLOPs from 39.76G to 10.52G. This reduction in parameters and drop in FLOPs highlights the effectiveness of our proposed architecture, making it highly suitable for real-time deploy-ment on resource-constrained devices. 
+
+A.4. Latency measurement 
+
+We provide the latency measurement of EPFv2. Specif-ically, we report latency for both plain PyTorch models 
+
+Table 3. Layer-wise comparison of parameter count and FLOPs for different spatial attention modules. (1) EPFv1 uses deformable attention with 16 joint queries and reference points, introducing moderate compute and high development complexity. (2) A base-line standard attention setup with 16 queries shows 4.75 × higher FLOPs due to dense spatial interactions. (3) Our final design adopts a single holistic query and standard attention, achieving the lowest computation (131K FLOPs) while maintaining similar pa-rameter count to other variants.                                              
+
+> Method Layer # of params FLOPs (1) EPFv1 Deformable Attention w/ 16 Queries w/ 16 reference points sampling offsets 16512 32768 attention weights 8256 16384 value projection 16512 32768 output projection 16512 32768 fuse mlp 32896 32768 norm 256 0Total -90944 147456 (2) EPFv2 w/ 16 Queries Standard Attention query projection 16512 32768 key projection 16512 32768 value projection 16512 32768 output projection 32896 524288 norm 256 0Total -82688 622592 (3) EPFv2 w/ 1 Query Standard Attention
+> (Our Final Design)
+> query projection 16512 32768 key projection 16512 32768 value projection 16512 32768 output projection 32896 32768 norm 256 0Total -82688 131072
+
+Table 4. Efficiency Comparison with EgoBody3M. We compare only the pose estimation heads, assuming a shared backbone. EPFv2 significantly reduces parameter count and FLOPs, demon-strating the efficiency of its streamlined transformer design. 
+
+Method # of params FLOPs EgoBody3M [72] 14.96M 39.76G EPFv2 0.83M 10.52G 
+
+Table 5. Latency measurement of EPFv2.                          
+
+> Backbone FP16 Plain PyTorch ONNX CPU TensorRT lvl. 0TensorRT lvl. 5ResNet18 9.8 ms 59.2 ms 3.3ms 1.3ms
+> ✓8.3 ms –1.6ms 1.0ms MobileNetV4S 14.9 ms 23.8 ms 3.0ms 1.1ms
+> ✓13.3 ms –1.3ms 0.8ms
+
+(common in research) and ONNX models (suitable for de-ployment). For ONNX, CPU latency was measured using FP32 with onnxruntime , and GPU latency of both FP32 and FP16 were measured using TensorRT’s trtexec with CudaGraph enabled at optimization lvl. 0 (least optimized) and lvl. 5 (most optimized). All experiments use 4-view 256×320 images (our baseline setting) on an Intel Xeon Platinum 8339HC CPU and NVIDIA A100 GPU. 
+
+## B. Additional Benchmark on Ego4View-Syn 
+
+In the main paper, we focus our evaluation and abla-tion studies on the EgoBody3M [72] dataset, since it con-tains long egocentric video sequences with 3D ground-truth poses. To further validate our architecture, we conduct an Table 6. Comparison on Ego4View-Syn [7]. We evaluate a single-frame variant of EPFv2 on the Ego4View-Syn dataset. De-spite removing temporal modeling, our method achieves strong results, outperforming prior works in PA-MPJPE and remaining competitive in MPJPE.               
+
+> Method MPJPE PA-MPJPE EgoPoseFormer [65] 27.36 23.31 EgoRear [7] 27.04 23.18 EPFv2 27.94 22.53
+> Table 7. Impact of temporal sequence length. Using only two frames leads to significant performance degradation, while longer sequences offer stable and improved accuracy. We use 16 as the default setting for fair comparison with prior work [72].
+> Length Overall MPJPE 24.30 16 (default) 4.17
+
+additional benchmark on the Ego4View-Syn dataset pro-posed in the recent SoTA method EgoRear [7]. For a fair comparison with existing single-frame meth-ods on this dataset, we adapt our model by removing the causal temporal attention module, effectively reduc-ing EPFv2 to a single-frame baseline method. Follow-ing EgoRear’s architecture, we use three transformer lay-ers: one for pose proposal and two for refinement. Since Ego4View-Syn does not provide auxiliary inputs (e.g., headset pose), we initialize the holistic query using an MLP over the image features, following EPFv1 [65]. All training implementations are kept consistent with EgoRear. As shown in Tab. 6, our “simplified” single-frame version achieves competitive MPJPE and the best PA-MPJPE among all compared methods. This confirms that our architectural design offers strong performance even in the absence of temporal modeling. 
+
+## C. Additional Ablation Study 
+
+We present two additional ablation studies to further in-vestigate the impact of temporal context length and image backbone capacity on the performance of EPFv2. 
+
+C.1. Sequence Length 
+
+We vary the causal temporal attention window length to assess the contribution of temporal modeling. As shown in Tab. 7, using only two frames leads to a substantial perfor-mance drop, indicating that temporal context is crucial for accurate 3D pose estimation. For longer sequences, perfor-mance remains stable. We adopt a length of 16 frames as the default setting, following EgoBody3M [72], to ensure both fair comparison and efficient training.            
+
+> Table 8. Comparison across different image backbones. Larger backbones, such as DINOv3-B, significantly improve pose estima-tion accuracy, demonstrating the benefit of strong visual features in egocentric settings.
+> Variants # of params. Overall MPJPE ResNet-18 [24] 12.5M 4.17 ResNet-50 [24] 43.3M 4.03 DINOv3-ViT-B [50] 119.2M 3.96
+
+C.2. Image Encoders 
+
+We also evaluate the effect of different image backbone architectures, ranging from lightweight (ResNet-18 [24]) to large-scale vision transformers (DINOv3-B [50]). Re-sults in Tab. 8 show a clear trend: stronger backbones con-sistently yield better 3D pose estimation, with DINOv3-B achieving the best performance, highlighting the benefit of high-quality features for challenging egocentric scenarios.
