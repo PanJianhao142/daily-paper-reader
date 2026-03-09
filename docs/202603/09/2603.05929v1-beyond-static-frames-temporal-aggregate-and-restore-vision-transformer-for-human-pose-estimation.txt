@@ -1,0 +1,472 @@
+Title: Beyond Static Frames: Temporal Aggregate-and-Restore Vision Transformer for Human Pose Estimation
+
+URL Source: https://arxiv.org/pdf/2603.05929v1
+
+Published Time: Mon, 09 Mar 2026 00:29:24 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# Beyond Static Frames: Temporal Aggregate-and-Restore Vision Transformer for Human Pose Estimation 
+
+## Hongwei Fang, Jiahang Cai, Xun Wang, Wenwu Yang *
+
+## Zhejiang Gongshang University, China 
+
+## Abstract 
+
+Vision Transformers (ViTs) have recently achieved state-of-the-art performance in 2D human pose estimation due to their strong global modeling capability. However, exist-ing ViT-based pose estimators are designed for static im-ages and process each frame independently, thereby ig-noring the temporal coherence that exists in video se-quences. This limitation often results in unstable predic-tions, especially in challenging scenes involving motion blur, occlusion, or defocus. In this paper, we propose TAR-ViTPose, a novel Temporal Aggregate-and-Restore Vi-sion Transformer tailored for video-based 2D human pose estimation. TAR-ViTPose enhances static ViT representa-tions by aggregating temporal cues across frames in a plug-and-play manner, leading to more robust and accurate pose estimation. To effectively aggregate joint-specific features that are temporally aligned across frames, we introduce a joint-centric temporal aggregation (JTA) that assigns each joint a learnable query token to selectively attend to its corresponding regions from neighboring frames. Further-more, we develop a global restoring attention (GRA) to restore the aggregated temporal features back into the to-ken sequence of the current frame, enriching its pose rep-resentation while fully preserving global context for pre-cise keypoint localization. Extensive experiments demon-strate that TAR-ViTPose substantially improves upon the single-frame baseline ViTPose, achieving a +2.3 mAP gain on the PoseTrack2017 benchmark. Moreover, our ap-proach outperforms existing state-of-the-art video-based methods, while also achieving a noticeably higher run-time frame rate in real-world applications. Project page: https://github.com/zgspose/TARViTPose. 
+
+## 1. Introduction 
+
+Human pose estimation (HPE) aims to localize anatomical keypoints of individuals in images or videos. As a core task in computer vision, HPE plays a vital role in numer-
+
+> *Corresponding author (wwyang@zjgsu.edu.cn).
+
+Figure 1. Comparison between the baseline ViTPose pipeline (a) and our TAR-ViTPose (b). (a) ViTPose adopts a ViT encoder to extract latent features from the input image, which are then fed into a lightweight decoder to regress keypoint heatmaps. (b) Our method enhances the current-frame representation by aggregating temporal cues from adjacent frames, achieving plug-and-play tem-poral modeling within the original ViTPose architecture. 
+
+ous human-centric applications, including human-computer interaction [5, 22], human behavior analysis [8], and mo-tion capture [46]. Although HPE is primarily deployed in video-based scenarios, the majority of existing methods rely on single-frame approaches [12, 19, 21, 30, 32, 35, 36, 39, 41, 42] that perform 2D pose estimation indepen-dently on static images . However, these approaches inher-ently lack temporal awareness and are thus susceptible to failure in dynamic scenarios. Recently, several video-based HPE methods [2, 4, 10, 11, 14, 17, 24] have been developed to address this limitation by exploiting dynamic cues across video frames. These studies demonstrate that incorporat-ing temporal information is crucial for improving robust-ness under challenging conditions such as occlusion, mo-tion blur, and video defocus. Existing video-based methods are mainly designed with convolutional neural network architectures. Recently, Vi-sion Transformers (ViTs) have been introduced to signifi-cantly improve single-frame pose estimation performance. 1
+
+> arXiv:2603.05929v1 [cs.CV] 6 Mar 2026
+
+Among them, ViTPose [41], built upon a plain ViT en-coder and a lightweight decoder, has emerged as a state-of-the-art 2D pose estimator, exhibiting strong spatial mod-eling capability and remarkable generalization. Inspired by the strong performance of ViTPose, several recent video-based methods have attempted to reuse it for temporal pose estimation. However, these approaches typically employ the pre-trained ViTPose solely for single-frame feature ex-traction, while relying on additional, carefully designed modules—such as Transformer-based architectures ( e.g. ,DSTA [14], CM-Pose [4], MTPose [31]) or Mamba-based models ( e.g. , GLSMamba [11])—to fuse multi-frame fea-tures, along with a dedicated decoder to adapt to the fused representations. This not only complicates the pipeline and increases inference cost but also deviates from the simplic-ity of the plain ViT architectures. This motivates us to ex-plore a new direction: can we directly embed temporal mod-eling into the ViTPose framework, while preserving its plain ViT design and lightweight decoding pipeline? 
+
+To answer this question, we propose TAR-ViTPose, a novel Temporal Aggregate-and-Restore Vision Transformer that enhances static ViT representations by aggregating temporal cues across frames in a plug-and-play manner, thereby enabling more robust and accurate pose estimation. As illustrated in Fig. 1, our strategy is to append a temporal modeling module after the ViTPose encoder to aggregate la-tent features from adjacent frames into the current frame’s feature tokens, and then reuse the original lightweight de-coder of ViTPose to regress keypoint heatmaps from the enhanced representation. The key challenge lies in ensur-ing that temporally corresponding keypoint features are ac-curately aligned across frames within the temporal model-ing module, so as to effectively capture joint-specific tem-poral dynamics. To address this, we introduce a Joint-centric Temporal Aggregation (JTA) that assigns each joint a learnable query token and employs a mask-aware atten-tion mechanism to selectively attend to its corresponding regions in neighboring frames. In addition, we develop a Global Restoring Attention (GRA) to restore the aggregated temporal features back into the token sequence of the cur-rent frame, enriching its pose representation while fully pre-serving global context for precise keypoint localization. We extensively evaluate our method on three widely used video-based HPE benchmarks: PoseTrack2017 [16], Pose-Track2018 [1], and PoseTrack21 [7]. Experimental results demonstrate that our TAR-ViTPose framework achieves substantial performance gains, surpassing the single-frame baseline ViTPose by a notable margin of +2.3 mAP on PoseTrack2017 benchmark. Moreover, our approach sets new state-of-the-art results on all three benchmarks, while achieving higher runtime frame rates (e.g. , 413 fps vs. 52 fps ) in real-world applications compared to existing video-based methods. It is worth noting that our work does not address temporal pose tracking; instead, it presents a simple and robust temporal Vision Transformer framework with superior performance for 2D pose estimation in videos. Our main contributions can be summarized as follows: • We propose TAR-ViTPose , a novel Temporal Aggregate-and-Restore Vision Transformer that integrates tempo-ral modeling into the ViTPose framework in a plug-and-play fashion, while preserving its plain ViT design and lightweight decoding pipeline. By leveraging temporal cues across frames, our method significantly enhances pose estimation robustness and accuracy. • We introduce Joint-centric Temporal Aggregation (JTA) and Global Restoring Attention (GRA), which together enable effective aggregation and reintegration of joint-specific temporal features across frames. • Extensive experiments on video-based benchmarks show that our method achieves substantial performance gains over the single-frame baseline ViTPose, establishes new state-of-the-art results, and delivers higher runtime frame rates than existing video-based methods. 
+
+## 2. Related Work 
+
+2.1. Image-Based Human Pose Estimation 
+
+Early approaches to human pose estimation primarily re-lied on deformable models and pictorial structures to cap-ture spatial relationships among body parts [29, 33]. With the advent of deep learning, convolutional neural networks (CNNs) have significantly advanced this field [3, 21, 26, 30, 32, 35, 38, 39]. More recently, the emergence of the Vision Transformer (ViT) has further reshaped the land-scape of human pose estimation from static images. Meth-ods like TransPose [42], TokenPose [12], HRFormer [45], and the highly influential ViTPose [41] employ global self-attention mechanisms to capture long-range dependencies among human joints, setting new benchmarks across multi-ple 2D HPE datasets. Among these ViT-based approaches, TransPose [42], TokenPose [12], and HRFormer [45] ei-ther rely on additional CNN backbones for feature extrac-tion or require carefully designed Transformer structures to adapt to the pose estimation task. In contrast, ViTPose [41] adopts the plain and non-hierarchical ViT architecture with-out task-specific structural modifications, thereby establish-ing a simple yet highly effective ViT-based baseline model for human pose estimation. However, despite their out-standing performance on static images, these methods in-herently lack temporal modeling capabilities, which lim-its their applicability in dynamic video scenarios. Conse-quently, such models struggle to handle challenges unique to video inputs, such as motion blur, defocus, and pose oc-clusions, which frequently occur in real-world scenes. 2Figure 2. The pipeline of the proposed Temporal Aggregate-and-Restore Vision Transformer (TAR-ViTPose). The objective is to estimate the human pose of the current frame Xi(t). Given a video sequence ⟨Xi(t−T ), . . . , X i(t), . . . , X i(t+T )⟩, each frame is first encoded by the ViT encoder to obtain latent features {F out                     
+
+> i(τ)}t+Tτ=t−T. The JTA precisely aligns and aggregates keypoint features across frames. To achieve this, a query token is assigned to each joint ( Q), and a mask-aware attention selectively attends to its corresponding joint regions in neighboring frames, guided by masks M(τ)t+Tτ=t−Tderived from the decoded keypoint heatmaps H(τ)t+Tτ=t−T. Subsequently, the GRA injects the aggregated temporal features eQback into the current frame’s latent representation, producing an enhanced feature bFout
+> i(t), which is then fed into the lightweight decoder to generate the final keypoint heatmaps Hi(t)for the current frame.
+
+2.2. Video-Based Human Pose Estimation 
+
+Compared to methods designed for static images, video-based 2D HPE approaches [2, 4, 10, 11, 14, 17, 24, 27, 40] are more suitable for motion-rich and dynamic en-vironments. These video-based methods are mainly de-signed with convolutional neural network architectures. In-spired by the strong performance of the ViT-based 2D HPE method ViTPose, several recent video-based meth-ods have attempted to extend it for temporal pose estima-tion. However, these approaches typically employ the pre-trained ViTPose solely for single-frame feature extraction, while relying on additional, carefully designed modules such as Transformer-based architectures ( e.g. , DSTA [14], CM-Pose [4], MTPose [31]) or Mamba-based models ( e.g. ,GLSMamba [11]) to fuse multi-frame features, along with dedicated decoders to adapt to the fused representations. This not only complicates the overall pipeline and increases inference cost but also deviates from the simplicity and el-egance of the plain ViT architecture employed in ViTPose. Although Poseidon [27] reuses the lightweight decoder of ViTPose, it merely fuses multi-frame features through sim-ple cross attention, which struggles to accurately align tem-porally corresponding keypoint features across frames. To date, there have been few efforts to explore the full potential of plain ViTs for spatiotemporal pose estimation. In this work, we address this gap by proposing a simple yet effective baseline that directly integrates temporal modeling into the ViTPose framework, while preserving its plain ViT design and lightweight decoding pipeline. 
+
+## 3. Our Approach 
+
+Let X(t) denote the video frame at the current time t,which contains multiple individuals. Our goal is to esti-mate the 2D locations of anatomical keypoints for each per-son in this frame. Unlike single-frame approaches such as ViTPose [41], which perform pose estimation indepen-dently on static images, we leverage temporal dynamics from a sequence of consecutive frames S = ⟨X(t −
+
+T ), . . . , X (t), . . . , X (t+T )⟩, where T denotes a predefined temporal span, to enhance pose estimation for the current frame X(t). Our method follows the widely adopted two-stage top-down paradigm. In the first stage, we apply a hu-3man detector [28] to localize individuals in the current video frame X(t). Each detected bounding box is then expanded by 25% to crop the corresponding person region across all frames in the sequence S, resulting in a person-specific video clip Si = ⟨Xi(t − T ), . . . , X i(t), . . . , X i(t + T )⟩
+
+for each individual i. In the second stage, human pose esti-mation is performed for each individual i within the current frame X(t), which can be expressed as: 
+
+n
+
+Hji (t)
+
+oNj=1 
+
+= HPE (Si), (1) where HPE (·) denotes the human pose estimation module, 
+
+Hji (t) is the heatmap for the j-th keypoint of individual i
+
+in the current frame t, and N is the number of keypoints (e.g. , N = 15 in the PoseTrack datasets [1, 7, 16]). For sim-plicity in the following description of our algorithm, unless otherwise specified, we will refer to a specific individual i.In our implementation, the human pose estimation module HPE (·) adopts a ViT-based framework similar to ViTPose [41], retaining its plain ViT design and lightweight decoding pipeline. Meanwhile, it seamlessly integrates temporal modeling to fully exploit joint-specific temporal dynamics within the video clip Si, thereby improving pose estimation robustness and accuracy, especially in challeng-ing scenarios involving motion blur, occlusion, or defocus. 
+
+3.1. ViTPose Revisited and Beyond 
+
+ViTPose [41] is a state-of-the-art 2D human pose estima-tion framework built upon a plain Vision Transformer ar-chitecture. It replaces traditional CNN backbones such as ResNet [15] or HRNet [32] with a ViT encoder [20], in which the input image is divided into fixed-size patches (e.g. , 16 × 16 ), linearly projected into tokens, and then pro-cessed by standard ViT layers. The decoder is lightweight, consisting of two stacked deconvolution layers that progres-sively upsample the ViT feature maps, followed by a 1 × 1
+
+convolution to generate pixel-wise keypoint heatmaps. While ViTPose excels in static image scenarios, it over-looks the temporal coherence inherent in video sequences. When directly applied to videos, it tends to produce sub-optimal predictions due to its inability to capture temporal dependencies across consecutive frames. To address this temporal limitation in ViTPose, we develop TAR-ViTPose by introducing temporal modeling into the ViT-based ar-chitecture, while preserving its original design simplicity and decoding pipeline. As shown in Fig. 1, given a person-specific video clip Si, our strategy is to append a temporal modeling module after the ViT encoder to aggregate latent features from adjacent frames, thereby enhancing the cur-rent frame’s feature representation before passing it to the lightweight decoder for regressing the keypoint heatmaps 
+
+{Hji (t)}nj=1 of the current frame t. The overall architecture and workflow are illustrated in Fig. 2. Specifically, we intro-duce a Joint-centric Temporal Aggregation (JTA) to effec-tively aggregate joint-specific features that are temporally aligned across frames. We then employ a Global Restoring Attention (GRA) to inject the aggregated temporal features back into the token sequence of the current frame, enriching its feature representation while fully preserving global con-text for precise keypoint localization. The following sec-tions provide detailed descriptions of the JTA and GRA. 
+
+3.2. Joint-centric Temporal Aggregation 
+
+For each image Xi(τ ) ∈ RH×W ×3 in the input person-specific video clip Si, where τ ∈ { t − T, . . . , t, . . . , t + T },the ViT encoder is employed to extract its latent feature rep-resentation. Specifically, the image is first partitioned into non-overlapping patches and embedded into tokens through a patch embedding layer, yielding Fi(τ ) ∈ R Hd × Wd ×C ,
+
+where d (e.g. , 16 by default) denotes the patch downsam-pling ratio, and C is the channel dimension of the token embedding. These tokens are then processed by multiple transformer layers, producing the final feature representa-tion output by the ViT backbone: F out  
+
+> i
+
+(τ ) ∈ R Hd × Wd ×C .
+
+The goal of JTA is to aggregate the latent features from consecutive frames, i.e. , {F out  
+
+> i
+
+(τ )}t+Tτ =t−T , through tempo-ral modeling, in order to enhance the feature representation 
+
+F out  
+
+> i
+
+(t) of the current frame t. Since self-attention mecha-nisms [34] can naturally capture temporal dependencies, a potential approach for aggregating these latent features, as explored in [27], is to perform self-attention directly over the feature sequence ⟨F out  
+
+> i
+
+(t−T ), . . . , F out  
+
+> i
+
+(t), . . . , F out  
+
+> i
+
+(t+
+
+T )⟩, or to conduct cross-attention between the current frame’s feature tokens F out  
+
+> i
+
+(t) (as queries) and those from adjacent frames (as keys and values). However, we observe that different human joints often exhibit relatively inde-pendent temporal trajectories during motion. For example, when running, the wrist joints swing back and forth, while the head joint remains mostly forward-facing. Hence, it is crucial to model temporal dependencies in a joint-specific manner to ensure that temporally corresponding keypoint features are accurately aligned across frames. To this end, our strategy is to assign a learnable query token to each joint and selectively attend to the correspond-ing feature regions across consecutive frames, rather than treating all feature tokens equally, as shown in Fig. 2. This design explicitly enforces joint-level temporal alignment, enabling accurate aggregation of temporally coherent fea-tures for each keypoint. To achieve this, JTA performs cross-attention between the N learnable joint query tokens 
+
+Q ∈ RN ×C (where N is the number of keypoints) and the feature tokens from all frames, thereby aggregating tempo-ral information in a joint-specific manner: 
+
+eQ = JTA 
+
+
+
+Q, F out  
+
+> i
+
+(τ ) t+Tτ =t−T
+
+
+
+, (2) where JTA (·, ·) denotes the joint-centric temporal aggrega-4tion, and eQ represents the updated query tokens, each ag-gregating features corresponding to the same joint across frames. In our implementation, the JTA (·, ·) follows the conventional transformer architecture [34]. We stack six identical cross-attention layers sequentially. In each layer, the joint query tokens first perform cross-attention over the feature sequence {F out  
+
+> i
+
+(τ )}t+Tτ =t−T (i.e. , feature-to-joint at-tention), followed by a self-attention that enables interac-tions among the joint queries themselves ( i.e. , joint-to-joint attention). Furthermore, to ensure that each joint query token attends only to its corresponding keypoint regions across frames during feature-to-joint attention, we intro-duce a mask-aware attention mechanism detailed below. 
+
+3.2.1. Mask-aware Feature-to-Joint Attention 
+
+To enforce joint-level temporal alignment and aggregation, each query token in Q is designed to attend exclusively to its corresponding keypoint regions across frames, avoid-ing interference from unrelated areas. To achieve this, we generate a spatial mask map for each joint query token on every frame, as shown in Fig. 2. Specifically, we first feed the frame-wise features extracted by the ViT encoder (i.e. , F out  
+
+> i
+
+(τ ) with τ ∈ { t − T, . . . , t, . . . , t + T }) into the lightweight decoder to obtain the keypoint heatmaps for all frames, denoted as H(τ ), where τ ∈ { t − T, . . . , t, . . . , t +
+
+T }. These heatmaps are then used to construct joint-specific binary masks, which indicate the spatial regions each joint query token should attend to across frames: 
+
+M jx,y (τ ) = 
+
+(
+
+0 if Hjx,y (τ ) ≥ ϕ, 
+
+−∞ otherwise , (3) where Hjx,y (τ ) denotes the value of the j-th keypoint heatmap at pixel location (x, y ) in frame τ . The resulting mask M jx,y (τ ) specifies whether the j-th joint query token should attend to the feature at position (x, y ) in frame τ : 0
+
+indicates that the region is relevant, while −∞ suppresses attention to irrelevant areas. The threshold ϕ is set to 0.2 by default. Each spatial mask is then resized to match the resolution of the ViT encoder’s output feature map. Guided by these masks, during the feature-to-joint at-tention process, the joint query tokens Q perform cross-attention over the feature sequence {F out  
+
+> i
+
+(τ )}t+Tτ =t−T using masked attention [6] (with a residual connection), replacing standard cross-attention: 
+
+Ql = softmax  fq (Ql−1)fk(F out  
+
+> i
+
+)⊤ + M  fv (F out  
+
+> i
+
+) + Ql−1,
+
+(4) where l denotes the layer index; Ql ∈ RN ×C represents the N joint query tokens at the l-th layer, each of dimen-sion C; F out  
+
+> i
+
+∈ R HdWd (2 T +1) ×C corresponds to the concate-nated feature tokens from all frames in the sequence; and 
+
+M ∈ RN × HdWd (2 T +1) stores the joint-specific spatial masks computed using Eq. 3. Here, fq (·), fk(·), and fv (·) denote the linear transformations applied to produce the query, key, and value embeddings, respectively. Starting from the ini-tialization Q0 = Q, the joint query tokens are iteratively updated across layers. The final output of the JTA (·, ·), de-fined in Eq. 2, is thus given by eQ = Q6.As a result, in Eq. 4, the mask matrix M modulates the attention scores based on the spatial masks derived in Eq. 3, enforcing that each query token in Q focuses solely on its associated keypoint regions across all frames. 
+
+3.3. Global Restoring Attention 
+
+Through the JTA module, the updated joint query tokens 
+
+eQ aggregate temporal contextual cues of human keypoints across frames. To leverage these temporal cues for en-hancing the current frame’s feature representation F out  
+
+> i
+
+(t),it is crucial to reintegrate the temporal semantics into the spatial features of the current frame. This leads to a spatio-temporally enhanced feature representation, denoted as bF out  
+
+> i
+
+(t). To achieve this, our GRA performs a single cross-attention operation between the current frame’s fea-ture tokens F out  
+
+> i
+
+(t) and the updated joint query tokens eQ,thereby injecting the aggregated temporal information back into the feature space of the current frame t:
+
+bF out  
+
+> i
+
+(t) = CrossAttn 
+
+
+
+F out  
+
+> i
+
+(t), eQ, eQ
+
+
+
+, (5) where CrossAttn (·, ·, ·) refers to the standard cross-attention operation, with F out  
+
+> i
+
+(t) serving as the query and eQ supply-ing both the keys and values. 
+
+Loss Function. The spatio-temporally enhanced fea-ture representation bF out  
+
+> i
+
+(t) is then fed into the original lightweight decoder of ViTPose [41] to generate the final keypoint heatmaps for the current frame, i.e. , {Hji (t)}Nj=1 .During training, the entire model (ViT encoder, JTA, GRA, and the decoder) is optimized end-to-end by minimizing the discrepancy between the predicted heatmaps and the ground-truth keypoint heatmaps: 
+
+L = X
+
+> iN
+
+X
+
+> j=1
+
+Hji (t) − Gji (t) 22
+
+, (6) where Gji (t) denotes the ground-truth heatmaps for joint j
+
+of person i at the current frame t.
+
+## 4. Experiments 
+
+4.1. Experimental Settings 
+
+We evaluated our model on three widely used video bench-mark datasets: PoseTrack2017 [16], PoseTrack2018 [1], and PoseTrack21 [7]. Each dataset contains dynamic video sequences with complex scenes, including severe occlu-sions, fast motions, and crowded environments. Perfor-mance was assessed using the Average Precision (AP) met-ric [2, 21, 24, 32], where AP is computed for each keypoint 5and the mean Average Precision (mAP) is obtained by av-eraging AP across all keypoints. Each reported result is ob-tained through 1–3 runs. Our models were implemented in PyTorch. The encoder and decoder were pretrained on the COCO dataset [23] following ViTPose [41], while the temporal modeling modules were randomly initialized and trained from scratch. The model was trained for 30 epochs on a single NVIDIA RTX A6000 GPU. The default mask threshold ϕ was set to 0.2. Additional implementation de-tails are provided in Appendix A of the Supp. Material. 
+
+4.2. Main Results 
+
+4.2.1. Comparison with the ViTPose Baseline 
+
+To comprehensively assess the effectiveness of the proposed TAR-ViTPose on video inputs, we first compare it with the state-of-the-art ViT-based single-frame baseline, i.e. ,ViTPose [41]. For a fair and thorough comparison, we eval-uate both methods using four different scales of ViT back-bones: ViT-S, ViT-B, ViT-L, and ViT-H, and ensure that each method employs the same pre-trained backbone and decoder. As reported in Table 1, our video-based approach consistently delivers substantial performance improvements across all backbones. For instance, our method outperforms ViTPose [41] by a notable margin of 2.3 mAP (or 2.1 mAP) when using the ViT-B (or ViT-H) backbone. In particular, by leveraging temporal information, our approach achieves significant improvements on challenging keypoints such as the wrist and ankle. For the ankle keypoint, for example, our method surpasses ViTPose [41] by 3.8 mAP with the ViT-S backbone and by 3.4 mAP with the ViT-B backbone. These results highlight the importance of leveraging tempo-ral cues from adjacent frames, which the single-frame base-line ( e.g. , ViTPose) is inherently unable to capture. By leveraging temporal relationships between consec-utive frames, our method demonstrates enhanced robust-ness in video scenes, particularly excelling in challeng-ing scenarios such as occlusion and motion blur, as shown in Fig. 3. These experiments validate that our video-based framework significantly outperforms the state-of-the-art ViT-based single-frame baseline ViTPose when process-ing video inputs, delivering superior overall performance. 
+
+4.2.2. Comparison with State-of-the-Art Methods 
+
+We begin with a comprehensive performance compari-son against state-of-the-art methods on the PoseTrack2017 dataset and further evaluate on PoseTrack2018 and Pose-Track21. Similar to our approach, most existing video-based human pose estimation methods adopt a two-stage top-down framework, where the human detection results in the first stage have a substantial impact on the pose estima-tion performance in the second stage. However, we observe that some state-of-the-art methods report improved pose es-timation accuracy by using ground-truth bounding boxes in-                                                                        
+
+> Method Head Should. Elbow Wrist Hip Knee Ankle Mean
+> Backbone : ViT-S ViTPose [41] 86.5 87.2 81.5 75.0 78.9 78.4 70.4 80.1
+> TAR-ViTPose (Ours) 87.1 88.0 83.2 77.8 80.4 81.0 74.2 81.9
+> Backbone : ViT-B ViTPose [41] 86.7 87.9 83.0 77.7 80.3 81.0 73.9 81.7
+> TAR-ViTPose (Ours) 88.0 89.2 85.0 80.3 82.9 84.2 77.3 84.0
+> Backbone : ViT-L ViTPose [41] 87.1 88.5 84.2 79.7 82.4 83.6 76.9 83.4
+> TAR-ViTPose (Ours) 89.0 90.4 87.1 82.3 83.6 85.8 79.1 85.3
+> Backbone : ViT-H ViTPose [41] 88.2 89.7 86.3 81.6 83.0 84.9 77.8 84.7
+> TAR-ViTPose (Ours) 90.5 91.9 88.4 83.8 84.9 87.3 80.2 86.8
+
+Table 1. Comparison with the ViTPose baseline (mAP) on Pose-Track2017 val. set. 
+
+Figure 3. Qualitative comparison of a) our TAR-ViTPose, b) ViT-Pose [41], c) DCPose [24], d) DSTA [14], and e) Poseidon [27], featuring challenges such as occlusion, motion blur, and defocus. The first two columns are from the PoseTrack datasets, while the last two columns are from in-the-wild videos. Inaccurate predic-tions are marked with red solid circles. Zoom in for clarity. 
+
+stead of those predicted by human detectors such as Faster R-CNN [28]. In addition, several methods do not clearly specify the source of their bounding boxes in their papers, and their source code is not publicly available, making it difficult to determine whether they rely on ground-truth or predicted bounding boxes. To ensure a fair comparison, we explicitly mark these cases in the tables. 
+
+Results on the PoseTrack Datasets. Table 2 presents the quantitative results of different approaches on the Pose-Track2017 validation set. Compared with existing state-of-the-art methods that also use bounding boxes predicted by the human detector [28], our method achieves perfor-mance on par with the best-performing approaches. For ex-ample, by fully leveraging the strong global modeling ca-pacity of ViTs, our method attains an impressive 81.9 mAP even with the small-scale ViT-S backbone, outperforming the much larger backbone network HRNet-W48 [32] by 
+
+4.6 points. Notably, when equipped with the same ViT-H 6Method Backbone Head Should. Elbow Wrist Hip Knee Ankle Mean                                                                                                                                                                      
+
+> Using bounding boxes predicted by the Faster R-CNN detector [28]
+> PoseTrack [13] ResNet-101 67.5 70.2 62.0 51.7 60.7 58.7 49.8 60.6 PoseFlow [40] ResNet-152 66.7 73.3 68.3 61.1 67.5 67.0 61.3 66.5 SimBase. [39] ResNet-152 81.7 83.4 80.0 72.4 75.3 74.8 67.1 76.7 HRNet [32] HRNet-W48 82.1 83.6 80.4 73.3 75.5 75.3 68.5 77.3 PoseWarp. [2] HRNet-W48 81.4 88.3 83.9 78.0 82.4 80.5 73.6 81.2 PAVE-Net †[44] Swin-L 88.2 89.1 81.7 74.8 81.6 78.5 71.8 81.3 DCPose [24] HRNet-W48 88.0 88.7 84.1 78.4 83.0 81.4 74.2 82.8 FAMI-Pose [25] HRNet-W48 89.6 90.1 86.3 80.0 84.6 83.4 77.0 84.8 DSTA [14] HRNet-W48 89.8 90.8 86.2 79.3 85.2 82.2 75.9 84.6 DSTA [14] ViT-H 89.3 90.6 87.3 82.6 84.5 85.1 77.8 85.6
+> TAR-ViTPose ViT-S 87.1 88.0 83.2 77.8 80.4 81.0 74.2 81.9
+> TAR-ViTPose ViT-B 88.0 89.2 85.0 80.3 82.9 84.2 77.3 84.0
+> TAR-ViTPose ViT-H 90.5 91.9 88.4 83.8 84.9 87.3 80.2 86.8
+> Using bounding boxes from unspecified sources or ground-truth ones (*)
+> STEmbed [18] ResNet-152 83.8 81.6 77.1 70.0 77.4 74.5 70.8 77.0 Dyn.-GNN [43] HRNet-W48 88.4 88.4 82.0 74.5 79.1 78.3 73.1 81.1 DetTrack [37] HRNet-W48 89.4 89.7 85.5 79.5 82.4 80.8 76.4 83.8 TDMI [10] HRNet-W48 90.6 91.0 87.2 81.5 85.2 84.5 78.7 85.9 DiffPose [9] ViT (#) 89.0 91.2 87.4 83.5 85.5 87.2 80.2 86.4 CM-Pose [4] ViT (#) 89.2 92.0 89.0 85.6 88.6 87.2 81.1 87.5 GLSMamba [11] ViT-H 90.7 92.1 89.2 85.3 87.0 88.4 82.4 88.0 Poseidon* [27] ViT-H 91.9 93.1 88.6 85.7 88.2 89.6 84.4 88.9
+> TAR-ViTPose* ViT-S 88.0 88.9 84.2 78.4 82.6 81.5 76.9 83.2
+> TAR-ViTPose* ViT-B 92.3 92.6 88.2 83.3 85.9 87.4 82.2 87.7
+> TAR-ViTPose* ViT-H 93.3 94.4 90.6 87.0 86.5 90.0 88.9 90.3
+
+Table 2. Comparison with the SOTAs on PoseTrack2017 val. set. ‘†’ indicates an end-to-end method without bounding box detec-tion, and ‘#’ indicates that the ViT backbone used is not specified. Similar to FAMI-Pose [25] and DSTA [14], our proposed TAR-ViTPose sets the temporal span T to 2, which includes two pre-ceding and two succeeding frames, totaling four auxiliary frames. 
+
+backbone, our method further surpasses the current state-of-the-art DSTA by 1.2 mAP, setting a new state-of-the-art performance of 86.8 mAP. Performance gains on relatively challenging joints are particularly encouraging: the ankle reaches 80.2 mAP ( ↑ 2.4 ), the wrist reaches 83.8 mAP ( ↑
+
+1.2 ), and the knee reaches 87.3 mAP ( ↑ 2.2 ). It is also worth noting that methods leveraging temporal information, such as PoseWarper [2], DCPose [24], FAMI-Pose [25], DSTA [14], and our TAR-ViTPose, consistently outperform those relying solely on a single key frame, such as Simple-Baseline [39] and HRNet [32]. This further reinforces the importance of incorporating temporal cues from adjacent frames. Qualitative results are provided in Fig. 3. To explore the upper-bound performance of our pro-posed TAR-ViTPose, we use ground-truth bounding boxes instead of detector-predicted ones to localize individuals in the video frames. As shown in Table 2, our method achieves substantial performance gains across ViT backbones of dif-ferent scales. Taking ViT-H as an example, our approach yields an additional improvement of 3.5 mAP, reaching an impressive 90.3 mAP, surpassing the state-of-the-art video-based method Poseidon [27]—which also uses ground-truth bounding boxes—by 1.4 mAP. These results clearly demon-
+
+Method Backbone #Params FPS( ↑) mAP PoseWarper [2] HRNet-W48 71.1M 52 81.0 DCPose [24] HRNet-W48 65.2M 128 82.8 DSTA [14] HRNet-W48 63.7M 156 83.4 DSTA [14] ViT-H 422.2M 25 84.3 ViT-S 35.6M 413 81.5 ViT-B 101.1M 186 83.4 TAR-ViTPose ViT-H 672.5M 28 86.3 
+
+Table 3. Runtime frame rate (FPS), measured on an A6000. All methods utilize the same two auxiliary frames as in [24]. 
+
+strate the effectiveness of our proposed joint-centric tempo-ral aggregation and restoring mechanisms. We further evaluate our model on the PoseTrack2018 and PoseTrack21 datasets. Due to space limitations, these results are reported in Appendix B of the supplementary materials. Based on the evaluations, our approach achieves new state-of-the-art performance, obtaining 84.2 mAP and 
+
+84.1 mAP on the two datasets, respectively. When evalu-ated using ground-truth bounding boxes, our method fur-ther reaches 89.8 mAP and 91.0 mAP, yielding additional improvements of 5.6 and 6.9 points, respectively. 
+
+Comparison of Runtime Frame Rates. We conduct experiments to compare the runtime frame rates of various methods in real-world video applications. For a fair com-parison, we use the official open-source implementations of existing state-of-the-art video-based approaches including PoseWarper [2], DCPose [24], and DSTA [14], and employ two auxiliary frames for all methods. Table 3 summarizes the resulting frame rates (FPS). The speed of all methods is measured on a single A6000 GPU with a batch size of 16. During inference, we adopt a simple bounding box inter-section over union (IoU) strategy for human tracking across frames. This design ensures that each cropped human im-age undergoes backbone processing only once, and the ex-tracted features are then reused for pose estimation in the current, preceding, and succeeding frames. As observed, when using the small ViT-S backbone, our TAR-ViTPose achieves an impressive 413 FPS, sig-nificantly outperforming PoseWarper [2] and DCPose [24] while delivering higher or comparable accuracy. Fur-thermore, DSTA [14], being a regression-based method, requires fewer parameters and less computation than heatmap-based approaches, which contributes to its high frame rate. Thanks to our design strategy, TAR-ViTPose, like ViTPose [41], fully preserves the plain ViT architec-ture and adopts a lightweight decoding pipeline. Although the model size of TAR-ViTPose becomes relatively large when using ViT-B and ViT-H backbones, it achieves an ex-cellent balance between throughput and accuracy, deliver-ing not only the highest accuracy but also a higher frame rate than DSTA. These results demonstrate that the plain vision transformer possesses strong representational capa-bility and is well aligned with modern hardware. 7Method GFLOPs mAP (a) Self-attention (All frames) 38.22 82.2 (b) Cross-attention (Cur and Aux) 12.74 82.6 (c) Self-attention (Aux) + (b) 16.99 82.8 (d) Our joint-specific modeling 3.89 84.0               
+
+> Table 4. Ablation of different temporal modeling strategies.
+> Method
+> JTA GRA
+> mAP #Params GFLOPs #Params MFLOPs 14.19M 3.87 2.4M 21.23 (a) ✓✗70.3 (b) ✓✓84.0
+> ViTPose baseline [41] 81.7
+> Table 5. Effect of JTA and GRA in our temporal modeling.
+
+4.3. Ablation Study 
+
+We conduct ablation experiments on the PoseTrack2017 validation set. The temporal span T is set to 2, consist-ing of two preceding and two subsequent frames, totalling 4 auxiliary frames, and the ViT-B backbone is employed. 
+
+Choice of Temporal Modeling Strategy. We examine the effectiveness of our joint-specific temporal modeling strategy by comparing it with various alternative designs. Several straightforward self-attention–based methods [34] can be used to aggregate auxiliary-frame features to en-hance the current-frame representation: (a) directly per-forming self-attention over the feature tokens of all frames; (b) applying cross-attention between the current frame’s feature tokens (as queries) and those of the auxiliary frames (as keys and values); ( c) first performing self-attention over the auxiliary-frame tokens, followed by the cross-attention strategy described in (b), as adopted in [27]. As shown in Table 4, our joint-specific temporal modeling strategy ef-fectively improves accuracy by 1.2 points while incurring lower computational cost. This confirms the importance of accurately aligning temporally corresponding keypoint fea-tures across frames within the temporal modeling module. 
+
+Effect of JTA and GRA. As shown in Table 5, within our joint-specific temporal modeling framework, it is es-sential to reinject the aggregated temporal features pro-duced by JTA back into the current-frame features through GRA. This step enriches the representation while preserv-ing the global context required for precise keypoint local-ization. In contrast, directly regressing keypoints from the joint query tokens that contain temporal information, fol-lowing [14], results in a substantial performance drop of up to 13.7 points—even falling noticeably below the single-frame ViTPose baseline—because these query tokens lack the global context among keypoints. Notably, both JTA and GRA introduce only a minimal number of additional param-eters and incur very low computational overhead, making them lightweight and suitable for real-time applications. 
+
+Impact of Mask-aware Attention. To verify that the proposed mask-aware attention enables each joint query to-              
+
+> Figure 4. Visualization of attention heatmaps for joint query to-kens with (b) and without (a) mask-aware attention. Given a cur-rent frame Xi(t)and a neighboring frame Xi(t−T), we visualize the attention heatmaps of three different joint query tokens with re-spect to the features of Xi(t−T). See Supp. Material for more.
+> Method Masking mAP (a) ✗82.6 (b) ✓84.0
+> Table 6. Impact of mask-aware attention.
+
+ken to effectively focus on its corresponding keypoint re-gions across frames while avoiding interference from unre-lated areas, we visualize the attention heatmaps of several joint query tokens, including the right elbow, right wrist, and right shoulder, as shown in Fig. 4. Without mask-aware attention, the attention regions of each joint query token are highly scattered and may even extend into background ar-eas. In contrast, with mask-aware attention, the attention of each joint query token is concentrated around its corre-sponding keypoint region, enabling accurate aggregation of temporally coherent features for each keypoint. As a re-sult, mask-aware attention improves the accuracy by an ad-ditional 1.4 mAP, as shown in Table 6. 
+
+## 5. Conclusion 
+
+In this work, we introduced TAR-ViTPose, a temporal aggregate-and-restore framework that extends plain ViTs to video-based 2D HPE. By integrating joint-centric tempo-ral aggregation (JTA) for aligning keypoint features across frames and global restoring attention (GRA) for reinject-ing temporal cues into the current-frame representation, our method effectively leverages temporal coherence while pre-serving the simplicity and efficiency of the ViT architec-ture. Extensive experiments show that TAR-ViTPose sub-stantially improves over the single-frame ViTPose baseline and surpasses existing SOTA video-based methods, while also delivering superior runtime performance. These results demonstrate the strong potential of plain ViTs for efficient and accurate real-world video pose estimation. 86. Acknowledgments 
+
+We would like to thank Runyang Feng for the helpful discussions. This work was supported by NSF of China (62541209) and the Fundamental Research Funds for the Provincial Universities of Zhejiang (FR24005Z). 
+
+## References 
+
+[1] Mykhaylo Andriluka, Umar Iqbal, Eldar Insafutdinov, Leonid Pishchulin, Anton Milan, Juergen Gall, and Bernt Schiele. Posetrack: A benchmark for human pose estima-tion and tracking. In CVPR , pages 5167–5176, 2018. 2, 4, 5, 1[2] Gedas Bertasius, Christoph Feichtenhofer, Du Tran, Jianbo Shi, and Lorenzo Torresani. Learning temporal pose estima-tion from sparsely labeled videos. In NIPS , 2019. 1, 3, 5, 7, 2[3] Zhe Cao, Tomas Simon, Shih-En Wei, and Yaser Sheikh. Realtime multi-person 2d pose estimation using part affinity fields. In CVPR , 2017. 2 [4] Haipeng Chen, Sifan Wu, Zhigang Wang, Yifang Yin, Yingying Jiao, Yingda Lyu, and Zhenguang Liu. Causal-inspired multitask learning for video-based human pose esti-mation. In AAAI , 2025. 1, 2, 3, 7 [5] Xianke Chen, Daizong Liu, Xun Yang, Xirong Li, Jianfeng Dong, Meng Wang, and Xun Wang. Prvr: Partially relevant video retrieval. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. 1 [6] Bowen Cheng, Ishan Misra, Alexander G. Schwing, Alexan-der Kirillov, and Rohit Girdhar. Masked-attention mask transformer for universal image segmentation. In CVPR ,pages 1280–1289, 2022. 5 [7] Andreas Doering, Di Chen, Shanshan Zhang, Bernt Schiele, and Juergen Gall. Posetrack21: A dataset for person search, multi-object tracking and multi-person pose tracking. In 
+
+CVPR , pages 20931–20940, 2022. 2, 4, 5, 1 [8] Jianfeng Dong, Shengkai Sun, Zhonglin Liu, Shujie Chen, Baolong Liu, and Xun Wang. Hierarchical contrast for unsu-pervised skeleton-based action representation learning. In 
+
+Proceedings of the AAAI Conference on Artificial Intelli-gence , pages 525–533, 2023. 1 [9] Runyang Feng, Yixing Gao, Tze Ho Elden Tse, Xueqing Ma, and Hyung Jin Chang. Diffpose: Spatiotemporal diffusion model for video-based human pose estimation. In ICCV ,pages 14815–14826, 2023. 7, 2 [10] Runyang Feng, Yixing Gao, Xueqing Ma, Tze Ho Elden Tse, and Hyung Jin Chang. Mutual information-based temporal difference learning for human pose estimation in video. In 
+
+CVPR , pages 17131–17141, 2023. 1, 3, 7, 2 [11] Runyang Feng, Hyung Jin Chang, Tze Ho Elden Tse, Boeun Kim5, Yi Chang, and Yixing Gao. High-resolution spa-tiotemporal modeling with global-local state space models for video-based human pose estimation. In ICCV , pages 8929–8938, 2025. 1, 2, 3, 7 [12] Zigang Geng, Chunyu Wang, Yixuan Wei, Ze Liu, Houqiang Li, and Han Hu. Human pose as compositional tokens. In 
+
+CVPR , pages 660–671, 2023. 1, 2 [13] Rohit Girdhar, Georgia Gkioxari, Lorenzo Torresani, Manohar Paluri, and Du Tran. Detect-and-track: Efficient pose estimation in videos. In CVPR , 2018. 7 [14] Jijie He and Wenwu Yang. Video-Based Human Pose Re-gression via Decoupled Space-Time Aggregation . In CVPR ,pages 1022–1031, 2024. 1, 2, 3, 6, 7, 8 [15] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for image recognition. In CVPR ,pages 770–778, 2016. 4 [16] U. Iqbal, A. Milan, and J. Gall. Posetrack: Joint multi-person pose estimation and tracking. In 2017 IEEE Confer-ence on Computer Vision and Pattern Recognition (CVPR) ,pages 4654–4663, 2017. 2, 4, 5, 1 [17] Kyung-Min Jin, Gun-Hee Lee, and Seong-Whan Lee. Ot-pose: Occlusion-aware transformer for pose estimation in sparsely-labeled videos. In 2022 IEEE International Confer-ence on Systems, Man, and Cybernetics , pages 3255–3260, 2022. 1, 3 [18] Sheng Jin, Wentao Liu, Wanli Ouyang, and Chen Qian. Multi-person articulated tracking with spatial and temporal embeddings. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2019. 7[19] Rawal Khirodkar, Timur Bagautdinov, Julieta Martinez, Su Zhaoen, Austin James, Peter Selednik, Stuart Anderson, and Shunsuke Saito. Sapiens: Foundation for human vision mod-els. In ECCV , pages 1–22, 2024. 1 [20] Alexander Kolesnikov, Alexey Dosovitskiy, Dirk Weis-senborn, Georg Heigold, Jakob Uszkoreit, Lucas Beyer, Matthias Minderer, Mostafa Dehghani, Neil Houlsby, Syl-vain Gelly, Thomas Unterthiner, and Xiaohua Zhai. An im-age is worth 16x16 words: Transformers for image recogni-tion at scale. In ICLR , 2021. 4 [21] Jiefeng Li, Siyuan Bian, Ailing Zeng, Can Wang, Bo Pang, Wentao Liu, and Cewu Lu. Human pose regression with residual log-likelihood estimation. In ICCV , pages 11005– 11014, 2021. 1, 2, 5 [22] Yong-Lu Li, Xinpeng Liu, Han Lu, Shiyi Wang, Junqi Liu, Jiefeng Li, and Cewu Lu. Detailed 2d-3d joint representation for human-object interaction. In CVPR , pages 10163–10172, 2020. 1 [23] Tsung-Yi Lin, Michael Maire, Serge Belongie, Lubomir Bourdev, Ross Girshick, James Hays, Pietro Perona, Deva Ramanan, C. Lawrence Zitnick, and Piotr Doll´ ar. Microsoft coco: Common objects in context. In ECCV , 2014. 6 [24] Zhenguang Liu, Haoming Chen, Runyang Feng, Shuang Wu, Shouling Ji, Bailin Yang, and Xun Wang. Deep dual consec-utive network for human pose estimation. In CVPR , pages 525–534, 2021. 1, 3, 5, 6, 7, 2 [25] Zhenguang Liu, Runyang Feng, Haoming Chen, Shuang Wu, Yixing Gao, Yunjun Gao, and Xiang Wang. Tempo-ral feature alignment and mutual information maximization for video-based human pose estimation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 11006–11016, 2022. 7, 2 [26] Alejandro Newell, Kaiyu Yang, and Jia Deng. Stacked hour-glass networks for human pose estimation. In ECCV , pages 483–499, 2016. 2 
+
+9[27] Cesare Davide Pace, Alessandro Marco De Nunzio, Clau-dio De Stefano, Francesco Fontanella, and Mario Molinara. Poseidon: A vit-based architecture for multi-frame pose es-timation with adaptive frame weighting and multi-scale fea-ture fusion, 2025. 3, 4, 6, 7, 8, 1, 2 [28] Shaoqing Ren, Kaiming He, Ross Girshick, and Jian Sun. Faster r-cnn: towards real-time object detection with region proposal networks. In NIPS , page 91–99, 2015. 4, 6, 7, 2 [29] Benjamin John Sapp, Alexander Toshev, and Ben Taskar. Cascaded models for articulated pose estimation. In ECCV ,2010. 2 [30] Dahu Shi, Xing Wei, Liangqi Li, Ye Ren, and Wenming Tan. End-to-end multi-person pose estimation with transformers. In CVPR , pages 11059–11068, 2022. 1, 2 [31] Inpyo Song, Jongmin Lee, Moonwook Ryu, and Jangwon Lee. Motion-aware heatmap regression for human pose es-timation in videos. In Proceedings of the Thirty-Third Inter-national Joint Conference on Artificial Intelligence , 2024. 2, 3, 1 [32] Ke Sun, Bin Xiao, Dong Liu, and Jingdong Wang. Deep high-resolution representation learning for human pose esti-mation. In CVPR , pages 5686–5696, 2019. 1, 2, 4, 5, 6, 7[33] Jonathan Tompson, Arjun Jain, Yann LeCun, and Christoph Bregler. Joint training of a convolutional network and a graphical model for human pose estimation. In NIPS , page 1799–1807, 2014. 2 [34] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-reit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, and Il-lia Polosukhin. Attention is all you need. In NIPS , page 6000–6010, 2017. 4, 5, 8 [35] Dongkai Wang and Shiliang Zhang. Contextual instance de-coupling for robust multi-person pose estimation. In CVPR ,pages 11060–11068, 2022. 1, 2 [36] Dongkai Wang, Shiyu Xuan, and Shiliang Zhang. Locllm: Exploiting generalizable human keypoint localization via large language model. In CVPR , pages 614–623, 2024. 1 [37] Manchen Wang, Joseph Tighe, and Davide Modolo. Com-bining detection and tracking for human pose estimation in videos. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2020. 7, 2 [38] Shih-En Wei, Varun Ramakrishna, Takeo Kanade, and Yaser Sheikh. Convolutional pose machines. In CVPR , pages 4724–4732, 2016. 2 [39] Bin Xiao, Haiping Wu, and Yichen Wei. Simple baselines for human pose estimation and tracking. In ECCV , 2018. 1, 2, 7 [40] Yuliang Xiu, Jiefeng Li, Haoyu Wang, Yinghong Fang, and Cewu Lu. Pose Flow: Efficient online pose tracking. In 
+
+BMVC , 2018. 3, 7 [41] Yufei Xu, Jing Zhang, Qiming Zhang, and Dacheng Tao. Vit-pose: Simple vision transformer baselines for human pose estimation. NIPS , 35:38571–38584, 2022. 1, 2, 3, 4, 5, 6, 7, 8[42] Sen Yang, Zhibin Quan, Mu Nie, and Wankou Yang. Trans-Pose: Keypoint Localization via Transformer . In ICCV ,pages 11782–11792, 2021. 1, 2 [43] Yiding Yang, Zhou Ren, Haoxiang Li, Chunluan Zhou, Xin-chao Wang, and Gang Hua. Learning dynamics via graph neural networks for human pose estimation and tracking. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 8074–8084, 2021. 7, 2 [44] Yonghui Yu, Jiahang Cai, Xun Wang, and Wenwu Yang. End-to-end multi-person pose estimation with pose-aware video transformer. In Proceedings of the AAAI Conference on Artificial Intelligence , 2026. 7, 2 [45] Yuhui Yuan, Rao Fu, Lang Huang, Weihong Lin, Chao Zhang, Xilin Chen, and Jingdong Wang. Hrformer: High-resolution vision transformer for dense predict. NIPS , 34: 7281–7293, 2021. 2 [46] Yuxiang Zhang, Liang An, Tao Yu, Xiu Li, Kun Li, and Yebin Liu. 4d association graph for realtime multi-person motion capture using multiple video cameras. In CVPR ,pages 1321–1330, 2020. 1 
+
+10 Beyond Static Frames: Temporal Aggregate-and-Restore Vision Transformer for Human Pose Estimation 
+
+# Supplementary Material 
+
+## Appendix 
+
+In the supplementary material, we provide: 
+
+§A Additional Implementation Details. 
+
+§B Experiments on PoseTrack2018/21 Datasets. 
+
+§C Additional Ablation Study. 
+
+§D Qualitative Results. 
+
+§E Limitation and Future Work. 
+
+## A. Additional Implementation Details 
+
+Dataset. Our models are evaluated on three widely used video-based human pose estimation benchmarks: Pose-Track2017 [16], PoseTrack2018 [1], and PoseTrack21 [7]. Together, these datasets form a comprehensive evaluation suite that spans diverse scenarios, motion patterns, and lev-els of visual complexity. A brief overview of each dataset is provided below. • PoseTrack2017 [16] contains 250 training videos and 50 validation videos, with a total of 80,144 pose annotations. Each person instance is annotated with 15 keypoints and corresponding visibility labels. Training clips are densely annotated in the central 30 frames, whereas validation clips are annotated every four frames. • PoseTrack2018 [1] substantially enlarges the dataset, providing 593 training videos and 170 validation videos, amounting to 153,615 pose annotations. It uses the same 15-keypoint annotation scheme and visibility labels as PoseTrack2017, with an identical annotation proto-col—dense annotations in the central 30 frames of train-ing videos and sparser annotations (every four frames) for validation videos. • PoseTrack21 [7] extends and refines PoseTrack2018, particularly improving annotations for small individuals and people in crowded scenes. It includes 177,164 hu-man pose annotations while preserving the same keypoint definition and annotation strategy. The updates make it more challenging, especially regarding occlusion and scale variations. 
+
+Optimization. We implemented TAR-ViTPose in Py-Torch. Data augmentation includes random scaling within the range [0 .65 , 1.35] , random rotation within [−45 ◦, 45 ◦],random cropping, and horizontal flipping. The input image resolution is set to 384 × 288 . The initial learning rate is 
+
+5 × 10 −6 and is reduced by 50% every 5 epochs. We use the AdamW optimizer for model training.                                                         
+
+> Method Head Should. Elbow Wrist Hip Knee Ankle Mean
+> Backbone : ViT-S ViTPose [41] 80.6 84.1 79.9 73.5 77.0 76.2 70.3 78.2
+> TAR-ViTPose(Ours) 82.8 85.6 81.5 75.2 78.0 78.1 72.1 79.3
+> Backbone : ViT-B ViTPose [41] 83.2 86.3 82.8 77.5 78.2 79.4 74.9 80.5
+> TAR-ViTPose(Ours) 84.3 87.8 83.6 79.4 79.3 82.8 76.5 82.1
+> Backbone : ViT-H ViTPose [41] 85.4 87.0 84.7 81.0 79.1 82.0 76.5 82.4
+> TAR-ViTPose(Ours) 86.8 88.9 86.1 81.9 82.9 83.4 77.9 84.2
+
+Table 7. Comparison with the ViTPose baseline (mAP) on Pose-Track2018 val. set.                                                         
+
+> Method Head Should. Elbow Wrist Hip Knee Ankle Mean
+> Backbone : ViT-S ViTPose [41] 79.7 84.4 80.4 73.8 77.2 77.3 71.2 77.8
+> TAR-ViTPose(Ours) 81.6 84.7 80.9 74.2 77.8 77.9 71.7 78.5
+> Backbone : ViT-B ViTPose [41] 81.8 85.2 82.1 76.6 78.5 79.5 74.5 79.9
+> TAR-ViTPose(Ours) 82.7 85.9 83.5 79.2 79.5 81.7 76.8 81.4
+> Backbone : ViT-H ViTPose [41] 83.2 87.0 84.1 80.4 79.5 81.9 77.3 82.0
+> TAR-ViTPose(Ours) 86.6 88.3 85.3 82.0 83.7 83.4 78.2 84.1
+
+Table 8. Comparison with the ViTPose baseline (mAP) on Pose-Track21 val. set. 
+
+## B. Experiments on PoseTrack2018/21 Datasets 
+
+B1. Comparison with the ViTPose Baseline 
+
+Tables 7 and 8 present comparisons between our method and the state-of-the-art ViT-based single-frame baseline ViTPose [41] on the PoseTrack2018 and PoseTrack21 val-idation sets, respectively. The results further demonstrate that our video-based approach consistently achieves sub-stantial performance gains across all ViT backbones, high-lighting the importance of exploiting temporal cues from adjacent frames, which single-frame baselines such as ViT-Pose are inherently unable to capture. 
+
+B2. Comparison with State-of-the-Art Methods 
+
+As shown in Tables 9 and 10, our approach establishes new state-of-the-art performance on the PoseTrack2018 and PoseTrack21 datasets, achieving 84.2 mAP and 84.1 mAP, respectively. When evaluated with ground-truth bounding boxes, our method attains 89.8 mAP and 91.0 mAP, yielding additional gains of 5.6 and 6.9 points. These results consis-tently outperform the state-of-the-art video-based methods MTPose [31] and Poseidon [27], both of which also rely on ground-truth bounding boxes. 1Method Backbone Head Should. Elbow Wrist Hip Knee Ankle Mean                                                                                                                                      
+
+> Using bounding boxes predicted by the Faster R-CNN detector [28] PoseWarper [2] HRNet-W48 79.9 86.3 82.4 77.5 79.8 78.8 73.2 79.7 PAVE-Net †[44] Swin-L 84.9 87.5 81.7 74.5 77.9 76.9 72.4 79.7 DCPose [24] HRNet-W48 84.0 86.6 82.7 78.0 80.4 79.3 73.8 80.9 FAMI-Pose [25] HRNet-W48 85.5 87.7 84.2 79.2 81.4 81.1 74.9 82.2 DSTA [14] ViT-H 85.9 88.8 85.0 81.1 81.5 83.0 77.4 83.4
+> TAR-ViTPose ViT-S 82.8 85.6 81.5 75.2 78.0 78.1 72.1 79.3
+> TAR-ViTPose ViT-B 84.3 87.8 83.6 79.4 79.3 82.8 76.5 82.1
+> TAR-ViTPose ViT-H 86.8 88.9 86.1 81.9 82.9 83.4 77.9 84.2
+> Using bounding boxes from unspecified sources or ground-truth ones (*)
+> Dyn.-GNN [43] HRNet-W48 80.6 84.5 80.6 74.4 75.0 76.7 71.8 77.9 DetTrack [37] HRNet-W48 84.9 87.4 84.8 79.2 77.6 79.7 75.3 81.5 TDMI [10] HRNet-W48 86.2 88.7 85.4 80.6 82.4 82.1 77.5 83.5 DiffPose [9] ViT (#) 85.0 87.7 84.3 81.5 81.4 82.9 77.6 83.0 MTPose* [31] ViT (#) 89.4 92.4 90.1 87.3 85.7 89.7 88.1 89.0 CM-Pose [4] ViT (#) 85.7 88.9 85.8 81.0 84.4 84.2 80.1 84.4 GLSMamba [11] ViT-H 85.6 88.9 86.5 83.6 82.9 85.7 81.4 84.9 Poseidon* [27] ViT-H 88.8 91.4 88.6 86.3 83.3 88.8 87.2 87.8
+> TAR-ViTPose* ViT-S 85.6 88.5 84.2 79.2 80.8 81.9 78.7 82.9
+> TAR-ViTPose* ViT-B 88.7 91.8 89.4 86.1 83.6 88.5 87.3 88.0
+> TAR-ViTPose* ViT-H 90.9 93.1 91.1 88.5 84.7 90.4 89.0 89.8
+
+Table 9. Comparison with the SOTAs on PoseTrack2018 val. set. ‘#’ indicates that the ViT backbone used is not specified, ‘ †’ in-dicates the end-to-end approach. Similar to FAMI-Pose [25] and DSTA [14], our proposed TAR-ViTPose sets the temporal span T
+
+to 2, which includes two preceding and two succeeding frames, totaling four auxiliary frames. 
+
+## C. Additional Ablation Study 
+
+Mask Threshold. We further analyze the influence of the mask threshold ϕ in Eq. 4 on constructing the joint-specific binary masks. As shown in Table 11, masking thresholds in the range of 0.1 to 0.25 all yield high human pose es-timation accuracy. Intuitively, a lower threshold enlarges the attention region around each joint’s location in succes-sive frames, while a higher threshold produces a smaller and more concentrated focus area. With a threshold of 0.2, the model achieves an optimal balance, reaching 84.0 mAP. 
+
+Number of Layers in JTA. Table 12 analyzes the effect of varying the number of layers in our JTA (·, ·) module. Increasing the depth from 2 to 6 layers consistently im-proves performance (83.4 → 84.0 mAP), which is consis-tent with the general observation that deeper architectures offer stronger representation capacity. However, further in-creasing the number of layers beyond 6 yields no additional benefit and even leads to a slight performance drop (83.9 mAP with 8 or 10 layers). We attribute this saturation to the redundancy introduced by excessive temporal aggrega-tion, which may over-smooth or dilute frame-specific cues. Overall, a depth of 6 layers provides the best balance be-tween accuracy and efficiency, and is therefore adopted as the default configuration in our main experiments.                                                                                                                                      
+
+> Method Backbone Head Should. Elbow Wrist Hip Knee Ankle Mean
+> Using bounding boxes predicted by the Faster R-CNN detector [28] SimBase. [39] ResNet-152 80.5 81.2 73.2 64.8 73.9 72.7 67.7 73.9 HRNet [32] HRNet-W48 81.5 83.2 81.1 75.4 79.2 77.8 71.9 78.8 PAVE-Net †[44] Swin-L 84.7 86.5 81.9 74.7 77.4 76.6 71.4 79.4 PoseWarper [2] HRNet-W48 82.3 84.0 82.2 75.5 80.7 78.7 71.6 79.5 DCPose [24] HRNet-W48 83.7 84.4 82.6 78.7 80.1 79.8 74.4 80.7 FAMI-Pose [25] HRNet-W48 83.3 85.4 82.9 78.6 81.3 80.5 75.3 81.2 DSTA [14] ViT-H 87.5 87.0 84.2 81.4 82.3 82.5 77.7 83.5
+> TAR-ViTPose ViT-S 79.0 83.1 79.8 73.6 75.3 77.2 72.6 77.4
+> TAR-ViTPose ViT-B 82.7 85.9 83.5 79.2 79.5 81.7 76.8 81.4
+> TAR-ViTPose ViT-H 86.6 88.3 85.3 82.0 83.7 83.4 78.2 84.1
+> Using bounding boxes from unspecified sources or ground-truth ones (*)
+> TDMI [10] HRNet-W48 85.8 87.5 85.1 81.2 83.5 82.4 77.9 83.5 DiffPose [9] ViT (#) 84.7 85.6 83.6 80.8 81.4 83.5 80.0 82.9 MTPose* [31] ViT (#) 92.0 91.7 88.7 85.5 86.4 86.6 85.3 88.3 CM-Pose [4] ViT (#) 88.9 88.3 84.4 81.9 84.6 83.7 78.8 84.3 GLSMamba [11] ViT-H 87.0 86.9 85.4 83.2 83.4 84.8 80.8 84.7 Poseidon* [27] ViT-H 92.2 90.8 88.3 85.8 85.5 87.7 85.7 88.3
+> TAR-ViTPose* ViT-S 81.6 84.7 80.9 74.2 77.8 77.9 71.7 78.5
+> TAR-ViTPose* ViT-B 82.9 87.8 85.9 82.1 80.1 84.5 82.0 83.6
+> TAR-ViTPose* ViT-H 94.3 93.3 91.3 88.8 88.7 90.2 88.6 91.0
+
+Table 10. Comparison with the SOTAs on PoseTrack21 val. set. ‘#’ indicates that the ViT backbone used is not specified, ‘ †’ in-dicates the end-to-end approach. Similar to FAMI-Pose [25] and DSTA [14], our proposed TAR-ViTPose sets the temporal span T
+
+to 2, which includes two preceding and two succeeding frames, totaling four auxiliary frames. 
+
+Threshold ϕ 0.1 0.15 0.2 0.25 0.3 mAP 83.2 83.7 84.0 83.5 82.9 
+
+Table 11. Impact of different mask thresholds. 
+
+#Layer 2 4 6 8 10 mAP 83.4 83.8 84.0 83.9 83.9 
+
+Table 12. Different number of layers in JTA. 
+
+#Layer 1 2 3 4mAP 84.0 83.9 84.0 84.0 
+
+Table 13. Different number of layers in GRA. 
+
+Number of Layers in GRA. In our GRA module, we use a single cross-attention layer to inject the aggregated tem-poral information back into the feature space of the current frame. As shown in Table 13, using only one layer already achieves strong performance (84.0 mAP), and increasing the number of layers does not provide any additional im-provement. We attribute this to the nature of GRA: it does not extract or aggregate new features but simply restores the joint-specific temporal features to the current-frame repre-sentation, a task that can be effectively accomplished with a shallow design. Therefore, we adopt a single cross-attention layer as the default configuration to maintain high accuracy 2Figure 5. Additional qualitative results of our TAR-ViTPose. The first two rows are from the PoseTrack datasets, while the last row is from in-the-wild videos. Across all examples, the model remains robust under occlusion, motion blur, complex poses, and defocus. 
+
+#Auxiliary Frame ViT-S ViT-B ViT-H 1 {-1 } 81.4 83.2 86.1 2 {-1, +1 } 81.5 83.4 86.3 4 {-2, -1, +1, +2 } 81.9 84.0 86.8 
+
+> Table 14. Different number of auxiliary frames. ‘-’ indicates pre-vious frames while ‘+’ indicates subsequent frames.
+
+while achieving optimal efficiency. 
+
+Auxiliary Frame. In addition, we investigate the impact of using different numbers of auxiliary frames. The re-sults reported in Table 14 consistently show that increasing the number of auxiliary frames leads to improved perfor-mance across ViT backbones of different scales. This ob-servation aligns with our intuition that incorporating more auxiliary frames provides richer and more complementary temporal information, thereby enabling more accurate and robust pose estimation for the key frame. 
+
+## D. Qualitative Results 
+
+D1. Additional qualitative results on the PoseTrack vali-dation sets and in-the-wild videos are presented in Fig. 5. More results are provided in the accompanying video. 
+
+D2. To further validate that the proposed mask-aware atten-           
+
+> Figure 6. Visualization of attention heatmaps for joint query to-kens with mask-aware attention. For each example, given a current frame Xi(t)and its neighboring frames Xi(t−T)and Xi(t+T),we visualize the attention heatmaps of nine joint query tokens, in-cluding the head, shoulders, elbows, wrists, right knee, and right ankle, over the feature maps of these three frames.
+
+tion enables each joint query token to effectively focus on its corresponding keypoint regions across frames while sup-3pressing interference from unrelated areas, additional atten-tion heatmaps of joint query tokens are provided in Fig. 6. 
+
+## E. Limitation and Future Work 
+
+It is important to clarify that our work does not target tem-poral pose tracking. Instead, it introduces a simple yet ro-bust temporal Vision Transformer framework that delivers strong performance for 2D pose estimation in videos. Be-cause the method does not explicitly impose temporal con-sistency across frames, it may occasionally produce slight temporal inconsistencies, especially in heavily occluded scenes, as shown in the supplementary video. Looking ahead, we plan to extend our framework to multi-person pose tracking by incorporating temporal identity consis-tency. 4

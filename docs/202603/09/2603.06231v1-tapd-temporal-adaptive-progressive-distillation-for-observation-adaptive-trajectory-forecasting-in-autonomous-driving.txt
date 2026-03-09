@@ -1,0 +1,662 @@
+Title: TaPD: Temporal-adaptive Progressive Distillation for Observation-Adaptive Trajectory Forecasting in Autonomous Driving
+
+URL Source: https://arxiv.org/pdf/2603.06231v1
+
+Published Time: Mon, 09 Mar 2026 01:01:47 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+> 1
+
+# TaPD: Temporal-adaptive Progressive Distillation for Observation-Adaptive Trajectory Forecasting in Autonomous Driving 
+
+Mingyu Fan, Member, IEEE, Yi Liu, Hao Zhou ∗, Deheng Qian, Mohammad Haziq Khan, Matthias Raetsch 
+
+Abstract —Trajectory prediction is essential for autonomous driving, enabling vehicles to anticipate the motion of surround-ing agents to support safe planning. However, most existing predictors assume fixed-length histories and suffer substantial performance degradation when observations are variable or extremely short in real-world settings (e.g., due to occlusion or a limited sensing range). We propose TaPD (Temporal-adaptive Progressive Distillation), a unified plug-and-play framework for observation-adaptive trajectory forecasting under variable history lengths. TaPD comprises two cooperative modules: an Observation-Adaptive Forecaster (OAF) for future prediction and a Temporal Backfilling Module (TBM) for explicit reconstruction of the past. OAF is built on progressive knowledge distillation (PKD), which transfers motion pattern knowledge from long-horizon “teachers” to short-horizon “students” via hierarchi-cal feature regression, enabling short observations to recover richer motion context. We further introduce a cosine-annealed distillation weighting scheme to balance forecasting supervision and feature alignment, improving optimization stability and cross-length consistency. For extremely short histories where implicit alignment is insufficient, TBM backfills missing historical segments conditioned on scene evolution, producing context-rich trajectories that strengthen PKD and thereby improve OAF. We employ a decoupled pretrain–reconstruct–finetune protocol to preserve real-motion priors while adapting to backfilled inputs. Extensive experiments on Argoverse 1 and Argoverse 2 show that TaPD consistently outperforms strong baselines across all observation lengths, delivers especially large gains under very short inputs, and improves other predictors (e.g., HiVT) in a plug-and-play manner. Code will be available at https://github.com/zhouhao94/TaPD. 
+
+Index Terms —Trajectory prediction, autonomous driving, observation-adaptive learning. 
+
+I. I NTRODUCTION 
+
+# TRAJECTORY prediction plays a vital role in autonomous driving, allowing an ego vehicle to anticipate the future motions of dynamic agents (e.g., vehicles, pedestrians, cy-clists) and thereby support safe and socially compliant plan-ning [1], [2]. Recent learning-based predictors [3]–[7] have achieved strong performance by exploiting high-definition (HD) maps and attention-based interaction modeling. Never-theless, these methods are predominantly trained and bench-marked with fixed-length observation windows, which diverges          
+
+> Mingyu Fan, Yi Liu are with the College of Information and Intelligent Science, Donghua University, Shanghai 201620 China. Hao Zhou is with the School of Computing and Information Technology, Great Bay Institute for Advanced Study/Great Bay University, Dongguan, China, and also with the Tsinghua Shenzhen International Graduate School, Tsinghua University, Shenzhen, China. Deheng Qian is with the Chongqing Chang’an Technology Co., Ltd, Chongqing 401120 China. Mohammad Haziq Khan and Matthias R¨ atsch are with the ViSiR, Reutlin-gen University, Alteburgstraße 150, 72762, Reutlingen, Germany. Corresponding author: Hao Zhou (e-mail: hao.zhou@hrbeu.edu.cn).
+
+from real deployments where the available history is inherently 
+
+variable . In practice, agents may be intermittently occluded, partially sensed, or appear abruptly at the boundary of the perception range (e.g., a pedestrian emerging from behind a parked vehicle). Under such conditions, the predictor must operate on severely truncated trajectories (sometimes only a handful of steps), where the loss of motion context can cause substantial accuracy drops and increase downstream safety risks. A straightforward solution is Isolated Training (IT) , i.e., training one model per observation length. While effective in principle, IT is inefficient and deployment-unfriendly due to duplicated parameters, repeated training, and additional main-tenance overhead. More efficient approaches based on cross-length parameter sharing (e.g., FLN [8]) partially alleviate the computational burden, yet they often remain brittle for extremely short histories. The core difficulty is not merely architectural: short histories suffer from an intrinsic informa-tion deficit . Pure feature-level alignment across lengths cannot reliably recover trajectory-specific prior states (e.g., heading, velocity trend, pre-occlusion maneuver intention) that are unobserved, leading to a persistent distribution gap between short- and long-history representations. To address these challenges, we propose TaPD (Temporal-
+
+adaptive Progressive Distillation), a unified and plug-and-play framework for observation-adaptive trajectory forecasting .TaPD couples two cooperative modules: an Observation-Adaptive Forecaster (OAF) for future prediction and a
+
+Temporal Backfilling Module (TBM) for explicit history completion. OAF is designed to handle arbitrary observation lengths within a single network via cross-length parameter sharing , avoiding the redundancy of IT while preserving representation consistency between training and inference. On top of this shared backbone, OAF introduces progressive knowledge distillation (PKD) : long-history features serve as teachers that guide short-history features through hierarchical regression, enabling short inputs to inherit richer motion-pattern knowledge and implicitly compensate for missing context. To prevent early-stage optimization instability when motion representations are still immature, we further employ a 
+
+cosine-annealed weighting schedule for the distillation objec-tive, emphasizing trajectory supervision at the beginning and gradually strengthening feature alignment as training proceeds. While PKD improves cross-length robustness, extremely short observations may still lack sufficient state information for implicit alignment alone. TBM therefore complements OAF by explicit temporal backfilling : conditioned on the evolving scene context, it reconstructs the missing historical segments and converts truncated trajectories into standardized full-length 
+
+> arXiv:2603.06231v1 [cs.CV] 6 Mar 2026 2
+
+inputs. This explicit completion supplies trajectory-specific priors that feature matching cannot reliably infer, and in turn enables OAF to exploit PKD more effectively on context-rich histories. To fully realize this synergy without corrupting learned motion priors, we adopt a decoupled pretrain–reconstruct– finetune protocol: (i) we pretrain OAF on real trajectories to learn forecasting and cross-length adaptation; (ii) we train TBM independently to produce high-fidelity backfilled histo-ries; and (iii) we freeze TBM and finetune OAF to adapt to completed inputs while retaining authentic motion regularities. With this design, TaPD can be integrated into existing tra-jectory prediction pipelines with minimal changes, providing robust performance under arbitrary observation lengths. The main contributions of this work are summarized as follows:  
+
+> •
+
+We propose TaPD, a unified dual-module framework for 
+
+observation-adaptive trajectory forecasting that remains robust under arbitrary and extremely short observation histories.  
+
+> •
+
+We design an OAF module with cross-length parameter sharing and PKD , enabling efficient knowledge transfer from long to short histories without training separate models, and also a cosine-annealed distillation schedule 
+
+to stabilize training and progressively enhance cross-length feature consistency.  
+
+> •
+
+We propose a TBM module that explicitly reconstructs missing historical segments, provides trajectory-specific priors, and synergistically strengthens OAF under ex-treme truncation.  
+
+> •
+
+We develop a decoupled pretrain–reconstruct–finetune 
+
+training protocol and demonstrate, through extensive ex-periments on Argoverse 1 and Argoverse 2, that TaPD consistently outperforms strong baselines across all ob-servation lengths and can improve other predictors in a plug-and-play manner. II. R ELATED WORKS 
+
+Trajectory prediction (motion forecasting) is a cornerstone of autonomous driving stacks, providing multi-hypothesis fu-tures for risk-aware planning and safe interaction in dynamic traffic [1], [2]. With the availability of large-scale benchmarks (e.g., Argoverse 1/2 [9], [10] and WOMD [11]), learning-based predictors have rapidly evolved in scene representation, interaction modeling, and generative uncertainty modeling. This section reviews related efforts from three perspectives: (i) representations and architectures, (ii) training paradigms for multimodality, efficiency, and robustness, and (iii) forecasting under partial observability and variable observation lengths. 
+
+A. Representations and Architectures for Motion Forecasting 
+
+Raster-based predictors. Early deep forecasting pipelines often rasterize agent states and HD maps into images and apply CNN backbones to regress future trajectories or trajectory sets [12]–[14]. Rasterization simplifies heterogeneous fusion but may obscure fine-grained topology and lane connectivity, motivating structured representations. To better preserve road structure, vectorized polyline encoders and lane-graph reason-ing have become mainstream. VectorNet [15] demonstrates the effectiveness of polyline-level encoding for jointly modeling agent dynamics and map geometry. Lane graph modeling further strengthens topological priors by propagating context along lane connectivity and candidate centerlines [16]–[18]. In broader trajectory prediction settings, graph formulations also capture social interactions and global context effectively [19]–[23]. Recently, transformers [24] have become the dom-inant paradigm for modeling complex agent–agent and agent– map interactions. Representative works include HiVT [25] and MTR [3], which leverage hierarchical/vector attention for multi-agent reasoning, and Wayformer [6], which high-lights the scalability of efficient attention designs. Query/goal-driven formulations further improve multimodal forecast-ing by decoupling where to go and how to move, such as TNT/DenseTNT [26], [27], anchor/goal proposals [7], [28], and query-centric decoding [4]. Meanwhile, efficiency-oriented modeling has attracted increasing attention. For ex-ample, Trajectory Mamba [29] explores selective state-space modeling to reduce the quadratic complexity of attention for forecasting. Recent works indicate two notable trends. First, decoder-only autoregressive forecasting (DONUT) unifies history en-coding and future unrolling in a single model, improving iterative consistency for trajectory generation [30]. Second, incorporating efficient SSM modules into interaction modeling is further explored by FINet [31], which injects potential fu-tures into scene encoding and employs Mamba-style temporal refinement. 
+
+B. Learning Paradigms: Pretraining, Diffusion, and Robust-ness 
+
+To mitigate dataset scarcity and enhance transferability, masked reconstruction and self-supervised objectives have been introduced for motion forecasting [32]–[35]. More re-cently, SmartPretrain [36] proposes a model-agnostic and dataset-agnostic SSL framework that combines contrastive and reconstructive learning, improving cross-dataset generaliza-tion. Instead of producing final futures in a single forward pass, refinement-based pipelines first generate coarse hypotheses and then refine them using additional context or trajectory-centric attention, improving accuracy and efficiency [5], [37], [38]. Diffusion-based forecasting has been adopted to better represent multimodal futures and controllability [39], [40]. Beyond vanilla diffusion modeling, long-tail scenarios have become a key challenge for real-world autonomy. GALTraj [41] introduces generative active learning with controllable dif-fusion to identify and augment rare behaviors during training, improving both tail and head performance. In a related di-rection, language-conditioned diffusion simulation (LangTraj) enables controllable scenario generation for evaluation and counterfactual testing [42]. Robustness under domain shift is critical for deployment. T4P [43] explores test-time training for trajectory prediction via masked autoencoding and actor-specific token memory, 3
+
+demonstrating gains under cross-dataset distribution shifts. Such test-time adaptation complements training-time robust-ness and is increasingly relevant for real-world operation. 
+
+C. Forecasting with Partial Observability and Variable Ob-servation Lengths 
+
+Real driving scenes rarely provide a clean and fixed-length history. Occlusion, sensor range limits, missing frames, or late entry of agents lead to truncated and irregular observations, which can significantly degrade predictors trained under fixed windows. Some works focus on forecasting from extremely short observations, such as human motion prediction from momen-tary cues [44] and distillation-based strategies that analyze how many observations are sufficient [45]. While effective for specific short-history settings, these approaches do not necessarily provide a unified mechanism to handle arbitrary 
+
+observation lengths in a single model. Another line jointly performs imputation and prediction to compensate for missing segments. Uncovering the missing pattern [46] proposes a unified framework for trajectory imputation and forecasting, and Scene Informer [47] performs anchor-based occlusion inference in partially observable environments. Target-driven self-distillation [48] further leverages auxiliary targets to guide learning under partial observations. These methods emphasize recovering missing measurements, yet cross-length generaliza-tion is often not treated as a first-class objective. To support diverse observation lengths efficiently, length-robust learning has attracted growing attention. LaKD [49] proposes length-agnostic distillation to transfer knowledge across observation regimes. Contrastive learning is adopted to extract length-invariant representations [50]. FLN [8] intro-duces a parameter-sharing paradigm to adapt to length shift. In parallel, dynamically adjusting output horizons is explored by FlexiSteps [51]. Despite these advances, extremely short histories remain challenging due to an intrinsic information deficit: purely implicit feature alignment may be insufficient to recover trajectory-specific prior states without explicitly reconstructing missing context. 
+
+D. Summary 
+
+Recent surveys summarize the fast-evolving landscape and highlight persistent gaps between benchmark settings and real-world deployment [52]. In particular, achieving both (i) efficient unified modeling across arbitrary observation lengths and (ii) strong performance under extremely short histories remains nontrivial. This motivates our work, which targets observation-adaptive forecasting by jointly addressing cross-length knowledge transfer and the information deficit of ultra-short trajectories. III. T APD: A PLUG -AND -PLAY FRAMEWORK 
+
+This section introduces TaPD, a unified framework for observation-adaptive motion forecasting under variable-length histories. TaPD comprises two decoupled yet complementary components: the Observation-Adaptive Forecaster (OAF) and the Temporal Backfilling Module (TBM). OAF predicts fu-ture trajectories and learns length-robust representations via intra-module parameter sharing and progressive knowledge distillation. TBM mitigates the intrinsic information deficit of truncated histories by explicitly reconstructing unobserved past segments, converting short temporal inputs into context-rich histories. To leverage their synergy without causing mutual interference, we adopt a staged training protocol: (i) pretrain OAF to learn reliable forecasting priors and cross-length generalization, (ii) train TBM independently for high-fidelity backfilling, and (iii) freeze TBM and finetune OAF on TBM-completed histories. 
+
+A. Problem Formulation 
+
+Motion forecasting aims to predict the future trajectories of dynamic agents in driving scenes, providing multi-step motion hypotheses for safe and informed planning. Following vectorized forecasting pipelines [15], we represent both the HD map and agent trajectories as structured polylines. 
+
+Map representation. The HD map is encoded as M ∈
+
+RP ×Sm×Cm , where P is the number of map polylines, each polyline is discretized into Sm segments, and Cm denotes the feature dimension of each segment. 
+
+Agent history with variable observation length. Let ∆T
+
+denote the sampling interval, and H be the number of intervals of duration ∆T . The standard full-length observation time span is Tobs = H∆T .For a variable number of observed intervals τ ∈{1, 2, . . . , H }, the observed historical trajectories are 
+
+Xτ ∈ RN ×Tτ ×Ca , (1) where N is the number of agents in the scene, Tτ = τ · ∆T
+
+denotes the duration of the observed history, and Ca is the motion-state dimension (e.g., position, velocity, heading). In practice, Xτ is obtained by extracting the last Tτ timesteps of the full observation history XH (i.e., the segment cor-responding to time steps [( H − τ )∆ T + 1 : Tobs ], a.k.a. 
+
+[Tobs − Tτ + 1 : Tobs ]), which is equivalent to applying a sliding window with a fixed observation end time. 
+
+Prediction target. Given the observed history, the fore-casting target is the future trajectory tensor from timesteps 
+
+[Tobs + 1 : Tobs + Tf ]
+
+Y ∈ RNaoi ×Tf ×2, (2) where Naoi denotes the number of agents of interest (AOIs), 
+
+Tf is the prediction horizon in time steps, and the last dimension corresponds to 2D coordinates. 
+
+Temporal backfilling and forecasting. In our framework, the TBM aims to reconstruct missing historical segments and produce a complete full-length history 
+
+ˆXH ∈ RN ×Tobs ×Ca , (3) from any truncated input Xτ with τ < H . The completed history ˆXH is then used as an enriched input to the OAF for forward forecasting, which generates the final future predic-tions Y for AOIs. 4Varying-Length Observations             
+
+> ···
+> X𝜏𝜏+1
+> X𝜏𝜏
+> 𝛩𝛩 𝐷𝐷 𝑂𝑂𝑂𝑂𝑂𝑂
+> 𝐹𝐹 𝑎𝑎𝑎𝑎 𝜏𝜏
+> 𝐹𝐹 𝑎𝑎𝑎𝑎 𝜏𝜏+1
+> Progressive Knowledge Distillation
+> ℒ𝑓𝑓 𝜏𝜏
+> ℒ𝑟𝑟𝑟𝑟 𝑎𝑎
+> 𝜏𝜏 Future Trajectories
+> ℒ𝑂𝑂𝑂𝑂𝑂𝑂
+> Shared 𝛩𝛩 𝐸𝐸 𝑂𝑂𝑂𝑂𝑂𝑂 𝛩𝛩 𝐸𝐸− 𝐸𝐸𝐸𝐸
+> 𝑂𝑂𝑂𝑂𝑂𝑂 ,𝜏𝜏
+> 𝛩𝛩 𝐷𝐷 𝑇𝑇𝑇𝑇𝑇𝑇
+> ℒ𝑇𝑇𝑇𝑇𝑇𝑇 𝜏𝜏
+> ℒ𝑇𝑇𝑇𝑇𝑇𝑇
+> Past Trajectories
+> ℒ𝑇𝑇𝑇𝑇𝑇𝑇 𝜏𝜏+1
+> 𝑆𝑆 ℎ𝑆𝑆𝑆𝑆𝑆𝑆𝑆𝑆 𝛩𝛩 𝐸𝐸 𝑇𝑇𝑇𝑇𝑇𝑇 𝛩𝛩 𝐸𝐸− 𝐸𝐸𝐸𝐸
+> 𝑇𝑇𝑇𝑇𝑇𝑇 ,𝜏𝜏
+> XC𝜏𝜏+1
+> Y
+> +XC𝜏𝜏
+> TaPD ：a plug-and-play Framework
+> Varying-Length Observations
+> ···
+> X𝜏𝜏+1
+> X𝜏𝜏
+> M
+> M
+> ···
+> �X𝐶𝐶 𝜏𝜏
+> �X𝐶𝐶 𝜏𝜏+1
+> �Y
+> Unobserved Past Trajectories
+
+Fig. 1: The OAF pipeline with parameter sharing and progressive knowledge distillation. 
+
+B. Observation-Adaptive Forecaster (OAF) 
+
+The OAF module is designed to (i) accommodate variable-length histories within a single predictor and (ii) learn reliable motion priors from real trajectories. OAF achieves this through two key mechanisms: intra-module parameter sharing (PS) 
+
+and progressive knowledge distillation (PKD) . Architecturally, OAF consists of an encoder ΦOAF E and a decoder ΦOAF D .The core network parameters are shared across all observation lengths to avoid training separate models, while length-specific LayerNorm parameters are maintained to absorb distribution shifts induced by different history lengths. This design pro-vides an effective trade-off between computational efficiency and cross-length generalization. 
+
+a) Encoder–decoder forecasting with cross-length pa-rameter sharing.: Given an observed history Xτ and the HD map M, the encoder extracts fused scene-motion features. Specifically, feature fusion, attention, and dynamic encoding layers share parameters ΘOAF E-shared for all τ ∈ { 1, . . . , H },whereas LayerNorm parameters are length-dependent, denoted by ΘOAF ,τ  
+
+> E-LN
+
+. This prevents shared normalization from distorting representations when the input statistics vary across lengths. The fused feature is computed as 
+
+Fτ 
+
+> e
+
+= Φ OAF E
+
+
+
+Xτ , M; Θ OAF E-shared , ΘOAF ,τ 
+
+> E-LN
+
+
+
+, (4) where Fτ 
+
+> e
+
+aggregates motion cues from Xτ and map context from M. We then extract AOI-specific features 
+
+Fτ 
+
+> aoi
+
+= Extract (Fτ 
+
+> e
+
+; AOI ) . (5) The decoder shares parameters ΘOAF D across all lengths to en-force consistent prediction logic, yielding the future trajectory prediction ˆYτ = Φ OAF D
+
+ Fτ
+
+> aoi
+
+; Θ OAF D
+
+ . (6) 
+
+b) Progressive knowledge distillation (PKD).: While pa-rameter sharing provides a unified predictor, extremely short histories still suffer from an intrinsic information deficit. PKD addresses this issue by progressively transferring motion-pattern knowledge from longer histories to shorter ones. Importantly, we distill knowledge using full-agent features rather than AOI-only features, since inter-agent context is often crucial under partial observability. Specifically, from the fused encoder feature Fτ 
+
+> e
+
+, we extract features for all Na agents: 
+
+Fτ 
+
+> ag
+
+= Extract (Fτ 
+
+> e
+
+; Na) . (7) This full-context design improves robustness when the AOI history is truncated, as neighboring agents and map-conditioned interactions provide complementary cues for the missing states. To enforce cross-length consistency without inducing severe feature mismatch, PKD performs adjacent-length alignment along the hierarchy τ = 1 → 2 → · · · → H. Unlike directly aligning very short inputs with the full-length history (which can be overly difficult and unstable), we align each student length τ with its adjacent teacher length τ + 1 ,which is naturally matched in spatiotemporal scope. Teacher features are detached to ensure one-way knowledge flow and to prevent short-history noise from corrupting reliable long-history representations. The alignment loss is defined as 
+
+Lf = 1
+
+H − 1
+
+> H−1
+
+X 
+
+> τ=1
+
+Fτ 
+
+> ag
+
+− detach  Fτ +1 ag 
+
+ 
+
+> 1
+
+. (8) This hierarchical, spatiotemporally matched alignment yields progressive distillation from long to short histories, reduces optimization difficulty compared with direct cross-level align-ment, and preserves the benefits of full-agent context for handling practical missing-history scenarios. 
+
+C. Temporal Backfilling Module (TBM) 
+
+TBM is an independent component that explicitly recon-structs the unobserved past for short truncated histories Xτ
+
+(τ < H ). It targets a key limitation of purely feature-level adaptation in OAF (e.g., PKD): although distillation can align representations across observation lengths, it cannot recover 
+
+trajectory-specific prior motion states (e.g., pre-occlusion ve-locity trend or heading evolution) that are never observed in extremely short inputs. TBM addresses this information deficit by converting a short history into a completed full-length history, enabling OAF to operate on context-rich inputs. To maintain efficient adaptation across multiple short lengths, TBM follows the same intra-module parameter-sharing prin-ciple as OAF and adopts an encoder–decoder architecture specialized for history reconstruction. 
+
+a) Encoder with cross-length parameter sharing.: Given a short history Xτ and the HD map M, the TBM en-coder ΦTBM E extracts reconstruction-oriented features. Core 5𝛩𝛩 𝐷𝐷 𝑂𝑂𝑂𝑂𝑂𝑂  ℒ 𝑟𝑟𝑟𝑟 𝑎𝑎           
+
+> 𝜏𝜏 Future Trajectories Shared 𝛩𝛩 𝐸𝐸 𝑂𝑂𝑂𝑂𝑂𝑂 𝛩𝛩 𝐸𝐸− 𝐸𝐸𝐸𝐸
+> 𝑂𝑂𝑂𝑂𝑂𝑂 ,𝜏𝜏
+> 𝛩𝛩 𝐷𝐷 𝑇𝑇𝑇𝑇𝑇𝑇
+> ℒ𝑇𝑇𝑇𝑇𝑇𝑇 𝜏𝜏
+> ℒ𝑇𝑇𝑇𝑇𝑇𝑇
+> Past Trajectories
+> ℒ𝑇𝑇𝑇𝑇𝑇𝑇 𝜏𝜏+1
+> 𝑆𝑆 ℎ𝑆𝑆𝑆𝑆𝑆𝑆𝑆𝑆 𝛩𝛩 𝐸𝐸 𝑇𝑇𝑇𝑇𝑇𝑇 𝛩𝛩 𝐸𝐸− 𝐸𝐸𝐸𝐸
+> 𝑇𝑇𝑇𝑇𝑇𝑇 ,𝜏𝜏
+> XC𝜏𝜏+1
+> Y
+> +XC𝜏𝜏
+> TaPD ：a plug-and-play Framework
+> Varying-Length Observations
+> ···
+> X𝜏𝜏+1
+> X𝜏𝜏
+> M
+> ···
+> �X𝐶𝐶 𝜏𝜏
+> �X𝐶𝐶 𝜏𝜏+1
+> �Y
+> Unobserved Past Trajectories
+
+Fig. 2: The TBM temporal backfilling module for unobserved past trajectories backfilling. layers (temporal encoding, inter-agent interaction, and map– trajectory fusion) share parameters ΘTBM E-shared across all τ ,while LayerNorm parameters are length-specific, denoted by 
+
+ΘTBM ,τ  
+
+> E-LN
+
+. This mirrors OAF’s normalization strategy and miti-gates representation distortion caused by shared normalization under length-dependent input statistics. The encoded feature is 
+
+Fτ 
+
+> rec
+
+= Φ TBM E
+
+
+
+Xτ , M; Θ TBM E-shared , ΘTBM ,τ 
+
+> E-LN
+
+
+
+, (9) where Fτ 
+
+> rec
+
+summarizes the scene context and the observed motion cues relevant for backfilling. 
+
+b) Decoder and temporal backfilling.: The decoder 
+
+ΦTBM D shares parameters ΘTBM D across all short lengths and predicts the missing prefix that precedes the observed segment. Concretely, TBM generates the missing historical segment 
+
+˜Xτ 
+
+> C
+
+= Φ TBM D
+
+ Fτ
+
+> rec
+
+; Θ TBM D
+
+ , (10) where ˜Xτ 
+
+> C
+
+∈ RN ×(H−τ )∆ T ×Ca corresponds to the (H−τ )∆ T
+
+unobserved time steps in the standard window. The completed full-length history is then formed by concatenation along the temporal dimension: 
+
+ˆXH = Concat 
+
+ ˜Xτ
+
+> C
+
+, Xτ 
+
+. (11) This operation preserves the original observed states in Xτ
+
+and augments them with reconstructed prior context, yielding a temporally ordered and standardized history of length Tobs .
+
+c) Role of TBM in the overall framework.: By explicitly reconstructing missing historical segments, TBM provides trajectory-specific priors that implicit feature alignment alone cannot reliably infer under severe truncation. The resulting context-rich ˆXH serves as an enriched input to OAF, allowing it to fully exploit PKD-trained motion priors for accurate fore-casting even when the originally observed history is extremely short. 
+
+D. Training Strategy 
+
+To fully exploit the complementarity between TBM and OAF while preserving reliable motion-prior learning and pre-venting adverse co-adaptation, we adopt a sequential three-stage training protocol. The protocol leverages the architec-tural decoupling of the two modules: each component is first optimized for its primary objective in isolation, and OAF is subsequently adapted to TBM-generated histories under controlled fine-tuning. This design yields robust performance across variables and extremely short observation lengths. 
+
+1) Stage 1: Pre-train OAF: In the first stage, we pre-train OAF solely on real driving data to establish strong forecasting priors and cross-length generalization. The inputs are native variable-length histories Xτ (constructed by truncation or sliding windows) paired with the HD map M; no reconstructed observations are used to avoid injecting reconstruction noise into motion-pattern learning. The objective jointly optimizes (i) accurate future trajectory prediction from variable-length inputs and (ii) progressive cross-length feature alignment via PKD. The overall loss is 
+
+LOAF = α Lf + Lreg , (12) where Lf is the PKD feature-alignment loss and Lreg aggre-gates prediction supervision across lengths: 
+
+Lreg =
+
+> H
+
+X 
+
+> τ=1
+
+ Lτ 
+
+> reg
+
++ Lτ
+
+> cls
+
+ . (13) Here, Lτ 
+
+> reg
+
+is a Smooth-L1 regression loss between the pre-dicted and ground-truth future trajectories, and Lτ 
+
+> cls
+
+is a cross-entropy loss for motion-mode classification, which encourages consistent multimodal motion reasoning. The PKD weight α
+
+is scheduled by cosine annealing: 
+
+α = 12
+
+
+
+1 − cos 
+
+ e · πE
+
+ 
+
+, (14) where e is the current epoch and E is the total number of pre-training epochs. This schedule mitigates early-stage instability by prioritizing trajectory supervision when representations are immature, and gradually increases the emphasis on feature alignment as OAF converges. 
+
+2) Stage 2: Train TBM Independently: In the second stage, we train TBM as a standalone reconstruction model to max-imize the fidelity of backfilled histories, while keeping OAF completely isolated. TBM takes short histories Xτ (τ < H )and the HD map M as inputs, and predicts the missing histor-ical segment ˜XτC such that the concatenated trajectory ˆXH is temporally coherent and consistent with real motion dynamics. 6TaPD ： a plug-and-play Framework 
+
+Stage1: OAF Pretraining 
+
+(M, X𝜏𝜏 ) (M, X𝜏𝜏 )
+
+OAF 
+
+(𝐹𝐹 𝑎𝑎𝑎𝑎 𝜏𝜏 , �𝑌𝑌 𝜏𝜏 ) (𝐹𝐹 𝑎𝑎𝑎𝑎 𝜏𝜏+1 , �𝑌𝑌 𝜏𝜏+1 )
+
+ℒ𝑓𝑓 𝜏𝜏 = || �𝑌𝑌 𝜏𝜏 − detach( �𝑌𝑌 𝜏𝜏+1 )|| 1PKD: 
+
+Stage2: TBM Training 
+
+(M, X𝜏𝜏 )
+
+TBM 
+
+�X𝐶𝐶 𝜏𝜏 
+
+ℒ 𝑇𝑇𝑇𝑇𝑇𝑇 𝜏𝜏 = 𝑙𝑙𝑙𝑙𝑙𝑙𝑙𝑙 (�X𝐶𝐶 𝜏𝜏 , X 𝐶𝐶 𝜏𝜏 )
+
+Stage3: OAF Finetuning 
+
+(M, cat(X 𝜏𝜏 , �X𝐶𝐶 𝜏𝜏 )) 
+
+OAF 
+
+�Y
+
+ℒ𝑂𝑂𝑇𝑇  = 𝑙𝑙𝑙𝑙𝑙𝑙𝑙𝑙 (�Y, Y) 
+
+OAF model 
+
+�X𝐶𝐶 𝜏𝜏 
+
+Fig. 3: The overview of TaPD training strategy. To ensure compatibility with OAF’s learning objectives, TBM uses a reconstruction loss aligned with OAF’s supervision: 
+
+LTBM =
+
+> H−1
+
+X 
+
+> τ=1
+
+ Lτ 
+
+> reg
+
++ Lτ
+
+> cls
+
+ , (15) where Lτ 
+
+> reg
+
+is a Smooth-L1 loss between the predicted and ground-truth missing segments, and Lτ 
+
+> cls
+
+is a cross-entropy loss that enforces motion-mode consistency for the reconstructed segment. Training TBM independently prevents erroneous re-construction artifacts from biasing OAF during representation learning. 
+
+3) Stage 3: Freeze TBM and Fine-tune OAF: In the final stage, we freeze TBM to preserve its reconstruction capability and fine-tune OAF to accommodate TBM-completed histories while retaining the motion priors learned from real data. For each training instance, if τ < H , the truncated history Xτ is first processed by the frozen TBM to produce a completed history ˆXH ; if τ = H, the native full-length history XH
+
+is used directly. OAF is then trained on these (completed or native) full-length inputs. During fine-tuning, we optimize only the trajectory predic-tion objective and omit the PKD alignment term to avoid overwriting the motion representations acquired in Stage 1. The fine-tuning loss is therefore 
+
+LFT = ˜LH
+
+> reg
+
+, (16) where ˜LH 
+
+> reg
+
+denotes the standard prediction loss computed from OAF outputs given the (TBM-completed or native) full-length history. This sequential protocol yields a final model that combines reliable forecasting priors from real trajectories with explicit history completion, leading to robust performance under variable-length and extremely short observations. IV. E XPERIMENTS 
+
+A. Experimental Settings a) Datasets.: We conduct experiments on two estab-lished motion forecasting benchmarks, Argoverse 1 [9] and Argoverse 2 [10]. Argoverse 1 comprises 323,557 real-world driving scenarios collected in the Miami and Pittsburgh metropolitan areas. Each scenario is sampled at 10 Hz and spans 5 s, where the first 2 s (20 frames) are provided as observed history and the remaining 3 s (30 frames) are used as the prediction horizon. Argoverse 2 further increases both scale and diversity, containing 250,000 scenarios from six cities. Each sequence is recorded at 10 Hz over 11 s; following the official protocol, we use the first 5 s (50 frames) as input and predict the subsequent 6 s (60 frames). 
+
+b) Evaluation Metrics.: We report three standard metrics for multimodal trajectory forecasting: minimum Average Dis-placement Error (minADE K ), minimum Final Displacement Error (minFDE K ), and Miss Rate (MR K ). Given a set of K
+
+predicted trajectories { ˆY(k)}Kk=1 and the ground-truth future trajectory Y, we define 
+
+ADE   ˆY(k), Y = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+ˆy(k) 
+
+> t
+
+− yt 2
+
+, (17) 
+
+FDE   ˆY(k), Y = ˆy(k) 
+
+> T
+
+− yT 2
+
+, (18) where T denotes the number of predicted time steps and the 
+
+ℓ2 distance is measured in meters. The multimodal errors are then computed in a best-of-K manner: 
+
+minADE K = min  
+
+> k∈{ 1,...,K }
+
+ADE   ˆY(k), Y, (19) 
+
+minFDE K = min  
+
+> k∈{ 1,...,K }
+
+FDE   ˆY(k), Y. (20) Following prior work, the miss rate is defined as 
+
+MR K = P minFDE K > 2 m , (21) i.e., the percentage of samples whose best final displacement exceeds 2 m. Unless otherwise specified, we report results for 
+
+K ∈ { 1, 6}.
+
+c) Backbone and Baselines.: We instantiate our approach on top of DeMo [53] and benchmark against representative baselines designed for variable observation lengths, including DTO [45], FLN [8], LaKD [49], and CLLS [50]. We addi-tionally report two reference settings for clarity. Ori denotes a model trained exclusively with the standard observation length and then directly evaluated under observation-length shift. IT 
+
+(Isolated Training) trains a separate model for each observation length and evaluates each model on its matched length. 
+
+d) Implementation Details.: We construct variable-length histories by truncating the standard full history of length 
+
+Tobs by removing several intervals, each of duration ∆T .Concretely, we set ∆T =10 and Tobs =50 time steps on Argo-verse 2, and ∆T =5 and Tobs =20 on Argoverse 1. DeMo [53] is used as the backbone. While the original DeMo includes 7
+
+TABLE I: Variable-length trajectory prediction comparison on Argoverse 2 (left) and Argoverse 1 (right) validation sets. Best results are in bold and second best are underlined. Ts denotes the time steps of Tτ , a.k.a., τ ∆T .                                                                         
+
+> Method Argoverse 2 ( minADE 6/minFDE 6)Argoverse 1 ( minADE 6/minFDE 6)10Ts 20Ts 30Ts 40Ts 50Ts 5Ts 10Ts 15Ts 20Ts DeMo Ori 0.861/1.533 0.700/1.358 0.671/1.306 0.662/1.288 0.658/1.278 0.781/1.267 0.662/1.087 0.624/1.011 0.606/1.003 DeMo IT 0.675/1.318 0.661/1.296 0.660/1.293 0.659/1.287 0.658/1.278 0.669/1.078 0.634/1.031 0.612/0.988 0.606/1.003 DeMo DTO 0.672/1.307 0.658/1.291 0.650/1.279 0.647/1.268 0.645/1.265 0.662/1.064 0.628/1.025 0.605/0.991 0.599/1.010 DeMo FLN 0.651/1.262 0.644/1.258 0.637/1.254 0.628/1.238 0.621/1.231 0.646/1.043 0.607/0.994 0.599/0.974 0.592/0.957 DeMo LaKD 0.639/1.262 0.627/1.251 0.620/1.243 0.617/1.236 0.617/1.232 0.631/1.008 0.593/0.976 0.584/0.933 0.581/0.929 DeMo CLLS 0.641/1.258 0.630/1.249 0.623/1.234 0.614/1.225 0.615/1.223 0.634/0.998 0.587/0.959 0.580/0.919 0.579/0.922 DeMo TaPD(Ours) 0.617/1.203 0.603/1.167 0.599/1.157 0.599/1.155 0.599/1.153 0.608/0.974 0.574/0.915 0.573/0.914 0.573/0.914
+
+the RealMotion module [54], we remove RealMotion and retain only the core forecasting architecture to obtain a clean and reproducible baseline for our extensions. All models are trained for 60 epochs using AdamW [55] with an initial learning rate of 6×10 −4, weight decay of 0.01, and a batch size of 16. We adopt an agent-centric coordinate system and include map/scene elements within a 150 m radius centered at each target agent. All experiments are conducted on two NVIDIA A40 GPUs. 
+
+B. Performance on Variable-Length Histories 
+
+Table I summarizes the variable-length forecasting results on the Argoverse 2 and Argoverse 1 validation sets. As expected, the standard-length model ( Ori ) exhibits pronounced performance degradation when the observation history short-ens, indicating that naive fixed-window training is not robust to observation-length shift. For instance, on Argoverse 2, 
+
+Ori deteriorates from 0.658/1.278 at 50Ts to 0.861/1.533 at 10Ts (minADE 6/minFDE 6), and on Argoverse 1 it drops from 0.606/1.003 at 20Ts to 0.781/1.267 at 5Ts. While IT (Iso-lated Training) improves short-history performance by training length-specific models (e.g., 0.675/1.318 on Argoverse 2 at 10Ts and 0.669/1.078 on Argoverse 1 at 5Ts), its gains quickly diminish as the history approaches the standard length (nearly identical to Ori at 50Ts/20Ts). Moreover, IT is impractical in real-world deployments because it requires maintaining multiple models. Among dedicated length-adaptive baselines ( DTO , FLN ,
+
+LaKD , CLLS ), our TaPD consistently achieves the best performance across all observation lengths on both datasets. The improvements are most evident under extremely short histories: on Argoverse 2 at 10Ts, TaPD reduces the error from 0.861/1.533 ( Ori ) to 0.617/1.203, and also surpasses the strongest adaptive baseline (0.641/1.258 by CLLS ); on Argoverse 1 at 5Ts, TaPD achieves 0.608/0.974 compared to 0.781/1.267 ( Ori ) and 0.634/0.998 ( CLLS ). More importantly, TaPD substantially narrows the short-to-full performance gap: the minFDE 6 gap between 10Ts and 50Ts on Argoverse 2 is reduced from 0.255 ( Ori ) to 0.050, and the gap between 5Ts and 20Ts on Argoverse 1 decreases from 0.264 to 0.060. This trend supports the proposed dual-module design: TBM explicitly compensates for missing historical context, while PKD in OAF encourages representation consistency across lengths. The consistent gains on both Argoverse 1 and Ar-goverse 2 further demonstrate the robustness and generality of TaPD under variable-length observations. 
+
+C. Comparison with State of the Art 
+
+TABLE II: Performance comparison on Argoverse 2 validation set . ”-” denotes that this result was not reported in their paper.                                           
+
+> Method minFDE 6minADE 6MR 6
+> LGT [56] 1.93 1.02 0.30 SIMPL [57] 1.45 0.78 -forecast-mae [32] 1.41 0.80 0.18 SeNeVA [58] 1.32 0.71 0.17 Realmotion [54] 1.31 0.66 0.15 QCNet [4] 1.27 0.73 0.16 DeMo [53] 1.27 0.67 0.15 LANet [59] 1.26 0.72 0.16 Polaris [60] 1.21 0.63 0.14 FutureNet-LoF [61] 1.19 0.71 0.14 CG-Net [62] 1.18 0.70 0.14 LITNT [63] 1.15 0.70 0.15
+> TaPD (Ours) 1.15 0.59 0.13
+
+TABLE III: Performance comparison on Argoverse 1 valida-tion set . ”-” denotes that this result was not reported in their paper.                                                          
+
+> Method minADE 6minFDE 6MR 6
+> LTP [64] 0.78 1.07 -LaneRCNN [17] 0.77 1.19 0.08 TPCN [65] 0.73 1.15 0.11 DenseTNT [27] 0.73 1.05 0.10 TNT [26] 0.73 1.29 0.09 mmTransformer [66] 0.71 1.15 0.11 LaneGCN [16] 0.71 1.08 -SSL-Lanes [34] 0.70 1.01 0.09 PAGA [18] 0.69 1.02 -DSP [67] 0.69 0.98 0.09 FRM [68] 0.68 0.99 -ADAPT [69] 0.67 0.95 0.08 SIMPL [57] 0.66 0.95 0.08 HiVT [25] 0.66 0.96 0.09 R-Pred [37] 0.66 0.95 0.09 HPNet [38] 0.64 0.87 0.07
+> DeMo [53] 0.61 1.00 0.09
+> TaPD (Ours) 0.57 0.91 0.07
+
+Although TaPD is tailored for observation-adaptive forecast-ing under variable-length histories, it also yields competitive— and in several cases state-of-the-art—performance under the conventional fixed-length protocol. Tables II and III report single-agent results on the Argoverse 2 [10] and Argov-erse 1 [9] validation sets, respectively. 
+
+Argoverse 2. As shown in Table II, TaPD achieves the best overall accuracy. It attains the lowest minADE 6 of 0.59 and 8
+
+TABLE IV: Ablation study on the core components of TaPD on the Argoverse 2 validation set . PS denotes parameter-sharing mechanism.                                
+
+> PS(OAF) PKD(OAF) TBM minADE 6/minFDE 6
+> 10Ts 20Ts 30Ts 40Ts 50Ts 0.675/1.318 0.661/1.296 0.660/1.293 0.659/1.287 0.658/1.278
+> ✓0.650/1.289 0.637/1.256 0.629/1.238 0.624/1.226 0.616/1.211
+> ✓✓0.621/1.216 0.610/1.200 0.608/1.196 0.604/1.185 0.601/1.172
+> ✓✓✓0.617/1.203 0.603/1.167 0.599/1.157 0.599/1.155 0.599/1.153
+
+TABLE V: Ablation study of different length combinations of observation lengths on the Argoverse 2 single-agent validation set .                                
+
+> Method Combination minADE 6/minFDE 6
+> 10Ts 20Ts 30Ts 40Ts 50Ts DeMo IT -0.675/1.318 0.661/1.296 0.660/1.293 0.659/1.287 0.658/1.278 DeMo TaPD-3 30/40/50 0.671/1.313 0.627/1.224 0.609/1.201 0.608/1.195 0.605/1.174 DeMo TaPD-4 20/30/40/50 0.651/1.274 0.606/1.188 0.605/1.182 0.605/1.178 0.603/1.162 DeMo TaPD-5 10/20/30/40/50 0.617/1.203 0.603/1.167 0.599/1.157 0.599/1.155 0.599/1.153
+
+the lowest MR 6 of 0.13, while matching the best minFDE 6
+
+of 1.15 (tied with LITNT [63]). Compared with the DeMo backbone [53], TaPD reduces minFDE 6 from 1.27 to 1.15 (9.4% relative improvement) and minADE 6 from 0.67 to 0.59 ( 11.9% ), and further lowers MR 6 from 0.15 to 0.13. These gains suggest that the proposed training scheme not only improves robustness to observation-length shift, but also enhances the quality of multimodal trajectory hypotheses even when evaluated with the standard full-history input. 
+
+Argoverse 1. Table III shows that TaPD achieves a new best minADE 6 of 0.57 and the best MR 6 of 0.07 (tied with HPNet [38]). For minFDE 6, TaPD remains highly competitive at 0.91, ranking second behind HPNet (0.87) while improving over DeMo (1.00 →0.91). Overall, TaPD consistently strength-ens the DeMo backbone on both datasets and maintains state-of-the-art fixed-length performance, despite being explicitly designed to handle variable-length observations. 
+
+D. Ablation Study a) Effects of components.: Table IV summarizes an ab-lation study on the Argoverse 2 validation set to quantify the contribution of each core component. The first row is the baseline without any of our proposed mechanisms (i.e., no parameter sharing, no PKD, and no TBM), which yields 
+
+minADE 6/minFDE 6 = 0 .675 /1.318 at 10Ts and 0.658 /1.278 
+
+at 50Ts. Adding only the PS mechanism consistently improves per-formance across all observation lengths by unifying the feature extraction/prediction logic and avoiding redundant length-specific optimization. For instance, PS improves 10Ts from 
+
+0.675 /1.318 to 0.650 /1.289 and 50Ts from 0.658 /1.278 to 
+
+0.616 /1.211 .Introducing PKD on top of PS yields further gains, with a larger effect under shorter histories. This supports our moti-vation that progressive distillation can effectively transfer spa-tiotemporal motion priors from longer observations to shorter ones and partially compensate for missing temporal context. Concretely, PS+PKD improves 10Ts from 0.650 /1.289 to 
+
+0.621 /1.216 and 50Ts from 0.616 /1.211 to 0.601 /1.172 .Finally, the full model (PS+PKD+TBM) achieves the best results across all lengths. The additional gains are most evident for short inputs, where the information deficit is most severe: compared with PS+PKD, TBM further reduces 10Ts from 
+
+0.621 /1.216 to 0.617 /1.203 and 20Ts from 0.610 /1.200 to 
+
+0.603 /1.167 . Overall, the ablation confirms that PS, PKD, and TBM play complementary roles: PS establishes an efficient unified predictor across lengths, PKD strengthens cross-length knowledge transfer, and TBM explicitly restores trajectory-specific historical context that feature-level alignment alone cannot reliably recover. 
+
+b) Effects of length combination.: Table V investigates how different training-length combinations affect variable-length generalization on Argoverse 2. Training on longer his-tories only (DeMo TaPD-3 with 30/40/50) performs competi-tively on the included lengths and improves over isolated train-ing at 30–50Ts (e.g., 50Ts: 0.605 /1.174 vs. 0.658 /1.278 for DeMo IT). However, its performance degrades substantially on unseen shorter lengths, most notably at 20Ts ( 0.627 /1.224 )and 10Ts ( 0.671 /1.313 ), indicating limited extrapolation to-ward short-history regimes when such lengths are absent during training. Expanding the training set to include 20Ts (DeMo TaPD-4 with 20/30/40/50) further improves performance on 20– 50Ts (e.g., 20Ts: 0.606 /1.188 ; 50Ts: 0.603 /1.162 ), but a clear gap remains at the unseen 10Ts case ( 0.651 /1.274 ), again highlighting the difficulty of generalizing to extremely short histories without direct exposure. In contrast, DeMo TaPD-5, trained with the full length spectrum (10/20/30/40/50), achieves the strongest and most consistent results across all observation lengths, improving over DeMo IT at every time step (e.g., 10Ts: 0.617 /1.203 
+
+vs. 0.675 /1.318 ; 50Ts: 0.599 /1.153 vs. 0.658 /1.278 ). While incorporating more lengths increases training cost, the results demonstrate that broad length coverage is crucial for ro-bust observation-adaptive forecasting, particularly for extreme 9
+
+TABLE VI: Performance Comparison of TaPD on HiVT on 
+
+Argoverse 1 single-agent validation set .                      
+
+> Method minADE 6/minFDE 6
+> 5Ts 10Ts 15Ts 20Ts HiVT Ori 0.943/1.540 0.768/1.201 0.732/1.124 0.702/1.070 HiVT IT 0.781/1.224 0.738/1.121 0.711/1.083 0.702/1.070 HiVT FLN 0.754/1.162 0.723/1.089 0.701/1.053 0.681/1.028 HiVT TaPD(Ours) 0.704/1.083 0.662/1.012 0.674/1.003 0.660/0.964
+
+TABLE VII: Variable-length trajectory prediction performance of TBM on Argoverse 2 (upper) and Argoverse 1 (lower) validation sets.               
+
+> Argoverse 2 ( minADE 6/minFDE 6)Module 10Ts 20Ts 30Ts 40Ts TBM 0.382/0.723 0.275/0.501 0.185/0.316 0.097/0.160 Argoverse 1 ( minADE 6/minFDE 6)Module 5Ts 10Ts 15Ts TBM 0.316/0.307 0.250/0.185 0.195/0.111
+
+short-history inputs. 
+
+E. Plug-and-Play Evaluation 
+
+To verify the plug-and-play property of TaPD, we integrate our framework into a representative backbone, HiVT [25], and evaluate it under variable-length observations on the Argo-verse 1 single-agent validation set (Table VI). The original HiVT model ( HiVT Ori ) suffers a substantial performance drop under short histories, e.g., 0.943 /1.540 at 5Ts. Isolated Training ( HiVT IT ) mitigates this issue but provides limited improvement at longer lengths and requires training separate models. In contrast, HiVT TaPD consistently achieves the best results at all observation lengths, reducing errors from 
+
+0.781 /1.224 to 0.704 /1.083 at 5Ts and from 0.702 /1.070 
+
+to 0.660 /0.964 at 20Ts. Moreover, our method outperforms the length-adaptive baseline FLN across the board (e.g., 5Ts: 0.754 /1.162 → 0.704 /1.083 ; 20Ts: 0.681 /1.028 →
+
+0.660 /0.964 ). These results demonstrate that TaPD can be seamlessly incorporated into existing forecasting pipelines and reliably improves variable-length performance without architectural overhauls. 
+
+F. Performance of TBM 
+
+Table VII reports the backfilling accuracy of TBM on Argoverse 2 and Argoverse 1 validation sets. A clear mono-tonic trend is observed: as the available observation length increases, both minADE 6 and minFDE 6 decrease consistently across datasets. On Argoverse 2, the reconstruction error drops from 0.382 /0.723 at 10Ts to 0.097 /0.160 at 40Ts, while on Argoverse 1 it decreases from 0.316 /0.307 at 5Ts to 0.195 /0.111 at 15Ts. This behavior indicates that TBM effectively exploits additional temporal evidence to recover missing history more accurately, and remains robust under varying degrees of truncation. In turn, the improved backfilled TABLE VIII: Parameters (M), FLOPs (G), and latency (ms) under different input lengths.                                
+
+> Len DeMo IT DeMo TaPD Params ↓FLOPs ↓Lat. ↓Params ↓FLOPs ↓Lat. ↓
+> 10Ts 3.431 0.678 23.370 6.831 1.213 88.568 20Ts 3.431 0.680 23.578 6.815 1.140 80.626 30Ts 3.431 0.683 23.878 6.800 1.066 84.238 40Ts 3.431 0.685 23.760 6.784 0.992 86.447
+
+histories provide richer context for OAF, which is particularly beneficial in the extremely short-history regime. 
+
+G. Model Efficiency Analysis 
+
+Table VIII presents the model efficiency of the DeMo backbone and the proposed TaPD on the Argoverse 2 dataset. Since TaPD’s inference cost on full-length input is equal to that of DeMo IT, we report results only for incomplete input lengths. The results show that DeMo IT is insensitive to input length across all three metrics, whereas TaPD is insensitive to input length with respect to parameters and latency but incurs increased FLOPs as input length decreases. The largest inference overhead of TaPD occurs at an input length of 10Ts, where it increases over DeMo IT by 3.400 M parameters, 0.535 G FLOPs, and 65.198 ms latency. Despite a modest increase in inference overhead, our method achieves real-time inference even under the heaviest workload, with a latency of 88.568 ms, thereby demonstrating its lightweight design. 
+
+H. Qualitative Comparisons 
+
+Fig. 4 provides qualitative comparisons under extremely short observations (10 time steps). In the first two rows, DeMo IT tends to produce less reliable multimodal hypothe-ses and may overshoot the ground-truth future trajectory, suggesting that training isolated models per length does not sufficiently capture informative motion cues from a very limited history. In contrast, our DeMo OAF and DeMo TaPD generate trajectories with noticeably improved coverage of the ground truth, indicating stronger motion representation under short inputs. Moreover, DeMo TaPD exhibits accurate backfilling of the unobserved history (blue vs. orange), which provides a better-conditioned context for forecasting. In the last two rows, DeMo IT shows a substantial devi-ation from the ground-truth future (red), while DeMo OAF partially corrects the trend but still exhibits residual bias. Our DeMo TaPD achieves the closest alignment: it reconstructs the missing historical segment faithfully and yields multimodal predictions that better match both the trajectory trend and the distribution of plausible futures. These cases qualitatively support the roles of TBM in compensating for missing context and of PKD in promoting cross-length consistency. V. C ONCLUSION 
+
+This paper addresses variable-length motion forecasting in autonomous driving, where the available observation history can be arbitrarily short due to occlusions, limited sensing range, or late agent entry. We propose TaPD, a unified 10   
+
+> (a) DeMo IT (b) DeMo OAF (c) DeMo TaPD (Our full model)
+
+Fig. 4: Qualitative comparison on the Argoverse 2 single-agent validation set under short observations (10 time steps). Each row corresponds to one scene, and the three columns show predictions from (a) DeMo IT, (b) DeMo OAF, and (c) our DeMo TaPD, respectively, given the same input. The observed history is shown as a solid black segment. The ground-truth future trajectory is shown in solid red with an arrow. Green dashed arrows denote multiple predicted trajectories. For methods with backfilling, the reconstructed (unobserved) history is shown as a blue dashed segment, and the corresponding ground-truth unobserved history segment is shown in solid orange. 11 
+
+framework that combines two complementary modules: an observation-adaptive forecaster and a temporal backfilling module. The observation-adaptive forecaster provides a sin-gle predictor for all observation lengths via a parameter-sharing design, and further improves short-history robust-ness through progressive knowledge distillation, which trans-fers spatiotemporal motion priors from longer trajectories to shorter ones. The temporal backfilling module complements the observation-adaptive forecaster by explicitly reconstructing missing historical segments for truncated inputs, supplying trajectory-specific prior states that cannot be reliably recovered by feature-level alignment alone. Extensive experiments on Argoverse 1 and Argoverse 2 demonstrate that TaPD consis-tently improves minADE 6 and minFDE 6 across all observation lengths, markedly narrowing the performance gap between short and full histories while also achieving competitive per-formance on standard fixed-length benchmarks. In future work, we plan to extend TaPD by generaliz-ing the current alignment strategy from feature-level match-ing to a multi-granularity formulation that jointly enforces representation-, intent-, and motion-pattern consistency, en-abling more structured adaptation across observation lengths. We expect these extensions to further improve robustness in real-world driving environments with dense interactions and severe partial observability. REFERENCES [1] E. Yurtsever, J. Lambert, A. Carballo, and K. Takeda, “A survey of autonomous driving: Common practices and emerging technologies,” 
+
+IEEE access , vol. 8, pp. 58 443–58 469, 2020. [2] C. Katrakazas, M. Quddus, W.-H. Chen, and L. Deka, “Real-time motion planning methods for autonomous on-road driving: State-of-the-art and future research directions,” Transportation Research Part C: Emerging Technologies , p. 416–442, Nov 2015. [3] S. Shi, L. Jiang, D. Dai, and B. Schiele, “Motion transformer with global intention localization and local movement refinement,” Advances in Neural Information Processing Systems , vol. 35, pp. 6531–6543, 2022. [4] Z. Zhou, J. Wang, Y.-H. Li, and Y.-K. Huang, “Query-centric trajectory prediction,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 17 863–17 873. [5] Y. Zhou, H. Shao, L. Wang, S. L. Waslander, H. Li, and Y. Liu, “Smartrefine: A scenario-adaptive refinement framework for efficient motion prediction,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 15 281–15 290. [6] N. Nayakanti, R. Al-Rfou, A. Zhou, K. Goel, K. S. Refaat, and B. Sapp, “Wayformer: Motion forecasting via simple & efficient at-tention networks,” in 2023 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2023, pp. 2980–2987. [7] X. Wang, T. Su, F. Da, and X. Yang, “Prophnet: Efficient agent-centric motion forecasting with anchor-informed proposals,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2023, pp. 21 995–22 003. [8] Y. Xu and Y. Fu, “Adapting to length shift: Flexilength network for trajectory prediction,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 15 226–15 237. [9] M.-F. Chang, J. Lambert, P. Sangkloy, J. Singh, S. Bak, A. Hartnett, D. Wang, P. Carr, S. Lucey, D. Ramanan et al. , “Argoverse: 3d tracking and forecasting with rich maps,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2019, pp. 8748– 8757. [10] B. Wilson, W. Qi, T. Agarwal, J. Lambert, J. Singh, S. Khandelwal, B. Pan, R. Kumar, A. Hartnett, J. K. Pontes et al. , “Argoverse 2: Next generation datasets for self-driving perception and forecasting,” arXiv preprint arXiv:2301.00493 , 2023. [11] P. Sun, H. Kretzschmar, X. Dotiwalla, A. Chouard, V. Patnaik, P. Tsui, J. Guo, Y. Zhou, Y. Chai, B. Caine et al. , “Scalability in perception for autonomous driving: Waymo open dataset,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2020, pp. 2446–2454. [12] Y. Chai, B. Sapp, M. Bansal, and D. Anguelov, “Multipath: Multiple probabilistic anchor trajectory hypotheses for behavior prediction,” arXiv preprint arXiv:1910.05449 , 2019. [13] T. Phan-Minh, E. C. Grigore, F. A. Boulton, O. Beijbom, and E. M. Wolff, “Covernet: Multimodal behavior prediction using trajectory sets,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2020, pp. 14 074–14 083. [14] T. Gilles, S. Sabatini, D. Tsishkou, B. Stanciulescu, and F. Moutarde, “Home: Heatmap output for future motion estimation,” in 2021 IEEE International Intelligent Transportation Systems Conference (ITSC) .IEEE, 2021, pp. 500–507. [15] J. Gao, C. Sun, H. Zhao, Y. Shen, D. Anguelov, C. Li, and C. Schmid, “Vectornet: Encoding hd maps and agent dynamics from vectorized rep-resentation,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2020, pp. 11 525–11 533. [16] M. Liang, B. Yang, R. Hu, Y. Chen, R. Liao, S. Feng, and R. Urtasun, “Learning lane graph representations for motion forecasting,” in Com-puter Vision–ECCV 2020: 16th European Conference, Glasgow, UK, August 23–28, 2020, Proceedings, Part II 16 . Springer, 2020, pp. 541– 556. [17] W. Zeng, M. Liang, R. Liao, and R. Urtasun, “Lanercnn: Distributed representations for graph-centric motion forecasting,” in 2021 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) .IEEE, 2021, pp. 532–539. [18] F. Da and Y. Zhang, “Path-aware graph attention for hd maps in motion prediction,” in 2022 International conference on robotics and automation (ICRA) . IEEE, 2022, pp. 6430–6436. [19] H. Zhou, X. Yang, M. Fan, H. Huang, D. Ren, and H. Xia, “Static-dynamic global graph representation for pedestrian trajectory prediction,” Know.-Based Syst. , vol. 277, no. C, Oct. 2023. [Online]. Available: https://doi.org/10.1016/j.knosys.2023.110775 [20] H. Zhou, X. Yang, D. Ren, H. Huang, and M. Fan, “Csir: Cascaded sliding cvaes with iterative socially-aware rethinking for trajectory prediction,” IEEE Transactions on Intelligent Transportation Systems ,vol. 24, no. 12, pp. 14 957–14 969, 2023. [21] R. Wang, Z. Hu, X. Song, and W. Li, “Trajectory distribution aware graph convolutional network for trajectory prediction considering spatio-temporal interactions and scene information,” IEEE Transactions on Knowledge and Data Engineering , vol. 36, no. 8, pp. 4304–4316, 2023. [22] Y. Liu, B. Li, X. Wang, C. Sammut, and L. Yao, “Attention-aware social graph transformer networks for stochastic trajectory prediction,” IEEE Transactions on Knowledge and Data Engineering , vol. 36, no. 11, pp. 5633–5646, 2024. [23] Z. Zhang, W. Yuan, Z. Fan, X. Song, and R. Shibasaki, “Aisfuser: Encod-ing maritime graphical representations with temporal attribute modeling for vessel trajectory prediction,” IEEE Transactions on Knowledge and Data Engineering , vol. 37, no. 4, pp. 1571–1584, 2025. [24] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” Advances in neural information processing systems , vol. 30, 2017. [25] Z. Zhou, L. Ye, J. Wang, K. Wu, and K. Lu, “Hivt: Hierarchical vector transformer for multi-agent motion prediction,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2022, pp. 8823–8833. [26] H. Zhao, J. Gao, T. Lan, C. Sun, B. Sapp, B. Varadarajan, Y. Shen, Y. Shen, Y. Chai, C. Schmid et al. , “Tnt: Target-driven trajectory prediction,” in Conference on Robot Learning . PMLR, 2021, pp. 895– 904. [27] J. Gu, C. Sun, and H. Zhao, “Densetnt: End-to-end trajectory prediction from dense goal sets,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2021, pp. 15 303–15 312. [28] M. Wang, X. Zhu, C. Yu, W. Li, Y. Ma, R. Jin, X. Ren, D. Ren, M. Wang, and W. Yang, “Ganet: Goal area network for motion forecasting,” in 2023 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2023, pp. 1609–1615. [29] Y. Huang, Y. Cheng, and K. Wang, “Trajectory mamba: Efficient attention-mamba forecasting model based on selective ssm,” in Proceed-ings of the Computer Vision and Pattern Recognition Conference , 2025, pp. 12 058–12 067. [30] M. Knoche, D. de Geus, and B. Leibe, “Donut: A decoder-only model for trajectory prediction,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , October 2025, pp. 28 903– 28 912. [31] S. Li, C. Liu, X. Xu, S. Y. Yeo, and X. Yang, “Future-aware interaction network for motion forecasting,” in Proceedings of the IEEE/CVF 12 
+
+International Conference on Computer Vision (ICCV) , October 2025, pp. 7505–7515. [32] J. Cheng, X. Mei, and M. Liu, “Forecast-mae: Self-supervised pre-training for motion forecasting with masked autoencoders,” in Proceed-ings of the IEEE/CVF International Conference on Computer Vision ,2023, pp. 8679–8689. [33] H. Chen, J. Wang, K. Shao, F. Liu, J. Hao, C. Guan, G. Chen, and P.-A. Heng, “Traj-mae: Masked autoencoders for trajectory prediction,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 8351–8362. [34] P. Bhattacharyya, C. Huang, and K. Czarnecki, “Ssl-lanes: Self-supervised learning for motion forecasting in autonomous driving,” in 
+
+Conference on Robot Learning . PMLR, 2023, pp. 1793–1805. [35] Z. Lan, Y. Jiang, Y. Mu, C. Chen, and S. E. Li, “Sept: Towards efficient scene representation learning for motion prediction,” arXiv preprint arXiv:2309.15289 , 2023. [36] Y. Zhou, H. Shao, L. Wang, S. L. Waslander, H. Li, and Y. Liu, “Smartpretrain: Model-agnostic and dataset-agnostic representation learning for motion prediction,” in International Conference on Learning Representations (ICLR) , 2025, openReview. [Online]. Available: https://openreview.net/forum?id=Bmzv2Gch9v [37] S. Choi, J. Kim, J. Yun, and J. W. Choi, “R-pred: Two-stage mo-tion prediction via tube-query attention-based trajectory refinement,” in 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 8525–8535. [38] X. Tang, M. Kan, S. Shan, Z. Ji, J. Bai, and X. Chen, “Hpnet: Dynamic trajectory forecasting with historical prediction attention,” in 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024, pp. 15 261–15 270. [39] C. Jiang, A. Cornman, C. Park, B. Sapp, Y. Zhou, D. Anguelov 
+
+et al. , “Motiondiffuser: Controllable multi-agent motion prediction using diffusion,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2023, pp. 9644–9653. [40] R. Li, C. Li, D. Ren, G. Chen, Y. Yuan, and G. Wang, “Bcdiff: Bidirectional consistent diffusion for instantaneous trajectory predic-tion,” Advances in Neural Information Processing Systems , vol. 36, pp. 14 400–14 413, 2023. [41] D. Park, M. Surana, P. Desai, A. Mehta, R. M. John, and K.-J. Yoon, “Generative active learning for long-tail trajectory prediction via controllable diffusion model,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , October 2025, pp. 27 839–27 850. [42] W.-J. Chang, W. Zhan, M. Tomizuka, M. Chandraker, and F. Pit-taluga, “Langtraj: Diffusion model and dataset for language-conditioned trajectory simulation,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , October 2025, pp. 26 622– 26 631. [43] D. Park, J. Jeong, S.-H. Yoon, J. Jeong, and K.-J. Yoon, “T4p: Test-time training of trajectory prediction via masked autoencoder and actor-specific token memory,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , June 2024, pp. 15 065–15 076. [44] J. Sun, Y. Li, L. Chai, H.-S. Fang, Y.-L. Li, and C. Lu, “Human trajectory prediction with momentary observation,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2022, pp. 6467–6476. [45] A. Monti, A. Porrello, S. Calderara, P. Coscia, L. Ballan, and R. Cuc-chiara, “How many observations are enough? knowledge distillation for trajectory forecasting,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 6553–6562. [46] Y. Xu, A. Bazarjani, H.-g. Chi, C. Choi, and Y. Fu, “Uncovering the missing pattern: Unified framework towards trajectory imputation and prediction,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 9632–9643. [47] B. Lange, J. Li, and M. J. Kochenderfer, “Scene informer: Anchor-based occlusion inference and trajectory prediction in partially observable environments,” in 2024 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2024, pp. 14 138–14 145. [48] P. Zhu, P. Shu, M. Qi, L. Liu, and H. Ma, “Target-driven self-distillation for partial observed trajectories forecasting,” arXiv preprint arXiv:2501.16767 , 2025. [49] Y. Li, C. Li, R. Lv, R. Li, Y. Yuan, and G. Wang, “Lakd: Length-agnostic knowledge distillation for trajectory prediction with any length observations,” Advances in Neural Information Processing Systems ,vol. 37, pp. 28 720–28 744, 2024. [50] R. Qiu, J. Gong, X. Zhang, S. Luo, B. Zhang, and Y. Cen, “Adapting to observation length of trajectory prediction via contrastive learning,” in Proceedings of the Computer Vision and Pattern Recognition Confer-ence , 2025, pp. 1645–1654. [51] Y. Liu, H. Niu, and J. Zhu, “Adaptive output steps: Flexisteps network for dynamic trajectory prediction,” arXiv preprint arXiv:2508.17797 , 2025. [52] N. A. Madjid, A. Ahmad, M. Mebrahtu, Y. Babaa, A. Nasser, S. Malik, B. Hassan, N. Werghi, J. Dias, and M. Khonji, “Trajectory prediction for autonomous driving: Progress, limitations, and future directions,” 
+
+Information Fusion , vol. 126, p. 103588, Feb. 2026. [Online]. Available: http://dx.doi.org/10.1016/j.inffus.2025.103588 [53] B. Zhang, N. Song, and L. Zhang, “Decoupling motion forecast-ing into directional intentions and dynamic states,” arXiv preprint arXiv:2410.05982 , 2024. [54] N. Song, B. Zhang, X. Zhu, and L. Zhang, “Motion forecasting in con-tinuous driving,” Advances in Neural Information Processing Systems ,vol. 37, pp. 78 147–78 168, 2024. [55] I. Loshchilov and F. Hutter, “Decoupled weight decay regularization,” 
+
+arXiv preprint arXiv:1711.05101 , 2017. [56] Z. Sun, C. Dong, A. Ji, R. Zhao, and Y. Zhao, “A structure-aware lane graph transformer model for vehicle trajectory prediction,” IEEE Intelligent Transportation Systems Magazine , 2025. [57] L. Zhang, P. Li, S. Liu, and S. Shen, “Simpl: A simple and efficient multi-agent motion prediction baseline for autonomous driving,” IEEE Robotics and Automation Letters , 2024. [58] J. Lu, C. Cui, Y. Ma, A. Bera, and Z. Wang, “Quantifying uncertainty in motion prediction with variational bayesian mixture,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,2024, pp. 15 428–15 437. [59] M. A. U. Rahman, D. Choi, and K. Min, “Lanet: A lane boundaries-aware approach for robust trajectory prediction,” in 2025 17th Inter-national Conference on Advanced Computational Intelligence (ICACI) .IEEE, 2025, pp. 203–210. [60] B. Zhang, N. Song, B. Gao, and L. Zhang, “Relative position matters: Trajectory prediction and planning with polar representation,” arXiv preprint arXiv:2508.11492 , 2025. [61] M. Wang, X. Ren, R. Jin, M. Li, X. Zhang, C. Yu, M. Wang, and W. Yang, “Futurenet-lof: Joint trajectory prediction and lane occupancy field prediction with future context encoding,” in 2025 IEEE Interna-tional Conference on Robotics and Automation (ICRA) . IEEE, 2025, pp. 8841–8848. [62] K. Bhowmik, A. Spalanzani, and P. Martinet, “Cg-net: Urban trajectory forecasting with bipartite graphs for agents, scene context and candidate centerlines,” in IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) 2025 , 2025. [63] S. Liu, Y. Zhao, Z. Wang, C. Lin, and C. Shen, “Litnt: A target-driven trajectory prediction framework with lane change intent analysis,” in 
+
+2024 IEEE 27th International Conference on Intelligent Transportation Systems (ITSC) . IEEE, 2024, pp. 1842–1849. [64] J. Wang, T. Ye, Z. Gu, and J. Chen, “Ltp: Lane-based trajectory prediction for autonomous driving,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022, pp. 17 134–17 142. [65] M. Ye, T. Cao, and Q. Chen, “Tpcn: Temporal point cloud networks for motion forecasting,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2021, pp. 11 318–11 327. [66] Y. Liu, J. Zhang, L. Fang, Q. Jiang, and B. Zhou, “Multimodal motion prediction with stacked transformers,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2021, pp. 7577– 7586. [67] L. Zhang, P. Li, J. Chen, and S. Shen, “Trajectory prediction with graph-based dual-scale context fusion,” in 2022 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2022, pp. 11 374–11 381. [68] D. Park, H. Ryu, Y. Yang, J. Cho, J. Kim, and K.-J. Yoon, “Leveraging future relationship reasoning for vehicle trajectory prediction,” arXiv preprint arXiv:2305.14715 , 2023. [69] G. Aydemir, A. K. Akan, and F. G¨ uney, “Adapt: Efficient multi-agent trajectory prediction with adaptation,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 8295–8305.
