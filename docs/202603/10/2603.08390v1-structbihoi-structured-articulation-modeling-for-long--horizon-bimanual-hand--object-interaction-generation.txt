@@ -1,0 +1,375 @@
+Title: StructBiHOI: Structured Articulation Modeling for Long--Horizon Bimanual Hand--Object Interaction Generation
+
+URL Source: https://arxiv.org/pdf/2603.08390v1
+
+Published Time: Tue, 10 Mar 2026 02:20:02 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# StructBiHOI: Structured Articulation Modeling for Long-Horizon Bimanual Hand–Object Interaction Generation 
+
+Zhi Wang 1, Liu Liu 1⋆, Ruonan Liu 1, Dan Guo 1, and Meng Wang 1
+
+School of Computer Science and Information Engineering, Hefei University of Technology, Hefei, China 
+
+liuliu@hfut.edu.cn 
+
+Fig. 1: Given a continuous action instruction, our framework generates a long-horizon sequence of continuous actions. The method hierarchically disentangles long-term joint planning and frame-level hand articulation, producing coherent and physically plausible manipulation motions. 
+
+Abstract. Recent progress in 3D hand–object interaction (HOI) gener-ation has primarily focused on single-hand grasp synthesis, while biman-ual manipulation remains significantly more challenging. Long-horizon planning instability, fine-grained joint articulation, and complex cross-hand coordination make coherent bimanual generation difficult, espe-cially under multimodal conditions. Existing approaches often struggle to simultaneously ensure temporal consistency, physical plausibility, and semantic alignment over extended sequences. We propose StructBiHOI, a Structured articulation modeling framework for long-horizon Bimanual HOI generation. Our key insight is to structurally disentangle temporal joint planning from frame-level manipulation refinement. Specifically, a jointVAE models long-term joint evolution conditioned on object geome-try and task semantics, while a maniVAE refines fine-grained hand poses at the single-frame level. To enable stable and efficient long-sequence gen-eration, we incorporate a state-space-inspired diffusion denoiser based  
+
+> ⋆
+
+Corresponding author.   
+
+> arXiv:2603.08390v1 [cs.RO] 9 Mar 2026 2Z. Wang et al. on Mamba, which models long-range dependencies with linear complex-ity. This hierarchical design facilitates coherent dual-hand coordination and articulated object interaction. Extensive experiments on bimanual manipulation and single-hand grasping benchmarks demonstrate that our method achieves superior long-horizon stability, motion realism, and computational efficiency compared to strong baselines.
+> Keywords: Bimanual Hand–Object Interaction, Articulation Model-ing, Long-Horizon Motion Generation
+
+# 1 Introduction 
+
+Generating human-like Hand–Object Interaction (HOI) conditioned on object geometry and language instructions is a fundamental problem for dexterous robotics [11], virtual character animation [30], and embodied AI [21]. Beyond achieving physically stable grasps, realistic manipulation must reflect task in-tent, semantic understanding, and temporally coherent motion evolution. Human manipulation is inherently goal-driven and unfolds as a continuous interaction process shaped jointly by object structure, semantic intent, and long-horizon planning. Recent advances in single-hand HOI generation [12, 24] have demon-strated promising results in grasp synthesis and manipulation planning under multimodal conditions. Leveraging large-scale motion data and generative mod-els, these approaches can produce physically plausible and semantically consis-tent motions for diverse objects. However, unlike single-hand grasping synthesis, bimanual interaction involves coordinated control of two articulated kinematic chains, where mutual constraints, contact dependencies, and asymmetric role assignment introduce significantly higher structural complexity. This results in the fact that simply extending single-hand modeling paradigms to bimanual HOI manipulation is far from trivial. Current bimanual HOI generation works can be summarized into physics-based reinforcement learning and data-driven generative modeling ways, where the former aims to learn manipulation policies in simulation considering phys-ically plausible behaviors but relying heavily on simulator fidelity and reward engineering, while the latter models interaction dynamics from large-scale mul-timodal data with sequence-based articulation architectures. Despite these sub-stantial progresses, these works often fail in long-horizon (over 150 frames) bi-manual HOI generation and suffer from three fundamental challenges: (1) Mod-eling long-range temporal dependencies becomes increasingly computationally demanding as sequence length grows, particularly in diffusion-based frameworks that repeatedly apply the sequence backbone during iterative denoising. (2) Fine-grained joint-level articulation and high-level manipulation semantics are tightly coupled, making it difficult to achieve both stable long-term planning and accurate local pose refinement. (3) Bimanual coordination requires consis-tent cross-hand dynamics, where errors in one hand may propagate temporally and spatially, leading to unstable or unrealistic motion evolution. Abbreviated paper title 3
+
+To address these issues, we propose StructBiHOI , a Struct ured articula-tion modeling framework for long-horizon Bi manual Hand– Object Interaction generation. Our key insight is that bimanual manipulation exhibits strong tem-poral continuity and state-dependent evolution, which can be more naturally modeled through structured state-space dynamics rather than global attention. Instead of treating long-sequence generation and fine-grained pose synthesis as a monolithic problem, we introduce a hierarchical and structurally disentangled modeling strategy. Specifically, we first map multimodal conditional informa-tion—including language intent, object geometry, and temporal context—into a unified latent space. On top of this representation, we design two conditional variational autoencoders (cVAE): 1) JointVAE, which focuses on long-horizon joint motion planning and captures temporally coherent interaction dynamics; 2) ManiVAE, which operates at the single-frame level to refine detailed hand poses conditioned on the current state and semantic intent. This hierarchical decom-position separates global motion evolution from local pose refinement, reducing modeling complexity and improving stability in long sequences. To further en-able efficient long-range dependency modeling, we incorporate a Mamba-based selective state space model [5, 7] as the denoising network within a latent dif-fusion framework. The linear-complexity state-space formulation allows scalable long-horizon modeling while preserving temporal continuity. Combined with our hierarchical disentanglement strategy, the proposed framework generates glob-ally coherent and semantically consistent motion sequences for both hands and articulated object joints. We conduct extensive evaluations of StructBiHOI on the challenging bi-manual manipulation benchmark ARCTIC [6]. Experimental results demon-strate that our method consistently outperforms state-of-the-art approaches across a comprehensive set of metrics, including generation efficiency, motion realism, and coordination quality. Notably, the performance gains become increasingly significant in complex long-horizon bimanual scenarios, where precise inter-hand coordination and articulated object reasoning are required. These results high-light the effectiveness of our structured latent formulation and Mamba-based dif-fusion denoiser in modeling temporally consistent and articulation-aware inter-actions. Furthermore, we validate StructBiHOI on a single-hand grasping bench-mark to assess its generalization capability beyond bimanual settings. Despite be-ing designed for structured bimanual interaction modeling, StructBiHOI achieves superior performance compared to existing single-hand methods, demonstrating the robustness and scalability of our hierarchical generative framework. In summary, our main contributions are three-fold: 1) We present StructBi-HOI, an efficient generative framework for long-horizon bimanual hand–object interaction, designed to address the scalability and stability challenges in long-sequence HOI generation. 2) We introduce a hierarchical and structurally dis-entangled modeling strategy, decomposing long-term joint motion planning and single-frame fine-grained hand pose refinement via jointVAE and maniVAE, en-abling semantically consistent and temporally stable generation. 3) We incor-porate a Mamba-based selective state space denoiser within a latent diffusion 4 Z. Wang et al. 
+
+framework, achieving linear-complexity long-range dependency modeling and significantly improving efficiency, motion realism, and bimanual coordination quality over state-of-the-arts. 
+
+# 2 Related Works 
+
+2.1 Bimanual Hand Object Interaction 
+
+HOI generation methods can generally be categorized into physics-based and data-driven approaches. Physics-based methods [3, 23, 28, 29] leverage reinforce-ment learning within simulation environments to learn manipulation policies that ensure physical plausibility. These approaches reduce reliance on large-scale mo-tion datasets and can produce dynamically consistent behaviors. However, their performance heavily depends on simulator fidelity and carefully engineered re-ward functions, which often limits generalization to unseen objects and interac-tion scenarios. Data-driven approaches [4, 14, 16, 19, 24, 25, 32] instead model HOI dynamics directly from large-scale multimodal motion data using generative frameworks such as autoencoder based [9, 10, 12, 17, 20] and diffusion-based models [1, 13]. By learning joint motion distributions in a data-driven manner, these meth-ods achieve realistic and semantically aligned interaction synthesis. Neverthe-less, most existing approaches focus primarily on short-horizon or single-hand settings, and often treat joint-level articulation implicitly within end-to-end se-quence models. As a result, structured modeling of long-horizon articulation dynamics and coherent bimanual coordination remains insufficiently explored. 
+
+2.2 Long-Horizon Motion Modeling 
+
+Recent advances in motion diffusion models have achieved remarkable success in realistic human motion synthesis. To generate full-body interactions with the environment, these models [2, 15, 16, 18, 20, 22, 26, 27, 31, 33] must simulta-neously produce coherent global body dynamics and plausible hand configura-tions. However, integrating fine-grained hand articulation with large-scale body motion significantly enlarges the state space and introduces multi-scale model-ing challenges. Several works [16, 27] adopt hierarchical or multi-stage strate-gies to decompose motion generation into coarse planning and fine refinement. Others [20] incorporate structured priors such as kinematic graphs or dynamic interaction modeling to enhance joint-level consistency. While these approaches improve full-body motion realism and grasp-oriented behaviors, they primarily focus on global motion naturalness rather than structured hand–object interac-tion modeling. In particular, articulation-level modeling of dual-hand coordina-tion and long-horizon object manipulation remains insufficiently explored within diffusion-based frameworks. Abbreviated paper title 5
+
+Fig. 2: Overview of the proposed StructBiHOI framework. We first train a maniVAE to model frame-level hand–object interactions. A motion-sequence model then gener-ates decoupled latent grasps and global motion. The jointVAE captures object joint articulations and provides a prior for decoding the latent grasps. Finally, the decoded grasps are combined with the global motion to produce the full long-horizon hand– object interaction sequence. 
+
+# 3 Problem Statement 
+
+In hand–object interaction, we represent a hand motion sequence over N frames as: H1: N = {T1: N , P 1: N }, where H1: N denotes the full hand motion sequence. For each frame i, the hand translation and pose are defined as: Ti = {T li , T ri }, Pi =
+
+{P li , P ri }. Here, T li , T ri ∈ R3 represent the global 3D translations of the left and right hands, respectively. The pose parameters are defined as: P li , P ri ∈ R16 ×6,
+
+where each hand consists of one global rotation and 15 local joint rotations. We adopt a 6D continuous rotation representation for each joint, resulting in a 16 ×6
+
+dimensional pose representation per hand. The articulated object state at frame 
+
+i is defined as: Oi = {Oαi , O βi , O γi }, where Oαi ∈ R3 denotes object translation, 
+
+Oβi ∈ R6 denotes object rotation (using 6D representation), and Oγi ∈ R1 denotes the articulated joint angle of the object. Our ultimate goal is to generate the articulated object motion ˆO1: N and the corresponding grasp motion sequence 
+
+ˆH1: N , conditioned on the articulation specification O, the motion instruction T
+
+and the hand type type .
+
+# 4 Method 
+
+4.1 Overview 
+
+Given an object O and a motion instruction T , our goal is to generate a long-horizon bimanual hand–object interaction sequence S that captures coherent object articulation and coordinated dual-hand manipulation. To this end, we 6 Z. Wang et al. 
+
+propose StructBiHOI , a structured articulation modeling framework that de-composes long-horizon interaction generation into hierarchical subproblems. The proposed framework consists of two components: 1) a VAE-based hierarchical articulation disentanglement module, and 2) a motion-aware sequence model for high-level interaction generation. Specifically, we introduce two conditional VAEs to disentangle global joint-level motion planning from fine-grained hand articulation refinement. After learning structured latent representations for both components, we freeze the VAE parameters and employ the motion-aware se-quence model to integrate the disentangled information and synthesize coherent long-horizon interaction trajectories. 
+
+4.2 Articulation Disentanglement Module 
+
+Modeling long-horizon bimanual hand–object interaction in a single latent space leads to strong entanglement between temporal planning and fine-grained artic-ulation, which in turn causes instability in long-range dependency modeling. To address this issue, we explicitly disentangle the interaction into two hierarchi-cal levels: (1) long-horizon joint-level motion evolution and (2) frame-level hand articulation refinement. Accordingly, we introduce two conditional VAEs to de-compose the original complex generation problem into structured sub-problems. 
+
+JointVAE. The goal of JointVAE is to capture the global articulation plan-ning of object joints conditioned on object geometry and motion instructions. Instead of directly modeling high-dimensional hand articulation sequences, we first abstract the interaction into articulated joint trajectories, which provide a structured and lower-dimensional representation for long-horizon motion evolu-tion. Given the initial object O and motion instruction T , we predict the joint state changes Oγ 
+
+> 1: N
+
+under the current conditions. As illustrated in the bottom-right of Fig. 2„ JointVAE follows a standard conditional VAE framework consisting of an encoder EJ and a decoder DJ . The encoder maps the joint trajectory and conditions into a latent representation: zJ = EJ (O, T ). The decoder reconstructs the joint trajectory conditioned on the sampled latent code and input conditions: 
+
+ˆOγ 
+
+> 1: N
+
+= DJ (zJ , O, T ). To train the variational autoencoder, we optimize the standard evidence lower bound (ELBO): 
+
+LELBO =
+
+> N
+
+X
+
+> i=1
+
+Eqϕ(zJ |Oγ  
+
+> 1: N,O,T)
+
+log pθ (Oγ 
+
+> 1: N
+
+| zJ , O, T )
+
+− KL  qϕ(zJ | Oγ 
+
+> 1: N
+
+, O, T ) ∥ N (0 , I ) .
+
+(1) The KL divergence term regularizes the latent distribution toward the stan-dard Gaussian prior N (0 , I ), encouraging a compact and structured planning space. We further compute a reconstruction loss between the predicted joint trajectory ˆOγ 
+
+> 1: N
+
+and the ground-truth sequence Oγ 
+
+> 1: N
+
+. The final objective is a weighted combination of the ELBO and the reconstruction loss: 
+
+LJointV AE = λELBO LELBO + λrec ∥Oγ 
+
+> 1: N
+
+− ˆOγ 
+
+> 1: N
+
+∥22. (2) Abbreviated paper title 7
+
+ManiVAE. While JointVAE captures long-horizon joint-level planning, di-rectly encoding fine-grained hand articulation into the same latent space would reintroduce strong entanglement between global temporal evolution and local geometric refinement. To explicitly resolve this issue, we decouple frame-level articulation modeling from global joint planning and introduce maniVAE for per-frame grasp refinement. This hierarchical separation prevents high-dimensional pose details from contaminating the global planning latent space and enables more stable long-horizon modeling. Unlike joint evolution, which exhibits smooth temporal dynamics, hand articulation is highly local, contact-sensitive, and frame-dependent. Therefore, maniVAE operates at the frame level to reconstruct de-tailed grasp configurations conditioned on instantaneous motion states. Specifically, given object Oi, motion instruction T , hand pose parameters Pi,and hand translation Ti, maniVAE reconstructs the refined grasp representation at frame i. To support both single-hand and bimanual interaction within a uni-fied formulation, we introduce a one-hot encoding variable type to indicate hand identity, enabling shared modeling across different hand roles while preserving asymmetry. As shown in the top-left panel of Fig. 2, maniVAE adopts a condi-tional VAE architecture consisting of an encoder EM and a decoder DM . The encoder models the posterior distribution: zMi = EM (Pi, T i, Oi, T , type ). The decoder reconstructs the refined hand pose conditioned on the sampled latent code: ˆPi = DM (zMi , Oi, T , type ). To train maniVAE, we optimize the standard ELBO: 
+
+LELBO = Eqϕ(zMi |Pi,T i,Oi,T ,type )
+
+ log pθ (Pi | zMi , Oi, T , type )
+
+− KL  qϕ(zMi | Pi, T i, Oi, T , type ) ∥ N (0 , I ). (3) The KL divergence regularizes the latent representation toward the stan-dard Gaussian prior N (0 , I ), encouraging a compact and structured articulation space: 
+
+Lkl = DKL (q(z|P ) ∥ N (0 , I )) . (4) Following prior work on hand modeling, we map the predicted pose param-eters ˆPi to hand mesh vertices using the MANO function: ˆHi = MANO( ˆPi).
+
+A mesh reconstruction loss is computed between predicted and ground-truth vertices: 
+
+Lmesh = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+∥ ˆHi − Hi∥22. (5) While mesh-level supervision ensures geometric fidelity, it does not explicitly constrain fine-grained contact proximity or relative articulation consistency be-tween the hands and the object. Inspired by prior works [1,12] on contact-aware hand-object modeling and interaction-aware motion learning, we further intro-duce two complementary regularization terms: a distance-field supervision and a relative orientation constraint. 
+
+1) Distance Map Loss. Let Dih ∈ RV denote the predicted hand-object distance field for hand h ∈ { l, r } at frame i, and Di∗ 
+
+> h
+
+the corresponding ground 8 Z. Wang et al. 
+
+truth. We define a validity mask 
+
+Mih(v) = 
+
+(
+
+1, if Di∗ 
+
+> h
+
+(v) > 0,
+
+0, otherwise , (6) which filters out non-interacting regions. The distance supervision is defined as 
+
+Ldist = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+X
+
+> h∈{ l,r }
+
+∥M ih ⊙ (Dih − Di∗ 
+
+> h
+
+)∥22. (7) This term encourages accurate modeling of contact proximity and prevents triv-ial minimization by predicting uniformly small distances. 
+
+2) Relative Orientation Loss. To further enforce interaction consistency, we constrain the relative rotation between each hand and the object. Let Rih and 
+
+Rio denote the global rotations of the hand and object at frame i, respectively. The relative rotation is defined as 
+
+˜Rih = ( Rio)−1Rih, (8) with ground truth ˜Ri∗ 
+
+> h
+
+. We impose 
+
+Lro = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+X
+
+> h∈{ l,r }
+
+∥ ˜Rih − ˜Ri∗ 
+
+> h
+
+∥2 
+
+> F
+
+. (9) This constraint explicitly regularizes the local articulation alignment between the hands and the manipulated object, promoting stable grasp configurations and reducing rotational drift. The final ManiVAE objective is 
+
+LM aniV AE = λELBO LELBO + λmesh Lmesh 
+
++ λdist Ldist + λro Lro 
+
++ λkl Lkl .
+
+(10) 
+
+4.3 Motion-aware Sequence Model 
+
+After disentangling global joint planning and frame-level articulation, we fur-ther introduce a diffusion model to synthesize coherent long-horizon interaction sequences in the latent space. We first employ the frozen maniVAE encoder to encode the hand–object interaction sequence into latent representations zM 
+
+> 1: N
+
+.Meanwhile, the articulated joint evolution predicted by JointVAE, denoted as 
+
+Oγ 
+
+> 1: N
+
+, is incorporated as a strong structural prior to guide long-range temporal planning. The detailed architecture of our model is illustrated in Fig. 3. The diffusion model is trained on the composite representation: x = {zM 
+
+> 1: N
+
+,T1: N , O α 
+
+> 1: N
+
+, O β 
+
+> 1: N
+
+}, which aggregates articulation latents, hand translations, and object global motions into a unified sequence representation. Following prior Abbreviated paper title 9 
+
+> Fig. 3: The design of our Motion-aware Sequence Model.
+
+diffusion-based generation methods [8], the forward noising process is defined as: xt = √¯αt x0 + √1 − ¯αt ηt, where t denotes the diffusion timestep, x0 is the original clean input sequence, and xt is the noisy sample at timestep t.The coefficient ¯αt ∈ (0 , 1) is a predefined cumulative product of noise schedule parameters. The noise term ηt is sampled from a Gaussian distribution at each timestep: ηt ∼ N (0 , I ).
+
+After obtaining the noisy sample xt, we inject two types of positional encod-ings to preserve structural information in the sequence: frame-wise encoding and agent-wise encoding. Both encodings are implemented as learnable sinusoidal-style parameters. The frame-wise positional encoding models temporal order within the motion sequence. Specifically, it assigns distinct positional embed-dings according to the frame index i ∈ { 1, . . . , N }, enabling the model to cap-ture temporal progression and long-horizon dependency across diffusion steps. In addition, we introduce agent-wise positional encoding to distinguish differ-ent semantic components within each frame. For each agent element in xi =
+
+{zMi , Ti, Oαi , Oβi }, we assign a unique learnable embedding. These agent-specific embeddings remain consistent across all frames, ensuring that each com-ponent (articulation latent, hand translation, object translation, and object ro-tation) maintains a stable semantic identity throughout the sequence. Together, the frame-wise and agent-wise positional encodings provide explicit temporal and structural cues, facilitating more effective sequence modeling within the Mamba2 encoder. In addition to positional encodings, we incorporate a global conditioning signal to modulate the denoising process. Specifically, we embed the diffusion timestep t, text description T , object feature O, and hand type indicator type 
+
+into a shared latent space, and aggregate them through additive fusion: 
+
+c = Et(t) + ET (T ) + EO (O) + Etype (type) , (11) 10 Z. Wang et al. 
+
+where E· denotes the corresponding embedding function. The resulting global condition c is broadcast along the temporal dimension and injected into the noisy sequence representation: 
+
+˜xt = xt + c.  (12) Unlike Transformer-based architectures that rely on token-level cross-attention for conditioning, our formulation injects global semantics directly into the latent sequence, which is naturally compatible with the linear-time state-space model-ing of Mamba2. This design allows the model to capture long-range dependencies while maintaining computational efficiency. With conditional encodings injected, the structured sequence xt is fed into a Mamba2-based denoiser. Unlike transformer-based architectures whose quadratic complexity limits long-horizon modeling, Mamba employs state-space sequence modeling with linear complexity, enabling stable dependency propagation over extended temporal ranges. This design directly addresses the long-horizon in-stability discussed earlier. Since global articulation planning has already been abstracted into Oγ 
+
+> 1: N
+
+and fine-grained articulation is represented by zM 
+
+> 1: N
+
+, the de-noiser focuses on learning structured temporal evolution rather than entangled pose reconstruction. Formally, the denoiser ϵθ predicts the injected Gaussian noise at timestep t: ϵθ (xt, O γ 
+
+> 1: N
+
+, T , t ), where Oγ 
+
+> 1: N
+
+serves as a strong articulation prior and L denotes motion instruction conditioning. The reverse process shares parameters across all diffusion steps, forming a fixed-length Markov chain of length N . The training objective follows the standard noise prediction formula-tion: 
+
+Ldiff = Ex0,ϵ ∼N (0 ,I ),t 
+
+∥ϵ − ϵθ (xt, O γ 
+
+> 1: N
+
+, T , t )∥22
+
+ , (13) where t is uniformly sampled from {1, . . . , N }. By combining hierarchical ar-ticulation priors with linear-complexity sequence modeling, the proposed Mamba denoiser enables scalable and stable long-horizon bimanual interaction genera-tion. After the reverse diffusion process, the recovered clean variable x0 can be practically decomposed into two components: a latent grasp representation and a global motion representation. The latent grasp component is first passed through the GraspVAE decoder to reconstruct the local hand joint motions. Meanwhile, the global motion component encodes the articulated object states, including object poses and joint configurations, as well as the global hand translations. We then combine the decoded local hand articulations with the global motion parameters to obtain the full hand–object interaction sequence. Formally, the final outputs are denoted as ˆH1: N and ˆO1: N .
+
+# 5 Experiments 
+
+5.1 Implementation and Metrics 
+
+Implementation Details. We adopt a diffusion process with T = 1 ,000 timesteps and employ a cosine noise schedule. Agent-wise and frame-wise positional en-codings are incorporated during training to preserve structured temporal and Abbreviated paper title 11 
+
+entity-level information within the denoising process. The maximum motion se-quence length is set to 150 frames. For text conditioning, we use the CLIP text encoder, while object geometry features are extracted using PointNet. We adopt a stack of 8 Mamba2 blocks as the temporal backbone of the diffusion de-noiser. Hand–object interaction visualization is implemented with PyTorch3D. Our method are trained on a single NVIDIA RTX PRO 6000 GPU for approxi-mately four days. Notably, we partition the ARCTIC dataset into four subsets according to the number of hands involved and whether the object contains articulated joints: Bi-Art. , Bi-Rigid , Single-Art. , and Single-Rigid .
+
+Metrics. Following prior work [13], we evaluate geometric realism, motion qual-ity, and generative diversity for bimanual HOI generation using the following metrics. Interpenetration Volume (IV) and Depth (ID). We measure ge-ometric consistency via the mean mesh intersection volume and the maximum penetration depth between hand and object across frames. capturing penetration severity relative to actual contact area. Motion Smoothness (Jerk). Temporal smoothness is evaluated by the mean jerk magnitude of hand mesh trajectories. Lower values indicate smoother and more physically plausible motion. Sam-ple Diversity (SD) and Overall Diversity (OD). We measure generative diversity via normalized pairwise ℓ2 distances between generated trajectories, computed per condition and across all samples. 
+
+5.2 Comparisons with State-of-the-Arts 
+
+Table 1 presents the quantitative comparison with state-of-the-art methods on bimanual HOI generation. Overall, StructBiHOI consistently achieves competi-tive or superior performance across both articulated and rigid object settings. On the Bi-Art. dataset, StructBiHOI achieves the best performance on most physical plausibility metrics. Compared with LatentHOI, our method further reduces the IV on the right hand from 0.395 to 0.382 and improves the left-hand ID from 1.319 to 1.242. Motion smoothness is also improved, where the Jerk score decreases from 0.097 to 0.092. Meanwhile, StructBiHOI maintains a reasonable object displacement (OD = 0.128), indicating physically consistent object motion during interaction. On the Bi-Rigid dataset, StructBiHOI shows consistent improvements in both interaction accuracy and motion stability. The right-hand IV is reduced from 0.085 to 0.074, and the right-hand ID decreases from 0.012 to 0.008. Our method also achieves competitive smoothness with a Jerk of 0.125 while preserving realistic object motion. These results demonstrate that the proposed structured latent modeling and hierarchical motion generation effectively improve physical plausibility, inter-action stability, and motion smoothness in long-horizon bimanual hand–object interaction synthesis. 
+
+5.3 Ablation Studies Ablation on structured latent representation and articulation prior. 
+
+Table 2 analyzes the contribution of the structured latent design and articulation-12 Z. Wang et al. Setting Model IV [cm 3] ↓ ID [cm] ↓ Jerk ↓ SD ↑ OD →
+
+Right Left Right Left Bi-Art. Real 2.566 2.283 0.657 0.885 0.081 0.136 Text2HOI [1] 2.211 2.476 0.755 1.396 0.252 1.143 0.088 LatentHOI [13] 0.395 2.918 0.075 1.319 0.097 0.001 0.127 SemGrasp [12] 1.027 3.098 0.213 1.447 0.162 0.480 0.112 MDM [33] 3.097 3.504 0.798 1.753 0.279 0.003 0.092 StructBiHOI (Ours) 0.382 2.943 0.075 1.242 0.092 0.228 0.128 
+
+Bi-Rigid Real 1.177 1.560 0.470 1.182 0.120 0.169 Text2HOI [1] 6.386 4.844 0.700 1.528 0.231 0.804 0.068 LatentHOI [13] 0.085 4.195 0.012 2.094 0.128 0.0003 0.115 
+
+SemGrasp [12] 0.517 4.483 0.118 1.987 0.192 0.477 0.103 MDM [33] 1.108 5.092 0.897 2.613 0.251 0.006 0.078 StructBiHOI (Ours) 0.074 3.335 0.008 1.143 0.125 0.299 0.113 
+
+Table 1: Comparison of StructBiHOI with Baseline Methods. Columns with ↑ indicate that higher values are better, columns with ↓ indicate that lower values are better, and columns with → indicate that values closer to the real measurement are preferred. 
+
+aware priors. Removing ManiVAE degrades interaction quality, increasing IV and ID (left hand) by 0.286 and 0.033, respectively, indicating weaker contact consistency. Eliminating JointVAE further worsens geometric alignment, raising IV and ID by 0.413 and 0.061. Discarding the frame-wise latent modeling harms temporal stability, increasing Jerk by 0.012 and reducing SD by 0.019. Similarly, removing the agent-wise latent leads to reduced coordination, decreasing SD by 0.058 and slightly increasing OD. Overall, each component contributes to stable and consistent bimanual interaction generation. 
+
+Variant IV [cm 3] ↓ ID [cm] ↓ Jerk ↓ SD ↑ OD →
+
+Right Left Right Left w/o ManiVAE 0.413 3.071 0.082 1.317 0.107 0.182 0.131 w/o JointVAE 0.428 3.198 0.091 1.345 0.111 0.169 0.134 
+
+w/o Frame-wise 0.398 3.009 0.079 1.284 0.099 0.201 0.130 w/o Agent-wise 0.405 3.034 0.081 1.292 0.098 0.162 0.133 
+
+Table 2: Ablation on structured latent representation and articulation prior. 
+
+Ablation on different temporal denoisers. Table 3 compares different temporal denoisers for modeling long-horizon HOI sequences. The GRU-based diffusion model performs the worst, yielding the largest interaction volume (IV) and motion jerk, indicating unstable contact modeling and less smooth motion generation. Replacing GRU with temporal convolution improves local temporal Abbreviated paper title 13  
+
+> Fig. 4: Qualitative visual comparison between our method and baseline methods.
+
+consistency, reducing the right-hand IV from 0.423 to 0.408 and the jerk from 0.108 to 0.103. Transformer diffusion further enhances global temporal model-ing through self-attention. Compared with GRU, the Transformer reduces the right-hand IV from 0.423 to 0.396 and the jerk from 0.108 to 0.099, while also improving the bimanual coordination score (SD) from 0.176 to 0.193. However, Transformer-based diffusion still suffers from quadratic complexity when mod-eling long sequences. In contrast, our Mamba-based denoiser achieves the best performance across all metrics. Compared with the Transformer backbone, our method further reduces the right-hand IV from 0.396 to 0.382 and the left-hand IV from 3.023 to 2.945, while lowering jerk from 0.099 to 0.092 and significantly improving SD from 0.193 to 0.228. These results demonstrate that the pro-posed Mamba-based temporal modeling is more effective for long-horizon HOI generation, enabling more stable interaction, smoother motion trajectories, and stronger bimanual coordination. 
+
+5.4 Generalization Across Hand Kinematic Structures 
+
+Although StructBiHOI is designed for bimanual interaction generation, we fur-ther evaluate its generalization on single-hand datasets. As shown in Table 4, our method achieves competitive or superior performance compared with single-14 Z. Wang et al. Denoiser IV [cm 3] ↓ ID [cm] ↓ Jerk ↓ SD ↑ OD →                     
+
+> Right Left Right Left GRU-based Diffusion 0.423 3.096 0.087 1.332 0.108 0.176 0.135
+> Temporal Conv Diffusion 0.408 3.051 0.082 1.308 0.103 0.187 0.132 Transformer Diffusion 0.396 3.023 0.079 1.294 0.099 0.193 0.130
+> Table 3: Ablation on different temporal denoisers.
+
+hand baselines across both articulated and rigid settings. In the Single-Art. 
+
+setting, StructBiHOI achieves the lowest left-hand ID (0.020) and competitive IV and Jerk, demonstrating stable contact modeling even without bimanual con-text. In the Single-Rigid setting, our method achieves the best IV (0.025) and left-hand ID (0.021), while maintaining comparable motion smoothness. These results indicate that the structured latent representation learned by StructBiHOI generalizes well beyond bimanual scenarios and can effectively model single-hand HOI dynamics.                                                                   
+
+> Setting Model IV [cm 3]↓ID [cm] ↓Jerk ↓SD ↑OD →
+> Right Left Right Left Single-Art. Real 3.203 1.165 0.715 0.300 0.082 0.000 0.323 Text2HOI [1] 3.569 3.121 1.229 0.645 0.243 1.338 0.101 LatentHOI [13] 4.219 0.063 1.293 0.018 0.119 0.00012 0.164 StructBiHOI (Ours) 3.384 0.054 1.235 0.020 0.116 0.233 0.164
+> Single-Rigid Real 0.059 0.798 0.997 0.460 0.103 0.000 0.211 Text2HOI [1] 0.397 2.557 1.614 0.750 0.237 1.537 0.093 LatentHOI [13] 0.032 0.065 1.709 0.032 0.112 0.0010 0.161 StructBiHOI (Ours) 0.025 0.047 1.568 0.021 0.108 0.331 0.161 Table 4: Comparison of StructBiHOI with Baselines on Single-Hand HOI Metrics.
+
+# 6 Conclusion 
+
+In this work, we revisit the problem of generating realistic hand–object in-teraction motions for articulated objects, where complex joint dynamics and multi-agent coordination pose significant challenges. To address these issues, we propose StructBiHOI, a structured diffusion framework for synthesizing long-horizon bimanual hand–object interaction sequences. Our key idea is to intro-duce a structured latent representation that disentangles manipulation seman-tics and object articulation while maintaining coordinated interaction dynam-ics. Specifically, we design a dual-level latent modeling strategy using ManiVAE and JointVAE to capture manipulation intent and articulation priors, and fur-Abbreviated paper title 15 
+
+ther incorporate frame-wise and agent-wise interaction modeling to better repre-sent temporal dependencies and cross-hand coordination. Moreover, our method shows strong generalization ability, successfully transferring to unseen objects and single-hand interaction scenarios. 16 Z. Wang et al. 
+
+# References 
+
+1. Cha, J., Kim, J., Yoon, J.S., Baek, S.: Text2hoi: Text-guided 3d motion genera-tion for hand-object interaction. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 1577–1585 (2024) 2. Chen, X., Jiang, B., Liu, W., Huang, Z., Fu, B., Chen, T., Yu, G.: Executing your commands via motion diffusion in latent space. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 18000–18010 (2023) 3. Christen, S., Kocabas, M., Aksan, E., Hwangbo, J., Song, J., Hilliges, O.: D-grasp: Physically plausible dynamic grasp synthesis for hand-object interactions. In: Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion. pp. 20577–20586 (2022) 4. Corona, E., Pumarola, A., Alenya, G., Moreno-Noguer, F., Rogez, G.: Ganhand: Predicting human grasp affordances in multi-object scenes. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 5031–5041 (2020) 5. Dao, T., Gu, A.: Transformers are ssms: Generalized models and efficient algo-rithms through structured state space duality. arXiv preprint arXiv:2405.21060 (2024) 6. Fan, Z., Taheri, O., Tzionas, D., Kocabas, M., Kaufmann, M., Black, M.J., Hilliges, O.: Arctic: A dataset for dexterous bimanual hand-object manipulation. In: Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 12943–12954 (2023) 7. Gu, A., Dao, T.: Mamba: Linear-time sequence modeling with selective state spaces. In: First conference on language modeling (2024) 8. Ho, J., Jain, A., Abbeel, P.: Denoising diffusion probabilistic models. Advances in neural information processing systems 33 , 6840–6851 (2020) 9. Huang, M., Chu, F.J., Tekin, B., Liang, K.J., Ma, H., Wang, W., Chen, X., Gleize, P., Xue, H., Lyu, S., et al.: Hoigpt: Learning long-sequence hand-object interac-tion with language models. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 7136–7146 (2025) 10. Jiang, H., Liu, S., Wang, J., Wang, X.: Hand-object contact consistency reason-ing for human grasps generation. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 11107–11116 (2021) 11. Li, K., Li, P., Liu, T., Li, Y., Huang, S.: Maniptrans: Efficient dexterous bimanual manipulation transfer via residual learning. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 6991–7003 (2025) 12. Li, K., Wang, J., Yang, L., Lu, C., Dai, B.: Semgrasp: Semantic grasp generation via language aligned discretization. In: European Conference on Computer Vision. pp. 109–127. Springer (2024) 13. Li, M., Christen, S., Wan, C., Cai, Y., Liao, R., Sigal, L., Ma, S.: Latenthoi: On the generalizable hand object motion generation with latent hand diffusion. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 17416–17425 (2025) 14. Liu, T., Liu, Z., Jiao, Z., Zhu, Y., Zhu, S.C.: Synthesizing diverse and physically stable grasps with arbitrary hand structures using differentiable force closure esti-mator. IEEE Robotics and Automation Letters 7(1), 470–477 (2021) 15. Peng, X., Xie, Y., Wu, Z., Jampani, V., Sun, D., Jiang, H.: Hoi-diff: Text-driven synthesis of 3d human-object interactions using diffusion models. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 2878–2888 (2025) Abbreviated paper title 17 16. Taheri, O., Choutas, V., Black, M.J., Tzionas, D.: Goal: Generating 4d whole-body motion for hand-object grasping. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 13263–13273 (2022) 17. Taheri, O., Ghorbani, N., Black, M.J., Tzionas, D.: Grab: A dataset of whole-body human grasping of objects. In: European conference on computer vision. pp. 581–600. Springer (2020) 18. Tevet, G., Raab, S., Gordon, B., Shafir, Y., Cohen-Or, D., Bermano, A.H.: Human motion diffusion model. arXiv preprint arXiv:2209.14916 (2022) 19. Turpin, D., Wang, L., Heiden, E., Chen, Y.C., Macklin, M., Tsogkas, S., Dickinson, S., Garg, A.: Grasp’d: Differentiable contact-rich grasp synthesis for multi-fingered hands. In: European Conference on Computer Vision. pp. 201–221. Springer (2022) 20. Wu, Y., Wang, J., Zhang, Y., Zhang, S., Hilliges, O., Yu, F., Tang, S.: Saga: Stochastic whole-body grasping with contact. In: European Conference on Com-puter Vision. pp. 257–274. Springer (2022) 21. Xu, D., Nair, S., Zhu, Y., Gao, J., Garg, A., Fei-Fei, L., Savarese, S.: Neural task programming: Learning to generalize across hierarchical tasks. In: 2018 IEEE international conference on robotics and automation (ICRA). pp. 3795–3802. IEEE (2018) 22. Xu, S., Li, Z., Wang, Y.X., Gui, L.Y.: Interdiff: Generating 3d human-object in-teractions with physics-informed diffusion. In: Proceedings of the IEEE/CVF In-ternational Conference on Computer Vision. pp. 14928–14940 (2023) 23. Xu, Y., Wan, W., Zhang, J., Liu, H., Shan, Z., Shen, H., Wang, R., Geng, H., Weng, Y., Chen, J., et al.: Unidexgrasp: Universal robotic dexterous grasping via learning diverse proposal generation and goal-conditioned policy. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 4737–4746 (2023) 24. Yang, L., Li, K., Zhan, X., Wu, F., Xu, A., Liu, L., Lu, C.: Oakink: A large-scale knowledge repository for understanding hand-object interaction. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 20953–20962 (2022) 25. Yang, L., Zhan, X., Li, K., Xu, W., Zhang, J., Li, J., Lu, C.: Learning a con-tact potential field for modeling the hand-object interaction. IEEE transactions on pattern analysis and machine intelligence 46 (8), 5645–5662 (2024) 26. Yuan, Y., Song, J., Iqbal, U., Vahdat, A., Kautz, J.: Physdiff: Physics-guided hu-man motion diffusion model. In: Proceedings of the IEEE/CVF international con-ference on computer vision. pp. 16010–16021 (2023) 27. Zeng, L.A., Huang, G., Wei, Y.L., Gu, S., Tang, Y.M., Meng, J., Zheng, W.S.: Chainhoi: Joint-based kinematic chain modeling for human-object interaction gen-eration. In: Proceedings of the Computer Vision and Pattern Recognition Confer-ence. pp. 12358–12369 (2025) 28. Zhang, H., Christen, S., Fan, Z., Hilliges, O., Song, J.: Graspxl: Generating grasping motions for diverse objects at scale. In: European Conference on Computer Vision. pp. 386–403. Springer (2024) 29. Zhang, H., Christen, S., Fan, Z., Zheng, L., Hwangbo, J., Song, J., Hilliges, O.: Artigrasp: Physically plausible synthesis of bi-manual dexterous grasping and ar-ticulation. In: 2024 International Conference on 3D Vision (3DV). pp. 235–246. IEEE (2024) 30. Zhang, J., Zeng, X., Chen, X., Zuo, W., Yu, G., Tu, Z.: Mikudance: Animating character art with mixed motion dynamics. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 19689–19699 (2025) 18 Z. Wang et al. 31. Zhang, M., Cai, Z., Pan, L., Hong, F., Guo, X., Yang, L., Liu, Z.: Motiondiffuse: Text-driven human motion generation with diffusion model. IEEE transactions on pattern analysis and machine intelligence 46 (6), 4115–4128 (2024) 32. Zheng, J., Zheng, Q., Fang, L., Liu, Y., Yi, L.: Cams: Canonicalized manipulation spaces for category-level functional hand-object manipulation synthesis. In: Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion. pp. 585–594 (2023) 33. Zhou, W., Dou, Z., Cao, Z., Liao, Z., Wang, J., Wang, W., Liu, Y., Komura, T., Wang, W., Liu, L.: Emdm: Efficient motion diffusion model for fast and high-quality motion generation. In: European Conference on Computer Vision. pp. 18– 38. Springer (2024)

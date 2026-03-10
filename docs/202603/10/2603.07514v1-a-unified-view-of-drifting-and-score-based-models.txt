@@ -1,0 +1,2571 @@
+Title: A Unified View of Drifting and Score-Based Models
+
+URL Source: https://arxiv.org/pdf/2603.07514v1
+
+Published Time: Tue, 10 Mar 2026 01:09:59 GMT
+
+Number of Pages: 35
+
+Markdown Content:
+# A Unified View of Drifting and Score-Based Models 
+
+## Chieh-Hsin Lai 1∗ Bac Nguyen 1
+
+## Naoki Murata 1 Yuhta Takida 1 Toshimitsu Uesaka 1 Yuki Mitsufuji 1,2
+
+## Stefano Ermon 3† Molei Tao 4†
+
+> 1
+
+## Sony AI, 2Sony Group Corporation, 3Stanford University, 4Georgia Tech 
+
+Abstract 
+
+Drifting models train one-step generators by optimizing a mean-shift discrepancy induced by a kernel between the data and model distributions, with Laplace kernels used by default in practice. At each point, this discrepancy compares the kernel-weighted displacement toward nearby data samples with the corresponding displacement toward nearby model samples, yielding a transport direction for generated samples. In this paper, we make its relationship to the score-matching principle behind diffusion models precise by showing that drifting admits a score-based formulation on kernel-smoothed distributions. For Gaussian kernels, the population mean-shift field coincides with the score difference between the Gaussian-smoothed data and model distributions. This identity follows from Tweedie’s formula, which links the score of a Gaussian-smoothed density to the corresponding conditional mean, and implies that Gaussian-kernel drifting is exactly a score-matching-style objective on smoothed distributions. It also clarifies the connection to Distribution Matching Distillation (DMD): both methods use score-mismatch transport directions, but drifting realizes the score signal nonparametrically from kernel neighborhoods, whereas DMD uses a pretrained diffusion teacher. Beyond Gaussians, we derive an exact decomposition for general radial kernels, and for the Laplace kernel we prove rigorous error bounds showing that drifting remains an accurate proxy for score matching in low-temperature and high-dimensional regimes. 
+
+# 1 Introduction 
+
+Diffusion and score-based generative models [ 1 , 2 , 3 , 4 , 5 ] generate data by transporting a simple noise distribution to the data distribution through many small steps. This transport is usually described by a time-indexed stochastic process or its ODE counterpart. Such a formulation yields strong sample quality, but often makes inference expensive because generation requires many neural network evaluations. Motivated by the need for faster sampling, recent work has explored one-step or few-step generators [6, 7, 8, 9, 10] that directly push forward noise to data. Drifting models [ 11 ] offer a fast, one-step perspective on generative modeling. Instead of defining a time-indexed corruption process and learning to reverse it, drifting fixes a kernel (Laplace by default) and constructs a transport rule directly from samples. The central object is a displacement: at each location, drifting aggregates nearby samples (weighted by the kernel) and takes their weighted average offset. This yields a mean-shift-type update [ 12 ] that moves points toward higher-density regions. Collecting these local displacements over all locations defines a vector field, and generation is performed by pushing samples along this field at one (or a few) kernel scales; see Figure 1-(a) for intuition. This displacement field is closely connected to the score function that underlies modern diffusion models. The score is a log-density gradient and points toward higher-density regions. In particular, the score mismatch between data and model defines a transport direction that steers model samples toward the data; Figure 1-(b) visualizes this behavior. Score-based diffusion models [ 3 , 4 ] learn scores via score matching [ 13 , 14 , 15 ], most often in a forward Fisher form that averages the score mismatch under the data distribution (which encourages mode coverage). They then generate samples by applying denoising updates across noise levels. In this article, we make this connection precise by proving that drifting admits a score-based interpretation on kernel-smoothed distributions. For Gaussian kernels, the population mean-shift field is exactly a variance-scaled 
+
+score-mismatch field between the Gaussian-smoothed data and model distributions. This follows from Tweedie’s formula [ 16 ], which links the conditional mean under additive Gaussian noise to the score of the corresponding smoothed marginal, and is the same principle that underlies the denoising interpretation of diffusion models, where the optimal denoiser is determined by the score of a Gaussian-smoothed distribution. We empirically validate and visualize this 
+
+> ∗Corresponding author: chieh-hsin.lai@sony.com
+> †Equal supervision.
+
+1
+
+> arXiv:2603.07514v1 [cs.LG] 8 Mar 2026
+
+exact theoretical correspondence in Figure 1-(c,d): the mean-shift and score-mismatch fields coincide up to the variance scaling, so the bridge to score-based modeling is exact at the level of the transport field. The corresponding drifting objective is a score-matching-style objective, but in reverse Fisher form: the pointwise score mismatch is averaged under the model distribution rather than the data distribution. This weighting encourages correcting the score field where the current model places mass (for example, suppressing spurious mass), and is complementary to forward Fisher, which emphasizes matching scores on data regions and thus promotes coverage under the data distribution. This viewpoint also places drifting closer, at the objective level, to Distribution Matching Distillation (DMD) [ 17 ], a distillation approach that learns a one-step generator from a pre-trained diffusion teacher. Both drifting and DMD use score-mismatch transport directions under the model law, but differ in how the score signal is obtained: drifting realizes it nonparametrically from local kernel neighborhoods, whereas DMD relies on a pre-trained diffusion teacher. −1.0 −0.5 0.0 0.5 1.0                     
+
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> (a) Drifting field Δ p,q
+> p
+> q
+> −1.0 −0.5 0.0 0.5 1.0
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> (b) Score mismatch CΔsp,q(C=τ2= 0.09)
+> −1.0 −0.5 0.0 0.5 1.0
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> (c) Overlay
+> Δp,q
+> CΔsp,q
+> −1.0 −0.5 0.0 0.5 1.0
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> (d) Pointwise cosine
+> pmodes
+> qmodes
+> −1.00
+> −0.75
+> −0.50
+> −0.25
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> cos ∠(Δ p, q, CΔsp, q)
+
+Figure 1: 2D visualization: Gaussian drifting field is exactly parallel to the score-matching direction. With a Gaussian kernel used for smoothing, the mean-shift drifting field in (a) is exactly direction-aligned with the score-mismatch field in (b) (as proved in Theorem 1); panels (c,d) visualize this alignment. Both fields are estimated from finite samples using the same kernel-based Monte Carlo procedure. Here p denotes the data distribution and q denotes a constructed model distribution (no training): p is a 3-mode mixture on the unit circle, and q is obtained by rotating each mode center of p by a fixed angle. 
+
+Beyond the Gaussian case, we show that general radial kernels (including Laplace) admit an exact decomposition into (i) a preconditioned smoothed-score term and (ii) a covariance residual that captures local neighborhood geometry. This yields a preconditioned score-matching interpretation of drifting and makes explicit the additional terms introduced by non-Gaussian kernels. For the Laplace kernel (a special case of the radial family) used in drifting-model implementations, this decomposition further implies that mean-shift drifting follows an approximately score-matching direction at least in two complementary regimes. (1) Low temperature. For small τ , the kernel is highly local and mean shift acts like a local score estimate, so the population drifting minimizer matches the data’s kernel-smoothed score up to a polynomially small error in 
+
+τ . (2) High dimension. For large (embedding) dimension D, drifting and score matching align at three levels: (i) vector field/objective alignment , where the drifting field approximately matches a scaled score-mismatch field; (ii) 
+
+update alignment , where the stop-gradient update approximately matches a score-mismatch transport update; and (iii) 
+
+minimizer alignment , where the drifting minimizer is close to the score-matching minimizer (and hence the data). In all three cases, the discrepancy decays polynomially in D. Empirically, we carefully validate our theory by confirming the predicted decay rate in D, and by showing that the Gaussian kernel (i.e., the score-based case) and the Laplace kernel yield generally comparable generation quality. For clarity, we summarize the main messages of this article below: 
+
+Key Takeaways. 
+
+• Gaussian Kernel: 
+
+⋄ Drifting’s mean-shift direction = score-mismatch direction (via Tweedie) 
+
+⋄ Drifting objective = score-matching-style objective. 
+
+• Laplace Kernel: drifting direction ≈ score-mismatch direction in two regimes: 
+
+⋄ Small temperature τ : population optima align, with a polynomially vanishing gap in τ .
+
+⋄ Large dimension D: objectives, gradients, and optima align, with a polynomially vanishing gap in D.22 Preliminaries 
+
+Score Functions and Fisher Divergences. Let p be a distribution on RD with density (still denoted by p). Its 
+
+score function is 
+
+sp(x) := ∇x log p(x).
+
+Given two distributions p and q, we define the forward and reverse Fisher divergences as 
+
+DfF (p∥q) := Ex∼p
+
+∥sp(x) − sq (x)∥22
+
+, DrF (p∥q) := Ex∼q
+
+∥sp(x) − sq (x)∥22
+
+.
+
+Throughout this article, we use p (or pdata ) to denote the data distribution and q (or qθ ) to denote the model distribution. The forward and reverse Fisher divergences share the same pointwise score mismatch, ∥sp − sq ∥22, but differ in how it is weighted: forward Fisher averages under p, while reverse Fisher averages under q. This distinction matters in practice: forward Fisher prioritizes correctness where real data concentrate (mode coverage), whereas reverse Fisher prioritizes correcting the score field where the current model places mass (suppressing spurious mass). Standard score matching [ 13 , 4 ] fits qθ by minimizing the forward Fisher divergence DfF (p∥qθ ), which avoids explicit normalizing constants and directly targets score-field matching. 
+
+Gaussian Perturbations and Diffusion Models. A diffusion forward process can be written as the Gaussian perturbation 
+
+xt = αtx0 + σtϵ, x0 ∼ pdata , ϵ ∼ N (0, I), (1) where ( αt, σ t) is a fixed noise schedule with αt ≥ 0 and σt > 0. Let pt denote the marginal density of xt. Then pt is a Gaussian smoothing of pdata :
+
+pt(x) = 
+
+Z
+
+N  x; αtx0, σ 2 
+
+> t
+
+I pdata (x0) d x0
+
+with a time-varying score function: 
+
+sp(x, t ) := ∇x log pt(x).
+
+Diffusion models learn the oracle score sp(xt, t ) with a neural network sθ (xt, t ) by minimizing a time-dependent score-matching objective [14, 4] in forward Fisher form: 
+
+Et Ext∼pt
+
+h
+
+sθ (xt, t ) − sp(xt, t ) 22
+
+i
+
+.
+
+Distribution Matching Distillation (DMD). Since diffusion-model sampling typically requires many function evaluations (the sampling process is essentially equivalent to solving an ODE [ 4]), it can be slow. DMD is an approach proposed to learn one- (or few-step) pushforward generators by distilling pre-trained diffusion models. Let fθ (z) be a deterministic one-step generator with Gaussian prior z ∼ pprior , where we take 
+
+pprior = N  0, σ 2 
+
+> T
+
+I .
+
+This generator induces the model distribution 
+
+qθ := ( fθ )#pprior .
+
+Applying the same forward process to synthetic samples yields ˆxt := αtfθ (z) + σtϵ, z ∼ pprior , ϵ ∼ N (0, I),
+
+with marginal density qθ,t . DMD matches {qθ,t } to {pt} by minimizing a time-weighted reverse KL objective 
+
+LDMD (θ) := Et
+
+h
+
+ω(t) DKL 
+
+ qθ,t ∥ pt
+
+i
+
+,
+
+where ω(t) is a weighting function. A key property is that the θ-gradient reduces to a score-mismatch term: 
+
+∇θ LDMD (θ) = Et, z,ϵ
+
+h
+
+ω(t) αt
+
+ ∂θ fθ (z)⊤ sqθ,t (ˆ xt, t ) − spt (ˆ xt, t )i
+
+, ˆxt = αtfθ (z) + σtϵ. (2) DMD naturally induces a reverse-Fisher-style weighting. Indeed, LDMD is based on a reverse KL divergence DKL (qθ,t ∥pt), whose gradient is evaluated under the model’s noised marginal qθ,t . Equivalently, conditioning on t, we may rewrite Equation (2) as an expectation over ˆxt ∼ qθ,t , so the score-mismatch signal sqθ,t ( ˆxt, t ) − spt ( ˆxt, t ) is weighted by the (noised) model distribution. In practice, DMD obtains spt from a pre-trained diffusion teacher and estimates sqθ,t using an auxiliary “fake-score” model trained on current generator samples. 33 A Fixed-Point Regression Template 
+
+In this section, we introduce a fixed-point regression framework with a pre-designed drift field, motivated by drifting models. We then present two realizations of this drift field: kernel-induced mean shift and kernel-induced score mismatch. 
+
+## 3.1 Training Objective of Drifting Model 
+
+Let p := pdata denote the data distribution 1. We consider a pushforward generator x = fθ (ϵ) with ϵ ∼ pprior with 
+
+pprior := N (0, I), which induces the model distribution 
+
+qθ := ( fθ )#pprior .
+
+When the dependence on θ is clear from context, we write q for brevity. The goal of learning a one-step generator is to choose fθ such that 
+
+qθ ≈ pdata 
+
+under a chosen statistical divergence (e.g., the KL divergence or the Fisher divergence). A drifting-style method [11] starts from a one-step transport operator 
+
+Up,q (x) = x + ∆ p,q (x),
+
+where ∆ p,q (x) is a designed drift field (instantiated later) on RD that measures the discrepancy between some quantities defined by p and q, and satisfies the equilibrium condition ∆p,p (x) ≡ 0.
+
+Given Up,q , the drifting-model template distills the update via a fixed-point regression objective with a stop-gradient target: min  
+
+> θ
+
+Ldrift (θ) := Eϵ∼pprior 
+
+h
+
+fθ (ϵ) − sg  Up,q θ (fθ (ϵ))  22
+
+i
+
+. (3) Intuitively, at each iteration the method (i) computes a frozen one-step transported sample ˜x = Up,q θ (x) using the current model, and (ii) fits the next generator to regress onto this transported cloud. 
+
+Objective-Level Equivalence. For any fixed θ, the stop-gradient makes the target constant for backpropagation, but the value of the loss simplifies: 
+
+Ldrift (θ) = Eϵ
+
+h
+
+fθ (ϵ) − sg  fθ (ϵ) + ∆ p,q θ (fθ (ϵ))  22
+
+i
+
+= Eϵ
+
+∥∆p,q θ (fθ (ϵ)) ∥22
+
+ = Ex∼qθ
+
+∥∆p,q θ (x)∥22
+
+.
+
+(4) Thus, at the objective level, Equation (3) is exactly the squared-norm functional of the field ∆ p,q θ under qθ . Since the two expressions are equal for every θ, they define the same objective function and thus share the same global minimizers (and optimal value). 
+
+Gradient-Level Remark. Although Equation (4) identifies the objective as Eqθ ∥∆p,q θ ∥2, the stop-gradient solver does not backpropagate through the dependence of ∆ p,q θ on qθ . Differentiating Equation (3) treats the frozen target as constant and yields the semi-gradient 
+
+∇θ Ldrift (θ) = −2 Eϵ∼pprior 
+
+h
+
+Jfθ (ϵ)⊤∆p,q θ (x)
+
+i
+
+, x = fθ (ϵ),
+
+where Jfθ (ϵ) is the Jacobian of fθ w.r.t. θ. Consequently, the stop-gradient objective Equation (3) implements a 
+
+transport–then–projection procedure at each iteration i:1. Transport/Particle Step. Using the current distribution qθi , compute a drift ∆ p,q θi and move samples by a one-step transport: 
+
+x 7 → ˜x = x + ∆ p,q θi (x), x = fθi (ϵ).                
+
+> 1Although we present the construction in the raw data space, the same definitions and arguments extend verbatim to any fixed feature space induced by a pre-trained embedding. Concretely, let Ψ : X → RDbe a (frozen) feature map and define the induced distributions
+> pΨ:= Ψ #pand qΨ:= Ψ #qon RD. Applying the kernel, mean-shift field, and discrepancy construction to pΨand qΨyields the feature-space counterparts of all quantities above, so every statement holds after replacing xby Ψ( x) and ( p, q ) by ( pΨ, q Ψ).
+
+42. Projection/Regression Step. Fit the next generator to match this transported sample cloud by regression: 
+
+θi+1 ≈ arg min  
+
+> θ
+
+Eϵ∼pprior 
+
+∥fθ (ϵ) − sg(˜ x)∥22
+
+. (5) Stop-gradient ensures that Equation (5) is a clean projection step: the target is treated as fixed while optimizing θ.In regimes where ∆ p,q θi varies slowly across iterations (e.g., small steps or lagged estimates), this two-step scheme can be viewed as a semi-gradient, fixed-point iteration that targets stationary points of the population functional in Equation (4), while yielding an explicit, implementable update direction. 
+
+Identifiability. Even if training reaches a global minimum of the drifting loss, this does not automatically imply that the learned distribution matches the data. Indeed, Ldrift (θ) = 0 only guarantees that the discrepancy field vanishes on model samples (that is, ∆ p,q θ (x) = 0 for qθ -almost every x). In principle, there can be multiple generators, and thus multiple model distributions, that satisfy this same fixed-point condition. This motivates an identifiability question: is the data distribution the only equilibrium picked out by the discrepancy operator? We say a discrepancy operator is identifiable on a class of distributions if the only way for its discrepancy to vanish is to have q = p. A natural criterion is ∆p,q (x) = 0 for q-almost every x =⇒ q = p. (6) If identifiability fails, the fixed-point condition can admit spurious equilibria with q̸ = p, and driving the drifting loss to zero does not certify true distribution matching. Whether identifiability holds depends on the choice of kernel; we return to this question for Gaussian kernels in Section 4.1 and for general radial kernels in Section 4.2. 
+
+## 3.2 Mean-Shift and Kernel-Induced Score Function 
+
+Mean-Shift Operator. Following the drifting-model construction, the update field ∆ p,q (x) is realized via using a kernel induced mean shift. To make it more precisely, Let k(x, y) ≥ 0 be a similarity kernel and let π be any distribution on RD . Define the kernel-weighted barycenter 
+
+μπ,k (x) := Ey∼π
+
+k(x, y) y
+
+Ey∼π
+
+k(x, y) ,
+
+and the corresponding mean-shift direction 
+
+Vπ,k (x) := μπ,k (x) − x = Ey∼π
+
+k(x, y) ( y − x)
+
+Ey∼π
+
+k(x, y) .
+
+Intuitively, μπ,k (x) is a kernel-weighted local average of samples, where points y with larger similarity k(x, y) receive larger weight. Accordingly, Vπ,k (x) = μπ,k (x) − x moves x toward regions that are better supported by π in the sense of the kernel, meaning regions containing many points y with large k(x, y). In particular, we write Vp,k (x) for the data distribution p, and Vq,k (x) for the model distribution q. The mean-shift induced discrepancy field is then ∆p,q (x) := η Vp,k (x) − Vq,k (x),
+
+where η > 0 is a step-size. This formulation is reminiscent of discriminator-free, kernel-based two-sample methods (e.g., MMD-style objectives [ 18 , 19 , 20 ]): the kernel acts as a fixed, nonparametric critic, and the update uses only samples from p and q. We make the relationship to kernel-potential methods precise in Section 4.4. 
+
+Kernel-Induced Score Function. A complementary “score-like” direction can be defined directly from the same kernel smoothing. Consider the scalar smoothing field induced by the kernel k
+
+πk(x) := Ey∼π
+
+k(x, y) =
+
+Z
+
+k(x, y) π(y) d y,
+
+if π admits a density (still denoted by π). In the common translation-invariant case k(x, y) = κ(x − y) for some real-valued function κ, kernel smoothing reduces to convolution, namely πk = π ∗ κ. Hereafter, we do not distinguish between k and κ.We define the kernel-induced score as 
+
+sπ,k (x) := ∇x log πk(x).
+
+5Throughout, we allow k to be unnormalized. Accordingly, πk(x) should be understood as a smoothed mass profile ,proportional to convolution with the corresponding normalized kernel. Because both the score and the mean-shift field are invariant under multiplicative rescaling of the kernel, all score and mean-shift identities remain unchanged by this normalization constant. The main goal of the remainder of this article is to uncover a principled but hidden connection between the mean-shift discrepancy 
+
+Vp,k (x) − Vq,k (x)and the score-mismatch discrepancy 
+
+sp,k (x) − sq,k (x).
+
+In doing so, we show that drifting models are not an isolated heuristic, but are deeply connected to the core mechanism of score-based modeling. 
+
+# 4 Bridging Drift Models and Score-Based Models 
+
+This section establishes the core theoretical message of the article: drifting models are fundamentally linked to score-based modeling. In Section 4.1, we show that, for Gaussian kernels, mean shift is exactly a score mismatch up to a constant factor, making Gaussian-kernel drifting a score-matching-style objective and clarifying its close relationship to DMD. In Section 4.2, we extend this perspective to general radial kernels through an exact preconditioned-score decomposition, which reveals the additional terms introduced by non-Gaussian kernel geometry. Building on this result, Section 4.3 shows that the Laplace kernel used in practice still provides a reliable proxy for score mismatch in the low-temperature and high-dimensional regimes. Finally, Section 4.4 contrasts drifting with kernel-GAN updates and highlights that mean-shift normalization yields a essentially more score-like learning signal. 
+
+## 4.1 Gaussian Kernel: Mean-Shift as Smoothed Score 
+
+We first specialize the kernel k to the Gaussian kernel with bandwidth τ > 0 as 
+
+kτ (x, y) = exp 
+
+
+
+− ∥x − y∥22
+
+2τ 2
+
+
+
+.
+
+The corresponding smoothing field of any distribution π becomes 
+
+πkτ (x) = Ey∼π
+
+kτ (x, y) = ( π ∗ kτ )( x) =: πτ (x),
+
+and the kernel-induced score is exactly the score of the Gaussian-smoothed density, 
+
+sπ,k τ (x) = ∇x log πkτ (x) = ∇x log πτ (x) =: sπ,τ (x).
+
+For the Gaussian kernel kτ , the mean-shift direction Vπ,k τ admits a particularly simple form. In particular, Theorem 1 shows that the drifting objective in Equation (4) can be rewritten as a discrepancy between smoothed scores. Moreover, up to the constant factor η2τ 4, this discrepancy is exactly a score-matching-style objective [ 13 ] between the Gaussian-smoothed densities pτ and ( qθ )τ , taking the form of a reverse Fisher divergence. Therefore, the two objectives differ only by a positive constant factor, and thus have the same set of global minimizers, with minimum values that agree up to scaling. 
+
+Theorem 1 (Gaussian-Kernel Drifting Equals Smoothed-Score Matching) . Suppose that kτ is a Gaussian kernel. Let 
+
+p and q be distributions on RD such that the expectations below are finite, and fix τ > 0. Then for all x,
+
+Vπ,k τ (x) = τ 2sπ,τ (x) for π ∈ { p, q }.
+
+Consequently, the drifting discrepancy field induced by kτ satisfies 
+
+∆p,q (x) = ητ 2 sp,τ (x) − sq,τ (x).
+
+Now consider a pushforward model qθ = ( fθ )#pprior and the fixed-point regression loss in Equation (4) . At the objective-value level, we have 
+
+Ldrift (θ) = η2τ 4 Ex∼qθ
+
+h
+
+sp,τ (x) − sqθ ,τ (x) 22
+
+i
+
+. (7) 
+
+6Sketch of Proof. The proof follows by differentiating πτ (x) = Ey∼π[kτ (x, y)] under the expectation and rearranging, which yields 
+
+Vπ,k τ (x) = μπ,k τ (x) − x = τ 2∇x log πτ (x).
+
+See Section A for the detailed derivation. Theorem 1 reveals a natural link to Tweedie’s formula [ 16 ], a central identity underlying diffusion denoising. For the Gaussian kernel, the kernel barycenter coincides with the Bayes-optimal denoiser, 
+
+μπ,k τ (x) = E[X| ˜X = x], ˜X = X + τ Z, Z ∼ N (0, I),
+
+and the mean-shift direction Vπ,k τ (x) is exactly the denoising residual. Tweedie’s formula then yields 
+
+Vπ,k τ (x) = μπ,k τ (x) − x = τ 2∇x log πτ (x).
+
+Equivalently, 
+
+μπ,k τ (x) = E[X| ˜X = x] =⇒ Vπ,k τ (x) = τ 2∇x log πτ (x).
+
+Moreover, the mean-shift discrepancy Vp,k τ − Vq,k τ equals (up to the factor τ 2) the difference between the score fields of the smoothed densities pτ and qτ . As a result, drifting with a Gaussian kernel can be interpreted as matching smoothed scores: either evaluated on clean model samples Equation (7), or, more canonically, evaluated on noised samples at noise scale τ , which yields the reverse Fisher divergence between pτ and qτ .However, because the drifting objective is in reverse Fisher form and averages the score mismatch under q rather than p, it only receives learning signal where the current model places mass. If q assigns (near-)zero probability to a mode of p, then that region contributes essentially nothing to the gradient, so drifting can be susceptible to mode dropping , especially early in training when coverage is limited. 
+
+Connection to Distribution Matching Distillation (DMD). DMD distills a diffusion model into a one-step generator by matching the data and model distributions after adding Gaussian noise at scale τ . A key observation is that the resulting update can be written in terms of a score mismatch sp,τ (x) − sq,τ (x), where sp,τ is provided by a pretrained diffusion teacher and sq,τ is obtained from a second “fake-score” model trained on current generator samples. Moreover, because DMD is derived from a reverse-KL objective DKL (qθ,t ∥pt) at each noise level, its learning signal is weighted by the (noised) model marginal qθ,t , consistent with the reverse-Fisher weighting discussed in Section 2. Our Gaussian-kernel identity in Theorem 1 shows that Gaussian drifting recovers the same score-mismatch direction: ∆p,q (x) = η Vp,k τ (x) − Vq,k τ (x) = ητ 2 sp,τ (x) − sq,τ (x).
+
+Beyond the score-mismatch algebra, DMD also fits the transport–then–projection template. At noise level t, define the score-mismatch transport field ∆spt,q θ,t (x) := ω(t) αt
+
+2
+
+
+
+spt (x, t ) − sqθ,t (x, t )
+
+
+
+,
+
+and consider the projection-style loss 
+
+LST -proj (θ) := Et, z,ϵ
+
+h
+
+fθ (z) − sg  fθ (z) + ∆ spt,q θ,t (ˆ xt) 22
+
+i
+
+, ˆxt = αtfθ (z) + σtϵ. (8) Differentiating with stop-gradient yields a semi-gradient that matches the DMD gradient direction in Equation (2). Although LDMD is KL-based while LST -proj is a regression surrogate, they share the same fixed-point condition: if the score mismatch vanishes for almost every t, then pt = qθ,t and hence p = qθ , using injectivity of the smoothing operator (see Lemma 7). This viewpoint clarifies the link to drifting: both methods fit the same transport–then–projection template, differing only in how the score mismatch is realized. We summarize the connection as follows: 
+
+Gaussian-kernel drifting is essentially score-based generative modeling, or more precisely, a DMD-like distribution-matching step in a reverse-Fisher (model-weighted) score-mismatch form, except for the score source. Drifting realizes this score signal nonparametrically and teacher-free via Tweedie/mean shift, whereas DMD relies on a pretrained diffusion teacher. 
+
+In particular, drifting performs distribution matching at a single or a few noise levels using only samples from p and 
+
+q and a chosen kernel, without training auxiliary diffusion-score networks. The trade-off is complementary to DMD: kernel drifting avoids maintaining a separate estimate of sq,τ as q evolves, but its effectiveness depends on bandwidth selection and sample density, while DMD scales to high-dimensional data by learning parametric score models at the cost of additional training and potential instability in the synthetic-score estimation. 7Identifiability of the Gaussian Kernel. Using a Gaussian kernel to define the discrepancy ∆ p,q (x) (as in DMD-style objectives) has a clean identifiability story. By Theorem 1, matching the mean-shift directions under a Gaussian kernel is equivalent to matching the corresponding Gaussian-smoothed scores: 
+
+sp,τ (x) = sq,τ (x) (on the support of qτ ).
+
+Under mild regularity and the usual normalization (both pτ and qτ integrate to one), equality of scores forces the smoothed densities to coincide: sp,τ ≡ sq,τ implies pτ = qτ (the only ambiguity is a multiplicative constant, removed by normalization). Finally, Gaussian smoothing is injective: if pτ = qτ for some τ > 0, then necessarily p = q. This yields the following identifiability statement. 
+
+Proposition 1 (Identifiability of Gaussian Case (Idealized DMD)) . Assume pτ and qτ are the Gaussian-smoothed versions of p and q for some τ > 0. If sp,τ (x) = sq,τ (x) for all x, then p = q. In particular, any population objective that enforces pτ = qτ for a single τ > 0 is identifiable. 
+
+In words, in the Gaussian case the DMD objective inherited from a diffusion teacher is identifiable under an idealized setting: if the teacher is perfectly trained, then at the population level the objective has a unique intended optimum, namely q = p. In practice, this guarantee is only approximate: it depends on the teacher score being sufficiently accurate and on student training being well behaved, in the sense that the model class is expressive enough and optimization reaches the intended optimum rather than an approximate or degenerate solution. 
+
+## 4.2 General Radial Kernels: Mean-Shift as Preconditioned Score 
+
+The Gaussian case in Section 4.1 gives an exact bridge: mean shift equals a scaled smoothed-score, so drifting becomes a score-matching-style objective. However, drifting model uses non-Gaussian kernels (Laplace in particular), where this equivalence is no longer automatic. The goal of this subsection is to isolate exactly what changes when we move beyond Gaussians, and to express mean shift as a score term plus explicit kernel-dependent corrections. To do this, we consider a broad family of translation-invariant radial kernels, which includes both Gaussian and Laplace and covers common choices in drifting: 
+
+kτ (x, y) = exp 
+
+
+
+− ρ
+
+ ∥x − y∥2
+
+τ
+
+ 
+
+, τ > 0, (9) where ρ : [0 , ∞) → R is differentiable. This family includes, for example, 
+
+Gaussian: ρ(u) = 12 u2 ⇒ kτ (x, y) = exp 
+
+
+
+− ∥x − y∥22
+
+2τ 2
+
+
+
+,
+
+Laplace: ρ(u) = u ⇒ kτ (x, y) = exp 
+
+
+
+− ∥x − y∥2
+
+τ
+
+
+
+.
+
+We keep the same two objects from Section 3.2: the mean-shift direction Vπ,k τ and the kernel-induced score 
+
+sπ,k τ = ∇ log πkτ , along with the associated score mismatch, where πkτ (x) = Ey∼π[kτ (x, y)]. The key observation is that, for radial kernels, the score direction is still a local average of displacements, but with an additional radius-dependent 
+
+reweighting. Indeed, differentiating log kτ (x, y) = −ρ(∥x − y∥2/τ ) gives 
+
+∇x log kτ (x, y) = 1
+
+τ 2
+
+ρ′(r/τ )
+
+r/τ 
+
+| {z }  
+
+> =: bτ(r)
+
+(y − x), r := ∥x − y∥2.
+
+Substituting the above identity into sπ,k τ (x) = E[kτ (x,y) ∇x log kτ (x,y)]   
+
+> E[kτ(x,y)]
+
+yields the following weighted-score representation: 
+
+τ 2 sπ,k τ (x) = Ey∼π
+
+kτ (x, y) bτ (∥x − y∥2) ( y − x)
+
+Ey∼π
+
+kτ (x, y) . (10) This immediately explains why Gaussians are special: for ρ(u) = 12 u2, we have ρ′(u) = u and hence bτ (r) ≡ 1, so the extra reweighting disappears and mean shift becomes exactly proportional to the smoothed score (see Theorem 1). For Laplace and other radial kernels, bτ (r) is not constant, so mean shift and score differ in a controlled, kernel-dependent way. To make this difference explicit, it is convenient to view both quantities under the same local kernel-reweighted law, 
+
+πτ (y|x) := kτ (x, y) π(y)
+
+Ey∼π[kτ (x, y)] .
+
+8With this notation, Equation (10) becomes 
+
+τ 2 sπ,k τ (x) = Ey∼πτ (·| x)
+
+h
+
+bτ
+
+ ∥x − y∥2
+
+ (y − x)
+
+i
+
+,
+
+which puts the score in the same “local displacement” form as mean shift and sets up an exact decomposition. 
+
+Theorem 2 (Preconditioned-Score Decomposition of Mean Shift for General Radial Kernels) . Fix τ > 0 and let kτ
+
+be a radial kernel defined by Equation (9) . Assume the expectations below are finite, and bτ (r) > 0 on the support of 
+
+πτ (·| x). Then for any x ∈ RD ,
+
+Vπ,k τ (x) = τ 2 απ,τ (x) sπ,k τ (x) + δπ,τ (x).
+
+Here, for each x,
+
+απ,τ (x) := Ey∼πτ (·| x)
+
+h
+
+b−1 
+
+> τ
+
+(∥x − y∥2)
+
+i
+
+,
+
+δπ,τ (x) := Cov y∼πτ (·| x)
+
+
+
+b−1 
+
+> τ
+
+(∥x − y∥2), b τ (∥x − y∥2)( y − x)
+
+
+
+∈ RD .
+
+Consequently, for ∆p,q (x) = η(Vp,k τ (x) − Vq,k τ (x)) ,
+
+∆p,q (x) = ητ 2
+
+αp,τ (x)sp,k τ (x) − αq,τ (x)sq,k τ (x)
+
+
+
++ η δp,τ (x) − δq,τ (x).
+
+Sketch of proof. Fix x and let y ∼ πτ (·| x). The claim follows by applying E[AB ] = E[A]E[B] + Cov (A, B ) with 
+
+A(y) := b−1 
+
+> τ
+
+(∥x − y∥2), and B(y) := bτ (∥x − y∥2)( y − x). See Section A for the full derivation. We remark that Cov (·, ·) above is a scalar–vector covariance. The decomposition in Theorem 2 clarifies how mean-shift relates to the kernel-induced score. Both Vπ,k τ (x) and sπ,k τ (x) summarize local displacements ( y − x) from neighbors sampled under the kernel-reweighted law πτ (y|x) ∝ kτ (x, y)π(y). For a general radial kernel, the difference has two parts: a scalar preconditioning factor απ,τ (x) that rescales the score contribution, and a residual δπ,τ (x) that captures the remaining effect of distance-dependent reweighting through bτ . In the Gaussian case bτ ≡ 1, so απ,τ ≡ 1and δπ,τ ≡ 0, recovering exact proportionality. A useful geometric view comes from rewriting the residual in terms of radius and direction. With r = ∥x − y∥2,under y ∼ πτ (·| x), we set 
+
+A := b−1 
+
+> τ
+
+(r) ∈ R, Z := bτ (r) ( y − x) ∈ RD .
+
+Then Equation (10) becomes τ 2 sπ,k τ (x) = E[Z], and the residual can be written as 
+
+δπ,τ (x) = Cov( A, Z) = Cov  A(r), E[Z|r].
+
+This shows that δπ,τ (x) arises only when the average (preconditioned) displacement E[Z|r] changes systematically with radius. To isolate the part that actually changes the direction relative to the score, assume s := sπ,k τ (x)̸ = 0 and let ˆs := s/∥s∥2. Define the orthogonal projector onto the subspace perpendicular to the score direction, 
+
+P⊥ := I − ˆsˆs⊤,
+
+so that P⊥v removes the component of v along s. We define the off-score residual by δ⊥(x) := P⊥ δπ,τ (x). Using 
+
+P⊥E[Z] = 0, one obtains the exact identity 
+
+δ⊥(x) = Cov  A(r), E[P⊥Z|r],
+
+so mean-shift deviates from the score direction only if the conditional mean displacement develops a systematic tangential component across radii. Equivalently, the score-parallel component of δπ,τ only adjusts the effective step size along the score. For the Laplace kernel, bτ (r) = τ /r , hence A = r/τ . Let 
+
+u := y − x
+
+∥y − x∥2
+
+, so that y − x = r u.
+
+Then 
+
+Z = bτ (r)( y − x) = τr (ru) = τ u,
+
+9ො𝒔 
+
+𝒖 ⊥
+
+𝜹 ⊥ ≫ 𝟎  
+
+> Mass of
+> 𝜋 𝜏 𝒚 |𝒙
+
+ො𝒔 
+
+𝒖 ⊥ ≈ 𝟎 
+
+𝜹 ⊥ ≈ 𝟎   
+
+> Mass of
+> 𝜋 𝜏 𝒚 |𝒙 Mass of
+> 𝜋 𝜏 𝒚 |𝒙
+
+ො𝒔 
+
+𝜹 ⊥ ≈ 𝟎 Figure 2: Illustration of δ⊥(x) in three illustrative examples. (a) δ⊥ ≫ 0 because most of the mass of πτ (·| x) lies far away (large r)and in directions perpendicular to ˆs; (b) δ⊥ ≈ 0 because most of the mass of πτ (·| x) lies closer (small r) and in directions parallel to ˆs; (c)    
+
+> δ⊥≈0because the contributions from different directions nearly cancel out.
+
+so the preconditioned displacement keeps only the direction u and discards the radius. Here the randomness is over 
+
+y ∼ πτ (·| x) (with x fixed), so both r = ∥y − x∥2 and u are random. Using the scalar–vector covariance definition, the off-score residual becomes 
+
+δ⊥(x) = Cov y∼πτ (·| x)
+
+ r, u⊥
+
+, u⊥ := P⊥u.
+
+Moreover, since P⊥E[Z] = 0 and Z = τ u, we have E[u⊥] = 0, and hence 
+
+δ⊥(x) = Ey∼πτ (·| x)
+
+r u⊥
+
+.
+
+This form makes the geometry transparent (which we also illustrate with simple scenarios in Figure 2): δ⊥(x) is a radius-weighted average of the tangential direction. Hence Laplace mean-shift develops an off-score component only when radius and tangential direction are correlated under y ∼ πτ (·| x), i.e., when δ⊥(x) = Cov (r, u⊥) = E[r u⊥]̸ = 0;equivalently, when E[u⊥|r] does not cancel across different r. Intuitively, δ⊥(x)̸ = 0 means that different distance bands contribute different average tangential directions, so the radius-weighted average E[r u⊥] does not cancel out; for instance, if farther neighbors tend to have a different average tangential direction than nearer ones, their contribution can dominate because it is amplified by the factor r.If E[u⊥|r] ≈ 0 for all r (no tangential bias at any radius), or if r concentrates so that it is effectively constant, then 
+
+E[r u⊥] is small and mean-shift stays nearly aligned with the score. In high dimension, the kernel-reweighted radii typically concentrate, making A(r) = r/τ nearly constant; this suppresses δ⊥(x) and yields the decay bounds used later (cf. Theorems 4 and 5). 
+
+Identifiability of the General Radial Kernel. For the mean-shift–induced discrepancy field ∆p,q (x) = η Vp,k (x) − Vq,k (x),
+
+a natural identifiability question is whether driving the field to zero forces true distribution matching, namely, ∆p,q ≡ 0 =⇒ p = q. 
+
+From the decomposition in Theorem 2, the Gaussian kernel is special: since b(r) ≡ 1, we have απ,τ ≡ 1 and δπ,τ ≡ 0.In this case, mean shift is exactly proportional to the kernel-smoothed score, so ∆ p,q ≡ 0 reduces to score equality 
+
+∇ log pτ ≡ ∇ log qτ , which implies pτ = qτ (and then p = q if the smoothing operator is injective). For a general radial kernel, however, Theorem 2 exposes extra degrees of freedom that can cancel the score mismatch. Concretely, ∆p,q (x) = 0 =⇒ τ 2
+
+αp,τ (x) sp,k τ (x) − αq,τ (x) sq,k τ (x)
+
+
+
++  δp,τ (x) − δq,τ (x) = 0. (11) so ∆ p,q ≡ 0 only constrains a sum of a scaled score difference and a residual δ capturing distance–direction coupling. Unless one can separately control the scalar preconditioners απ,τ and the residuals δπ,τ , Equation (11) does not force ∇ log pτ = ∇ log qτ , and therefore does not by itself certify pτ = qτ . In particular, identifiability is generally 
+
+p-dependent: the functions αp,τ and δp,τ are determined by the kernel-reweighted local neighborhood law induced by p,and different targets can yield different patterns of (preconditioner, residual) cancellation. As an important example, for Laplace-type kernels commonly used in drifting-model implementations, the induced preconditioning is generally not constant. In this case, both απ,τ (x) and the residual δπ,τ (x) depend on the local kernel neighborhood and can vary with the underlying distribution π. As a result, even at the population level, the equilibrium condition ∆ p,q (x) ≡ 0 does not necessarily imply score equality. Instead, it can be satisfied by a cancellation between a scaled score mismatch and the residual term. Therefore, identifiability is not automatic and may require additional structural assumptions. 10 This concern can be amplified in practice because the drifting field is never evaluated at the population level. Implementations use finite-sample, mini-batch estimates with normalized (softmax) kernel weights, so the drift becomes a ratio-type Monte Carlo estimator, which can have non-negligible variance and bias. Empirically, the method often benefits from using more reference samples, consistent with this estimation sensitivity. Moreover, many pipelines apply batch-dependent normalizations and heuristics, such as the balance between positive and negative sets, the choice and quality of the feature map, and tuning or aggregating across multiple temperatures [ 21 ]. These choices effectively reshape the kernel and hence the induced transport field. Finally, when the kernel is computed in a learned feature space, near-flat feature distances can make the softmax weights close to uniform, yielding a small drift magnitude even when p and q remain mismatched. Taken together, these effects imply that an observed near-equilibrium in practice does not uniquely certify q ≈ p. It can also make training behavior sensitive to implementation choices that change the effective kernel and the resulting field. In summary, 
+
+Gaussian kernels lead to an identifiable score-based discrepancy. For Laplace-type kernels, identifiability is not automatic in general, because ∆p,q can vanish through cancellation with the residual term even when the underlying scores differ. 
+
+## 4.3 Laplace Kernel: Mean-Shift as a Proxy of Score Mismatch 
+
+The Gaussian case provides a clean reference point. With a Gaussian kernel, the mean-shift direction is exactly proportional to the kernel-induced score, so minimizing the drifting objective agrees with minimizing a score-matching objective at the population optimum (see Theorem 1). In practice, however, drifting models typically use the Laplace kernel. In that setting, the mean-shift direction is generally not a purely scaled score (see Theorem 2), so it is not obvious whether optimizing the mean-shift loss still yields a model distribution whose kernel-smoothed score matches that of the data. In the next two subsections, we analyze two complementary regimes: (i) the low-temperature (small 
+
+τ ) regime and (ii) the high-dimensional (large D) regime. In both cases, we show that the drifting objective behaves like score matching up to an explicit error that decays in τ or in D. Before turning to these results, we first formalize the problem setup. Formally, let p denote the data distribution on RD (the same ambient space where the kernel is applied). We consider generators f , g : Rm → RD and their induced model distributions 
+
+qf := f#N (0, I), qg := g#N (0, I).
+
+Throughout the discussion, we use a dimension-aware bandwidth 
+
+τ := ¯ τ D a, ¯τ > 0, a ≥ 0,
+
+which follows common practice in high-dimensional kernel methods and in drifting model implementations, and keeps the kernel weights well-conditioned as D grows. Given the Laplace kernel kτ (x, y) = exp (−∥ x−y∥2/τ ), the mean-shift direction under a distribution π is Vπ,k τ (x) as introduced in Section 3.2. The drifting model compares mean-shift directions under p and under the model distribution: 
+
+Vf (x) := Vp,k τ (x) − Vqf ,k τ (x), Ldrift (f ) := Ex∼qf ∥Vf (x)∥22.
+
+In parallel, we compare kernel-smoothed scores using the kernel-induced score sπ,τ (x) = ∇x log πkτ (x), where πkτ (x) = 
+
+Ey∼π[kτ (x, y)]. 
+
+4.3.1 Low-Temperature Regime 
+
+First, we show that in the low-temperature regime (small τ ) with fixed dimension D, the population minimizer of the drifting model induces a distribution close to the data’s, as in score matching. When τ is small, the Laplace kernel 
+
+kτ (x, y) = exp (−∥ x − y∥2/τ ) concentrates its mass near x, so the mean-shift direction Vπ,k τ (x) becomes a purely local statistic of the density π. A Taylor expansion then reveals that this local displacement is proportional to the kernel-smoothed score sπ,τ (x), up to higher-order terms. The only remaining issue is that mean shift is defined through a ratio. Specifically, we write Vπ,k τ (x) = Bτ (x)/A τ (x), where 
+
+Aτ (x) := 
+
+Z
+
+> RD
+
+e−∥ x−y∥2/τ π(y) d y, Bτ (x) := 
+
+Z
+
+> RD
+
+e−∥ x−y∥2/τ (y − x) π(y) d y.
+
+Thus we need to ensure the denominator Aτ (x) does not become too small and that the Taylor remainder stays well behaved after dividing by Aτ (x). Assumption 2 provides exactly this by requiring moment control of the local smoothness of log π and of how much π(x) can differ from nearby values. 11 Under this mild regularity, the theorem below states that any population drifting minimizer induces a distribution whose kernel-smoothed score matches that of the data up to O(τ 2) pointwise, and hence the scale-τ Fisher divergence decays as O(τ 4). In short, we have the following: 
+
+Theorem 3 ((Informal) Small- ¯τ Agreement between Mean-Shift and Score Matching) . Suppose that kτ is a Laplace kernel. Let τ0 > 0. For each τ ∈ (0 , τ 0], pick any population drifting minimizer 
+
+f ⋆(τ ) ∈ arg min  
+
+> f
+
+Ldrift (f ), g⋆(τ ) ∈ arg min  
+
+> g
+
+LSM (g).
+
+Assume that, uniformly over such drifting-model minimizers, the local derivatives and local density ratios of p and qf ⋆(τ )
+
+admit integrable (moment) control. Then, for small τ ,
+
+DrF 
+
+ qg⋆(τ )∥qf ⋆(τ )
+
+ = DrF 
+
+ p∥qf ⋆(τ )
+
+ = O(τ 4).
+
+The hidden constant is independent of ¯τ and of the learnable parameters. 
+
+We refer to Section B for a rigorous statement and the full proof. To obtain similar bounds in other distributional divergences (e.g., KL or total variation) from a reverse-Fisher guarantee, one needs an additional regularity condition on the reference distribution. A standard sufficient assumption is that the reference distribution π satisfies a log-Sobolev inequality; we do not pursue these implications further here. 
+
+4.3.2 High-Dimensional Regime −1.0 −0.5 0.0 0.5 1.0                       
+
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> (a) Drifting field Δ p,q
+> p
+> q
+> −1.0 −0.5 0.0 0.5 1.0
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> (b) Score mismatch CΔsp,q(C*= 0.17)
+> −1.0 −0.5 0.0 0.5 1.0
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> (c) Overlay
+> Δp,q
+> CΔsp,q
+> −1.0 −0.5 0.0 0.5 1.0
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> (d) Pointwise cosine
+> pmodes
+> qmodes
+> −1.00
+> −0.75
+> −0.50
+> −0.25
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> cos ∠(Δ p, q, CΔsp, q)
+
+Figure 3: 2D visualization: drifting field is nearly parallel to score mismatch. The mean-shift drifting field is nearly direction-aligned with the score-mismatch field; both are estimated from finite samples using the same kernel-based Monte Carlo procedure. Here, p
+
+and q are constructed as in Figure 1. As D increases, the alignment improves and the error gap decays as 1 /D , consistent with Theorems 4 and 5. 
+
+We next analyze the high-dimensional regime with fixed ¯τ > 0, which is relevant both in raw data space and, more practically, in a pre-trained embedding space where the feature dimension can easily reach the order of 10 3. In this regime, we make the connection between the drifting model and score matching concrete through three complementary results: (i) objective-level alignment (drifting as an approximate surrogate for the scale-τ Fisher divergence), (ii) semi-gradient alignment (the implemented stop-gradient update direction matches a score-transport regression update), and (iii) minimizer alignment (the drifting optimum is close to the score-matching/data distribution in smoothed Fisher divergence). Together, these provide both an optimization-level and an estimator-level justification for viewing drifting as “more or less” score matching in high dimension. We refer to Section C for rigorous statements and full proofs of the high-D results; here we present a conceptual (but still rigorous) version instead. 
+
+Vector Field/Objective Alignment. We work in the large-D regime and write C = C(Da) > 0 for the known scaling factor. Under high-dimensional regularity conditions that commonly hold in raw feature spaces or normalized embedding spaces (Assumption 4–Assumption 7), sample norms concentrate around a shared scale and inner products between independent samples remain small on average. Our first result is an objective-level alignment: the drifting field is well-approximated by a scaled score-mismatch field, 
+
+Vf (x) ≈ C ∆sf (x),
+
+with mean-square error of order O(1 /D ). 12 Theorem 4 ((Informal) Large-D field alignment at 1 /D rate) . Suppose that kτ is a Laplace kernel. Assume the distributions under consideration concentrate on a common-radius shell, and their inner products and moments are suitably controlled. Let C = C(Da) > 0 denote the known scaling factor. Then for all sufficiently large D and all f ,
+
+Ex∼qf Vf (x) − C ∆sf (x) 22
+
+= O D−1.
+
+This theorem implies that, up to a vanishing O(1 /D ) error, minimizing the drifting objective is equivalent to minimizing a scaled Fisher divergence based on kernel-smoothed scores. (In particular, when a = 0, the scaling C is constant.) 
+
+Algorithmic Gradient Alignment. The previous theorem compares two fields ( Vf and ∆ sf ) evaluated under the model-induced law qf . To connect this geometric picture to training dynamics, we now instantiate the model by a parameterized generator fθ and write qθ := ( fθ )#pprior . As introduced above, the drifting model’s fixed-point loss with stop-gradient implements a transport–then–projection step: it transports each sample x = fθ (ϵ) by a discrepancy field and then regresses back to the generator family via an L2 projection. As a result, the implemented update direction is following: 
+
+gdrift (θ) := ∇θ Ldrift (θ) = −2 Eϵ
+
+h
+
+Jfθ (ϵ)⊤ ∆p,q θ
+
+ fθ (ϵ)i
+
+, ∆p,q θ (x) := η Vp,k τ (x) − Vqθ ,k τ (x),
+
+where η > 0 is the transport step size in sample space and Jfθ is the Jacobian w.r.t. θ.To compare this implemented update to a score-driven direction without differentiating the score-matching objective, we use a transport–then–projection (e.g., DMD-style) comparator obtained by replacing the drift transport field with a scaled score mismatch (see Equations (8) and (13) for the fixed-point loss induced by this score-transport field): 
+
+gST (θ) := −2 Eϵ
+
+h
+
+Jfθ (ϵ)⊤ ∆sp,q θ
+
+ fθ (ϵ)i
+
+, ∆sp,q θ (x) := η C  sp,τ − sqθ ,τ 
+
+.
+
+This has the familiar “Jacobian ⊤× (score mismatch)” structure used in DMD-like updates (see Equation (2)). In the following informal theorem, we establish an algorithm-level relationship: the stop-gradient update used by drifting becomes asymptotically indistinguishable from a score-transport update driven by the smoothed score mismatch. 
+
+Theorem 5 ((Informal) Large-D Gradient Alignment) . Suppose that kτ is a Laplace kernel. Assume the conditions of Theorem 4 and a uniform second-moment bound on Jfθ . Then for large enough D and all θ,
+
+gdrift (θ) − gST (θ) 2 = O
+
+
+
+D−1/2
+
+.
+
+Moreover, assuming that at least one of the two update directions has non-vanishing norm, we have 
+
+cos ∠ gdrift (θ), gST (θ) = 1 − O  D−1 .
+
+In particular, the hidden constant does not depend on learnable parameters. 
+
+Figure 3 illustrates this approximate alignment on a 2D synthetic dataset. Even at the low dimension D = 2, the Laplace-kernel mean-shift direction is already well aligned with the score-mismatch direction. In Section 5.1, we further confirm empirically that this alignment improves markedly as D increases. Theorem 5 also helps explain why drifting may behave like score matching in practice. In high dimensions, the two implemented update directions are close as vectors: their difference is small in norm. As a result, if one update is near zero (i.e., the algorithm is close to a stationary point), then the other must also be near zero up to the same tolerance. When the updates are not tiny, the cosine-similarity bound strengthens this into a geometric statement: the two updates point in nearly the same direction, so they tend to move the generator along essentially the same optimization path, differing mainly by a rescaling of the step size. 13 Minimizer Alignment. Finally, we return to population optima in nonparametric form and study how close the minimizers are at the level of the induced densities. To quantify proximity between a model distribution and the data through their kernel-smoothed scores, we use the scale-τ reverse Fisher divergence 
+
+DrF (p∥q) := Ex∼q sp,τ (x) − sq,τ (x) 22.
+
+For a generator f , this becomes 
+
+DrF (p∥qf ) = Ex∼qf sp,τ (x) − sqf ,τ (x) 22,
+
+which directly measures the squared mismatch between the smoothed data score and the smoothed model score under the model law. Under the same high-dimensional regularity conditions as before, any population minimizer of the Laplace drifting objective induces a model distribution whose kernel-smoothed score is close to that of the data, with an error that decays polynomially in D. Although the Laplace mean-shift objective is not explicitly formulated as score matching, its minimizer nevertheless achieves vanishing reverse Fisher discrepancy at rate O D−(1+2 a). We summarize this high-dimensional agreement result below. 
+
+Theorem 6 ((Informal) High-Dimensional Agreement Between Mean-Shift and Score Matching) . Suppose that kτ is a Laplace kernel. Assume that distributions we consider concentrate on a common-radius shell and have controlled inner products and moments. Let 
+
+f ⋆ ∈ arg min  
+
+> f
+
+Ldrift (f ), g⋆ ∈ arg min  
+
+> g
+
+LSM (g).
+
+Then as D is large, 
+
+DrF 
+
+ p∥qf ⋆
+
+ = DrF 
+
+ qg⋆ ∥qf ⋆
+
+ = O
+
+
+
+D−(1+2 a)
+
+.
+
+In particular, the hidden constant in O(·) is independent of D and of the learnable parameters used to parametrize f
+
+and g.
+
+Even though we also derive an analogous minimizer-level alignment in the small-temperature regime, one could in principle establish the same three components there as well: objective-level equivalence, (semi-)gradient alignment, and minimizer agreement. In practice, however, the small-τ analysis requires additional τ -uniform local smoothness and non-degeneracy conditions. These are needed to control Taylor remainders and denominators arising in ratio expansions, but they make the presentation substantially more technical. To keep the main narrative focused and readable, we therefore emphasize the high-dimensional results in this article. 
+
+## 4.4 What About GANs? 
+
+The drifting-model discrepancy field ∆ p,q has an attractive–repulsive structure: it pulls model samples toward regions supported by the data distribution p while pushing them away from regions heavily supported by the model distribution 
+
+q. This is conceptually close to two-sample, kernel-based views of GANs [ 22 ]. The goal of this subsection is to highlight a simple but important distinction. Coulomb GANs [ 20 ] (and, more broadly, MMD-style kernel discrepancies [ 18 , 19 , 20 ]discussed in [ 11 ]) derive update directions by differentiating a global objective that compares p and q through kernel interactions. Drifting models use the same two-sample ingredients, but introduce a local normalization via mean shift that turns the kernel signal into a score-like (log-gradient) update, thereby connecting more naturally to (kernel-smoothed) score matching. 
+
+Coulomb GANs: A Potential Field Induced by A Global Discrepancy. Coulomb GANs begin with the signed density difference p − q and define a kernel potential Φp,q (x) := Ey∼p
+
+k(x, y) − Ey∼q
+
+k(x, y),
+
+which appears in empirical (mini-batch) form as Equation (8) in [ 20 ]. Generator samples are transported along the induced force field (the direction followed by generator particles under the Coulomb-GAN charge convention), given by the gradient of the potential: 
+
+Fp,q (x) := ∇xΦp,q (x) = Ey∼p
+
+∇xk(x, y) − Ey∼q
+
+∇xk(x, y).
+
+14 This matches the electric-field expression in Equation (34) of [ 20 ] up to a sign convention (generator particles are treated as negative charges). For radial kernels, ∇xk(x, y) is colinear with ( y − x), so Fp,q (x) takes the familiar “attract data, repel model” form of a weighted displacement difference. The key point is that this force field is not arbitrary: it is induced by an interaction energy . Coulomb GANs define 
+
+E(p, q ) := 12
+
+Z  p(x) − q(x) Φp,q (x) d x,
+
+and update particles by following the potential gradient Fp,q = ∇xΦp,q . Heuristically, transporting model mass in the direction of Fp,q decreases E. The energy is minimized when p ≡ q. In this sense, the Coulomb-GAN update is driven by a global discrepancy: the learning signal is determined by how p and q interact through the kernel across the whole space. To relate this to the drifting model, it is helpful to isolate the kernel-smoothed profile 
+
+πk(x) := Ey∼π
+
+k(x, y), π ∈ { p, q }.
+
+Intuitively, πk(x) summarizes how much probability mass of π lies near x in the sense of the kernel. Note that πk
+
+is generally not a normalized density; it is a kernel-smoothed mass profile (or “density proxy”) whose overall scale depends on the normalization of k. With this notation, Φp,q (x) = pk(x) − qk(x), Fp,q (x) = ∇xpk(x) − ∇ xqk(x),
+
+so Coulomb GAN transport is driven by gradients of these kernel-smoothed mass profiles. 
+
+Drifting Models: Same Ingredients but Locally Normalized. Drifting uses the same attraction–repulsion ingredients from p and q, but replaces an unnormalized force by a locally normalized mean-shift direction: ∆p,q (x) = η Vp,k (x) − Vq,k (x), Vπ,k (x) = Ey∼π
+
+k(x, y)( y − x)
+
+Ey∼π
+
+k(x, y) (π ∈ { p, q }).
+
+The numerator is a kernel-weighted displacement, while the denominator πk(x) := Ey∼π[k(x, y)] is the local kernel mass. This normalization automatically rescales the step by local neighborhood density, while keeping the same qualitative behavior of “attract p, repel q”. In dense regions πk(x) is large, so the update is tempered; in sparse regions it is amplified, yielding a meaningful pull toward nearby neighbors even when few samples lie in the kernel neighborhood. This is a score-like property: the update follows a direction determined by local geometry rather than a force whose magnitude is proportional to local mass. Score matching is formulated in terms of log-gradients. The kernel-induced score is 
+
+sπ,k (x) := ∇x log πk(x) = ∇xπk(x)
+
+πk(x) .
+
+This makes the contrast explicit. Kernel-based potential methods (e.g., Coulomb-style updates) act on the unnormalized 
+
+gradient ∇xπk(x), which scales with local mass. Drifting, through the mean-shift normalization, naturally aligns with the normalized log-gradient ∇x log πk(x), namely the score of the kernel-smoothed profile. As shown in Section 4, this connection is exact for Gaussian kernels, where the drifting discrepancy reduces to a kernel-smoothed score mismatch. We summarize these points in the following takeaway: 
+
+Mean-shift drifting is more score-like than kernel-discrepancy methods (e.g., Coulomb GANs/MMD), because its normalization by πk(x) turns mass gradients into log-gradients (scores). 
+
+# 5 Empirical Study 
+
+Our theory makes two predictions about mean shift versus score mismatch. At the field level, Gaussian mean shift matches a variance-scaled score mismatch exactly, while Laplace mean shift aligns with a scaled score mismatch in high dimension. At the mechanism level for Laplace, the preconditioner concentrates when D grows, the covariance residual vanishes, and the scaling is set by the kernel-weighted radius (see Theorem 2). We therefore split experiments into two complementary angles. First, in Section 5.1, we probe the discrepancy-field geometry on synthetic data and verify that Laplace mean shift becomes increasingly aligned with an appropriately scaled score-mismatch field as dimension grows, with errors decaying at the rates predicted by theory. Second, in Section 5.2, we move to generation: we train one-step generators with Gaussian and Laplace mean shift under the same pipeline and compare sample quality. Together, these experiments separate mechanism from outcome: the synthetic study directly tests the predicted score-alignment mechanism at the field level, while the trained-model study evaluates whether the Laplace-specific preconditioning and residual terms translate into any measurable difference in end-to-end generation quality. 15 5.1 Examinations with Oracles 
+
+Experimental Setup: Datasets. We empirically test the high-dimensional alignment prediction in our theory: the drifting discrepancy and the score discrepancy should become increasingly aligned as the ambient dimension grows. Concretely, we measure whether ∆p,q (x) ≈ C ∆sp,q (x), and cos ∠ ∆p,q (x), ∆sp,q (x) → 1 as D → ∞ .
+
+All quantities below are estimated nonparametrically from finite samples of p or q with no training involved. We treat p and q as oracle samplers. For each dimension D, we construct two Gaussian mixtures with a fixed number of modes. We then draw reference samples from both p and q, and sample query points x from q as the evaluation locations. Below, we consider two synthetic datasets to disentangle the role of the shell-concentration assumption from other effects. −4 −2 0 2 4       
+
+> −4
+> −2
+> 0
+> 2
+> 4
+> (a) Ring MoG ( Kp=Kq=6)
+> pmodes
+> qmodes
+> −5 05
+> −8
+> −6
+> −4
+> −2
+> 0
+> 2
+> 4
+> 6
+> 8
+> (b) Raw MoG ( Kp=6, Kq=4)
+> pmodes
+> qmodes
+
+Figure 4: Illustration of the 2D syn-thetic datasets. Top row shows Ring MoG; bottom row shows Raw MoG. 
+
+(A) Ring MoG. Both p and q are six-mode mixtures of Gaussians in RD .For each dimension D, we first choose a random two-dimensional plane and place six mode centers equally spaced on a ring of radius R = 3 inside that plane. To draw a sample, we pick one mode uniformly and add isotropic Gaussian noise with standard deviation 0 .40. We define q by rotating the entire ring by a fixed angle of π/ 6 within the same plane and sampling in the same way. The mismatch between p and q is controlled by a fixed angular offset, so the geometric structure of the discrepancy is preserved as D increases. 
+
+(B) Raw MoG. Here p and q are mixtures with different numbers of modes and different radius profiles. We place six mode centers for 
+
+p at radii {1.5, 2.5, 3.0, 4.0, 5.0, 6.0} in random directions, and place four mode centers for q at radii {2.0, 3.5, 4.0, 5.5} in independent random direc-tions. Samples are generated by choosing a mode uniformly within each mixture and adding isotropic Gaussian noise with σ = 0.5. This con-struction produces broad, varying norms and a mismatched mode layout be-tween p and q, serving as a stress test beyond the shell-concentration set-ting. In both datasets, we set the Laplace bandwidth adaptively as τ = ¯τ · ∥ x∥ with ¯τ = 0 .3, where ∥x∥ is the mean norm of the query batch. Since ∥x∥ grows as √R2 + σ2D ∝ √D for large D, this corresponds to a ≈ 12 in the dimension-aware scaling τ = ¯ τ D a used in the theory. 
+
+Experimental Setup: Kernel and Nonparametric Field Estimators. Fix a query point x ∈ RD . For each distribution, we draw a finite i.i.d. reference set of size N (we use N = 3 ,000): 
+
+{y(p) 
+
+> j
+
+}Nj=1 ∼ p, {y(q) 
+
+> j
+
+}Nj=1 ∼ q. 
+
+We use the Laplace kernel kτ (x, y) = exp (−∥ x − y∥2/τ ) as in drifting model, and turn kernel values into normalized attention weights over the reference set. For p, the weights are 
+
+w(p) 
+
+> j
+
+(x) = kτ (x, y(p) 
+
+> j
+
+)
+
+PNℓ=1 kτ (x, y(p) 
+
+> ℓ
+
+) , j = 1 , . . . , N, 
+
+and w(q) 
+
+> j
+
+(x) is defined analogously using {y(q) 
+
+> j
+
+}Nj=1 . Intuitively, w(p) 
+
+> j
+
+(x) assigns larger mass to reference points y(p)
+
+> j
+
+that are closer to x. These weights define two nonparametric fields. The mean-shift drifting field is the weighted displacement from x to the reference set: 
+
+bVp,k (x) = 
+
+> N
+
+X
+
+> j=1
+
+w(p) 
+
+> j
+
+(x) y(p) 
+
+> j
+
+− x, bVq,k (x) = 
+
+> N
+
+X
+
+> j=1
+
+w(q) 
+
+> j
+
+(x) y(q) 
+
+> j
+
+− x.
+
+The kernel-score is the gradient of the log kernel density estimate, which admits the Monte Carlo form 
+
+bsp,k (x) = ∇x log 
+
+ NX
+
+> j=1
+
+kτ (x, y(p) 
+
+> j
+
+)
+
+
+
+= 1
+
+τ
+
+> N
+
+X
+
+> j=1
+
+w(p) 
+
+> j
+
+(x) y(p) 
+
+> j
+
+− x
+
+∥y(p) 
+
+> j
+
+− x∥ ,
+
+16 4 8 16 32 64 128 256 512                                    
+
+> Dimension D
+> 10 −3
+> 10 −2
+> 10 −1
+> 10 0
+> 10 1
+> Absolute Error
+> (a) ‖Δ p,q−CΔsp,q‖2
+> ∝ 1/ D
+> Raw MoG (-0.82)
+> Ring MoG (-1.49)
+> 4816 32 64 128 256 512
+> Dimension D
+> 10 −2
+> 10 −1
+> 10 0
+> Relative Error
+> (b) Relative Error
+> ∝ 1/ D
+> Raw MoG (-0.72)
+> Ring MoG (-1.35)
+> 4816 32 64 128 256 512
+> Dimension D
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> Cosine Similarity
+> (c) cos ∠(Δ p,q, Δ sp,q)
+> Raw MoG
+> Ring MoG
+> 4816 32 64 128 256 512
+> Dimension D
+> 10 −2
+> 10 −1
+> 1 − cos
+> (d) 1 − cos ∠(Δ p,q, Δ sp,q)
+> ∝ 1/ D
+> Raw MoG (-0.71)
+> Ring MoG (-1.07)
+
+Figure 5: Empirical validity of drifting–score alignment as dimension grows. Field alignment between the drifting discrepancy ∆p,q (x) and the score discrepancy ∆ sp,q (x) across increasing dimension D, evaluated on both Ring MoG and Raw MoG. (a) Absolute alignment error Eq ∥∆p,q (x) − Ctheory ∆sp,q (x)∥2, where Ctheory is computed as Equation (12). (b) Scale-free relative error normalized by the field energy Eq ∥∆p,q (x)∥2. (c) Cosine similarity cos ∠(∆ p,q (x), ∆sp,q (x)). (d) Directional misalignment 1 − cos ∠ on a log scale. Across both datasets, alignment improves monotonically with dimension: errors decrease at a rate consistent with the predicted 1 /D decay, and the cosine similarity approaches 1, supporting the high-dimensional alignment predictions in Theorems 4 and 5. 
+
+and bsq,k (x) is defined analogously. Finally, we form the drifting and score discrepancies at x:∆p,q (x) = bVp,k (x) − bVq,k (x), ∆sp,q (x) = bsp,k (x) − bsq,k (x).
+
+All quantities are Monte Carlo estimators: they depend only on the sampled reference sets and kernel evaluations, with no closed-form access to p or q.
+
+Empirical Results of Alignment as D increases. We evaluate three complementary alignment metrics as D
+
+increases; results are shown in Figure 5. Figure 5-(a) reports the absolute alignment error Eq ∥∆p,q (x)−Ctheory ∆sp,q (x)∥2,where Ctheory is computed as in Equation (12). Figure 5-(b) reports the corresponding scale-free relative error, obtained by normalizing with the field energy Eq ∥∆p,q (x)∥2; this controls for changes in the overall magnitude of ∆ p,q across dimensions. For both datasets, the absolute and relative errors decrease as D grows, consistent with the 1 /D decay predicted by Theorem 4. To make the decay explicit, we annotate each curve in (a) and (b) with its log–log regression slope; the measured slopes are close to −1, matching the 1 /D rate. Finally, Figure 5-(c,d) reports the averaged cosine similarity cos ∠(∆ p,q (x), ∆sp,q (x)) and its complement 1 − cos ∠,which isolate directional alignment independent of scaling. In line with Theorem 5, the cosine similarity increases toward 1 as D grows, while 1 − cos ∠ decreases consistently across dimensions. 
+
+Empirical Mechanism Diagnostics: Preconditioner Concentration and Vanishing Residual. Following the notation in Theorem 2, we compute the covariance residuals 
+
+δp(x) := Vp,k (x) −  αp(x) τ  sp,k (x), δq (x) := Vq,k (x) −  αq (x) τ  sq,k (x),
+
+and their gap 
+
+δgap (x) := δp(x) − δq (x).
+
+The high-dimensional mechanism of the Laplace kernel (as captured by our proof) can be summarized by two effects: (i) the preconditioning terms αp(x) and αq (x) concentrate to the same constant scale as D grows, and (ii) the covariance residual δπ(x) vanishes. As a result, the drifting discrepancy is dominated by the score discrepancy: the remaining direction is essentially the score direction. Empirically, Figure 6 supports both predictions. In Figure 6-(a), the averaged preconditioners become indistinguishable, ¯αp
+
+¯αq
+
+→ 1, where ¯αp := Ex∼q
+
+αp(x), ¯αq := Ex∼q
+
+αq (x).
+
+In Figure 6-(b), the residual-gap energy Ex∼q ∥δgap (x)∥2 decays with D, consistent with the theory that the covariance residual vanishes. Together with the concentration of αp(x) and αq (x), this indicates that the Laplace preconditioner becomes nearly constant over x, so the mean-shift field behaves like a globally scaled score field. Here, all reported quantities are computed nonparametrically from finite reference samples from p and q (and query points x ∼ q), using the same Monte Carlo strategies described above. 17 4 8 16 32 64 128 256 512                                  
+
+> Dimension D
+> 1.0
+> 1.5
+> 2.0
+> 2.5 ̄
+> αp/̄ αq
+> (a) ̄ αp/̄ αq→ 1
+> Raw MoG
+> Ring MoG
+> 4816 32 64 128 256 512
+> Dimension D
+> 10 −3
+> 10 −2
+> 10 −1
+> ‖δ‖2
+> (b) Covariance residual δ→ 0
+> ∝ 1/ D
+> Raw MoG: ‖δp‖2(-0.74)
+> Raw MoG: ‖δq‖2(-0.54)
+> Ring MoG: ‖δp‖2(-0.37)
+> Ring MoG: ‖δq‖2(-0.48)
+> 4816 32 64 128 256 512
+> Dimension D
+> 0.6
+> 0.8
+> 1.0
+> C * /Ctheory
+> (c) C*/Ctheory → 1
+> Raw MoG
+> Ring MoG
+
+Figure 6: Empirical diagnostics for the Laplace-kernel mechanism. (a) The kernel-reweighted preconditioners concentrate and become indistinguishable, ¯αp/ ¯αq → 1. (b) The residual-gap energy Ex∼q ∥δgap (x)∥22 decays with D, indicating a vanishing covariance residual. (c) The theory-predicted scale Ctheory = ρτ matches the oracle least-squares scale C∗, with C∗/C theory → 1. All results are consistent with the predictions of Theorems 4 and 5 and support the view that mean-shift drifting follows an approximately score-matching direction. 
+
+Empirical Check: Alignment Between the Predicted Scaling and the Oracle Constant. A central quantity in Theorem 2 is the kernel-weighted mean distance. In our implementation it is estimated from samples as 
+
+αp(x) := X
+
+> j
+
+w(p) 
+
+> j
+
+(x) ∥y(p) 
+
+> j
+
+− x∥, αq (x) := X
+
+> j
+
+w(q) 
+
+> j
+
+(x) ∥y(q) 
+
+> j
+
+− x∥.
+
+In high dimension, these quantities become nearly constant over x, so we form a single empirical scale 
+
+ρ := 12
+
+ ¯αp + ¯ αq
+
+, Ctheory := ρ τ. (12) Intuitively, Ctheory captures the typical (kernel-weighted) distance scale induced by kτ , and is the scalar predicted by the theory when relating the drifting discrepancy to the score discrepancy. To check the predicted scaling quantitatively, we also compute an oracle rescaling constant C∗ by a least-squares fit. Specifically, we choose the scalar C that best matches the drifting discrepancy by the score discrepancy in mean squared error: 
+
+C∗ := arg min  
+
+> C∈R
+
+Ex∼q
+
+h
+
+∆p,q (x) − C ∆sp,q (x) 2i
+
+= Ex∼q
+
+⟨∆p,q (x), ∆sp,q (x)⟩
+
+Ex∼q
+
+∥∆sp,q (x)∥2 .
+
+This comparison separates two questions. The cosine similarity measures directional alignment and does not depend on the overall scale. In contrast, comparing C∗ with Ctheory tests whether the magnitude scaling predicted by the theory is correct. As shown in Figure 6-(c), we observe C∗/C theory → 1 as D increases, which directly supports the constant predicted by Theorem 2. Together, these results show that the preconditioned-score decomposition predicts not only directional alignment, but also a concrete calibration of magnitude, leading to near-parallelism between the drifting mean-shift direction and the score-matching direction. Moreover, although Theorems 4 to 6 rely on concentration-type assumptions in high dimension as sufficient conditions for the theory, the empirical results on Raw MoG still support the same conclusions even when these assumptions are not strictly enforced. This raises an interesting question: are there broader and more realistic settings, or even necessary and sufficient conditions, under which the parallel between the mean-shift direction and the score-mismatch direction continues to hold? 
+
+## 5.2 Examinations with Trained Models 
+
+In Section 5.1, we validated the central geometric prediction of our theory: Laplace mean-shift drifting is approximately aligned with a scaled score-mismatch field, with an alignment gap that decays with dimension at the predicted rate. At the same time, our radial-kernel decomposition shows that non-Gaussian kernels introduce an additional preconditioning effect and a covariance residual, both absent in the Gaussian case. The practical question is therefore whether these Laplace-specific terms matter for generation quality. To test this, we compare one-step generators trained with the same drifting pipeline under two kernels: Gaussian, for which mean shift is exactly aligned with the smoothed score mismatch, and Laplace, the default choice in drifting implementations. Since the training procedure, architecture, and feature map (for CIFAR-10) are all fixed, this comparison isolates the effect of the non-Gaussian preconditioning and residual terms on sample quality. 18 Ring MoG            
+
+> Laplace
+> SWD=0.0740 MMD=3.64e-04
+> Swiss Roll
+> SWD=0.0160 MMD=3.76e-04
+> Checkerboard
+> SWD=0.0206 MMD=2.84e-04
+> Two Moons
+> SWD=0.0192 MMD=2.12e-04
+> Gaussian
+> SWD=0.0717 MMD=2.68e-04 SWD=0.0151 MMD=2.64e-04 SWD=0.0204 MMD=3.04e-04 SWD=0.0861 MMD=5.13e-03
+
+Figure 7: Illustration of 2D generation across different synthetic datasets. We compare the generation quality of drifting models using Laplace and Gaussian kernels, and evaluate them using Sliced Wasserstein Distance (SWD) and MMD. The two kernels achieve nearly identical performance on both metrics across the four datasets. This suggests that, even in low dimension, the preconditioning and covariance-residual terms in Theorem 2 have little practical effect on generation quality. 
+
+2D Synthetic Experiments. We follow the setup in the drifting model’s demo implementation 2 and train a one-step generator on four 2D targets (Ring MoG, Swiss Roll, Checkerboard, Two Moons). The generator is a 4-layer MLP mapping z ∼ N (0, I32 ) to R2, trained with batch size 2048 for both data and model samples. At each step, we form a transported target x + bVp,q (x) using finite-sample mean shift with either a Laplace kernel kτ (x, y) = exp (−∥ x − y∥2/τ )or a Gaussian kernel kσ (x, y) = exp (−∥ x − y∥22/(2 σ2)) (the Gaussian case coincides with a score-mismatch transport direction). We use kernel scales ( τ, σ ) = (0 .30 , 0.30) for Ring MoG and ( τ, σ ) = (0 .05 , 0.05) for the other datasets. We evaluate sample quality by sliced Wasserstein distance (SWD) with 200 random projections and RBF-MMD on 5 , 000 generated and 5 , 000 real samples. Figure 7 reports the generations together with SWD and MMD. Across all four targets, Laplace and Gaussian kernels achieve nearly identical performance, suggesting that, in these low-dimensional settings, the preconditioning and covariance-residual corrections in Theorem 2 have limited impact on sample quality. 
+
+CIFAR-10. We train drifting models on CIFAR-10 with a U-Net backbone, following the public reimplementation [ 21 ]3.Training runs for 50,000 iterations on 4 GPUs with a global batch size of 1,536. To compute kernels in feature space, we use DINOv3 [23] with a ViT-B/16 backbone. Input images are resized to 112 × 112 before encoding. Rather than using the [CLS] token, we extract multi-resolution features from four encoder stages (layers 2, 5, 8, and 11). For each stage, we form 18 vectors consisting of 16 spatial descriptors (via adaptive pooling) plus a global mean and global standard deviation. Concatenating across stages yields 72 feature vectors per image. Figure 8 compares Laplace and Gaussian kernels under the same baseline configuration. The Gaussian-kernel variant (which corresponds to the score-mismatch discrepancy) reaches an FID of 7 .97 after convergence, whereas the Laplace-kernel variant (the default mean-shift drifting discrepancy) converges to an FID of 20 .91. While we did not perform extensive tuning, the Gaussian kernel is already competitive. These observations are consistent with the concurrent work of [ 24 ], who report similar FIDs for Laplace and Gaussian kernels on CelebA-HQ unconditional generation under a matched training budget (Laplace: 14 .71; Gaussian: 16 .56). We expect that additional hyperparameter optimization, as well as searching for stronger pre-trained feature maps, can further improve sample quality. At the same time, the current evidence suggests that the performance gap between Gaussian and Laplace kernels can remain modest. 
+
+> 2
+
+https://lambertae.github.io/projects/drifting/ 
+
+> 3
+
+At the time of writing, there is no official implementation released by the drifting-model authors. Our implementation builds directly on the driftin codebase https://github.com/Infatoshi/driftin 
+
+19 (a) Laplace (b) Gaussian 
+
+Figure 8: Comparison of generation on CIFAR-10. Single-step unconditional generation on CIFAR-10 at 32 × 32 resolution using (a) a Laplace kernel (FID 20.91) and (b) a Gaussian kernel (FID 7.97). Both models are trained from the same random initialization. In this setup, the Gaussian kernel performs better. However, we do not view this gap as necessarily intrinsic to the kernel choice: prior evidence on CelebA-HQ [ 24 ] shows that Laplace and Gaussian kernels can achieve comparable FIDs (Laplace: 14.71; Gaussian: 16.56). Taken together, these results suggest that the additional preconditioning and residual terms introduced by the Laplace kernel need not significantly affect generation quality relative to the Gaussian kernel, although their practical impact may depend on tuning and training configuration. 
+
+Conclusion. Across all four 2D synthetic datasets and CIFAR-10, Laplace- and Gaussian-kernel drifting achieve comparable generation quality under the same training pipeline. Since Gaussian-kernel drifting is exactly aligned with the smoothed score-mismatch field, this kernel swap provides an end-to-end check of whether the Laplace-specific corrections identified by the radial decomposition (preconditioning and covariance residual) accumulate during training in a way that degrades samples. The observed parity in sample quality suggests that, in these settings, these Laplace-specific terms are either small or largely self-canceling over optimization, so the default Laplace drifting behaves similarly to a score-mismatch transport baseline in practice. 
+
+# 6 Additional Related Works 
+
+Generative modeling has long sought a paradigm that supports stable and efficient training together with fast, high-fidelity sampling. Early work focused on generative adversarial networks (GANs) [ 22 ], including kernel-based and MMD-style variants [ 18 , 19 , 20 ]. These methods can learn a one-step pushforward map and generate samples with a single function evaluation, but training is often unstable and difficult. Later, diffusion and score-based models [ 1 , 3, 2, 4, 5]shifted the field because they offer more stable training, strong scalability, and high sample quality. Their main drawback is slow sampling, since generation amounts to solving a differential equation with many function evaluations. To reduce this cost, subsequent work has explored distillation methods [ 25 , 17 , 26 ], such as DMD, which compress a pre-trained diffusion teacher into a few-step student generator, as well as approaches that directly learn the ODE solution map [27, 6, 7]. Several recent methods revisit the design of powerful generative models from different formulations. Idempotent Generative Networks (IGN) [ 28 ] train generators through an idempotence constraint; Equilibrium Matching [ 29 ] learns a time-invariant gradient field compatible with an underlying energy; and drifting models [ 11 ] use a kernel-induced force field to move the model distribution toward the data distribution. Despite these different viewpoints, the connections between them can be close. For instance, drifting can be related to a different parametrization of IGN by setting the discrepancy field ∆ p,q θ := fθ − x as the generator residual in Equation (4). Moreover, concurrent work [ 24 ] relates drifting to a semigroup-consistent decomposition of diffusion ODE solution maps. Our work places drifting more directly within the score-based generative modeling framework: it admits a score-based formulation, while differing in how the score function is realized, and in the Gaussian case it becomes exactly score matching on kernel-smoothed distributions. 20 7 Discussion and Conclusion 
+
+The fixed-point regression template views one-step generator training as learning a distribution-level transport field. For Gaussian kernels, this transport field coincides with the score mismatch of Gaussian-smoothed densities, so the drifting objective reduces exactly to a score-matching-style objective in reverse Fisher form, and closely parallels DMD (single-scale kernel score estimation versus multi-scale teacher scores). For general radial kernels, including Laplace, we show that mean shift admits an exact decomposition into a preconditioned smoothed-score term plus a covariance residual that captures local neighborhood geometry, yielding a unified preconditioned score-based interpretation. For the Laplace kernel used in drifting, we further justify drifting as a reliable proxy for score mismatch by proving two complementary results: in the low-temperature regime, population optima agree up to a polynomially small error in the kernel scale; and in the high-dimensional regime, the drifting field, the implemented stop-gradient updates, and population optima align with discrepancies decaying polynomially in dimension. Empirically, we support these predictions by confirming the predicted decay in D and by showing that Gaussian and Laplace kernels yield generally comparable generation quality. Overall, these results clarify the connection between drifting and score-based generative modeling. These results suggest that drifting can be understood as a kernel-based, nonparametric realization of score-driven one-step generation, and potentially offer a useful perspective for designing fast diffusion-style generators. 21 References 
+
+[1] Jascha Sohl-Dickstein, Eric Weiss, Niru Maheswaranathan, and Surya Ganguli. Deep unsupervised learning using nonequilibrium thermodynamics. In International Conference on Machine Learning , pages 2256–2265. PMLR, 2015. [2] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. Advances in Neural Information Processing Systems , 33:6840–6851, 2020. [3] Yang Song and Stefano Ermon. Generative modeling by estimating gradients of the data distribution. Advances in Neural Information Processing Systems , 32, 2019. [4] Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equations. In International Conference on Learning Representations , 2020. [5] Chieh-Hsin Lai, Yang Song, Dongjun Kim, Yuki Mitsufuji, and Stefano Ermon. The principles of diffusion models. 
+
+arXiv preprint arXiv:2510.21890 , 2025. [6] Yang Song, Prafulla Dhariwal, Mark Chen, and Ilya Sutskever. Consistency models. arXiv preprint arXiv:2303.01469 , 2023. [7] Dongjun Kim, Chieh-Hsin Lai, Wei-Hsiang Liao, Naoki Murata, Yuhta Takida, Toshimitsu Uesaka, Yutong He, Yuki Mitsufuji, and Stefano Ermon. Consistency trajectory models: Learning probability flow ode trajectory of diffusion. In International Conference on Learning Representations , 2024. [8] Zhengyang Geng, Mingyang Deng, Xingjian Bai, J Zico Kolter, and Kaiming He. Mean flows for one-step generative modeling. arXiv preprint arXiv:2505.13447 , 2025. [9] Nicholas M Boffi, Michael S Albergo, and Eric Vanden-Eijnden. Flow map matching. arXiv preprint arXiv:2406.07507 , 2024. [10] Zheyuan Hu, Chieh-Hsin Lai, Yuki Mitsufuji, and Stefano Ermon. Cmt: Mid-training for efficient learning of consistency, mean flow, and flow map models. arXiv preprint arXiv:2509.24526 , 2025. [11] Mingyang Deng, He Li, Tianhong Li, Yilun Du, and Kaiming He. Generative modeling via drifting. arXiv preprint arXiv:2602.04770 , 2026. [12] Dorin Comaniciu and Peter Meer. Mean shift: A robust approach toward feature space analysis. IEEE Transactions on pattern analysis and machine intelligence , 24(5):603–619, 2002. [13] Aapo Hyv¨ arinen and Peter Dayan. Estimation of non-normalized statistical models by score matching. Journal of Machine Learning Research , 6(4), 2005. [14] Pascal Vincent. A connection between score matching and denoising autoencoders. Neural computation , 23(7):1661– 1674, 2011. [15] Siwei Lyu. Interpretation and generalization of score matching. arXiv preprint arXiv:1205.2629 , 2012. [16] Bradley Efron. Tweedie’s formula and selection bias. Journal of the American Statistical Association , 106(496):1602– 1614, 2011. [17] Tianwei Yin, Micha¨ el Gharbi, Richard Zhang, Eli Shechtman, Fr´ edo Durand, William T Freeman, and Taesung Park. One-step diffusion with distribution matching distillation. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 6613–6623. IEEE, 2024. [18] Chun-Liang Li, Wei-Cheng Chang, Yu Cheng, Yiming Yang, and Barnab´ as P´ oczos. Mmd gan: Towards deeper understanding of moment matching network. Advances in neural information processing systems , 30, 2017. [19] Yujia Li, Kevin Swersky, and Richard Zemel. Generative moment matching networks. In Proceedings of the 32nd International Conference on Machine Learning-Volume 37 , pages 1718–1727, 2015. [20] Thomas Unterthiner, Bernhard Nessler, Calvin Seward, G¨ unter Klambauer, Martin Heusel, Hubert Ramsauer, and Sepp Hochreiter. Coulomb gans: Provably optimal nash equilibria via potential fields. In International Conference on Learning Representations , 2018. 22 [21] Elliot. Driftin: Single-step image generation via drift fields, 2026. [22] Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio. Generative adversarial nets. Advances in neural information processing systems , 27, 2014. [23] Oriane Sim´ eoni, Huy V. Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Micha¨ el Ramamonjisoa, Francisco Massa, Daniel Haziza, Luca Wehrstedt, Jianyuan Wang, Timoth´ ee Darcet, Th´ eo Moutakanni, Leonel Sentana, Claire Roberts, Andrea Vedaldi, Jamie Tolan, John Brandt, Camille Couprie, Julien Mairal, Herv´ e J´ egou, Patrick Labatut, and Piotr Bojanowski. Dinov3, 2025. [24] Zhiqi Li and Bo Zhu. A long-short flow-map perspective for drifting models. arXiv preprint arXiv:2602.20463 ,2026. [25] Tim Salimans and Jonathan Ho. Progressive distillation for fast sampling of diffusion models. In International Conference on Learning Representations , 2021. [26] Dongjun Kim, Chieh-Hsin Lai, Wei-Hsiang Liao, Yuhta Takida, Naoki Murata, Toshimitsu Uesaka, Yuki Mitsufuji, and Stefano Ermon. Pagoda: Progressive growing of a one-step generator from a low-resolution diffusion teacher. 
+
+arXiv preprint arXiv:2405.14822 , 2024. [27] Eric Luhman and Troy Luhman. Knowledge distillation in iterative generative models for improved sampling speed. arXiv preprint arXiv:2101.02388 , 2021. [28] Assaf Shocher, Amil V Dravid, Yossi Gandelsman, Inbar Mosseri, Michael Rubinstein, and Alexei A Efros. Idempotent generative network. In The Twelfth International Conference on Learning Representations , 2024. [29] Runqian Wang and Yilun Du. Equilibrium matching: Generative modeling with implicit energy-based models. 
+
+arXiv preprint arXiv:2510.02300 , 2025. 23 Contents 
+
+1 Introduction 12 Preliminaries 33 A Fixed-Point Regression Template 4
+
+3.1 Training Objective of Drifting Model . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 43.2 Mean-Shift and Kernel-Induced Score Function . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5
+
+4 Bridging Drift Models and Score-Based Models 6
+
+4.1 Gaussian Kernel: Mean-Shift as Smoothed Score . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 64.2 General Radial Kernels: Mean-Shift as Preconditioned Score . . . . . . . . . . . . . . . . . . . . . . . 84.3 Laplace Kernel: Mean-Shift as a Proxy of Score Mismatch . . . . . . . . . . . . . . . . . . . . . . . . . 11 4.3.1 Low-Temperature Regime . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11 4.3.2 High-Dimensional Regime . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12 4.4 What About GANs? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14 
+
+5 Empirical Study 15 
+
+5.1 Examinations with Oracles . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 16 5.2 Examinations with Trained Models . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18 
+
+6 Additional Related Works 20 7 Discussion and Conclusion 21 A Proof of the Preconditioning Score Decomposition 24 
+
+A.1 Proof to Theorem 1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 24 A.2 Proof to Theorem 2 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25 
+
+B Proof to Theorem 3 25 
+
+B.1 Setup and Technical Assumptions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25 B.2 Auxiliary Tools and the Main Proof . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 27 
+
+C Proof to Theorem 6 29 
+
+C.1 Proof Roadmap and Technical Assumptions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 29 C.2 Auxiliary Tools and the Main Proof . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30 C.3 Gradient-Level Alignment . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 34 
+
+# Appendix A Proof of the Preconditioning Score Decomposition 
+
+## A.1 Proof to Theorem 1 
+
+Proof to Theorem 1. We first prove the identity that relates the mean-drift and score function. Let kτ be a Gaussian kernel. By definition, 
+
+pτ (x) = ( p ∗ kτ )( x) = Ey∼p
+
+kτ (x, y).
+
+Differentiating under the expectation and using ∇xkτ (x, y) = −(x − y)kτ (x, y)/τ 2 yields 
+
+∇xpτ (x) = 1
+
+τ 2 Ey∼p
+
+kτ (x, y)( y − x).
+
+Dividing by pτ (x) gives 
+
+∇x log pτ (x) = Ey∼p
+
+kτ (x, y)( y − x)
+
+τ 2 Ey∼p
+
+kτ (x, y) = Vp,k τ (x)
+
+τ 2 ,
+
+24 where the last equality uses the definition of Vp,k τ in the mean-shift operator paragraph. The same argument applies to q. Substituting 
+
+Vπ,k τ (x) = τ 2sπ,τ (x) for π ∈ { p, q }.
+
+into ∆ p,q (x) = η(Vp,k τ (x) − Vq,k τ (x)) gives the discrepancy formula defined by the mean-shift. Finally, Equation (7) follows from Equation (4). 
+
+## A.2 Proof to Theorem 2 
+
+Proof to Theorem 2. Fix x and write b := bτ (∥x − y∥2). Under y ∼ πτ (·| x), define 
+
+A(y) := b−1, B(y) := b(y − x).
+
+Then A(y)B(y) = y − x, and by the definition of Vπ,k τ ,
+
+Vπ,k τ (x) = Ey∼πτ (·| x)[A(y)B(y)] .
+
+Applying the covariance identity E[AB ] = E[A]E[B] + Cov( A, B ) under y ∼ πτ (·| x) yields 
+
+Vπ,k τ (x) = απ,τ (x) Ey∼πτ (·| x)[B(y)] + δπ,τ (x).
+
+Finally, Equation (10) is exactly 
+
+Ey∼πτ (·| x)
+
+bτ (∥x − y∥2)( y − x) = τ 2 sπ,k τ (x),
+
+so E[B(y)] = τ 2sπ,k τ (x) and the claim follows. 
+
+# B Proof to Theorem 3 
+
+In this section, we prove the small-temperature result Theorem 3, which establishes a proxy relationship between score matching and the drifting model at their optimal distributions in the small-temperature regime. We state a rigorous version of this relationship below. 
+
+Theorem 5 ′ (Small- ¯τ agreement between mean-shift and score matching) . Assume Assumptions 1 to 3. Fix a ≥ 0
+
+and set τ = τD := ¯ τ D a. Let τ0 be as in Assumption 2. For each τ ∈ (0 , τ 0], let 
+
+f ⋆(τ ) ∈ arg min   
+
+> f∈F
+
+Ldrift (f ).
+
+Then, as ¯τ → 0 (equivalently τ → 0), 
+
+DrF 
+
+ p∥qf ⋆(τ )
+
+ = O(¯ τ 4).
+
+Moreover, by realizability (Assumption 3) there exists gdata ∈ G such that qgdata = p, and hence 
+
+DrF 
+
+ qgdata ∥qf ⋆(τ )
+
+ = DrF 
+
+ p∥qf ⋆(τ )
+
+ = O(¯ τ 4).
+
+The hidden constant in O(·) is independent of ¯τ and of the learnable parameters (but may depend on D, a, η and the uniform envelope moment bound in Assumption 2). 
+
+## B.1 Setup and Technical Assumptions 
+
+Setup and Formulations. We work in the D-dimensional (feature embedding) space and consider distributions induced by generators. Let F, G be classes of measurable maps f , g : Rm → RD , and define the pushforward distributions 
+
+qf := f#N (0, I), qg := g#N (0, I),
+
+on RD . Let p denote the data distribution in the same space. To match the dimension-dependent scaling used in drifting implementations (and to avoid kernel degeneracy in high dimension), we use the bandwidth 
+
+τ = τD := ¯ τ D a, ¯τ > 0, a ≥ 0,
+
+25 so τ grows with D when a > 0 and remains constant when a = 0. Given a kernel kτ (e.g., the Laplace kernel 
+
+kτ (x, y) = exp( −∥ x − y∥2/τ ) as a special case of Equation (9)), recall the mean-shift direction 
+
+Vπ,k τ (x) := Ey∼π
+
+kτ (x, y) ( y − x)
+
+Ey∼π
+
+kτ (x, y) ,
+
+and the kernel-induced score (at scale τ ) sπ,τ (x) := ∇x log πkτ (x) with πkτ (x) = Ey∼π[kτ (x, y)]. We measure how well a generator f matches p by the drifting field 
+
+Vf (x) := Vp,k τ (x) − Vqf ,k τ (x),
+
+and how well it matches the (smoothed) score by the score mismatch 
+
+∆sf (x) := sp,τ (x) − sqf ,τ (x).
+
+The corresponding population objectives are 
+
+Ldrift (f ) := Ex∼qf ∥Vf (x)∥22, LSM (g) := Ex∼qg ∥sp,τ (x) − sqg ,τ (x)∥22.
+
+Finally, the scale-τ Fisher divergence introduced above satisfies 
+
+DrF (p∥qf ) = Ex∼qf ∥sp,τ (x) − sqf ,τ (x)∥22 = Ex∼qf ∥∆sf (x)∥22.
+
+Proof Roadmap. We write Vπ,k τ (x) = Bτ (x)/A τ (x), where 
+
+Aτ (x) := 
+
+Z
+
+> RD
+
+e−∥ x−y∥2/τ π(y) d y, Bτ (x) := 
+
+Z
+
+> RD
+
+e−∥ x−y∥2/τ (y − x) π(y) d y.
+
+After the change of variables y = x + τ z, both Aτ and Bτ become Laplace-weighted local averages of π(x + τ z). We then Taylor expand π(x + τ z) around x and control the far-tail region by the exponential kernel decay, yielding expansions of Aτ , Bτ , and ∇Aτ up to order τ 4. Finally, a ratio expansion gives 
+
+Vπ,k τ (x) = cD τ 2∇ log Aτ (x) + τ 4Rπ,τ (x) = cD τ 2sπ,τ (x) + τ 4Rπ,τ (x),
+
+and the local envelope condition ensures the remainder stays uniformly controlled after dividing by Aτ (x). 
+
+Technical Assumptions. We follow the instance-noise convention: whenever we evaluate drifting or score-matching objectives, we implicitly add a small Gaussian perturbation. This ensures all relevant laws admit smooth, strictly positive densities, avoiding singular pushforwards without changing the practical learning setup. 
+
+Assumption 1 (Instance Noise) . We observe ˜x = x + ξ where ξ ∼ N (0, η 2I) is independent and η > 0 is fixed. Equivalently, for every distribution μ in 
+
+n
+
+p
+
+o
+
+∪
+
+n
+
+qf : f ∈ F 
+
+o
+
+∪
+
+n
+
+qg : g ∈ G 
+
+o
+
+,
+
+we work with its noise-regularized version μ ∗ N (0, η 2I). In particular, each effective p, q f , q g admits a C∞ Lebesgue density that is strictly positive everywhere on RD .
+
+Throughout this subsection, we keep the same notation p, q f , q g for these effective (instance-noised) laws (i.e., we drop the convolution notation). Moreover, we notice that there is a uniform ∥ · ∥ ∞ bound from instance noise. If 
+
+ν = μ ∗ N (0, η 2I) for a probability measure μ, then 
+
+∥ν∥∞ ≤ (2 π η 2)−D/ 2.
+
+Indeed, writing φη (x) = (2 π η 2)−D/ 2 exp( −∥ x∥22/(2 η2)) for the Gaussian density, 
+
+ν(x) = 
+
+Z
+
+φη (x − y) d μ(y) ≤ sup 
+
+> z
+
+φη (z) = φη (0).
+
+As stated above, we write Vπ,k τ (x) = Bτ (x)/A τ (x). A small-τ expansion is local: after y = x + τ z, the kernel weight becomes e−∥ z∥2 , so the main contribution comes from ∥z∥2 = O(1) (equivalently, ∥y − x∥2 = O(τ )). The only subtlety is that our ratio expansions divide by Aτ (x), whose leading term is Aτ (x) ≈ M0τ D π(x) as τ → 0. Thus we must control how small π(x) can be relative to its local neighborhood. We encode this via a local density ratio as stated in the following assumption. 26 Assumption 2 (Uniform Integrable Local Envelope along Drifting Models’ Minimizers) . Assume Assumption 1. For any effective density π define: 
+
+Mπ(x) := 1 + X
+
+> 1≤| α|≤ 4
+
+sup 
+
+> ∥u−x∥2≤1
+
+∂α log π(u) , Rπ(x) := sup 
+
+> ∥u−x∥2≤1
+
+π(u)
+
+π(x) ∈ [1 , ∞),
+
+and the combined local envelope (for an integer K ≥ 1, e.g. K = 4 )
+
+Uπ(x) := (1 + Mπ(x)) K (1 + Rπ(x)) .
+
+Fix τ0 ∈ (0 , 1] . Assume that for every τ ∈ (0 , τ 0] the population minimizer set arg min f ∈F Ldrift (f ) is nonempty. Assume there exists an integer K ≥ 1 (one may take K = 4 ) such that 
+
+sup  
+
+> τ∈(0 ,τ 0]
+
+sup    
+
+> f⋆∈arg min fLdrift (f)
+
+EX∼qf ⋆
+
+h
+
+Up(X)2 + Uqf ⋆ (X)2i
+
+< ∞.
+
+This density-ratio factor is mild but necessary. The denominator of Vπ,k τ (x), 
+
+Aτ (x) = Ey∼π
+
+kτ (x, y),
+
+satisfies Aτ (x) ≍ τ D π(x) as τ → 0 (under the local regularity conditions used in the small-τ expansion). Hence any pointwise expansion of Vπ,k τ (x) = Bτ (x)/A τ (x) must control division by π(x). The local ratio Rπ(x) quantifies how 
+
+π(x) compares to nearby values in B(x, 1), and it avoids imposing any global lower bound or compact support. Only moments under the drifting minimizers are required. 
+
+Assumption 3 (Realizability in each class) . There exist fdata ∈ F and gdata ∈ G such that qfdata = p and qgdata = p.
+
+We measure agreement via the Fisher divergence between kernel-smoothed scores :
+
+DrF (p∥q) := Ex∼q
+
+h
+
+sp,τ (x) − sq,τ (x) 22
+
+i
+
+, sπ,τ (x) := ∇x log πkτ (x), πkτ (x) := Ey∼π[kτ (x, y)] .
+
+## B.2 Auxiliary Tools and the Main Proof 
+
+For the Laplace kernel kτ (x, y) = exp( −∥ x − y∥2/τ ), define 
+
+M0 := 
+
+Z
+
+> RD
+
+e−∥ z∥2 dz, M2 := 
+
+Z
+
+> RD
+
+z21 e−∥ z∥2 dz, cD := M2
+
+M0
+
+∈ (0 , ∞).
+
+Lemma 1 (Small-τ Expansion: Mean Shift Matches Kernel Score up to τ 4). Assume Assumptions 1 and 2. Fix any τ ∈ (0 , τ 0] and any minimizer f ⋆ ∈ arg min f ∈F Ldrift (f ), depending on τ . For π ∈ { p, q f ⋆ }, there exists C < ∞
+
+(depending only on D, η and kernel moments, but not on τ ) such that for all x ∈ RD ,
+
+Vπ,k τ (x) = cD τ 2 sπ,τ (x) + τ 4 Rπ,τ (x), ∥Rπ,τ (x)∥2 ≤ C Uπ(x).
+
+Consequently, 
+
+sup  
+
+> τ∈(0 ,τ 0]
+
+sup   
+
+> f⋆∈arg min Ldrift
+
+EX∼qf ⋆
+
+∥Rπ,τ (X)∥22
+
+ < ∞.
+
+Proof. Fix π and x ∈ RD . Define 
+
+Aτ (x) := 
+
+Z
+
+> RD
+
+e−∥ x−y∥2/τ π(y) d y, Bτ (x) := 
+
+Z
+
+> RD
+
+e−∥ x−y∥2/τ (y − x) π(y) d y.
+
+Then πkτ (x) = Aτ (x) and Vπ,k τ (x) = Bτ (x)/A τ (x). First, we examine the differentiability of Aτ (Laplace kernel). Although kτ (x, y) is not classically C1 at x = y, the map x 7 → kτ (x, y) belongs to W 1,1(RD ) (in x) and admits an L1 weak gradient, given for x̸ = y by 
+
+∇xkτ (x, y) = − 1
+
+τ e−∥ x−y∥2/τ x − y
+
+∥x − y∥2
+
+,
+
+and we set ∇xkτ (y, y) := 0. Hence Aτ = kτ ∗ π ∈ C1 and 
+
+∇Aτ (x) = 
+
+Z
+
+> RD
+
+∇xkτ (x, y) π(y) d y, sπ,τ (x) = ∇ log Aτ (x) = ∇Aτ (x)
+
+Aτ (x) .
+
+Now, we apply the change of variables. Set y = x + τ z to get 
+
+Aτ (x) = τ D
+
+Z
+
+> RD
+
+e−∥ z∥2 π(x + τ z) d z, Bτ (x) = τ D+1 
+
+Z
+
+> RD
+
+e−∥ z∥2 z π(x + τ z) d z.
+
+27 Step 1: Local Taylor Expansion on ∥z∥ ≤ τ −1. If ∥z∥ ≤ τ −1 then x + tτ z ∈ Bx, 1) for all t ∈ [0 , 1]. Taylor’s theorem (order 3 with integral remainder) yields 
+
+π(x + τ z) = π(x) + τ ⟨∇ π(x), z⟩ + τ 2
+
+2 z⊤∇2π(x)z + τ 3
+
+6
+
+X
+
+> i,j,k
+
+∂ijk π(x) zizj zk + τ 4 eR4(x, τ z),
+
+where eR4(x, τ z) is a linear combination of ∂απ(x + tτ z) with |α| = 4 times monomials of degree 4 in z. Using 
+
+∂απ = π · Pα({∂β log π}1≤| β|≤ 4) and the definitions of Mπ, Rπ, we obtain for ∥z∥ ≤ τ −1:
+
+eR4(x, τ z) ≤ C1 π(x) Rπ(x) (1 + Mπ(x)) K ∥z∥42,
+
+for a constant C1 depending only on D.Plugging into Aτ , B τ and using symmetry of e−∥ z∥2 (odd moments vanish) gives 
+
+Aτ (x) = τ D 
+
+M0 π(x) + τ 2
+
+2 M2 ∆π(x)
+
+
+
++ τ D+4 aπ,τ (x),Bτ (x) = τ D+2 
+
+M2 ∇π(x)
+
+
+
++ τ D+4 bπ,τ (x),
+
+where ∆ = PDi=1 ∂ii and 
+
+|aπ,τ (x)| + ∥bπ,τ (x)∥ ≤ C2 π(x) Rπ(x) (1 + Mπ(x)) K , (τ ∈ (0 , τ 0]) .
+
+Step 2: Tail Region ∥z∥ > τ −1. Since R  
+
+> ∥z∥>τ −1
+
+e−∥ z∥2 dz ≲ e−1/τ τ −(D−1) and ∥π∥∞ < ∞ under instance noise, the tail contributions to Aτ , B τ are bounded by e−1/τ times a polynomial in 1 /τ . Hence they are o(τ N ) for every N
+
+and can be absorbed into the τ D+4 remainders by shrinking τ0 if needed. 
+
+Step 3: Expansion for ∇Aτ and a Ratio Identity. By the same decomposition (main region + tail) we obtain 
+
+∇Aτ (x) = τ D 
+
+M0 ∇π(x) + τ 2
+
+2 M2 ∇∆π(x)
+
+
+
++ τ D+4 ˜aπ,τ (x), ∥˜aπ,τ (x)∥ ≤ C3 π(x) Rπ(x) (1 + Mπ(x)) K .
+
+We use the explicit algebraic identity: if A = a0 + τ 2a2 + τ 4a4 with a0 > 0 and B = τ 2(b2 + τ 2b4), then 
+
+BA = τ 2 b2
+
+a0
+
++ τ 4 b4a0 − b2a2
+
+a0 (a0 + τ 2a2 + τ 4a4) .
+
+Applying this to Bτ /A τ and to ∇Aτ /A τ , using a0(x) = M0π(x), b2(x) = M2∇π(x), and cD = M2/M 0, yields 
+
+Bτ (x)
+
+Aτ (x) = cD τ 2 ∇Aτ (x)
+
+Aτ (x) + τ 4 Rπ,τ (x) = cD τ 2 sπ,τ (x) + τ 4 Rπ,τ (x).
+
+Using the bounds on aπ,τ , b π,τ , ˜aπ,τ above together with 
+
+∥∇ π(x)∥ ≤ π(x) sup 
+
+> ∥u−x∥≤ 1
+
+∥∇ log π(u)∥ ≤ π(x) Mπ(x), |∆π(x)| ≤ π(x) C(1 + Mπ(x)) 2,
+
+one checks that all factors of π(x) cancel in the ratio remainder, and thus 
+
+∥Rπ,τ (x)∥ ≤ C (1 + Mπ(x)) K (1 + Rπ(x)) = C Uπ(x),
+
+for a constant C depending only on D, η and kernel moments. This proves the pointwise expansion and bound. Finally, the uniform L2 statement follows immediately from Assumption 2. 
+
+Main Proof to Theorem 5 ′. Fix a ≥ 0 and τ = τD = ¯ τ D a. For each τ ∈ (0 , τ 0], let 
+
+f ⋆(τ ) ∈ arg min   
+
+> f∈F
+
+Ldrift (f ), g⋆(τ ) ∈ arg min  
+
+> g∈G
+
+LSM (g).
+
+We first show that drifting optimality implies equality of mean-shift fields. By Assumption 3, there exists fdata ∈ F 
+
+with qfdata = p. Then Ldrift (fdata ) = 0 for every τ , hence min f Ldrift (f ) = 0 and therefore Ldrift (f ⋆(τ )) = 0. Equivalently, 
+
+Vp,k τ (x) = Vqf ⋆(τ ),k τ (x) for qf ⋆(τ )-a.e. x.
+
+28 We then convert mean-shift equality into a bound on score mismatch. Apply Lemma 1 with π = p and π = qf ⋆(τ ).For qf ⋆(τ )-a.e. x,
+
+cD τ 2 sp,τ (x) + τ 4Rp,τ (x) = cD τ 2 sqf ⋆(τ ),τ (x) + τ 4Rqf ⋆(τ ),τ (x),
+
+hence ∆sf ⋆(τ )(x) = sp,τ (x) − sqf ⋆(τ ),τ (x) = τ 2
+
+cD
+
+
+
+Rqf ⋆(τ ),τ (x) − Rp,τ (x)
+
+
+
+.
+
+Now we square and integrate under qf ⋆(τ ). Let X ∼ qf ⋆(τ ). Using ( a + b)2 ≤ 2a2 + 2 b2,
+
+DrF (p∥qf ⋆(τ )) = E∥∆sf ⋆(τ )(X)∥22
+
+ ≤ 2τ 4
+
+c2
+
+> D
+
+E∥Rqf ⋆(τ ),τ (X)∥22 + ∥Rp,τ (X)∥22
+
+.
+
+By Assumption 2 and Lemma 1, the expectation on the right-hand side is bounded uniformly for τ ∈ (0 , τ 0], hence 
+
+DrF (p∥qf ⋆(τ )) = O(τ 4), τ → 0.
+
+Since D is fixed and τ = ¯ τ D a, we have τ 4 = D4a ¯τ 4, so equivalently 
+
+DrF (p∥qf ⋆(τ )) = O(¯ τ 4), ¯τ → 0,
+
+with a constant independent of ¯ τ .At last, we compare to the score-matching minimizer. By realizability and population identification of score matching (as used elsewhere in your paper), qg⋆(τ ) = p. Therefore 
+
+DrF (qg⋆(τ )∥qf ⋆(τ )) = DrF (p∥qf ⋆(τ )) = O(¯ τ 4).
+
+# C Proof to Theorem 6 
+
+In this section, we prove Theorem 6, which establishes a proxy relationship between score matching and the drifting model at their optimal distributions in the high-dimensional regime. We state a rigorous version of this relationship below. 
+
+Theorem 6 ′ (High-Dimensional Agreement between Mean-Shift and Score Matching) . Assume Assumption 1, As-sumption 3, and Assumption 4–Assumption 7. Fix ¯τ > 0 and a ≥ 0, and set τ = ¯ τ D a. For each D, let 
+
+f ⋆D ∈ arg min   
+
+> f∈F
+
+Ldrift (f ).
+
+Then 
+
+DrF 
+
+ p∥qf ⋆D
+
+ = O
+
+
+
+D−(1+2 a)
+
+.
+
+Moreover, by realizability (Assumption 3) there exists gdata ,D ∈ G such that qgdata ,D = p, and hence 
+
+DrF 
+
+ qgdata ,D ∥qf ⋆D
+
+ = DrF 
+
+ p∥qf ⋆D
+
+ = O
+
+
+
+D−(1+2 a)
+
+.
+
+The hidden constant in O(·) is independent of D and of the learnable parameters. 
+
+## C.1 Proof Roadmap and Technical Assumptions 
+
+Proof Roadmap. The proof has two conceptual pieces. First, under the shell and inner-product moment conditions, independent samples from any two distributions in our model/data family have pairwise distance tightly concentrated around the common scale ρ = √2R0 at rate 1 /√D (Step 1). Second, drifting does not sample neighbors uniformly: it reweights neighbors by the Laplace kernel. With bounded feature norms, this kernel reweighting cannot distort distances too much, so the kernel-reweighted neighbor radius r = ∥y − x∥2 still concentrates around ρ with E(r − ρ)2 = O(1 /D ), uniformly in D and without any restriction on ¯τ (Step 2). These two concentration facts are then plugged into the preconditioned-score decomposition (Step 3), which writes mean shift as a scaled kernel score plus a covariance residual; concentration makes both the preconditioner fluctuation and the residual O(1 /√D) in L2, yielding the field alignment 
+
+Vf (x) ≈ (τ ρ ) ∆ sf (x) with mean-square error O(1 /D ). Finally, at the distribution-level optimum drifting enforces 
+
+Vf ⋆ ≡ 0, so alignment implies Eqf ⋆ ∥∆sf ⋆ ∥22 = O(( τ ρ )−2D−1) = O(D−(1+2 a)); score matching identifies qg⋆ = p, giving the stated Fisher-divergence decay (Step 4). 29 Technical Assumptions. The assumptions below assert that sample norms concentrate around a common scale, and that pairwise inner products between independent samples are small on average. 
+
+Assumption 4 (Shell around a Common Scale R0). There exists σ ≥ 0 independent of D such that for every μ in the above family, if x ∼ μ then 
+
+E ∥x∥22 − R20
+
+2 ≤ σ2R40
+
+D .
+
+Assumption 5 (Mixed Inner-Product Second Moment) . There exists κ ≥ 0 independent of D such that for any μ, ν in the above family, if x ∼ μ and y ∼ ν are independent then 
+
+E⟨x, y⟩2 ≤ κR 40
+
+D .
+
+Assumption 6 (Fourth-Moment Controls) . There exist constants Cnorm ,4, C ip ,4 < ∞ independent of D such that: 1. For every μ in the above family, if x ∼ μ then 
+
+E ∥x∥22 − R20
+
+4 ≤ Cnorm ,4R80
+
+D2 .
+
+2. For any μ, ν in the above family, if x ∼ μ and y ∼ ν are independent then 
+
+E⟨x, y⟩4 ≤ Cip ,4R80
+
+D2 .
+
+Assumption 7 (Bounded (Feature) Norm) . There exists B < ∞ independent of D such that for every μ in the above family, if x ∼ μ then 
+
+∥x∥2 ≤ B almost surely .
+
+Drifting-model pipelines that rely on pretrained feature maps typically enforce explicit norm control, for instance via ℓ2-normalization, LayerNorm followed by clipping, or direct norm clipping. Under such preprocessing, Assumption 7 holds naturally with a known constant B (often B = 1 for ℓ2-normalized embeddings). Thus, this assumption is realistic in practice. 
+
+## C.2 Auxiliary Tools and the Main Proof 
+
+Step 1: Mixed Distances Concentrate. Lemma 2 (Mixed Distance Concentrates in L2 around ρ = √2R0). Assume Assumptions 4 and 5. Draw x ∼ μ and 
+
+y ∼ ν independently (any μ, ν from the family), and set S := ∥x − y∥2. Then 
+
+E(S − ρ)2 ≤ Cdist 
+
+D , Cdist := 3  2σ2 + 4 κR20.
+
+Proof. Write 
+
+S2 = ∥x∥22 + ∥y∥22 − 2⟨x, y⟩, ρ2 = 2 R20.
+
+For b > 0, ( √a − √b)2 ≤ (a − b)2/b , hence (S − ρ)2 ≤ (S2 − ρ2)2
+
+ρ2 .
+
+Now 
+
+S2 − ρ2 = ( ∥x∥22 − R20) + ( ∥y∥22 − R20) − 2⟨x, y⟩.
+
+Using ( a + b + c)2 ≤ 3( a2 + b2 + c2), (S2 − ρ2)2 ≤ 3
+
+
+
+(∥x∥22 − R20)2 + ( ∥y∥22 − R20)2 + 4 ⟨x, y⟩2
+
+.
+
+Taking expectations and applying Assumptions 4 and 5 gives 
+
+E(S2 − ρ2)2 ≤ 3
+
+ σ2R40 
+
+> D
+
++ σ2R40 
+
+> D
+
++ 4 κR 40
+
+> D
+
+
+
+= 3(2 σ2 + 4 κ)R40
+
+D .
+
+Divide by ρ2 = 2 R20 and absorb the factor 1 /2 into the constant. 30 Lemma 3 (Fourth Moment Bound for Mixed Distances) . Assume Assumption 6. Draw x ∼ μ and y ∼ ν independently, set S := ∥x − y∥2 and ρ = √2R0. Then there exists Cdist ,4 independent of D such that 
+
+E(S − ρ)4 ≤ Cdist ,4
+
+D2 .
+
+Proof. Let A := ∥x∥22 −R20, B := ∥y∥22 −R20, W := ⟨x, y⟩. Then S2 −ρ2 = A+B−2W . Using ( a+b+c)4 ≤ 27( a4 +b4 +c4)with c = −2W ,(S2 − ρ2)4 ≤ 27  A4 + B4 + 16 W 4.
+
+Taking expectations and applying Assumption 6 yields 
+
+E(S2 − ρ2)4 ≤ 27 
+
+ Cnorm ,4R80 
+
+> D2
+
++ Cnorm ,4R80 
+
+> D2
+
++ 16 Cip ,4R80
+
+> D2
+
+
+
+= 27(2 Cnorm ,4 + 16 Cip ,4)R80
+
+D2 .
+
+Finally, for b > 0, ( √a − √b)4 ≤ (a − b)4/b 2 with a = S2 and b = ρ2 = 2 R20 gives (S − ρ)4 ≤ (S2 − ρ2)4
+
+ρ4 = (S2 − ρ2)4
+
+4R40
+
+.
+
+Combine the bounds. 
+
+Step 2: Kernel-Reweighting Preserves the O(1 /D ) Scale. In the remainder we specialize to the Laplace kernel 
+
+kτ (x, y) = exp 
+
+
+
+− ∥x − y∥2
+
+τ
+
+
+
+, so that bτ (r) = τr .
+
+Lemma 4 (Kernel-reweighted radii still concentrate (no constraint on ¯τ )) . Assume Assumption 7 and Lemma 2. Fix any μ, ν from the family and draw x ∼ ν. Conditionally on x, draw y from the kernel-reweighted conditional density 
+
+μτ (y|x) := kτ (x, y) μ(y)
+
+Ey′∼μ[kτ (x, y′)] .
+
+Let r := ∥y − x∥2 and ρ = √2R0. Then for every τ > 0,
+
+E(r − ρ)2 ≤ exp 
+
+ 2Bτ
+
+
+
+· Cdist 
+
+D ,
+
+where B is from Assumption 7 and Cdist is from Lemma 2. In particular, if τ = ¯τ D a with a ≥ 0, then τ ≥ ¯τ for all 
+
+D ≥ 1 and hence 
+
+E(r − ρ)2 ≤ exp 
+
+ 2B
+
+¯τ
+
+
+
+· Cdist 
+
+D ,
+
+so the hidden constant is independent of D with no lower bound requirement on ¯τ > 0.Proof. Condition on x. By definition of μτ (·| x), 
+
+E[( r − ρ)2|x] = 
+
+Ey′∼μ
+
+h
+
+(∥y′ − x∥2 − ρ)2e−∥ y′−x∥2/τ x
+
+i
+
+Ey′∼μ
+
+h
+
+e−∥ y′−x∥2/τ x
+
+i .
+
+Since e−u/τ ≤ 1, the numerator is at most E[( ∥y′ − x∥2 − ρ)2|x]. For the denominator, Jensen gives 
+
+E
+
+h
+
+e−∥ y′−x∥2/τ x
+
+i
+
+≥ exp 
+
+
+
+− 1
+
+τ E[∥y′ − x∥2|x]
+
+
+
+.
+
+Therefore 
+
+E[( r − ρ)2|x] ≤ E(∥y′ − x∥2 − ρ)2|x exp 
+
+ 1
+
+τ E[∥y′ − x∥2|x]
+
+
+
+.
+
+Under Assumption 7, ∥x∥2 ≤ B and ∥y′∥2 ≤ B almost surely, so ∥y′ −x∥2 ≤ 2B almost surely and hence E[∥y′ −x∥2|x] ≤
+
+2B. Thus 
+
+E[( r − ρ)2|x] ≤ exp 
+
+ 2Bτ
+
+
+
+E(∥y′ − x∥2 − ρ)2|x.
+
+Taking expectation over x ∼ ν and using independence of x ∼ ν and y′ ∼ μ yields 
+
+E(r − ρ)2 ≤ exp 
+
+ 2Bτ
+
+
+
+E(∥y′ − x∥2 − ρ)2.
+
+Finally, Lemma 2 bounds the right-hand side by exp(2 B/τ ) · Cdist /D .31 Step 3: Field Alignment. For Laplace, ∇x log kτ (x, y) = 1 
+
+> τ
+> y−x
+> ∥y−x∥2
+
+(with the diagonal convention), so the kernel-score identity gives 
+
+sπ,τ (x) = 1
+
+τ Ey∼πτ (·| x)
+
+h y − x
+
+∥y − x∥2
+
+i
+
+=⇒ ∥sπ,τ (x)∥2 ≤ 1
+
+τ .
+
+Lemma 5 (Residual Bound for δπ,τ of Laplace Kernel) . Assume the second moment of r = ∥y − x∥2 under πτ (·| x) is finite. Then 
+
+∥δπ,τ (x)∥2 ≤ 2pVar( r|x).
+
+Proof. For Laplace, bτ (r) = τ /r , so bτ (r)−1 = r/τ and 
+
+bτ (r)( y − x) = τ · u, u := y − x
+
+∥y − x∥2
+
+, ∥u∥2 ≤ 1.
+
+By definition, 
+
+δπ,τ (x) = Cov y∼πτ (·| x)
+
+
+
+r/τ, τ u 
+
+
+
+.
+
+Cauchy–Schwarz for scalar–vector covariance yields 
+
+∥δπ,τ (x)∥2 ≤ pVar( r/τ |x) ·
+
+q
+
+E∥τ u − E[τ u ]∥22.
+
+Since ∥τ u − E[τ u ]∥2 ≤ 2τ , the second factor is at most 2 τ , hence 
+
+∥δπ,τ (x)∥2 ≤ 2τ pVar( r/τ |x) = 2 pVar( r|x).
+
+Now we prove the objective-alignment result in Theorem 4 ′. A rigorous statement is as follows: 
+
+Theorem 4 ′ (Large-D Field Alignment at 1 /D Rate) . Assume Assumptions 4, 5 and 7 and let ρ = √2R0 and 
+
+C := τ ρ = ¯τ ρD a. Then there exists a constant K > 0 independent of D and independent of learnable parameters such that for all sufficiently large D and all f ∈ F ,
+
+Ex∼qf Vf (x) − C ∆sf (x) 22
+
+≤ KD .
+
+Proof. Apply Theorem 2 to π = p and π = qf and subtract: 
+
+Vf = τ 2 αp,τ sp,τ − αqf ,τ sqf ,τ 
+
+ +  δp,τ − δqf ,τ 
+
+.
+
+Add and subtract ( ρ/τ )sp,τ and ( ρ/τ )sqf ,τ :
+
+Vf = C ∆sf + τ 2
+
+(αp,τ − ρ/τ )sp,τ − (αqf ,τ − ρ/τ )sqf ,τ 
+
+
+
++  δp,τ − δqf ,τ 
+
+.
+
+Using ( a + b)2 ≤ 2a2 + 2 b2 repeatedly, it suffices to control for π ∈ { p, q f }:
+
+Ex∼qf τ 2(απ,τ (x) − ρ/τ )sπ,τ (x) 22
+
+and Ex∼qf ∥δπ,τ (x)∥22,
+
+by O(1 /D ) with constants independent of f .
+
+(i) Preconditioner term. For Laplace, bτ (r) = τ /r , so απ,τ (x) = E[r|x]/τ , hence τ α π,τ (x) = E[r|x]. Using 
+
+∥sπ,τ (x)∥2 ≤ 1/τ ,
+
+τ 2(απ,τ − ρ/τ )sπ,τ 2
+
+≤ τ 2 απ,τ − ρτ · 1
+
+τ = τ α π,τ − ρ .
+
+By Jensen,  τ α π,τ (x) − ρ2 =  E[r|x] − ρ2 ≤ E[( r − ρ)2|x].
+
+Averaging over x ∼ qf and applying Lemma 4 yields 
+
+Ex∼qf
+
+ τ α π,τ (x) − ρ2 = O(1 /D ), π ∈ { p, q f }.
+
+(ii) Residual term. By Lemma 5, 
+
+∥δπ,τ (x)∥22 ≤ 4 Var( r|x) ≤ 4 E[( r − ρ)2|x],
+
+since E[( r − ρ)2|x] = Var (r|x) + ( E[r|x] − ρ)2 ≥ Var (r|x). Averaging over x ∼ qf and applying Lemma 4 again gives 
+
+O(1 /D ). Combining the bounds yields E∥Vf − C∆sf ∥22 ≤ K/D for some K depending only on ( σ, κ, R 0, B, ¯τ , a ) (and not on learnable parameters). 32 Corollary 4.1 (Drift Controls Score Mismatch) . Assume Theorem 4 ′. Then for every f ∈ F ,
+
+Ex∼qf ∥∆sf (x)∥22 ≤ 2
+
+C2 Ex∼qf ∥Vf (x)∥22 + 2KC2D , C = τ ρ. 
+
+Proof. From Theorem 4 ′, write Vf = C∆sf + εf with E∥εf ∥22 ≤ K/D . Then 
+
+C2∥∆sf ∥22 = ∥Vf − εf ∥22 ≤ 2∥Vf ∥22 + 2 ∥εf ∥22.
+
+Take expectation over x ∼ qf .
+
+Step 4: Score-Matching Minimizers Imply qg⋆ = p.Lemma 6 (Kernel Score Identity for Laplace Smoothing) . For any probability measure μ on RD , the function μkτ is Lipschitz and hence differentiable Lebesgue-a.e. Moreover, wherever ∇μkτ (x) exists, 
+
+∇μkτ (x) = Ey∼μ
+
+∇xkτ (x, y), sμ,τ (x) = ∇ log μkτ (x).
+
+Proof. For fixed y, define ∇xkτ (x, y) := 1 
+
+> τ
+
+kτ (x, y) u(x, y) for y̸ = x and 0 on the diagonal, where ∥u(x, y)∥2 ≤ 1. Then ∥∇ xkτ (x, y)∥2 ≤ 1/τ , so x 7 → kτ (x, y) is 1 /τ -Lipschitz, and therefore μkτ is 1 /τ -Lipschitz as an expectation. By Rademacher, μkτ is differentiable Lebesgue-a.e. At differentiability points, dominated convergence justifies differentiating under the expectation to obtain ∇μkτ (x) = Ey∼μ[∇xkτ (x, y)]. Dividing by μkτ (x) > 0 yields ∇ log μkτ = sμ,τ at those points. 
+
+Lemma 7 (Injectivity of Laplace Smoothing) . Let kτ (z) = exp (−∥ z∥2/τ ) and let μ, ν be finite Borel measures on RD .If μ ∗ kτ = ν ∗ kτ as functions, then μ = ν as measures. Proof. Take Fourier transforms: 
+
+bμ(ω) ckτ (ω) = bν(ω) ckτ (ω).
+
+For the radial Laplace kernel, ckτ (ω) > 0 for all ω (e.g. ckτ (ω) = cD,τ (1 + τ 2∥ω∥22)−(D+1) /2 with cD,τ > 0), so bμ = bν
+
+and hence μ = ν.
+
+Proposition 2 (SM Identification: LSM (g) = 0 ⇒ qg = p). Assume Assumption 1. If LSM (g) = 0 , i.e. 
+
+Ex∼qg ∥sp,τ (x) − sqg ,τ (x)∥22 = 0 ,
+
+then qg = p as distributions on RD .Proof. LSM (g) = 0 implies sp,τ (x) = sqg ,τ (x) for qg-a.e. x. By Assumption 1, qg has a density strictly positive Lebesgue-a.e., hence the equality holds Lebesgue-a.e. By Lemma 6, wherever both gradients exist, 
+
+∇ log pkτ (x) = ∇ log( qg)kτ (x) for Lebesgue-a.e. x.
+
+Thus ∇h(x) = 0 Lebesgue-a.e. for h(x) := log pkτ (x) − log (qg)kτ (x). Since both smoothed functions are positive and Lipschitz, h is locally Lipschitz. A locally Lipschitz function with zero gradient a.e. is constant, so h(x) ≡ log c and 
+
+pkτ (x) = c (qg)kτ (x) for Lebesgue-a.e. x. By continuity, the equality holds for all x.Integrate both sides over RD and use Fubini/translation invariance: 
+
+Z
+
+> RD
+
+μkτ (x) d x =
+
+ Z
+
+> RD
+
+kτ (z) d z
+
+ Z
+
+> RD
+
+μ(y) d y,
+
+so R pkτ = R (qg)kτ and therefore c = 1. Hence pkτ = ( qg)kτ , and Lemma 7 gives p = qg.
+
+Main Proof to Theorem 6 ′. Let 
+
+f ⋆ ∈ arg min   
+
+> f∈F
+
+Ldrift (f ), g⋆ ∈ arg min  
+
+> g∈G
+
+LSM (g).
+
+Fix a ≥ 0 and use the dimension-aware bandwidth τ = ¯τ D a with ¯τ > 0. By realizability, inf g∈G LSM (g) = 0, hence 
+
+LSM (g⋆) = 0 and Proposition 2 gives qg⋆ = p.33 By realizability, inf f ∈F Ldrift (f ) = 0, hence any minimizer satisfies Ldrift (f ⋆) = 0, i.e. 
+
+Ex∼qf ⋆ ∥Vf ⋆ (x)∥22 = 0 .
+
+Apply Corollary 4.1 to f ⋆:
+
+Ex∼qf ⋆ ∥∆sf ⋆ (x)∥22 ≤ 2KC2D , C = τ ρ = ¯ τ ρD a.
+
+Since ∆ sf ⋆ = sp,τ − sqf ⋆ ,τ , by definition 
+
+DrF (p∥qf ⋆ ) = Ex∼qf ⋆ ∥∆sf ⋆ (x)∥22 ≤ 2K
+
+(ρ¯τ )2 · 1
+
+D1+2 a .
+
+The equivalent statement with qg⋆ follows from qg⋆ = p.
+
+## C.3 Gradient-Level Alignment 
+
+The stop-gradient solver optimizes the drifting loss by treating the transported target sg (x + ∆ p,q θ (x)) as constant for backpropagation. Consequently, the update direction is the semi-gradient 
+
+gdrift (θ) := ∇θ Ldrift (θ) = −2 Eϵ
+
+h
+
+Jfθ (ϵ)⊤ ∆p,q θ
+
+ fθ (ϵ)i
+
+, qθ := ( fθ )#pϵ.
+
+This differs from the full gradient of the population functional θ 7 → Ex∼qθ ∥∆p,q θ (x)∥22, which would additionally differentiate through the dependence of ∆ p,q θ on qθ . Therefore, the appropriate notion of “gradient-level equivalence” for the implemented drifting algorithm is alignment between implemented semi-gradient directions .In the Laplace-kernel setting, our field-alignment results imply that the drifting discrepancy field ∆p,q θ (x) = η Vp,k τ (x) − Vqθ ,k τ (x)
+
+is close to a scaled score-mismatch field. Recall the definition of score sπ,τ (x) := ∇x log πkτ (x), we define the scale-τ
+
+score mismatch ∆sp,q θ (x) := η C  sp,τ (x) − sqθ ,τ (x), C := τ ρ. 
+
+To compare the implemented drifting update to an update driven by score mismatch, we introduce the score-transport projection loss 
+
+LST -proj (θ) := Eϵ
+
+h
+
+fθ (ϵ) − sg  fθ (ϵ) + ∆ sp,q θ (fθ (ϵ))  22
+
+i
+
+, (13) whose semi-gradient is 
+
+gST (θ) := ∇θ LST -proj (θ) = −2 Eϵ
+
+h
+
+Jfθ (ϵ)⊤ ∆sp,q θ
+
+ fθ (ϵ)i
+
+.
+
+We remark that the population score-matching objective is 
+
+LSM (θ) := Ex∼qgθ sp,τ (x) − sqgθ ,τ (x) 22,
+
+and it involves no stop-gradient. The full gradient ∇θ LSM (θ) differentiates through the θ-dependence of the smoothed score sqgθ ,τ and is not, in general, equal to the semi-gradient of LST -proj . The role of LST -proj is purely to provide an algorithm-level comparator that matches the transport–projection structure of the drifting stop-gradient update. First, we state the Jacobian control needed to turn field alignment into gradient alignment: 
+
+Assumption 8 (Uniform Jacobian Second Moment) . There exists J2 < ∞ (uniform in θ and in D for the considered model class) such that 
+
+Eϵ
+
+∥Jfθ (ϵ)∥2op 
+
+ ≤ J2 for all θ.
+
+Next, we first state a rigorous version of Theorem 5 and then prove it. 
+
+Theorem 5 ′ (Large-D Alignment) . Assume the hypotheses of Theorem 4, and additionally assume Assumption 8. Let 
+
+∆p,q θ (x) = η(Vp,k τ (x) − Vqθ ,k τ (x)) and ∆sp,q θ (x) = η C  sp,τ (x) − sqθ ,τ (x) with C = τ ρ . Then there exists D0 ∈ N
+
+such that for all D ≥ D0 and all θ,
+
+gdrift (θ) − gST (θ) 2 ≤ 2 η pJ2
+
+r KD ,
+
+where K is the constant from Theorem 4. 
+
+34 Proof. By definition of the two semi-gradients, 
+
+gdrift (θ) − gST (θ) = −2 Eϵ
+
+h
+
+Jfθ (ϵ)⊤
+
+∆p,q θ (x) − ∆sp,q θ (x)
+
+i 
+
+, x = fθ (ϵ).
+
+Using ∥A⊤v∥2 ≤ ∥ A∥op ∥v∥2 and Cauchy–Schwarz, 
+
+gdrift (θ) − gST (θ) 2
+
+≤ 2
+
+q
+
+Eϵ∥Jfθ (ϵ)∥2op 
+
+q
+
+Eϵ ∆p,q θ (x) − ∆sp,q θ (x) 22.
+
+By Assumption 8, the first factor is at most √J2.For the second factor, ∆p,q θ (x) − ∆sp,q θ (x) = η
+
+
+
+(Vp,k τ (x) − Vqθ ,k τ (x)) − C  sp,τ (x) − sqθ ,τ (x)
+
+.
+
+Applying Theorem 4 (with f = fθ ) yields that for all D ≥ D0,
+
+Ex∼qθ (Vp,k τ (x) − Vqθ ,k τ (x)) − C  sp,τ (x) − sqθ ,τ (x) 22
+
+≤ KD .
+
+Therefore, 
+
+Eϵ ∆p,q θ (x) − ∆sp,q θ (x) 22 = Ex∼qθ ∆p,q θ (x) − ∆sp,q θ (x) 22 ≤ η2 KD ,
+
+and the claim follows. 
+
+Remark 1 (Scope) . Theorem 5 concerns the implemented stop-gradient update directions for drifting, and compares them to a score-transport projection update that uses the score mismatch as the transport field. It does not claim alignment with the full gradient ∇θ LSM (θ) of the score-matching objective, which differentiates through the θ-dependence of 
+
+sqgθ ,τ .
+
+Corollary 5.1 (Cosine Similarity of Update Directions) . Assume the hypotheses of Theorem 5. Fix any γ > 0 and consider parameters θ such that min {∥ gdrift (θ)∥2, ∥gST (θ)∥2} ≥ γ. Then for all D ≥ D0,cos ∠ gdrift (θ), gST (θ) ≥ 1 − 16 η2 J2 Kγ2 D .
+
+In particular, if ∥gST (θ)∥2 is bounded below by a constant γ > 0 independent of D, then the two update directions become asymptotically parallel with cos ∠(gdrift , gST ) ≥ 1 − O (D−1). 
+
+Proof. We may assume ∥gST (θ)∥2 ≥ γ. Let a := gST (θ) and b := gdrift (θ). From Theorem 5, ∥b − a∥2 ≤ δD with 
+
+δD := 2 η√J2
+
+pK/D . Write b = a + e with ∥e∥ ≤ δD , and set t := δD /γ .Let θ := ∠(a, b). The component of e perpendicular to a satisfies ∥P⊥e∥ ≤ ∥ e∥ ≤ δD , and the reverse triangle inequality gives ∥b∥ ≥ ∥ a∥ − ∥ e∥ ≥ γ − δD . Therefore sin θ = ∥P⊥e∥∥b∥ ≤ δD
+
+γ − δD
+
+= t
+
+1 − t .
+
+For all D large enough that t ≤ 1/2 (equivalently δD ≤ γ/ 2, which holds for D ≥ D1 := 16 η2J2K/γ 2), we have θ ≤ π/ 2. For θ ∈ [0 , π/ 2], 1 − cos θ = sin 2 θ
+
+1 + cos θ ≤ sin 2 θ, 
+
+since 1 + cos θ ≥ 1. Combining the two bounds and using (1 − t)2 ≥ 1/4 for t ≤ 1/2, 1 − cos ∠ gdrift (θ), gST (θ) ≤ sin 2 θ ≤ t2
+
+(1 − t)2 ≤ 4t2 = 4δ2
+
+> D
+
+γ2 = 16 η2 J2 Kγ2 D .
+
+35

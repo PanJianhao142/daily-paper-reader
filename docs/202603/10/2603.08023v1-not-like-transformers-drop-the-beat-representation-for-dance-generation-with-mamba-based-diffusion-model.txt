@@ -1,0 +1,529 @@
+Title: Not Like Transformers: Drop the Beat Representation for Dance Generation with Mamba-Based Diffusion Model
+
+URL Source: https://arxiv.org/pdf/2603.08023v1
+
+Published Time: Tue, 10 Mar 2026 01:51:41 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+Not Like Transformers: Drop the Beat Representation for Dance Generation with Mamba-Based Diffusion Model 
+
+Sangjune Park 1 Inhyeok Choi 1 Donghyeon Soon 2 Youngwoo Jeon 1 Kyungdon Joo 1*
+
+> 1
+
+Ulsan National Institute of Science and Technology, South Korea 
+
+> 2
+
+Daegu Gyeongbuk Institute of Science and Technology, South Korea 
+
+{psj9116, inhyeok.choi, youngwoo.jeon, kyungdon }@unist.ac.kr dhsoon@dgist.ac.kr 
+
+Abstract 
+
+Dance is a form of human motion characterized by emo-tional expression and communication, playing a role in var-ious fields such as music, virtual reality, and content cre-ation. Existing methods for dance generation often fail to adequately capture the inherently sequential, rhythmi-cal, and music-synchronized characteristics of dance. In this paper, we propose MambaDance , a new dance gen-eration approach that leverages a Mamba-based diffusion model. Mamba, well-suited to handling long and autore-gressive sequences, is integrated into our two-stage dif-fusion architecture, substituting off-the-shelf Transformer. Additionally, considering the critical role of musical beats in dance choreography, we propose a Gaussian-based beat representation to explicitly guide the decoding of dance se-quences. Experiments on AIST++ and FineDance datasets for each sequence length show that our proposed method effectively generates plausible dance movements while re-flecting essential characteristics, consistently from short to long dances, compared to the previous methods. Addi-tional qualitative results and demo videos are available at 
+
+https://vision3d-lab.github.io/mambadance .
+
+1. Introduction 
+
+Generating expressive and realistic dance movements syn-chronized with music is a long-standing challenge. Dance serves as a medium of embodied communication and artis-tic expression, characterized by its structured, rhythmic na-ture. Traditionally, choreography requires manual effort from experts or frame-by-frame animation, both of which are costly and time-consuming. Recent advances in gen-erative models have enabled the automatic generation of music-driven dance [12, 13, 15, 17, 24, 25, 29] with appli-cations spanning entertainment, content creation, gaming, and virtual reality. These developments offer scalable al-
+
+> *
+
+Corresponding author. Beat Music 
+
+MambaDance 
+
+Figure 1. We propose MambaDance , a Mamba-based two-stage diffusion framework with an informative Gaussian beat represen-tation. The result is coherent, beat-synchronized motion across variable lengths on AIST++ [13] and FineDance [14]. 
+
+ternatives to manual choreography, but also introduce tech-nical challenges in modeling the temporal complexity and rhythmic sensitivity inherent in dance. Transformer-based architectures [12, 13, 15, 17, 24, 25, 29] are widely adopted in current 3D dance generation methods because of their ability to model global temporal dependencies. However, dance sequences require more than a general understanding of context. They demand strong temporal causality and consistent autoregressive structure over extended time horizons. Transformer [30] models fun-damentally lack an inductive bias for sequential progres-sion and often show inefficiency and inconsistency when 
+
+> arXiv:2603.08023v1 [cs.CV] 9 Mar 2026
+
+generating long motion sequences. These limitations make it challenging to produce motion that is both rhythmically aligned and temporally coherent. In addition to architectural limitations, the representa-tion of musical beats plays a critical role in structuring dance motion. For example, in instruction, choreogra-phy is first segmented into beat-length phrases (e.g., 8-counts), and learners practice following those anchors be-fore performing to the full track with music. Many ex-isting methods [13, 15, 17, 24, 25, 29] incorporate simple 1-dimensional beat features within the music feature vec-tor. While such representations provide coarse alignment, they do not explicitly model how beats influence the mo-tion sequence. Beat-It [10] decouple beat cues from au-dio features to strengthen beat-dance alignment while in-troducing a beat-distance estimator with an auxiliary align-ment loss. Nevertheless, this approach encodes beat influ-ence implicitly in network activations, rather than model-ing an explicit temporal prior that shapes motion over time. These two challenges, namely long and autoregressive se-quence modeling and effective beat conditioning, may seem independent, but they are closely related. Inadequate se-quence modeling weakens rhythmic alignment, and insuf-ficient beat representations limit the ability of the model to produce structured and expressive movements. A unified approach is necessary to address both aspects simultane-ously, enabling the generation of dance that is both tem-porally consistent and rhythmically synchronized. As illustrated in Fig. 1, we propose MambaDance , a music-to-dance generation framework built on a Mamba-based, two-stage diffusion architecture. Unlike prior Trans-former or hybrid designs, our model replaces attention en-tirely with state space modules to efficiently capture long and autoregressive dynamics. We follow the overall two-stage paradigm of Lodge [15], but the decoder block in a denoising network of diffusion comprises (i) Single-Modal Mamba that processes motion features and (ii) Cross-Modal Mamba that fuses motion with music, followed by Adap-tive Linear Modulation. To enforce rhythmic structure, we introduce a novel beat representation based on Gaus-sian decay, which provides smooth and interpretable tem-poral priors centered around musical beats. This repre-sentation enables the model to generate motion that fol-lows the underlying rhythmic phrasing of the music. We evaluate on AIST++ [13] and FineDance [14] with dif-ferent sequence lengths to systematically validate superior performance across multiple sequence lengths, demonstrat-ing length-robust synthesis. Experimental results show that 
+
+MambaDance consistently generates dance motions that are more physically plausible and rhythmically aligned than the off-the-shelf methods. In summary, our contributions are as follows: • We propose a novel framework, MambaDance , a fully Mamba-based diffusion model designed for autoregres-sive music-to-dance generation. • We present a Gaussian-based beat representation that ex-plicitly encodes rhythmic structure to guide motion de-coding, considering key properties of music beats. • We conduct comprehensive experiments and ablation studies demonstrating that our approach consistently out-performs previous baselines across fidelity and rhythm alignment metrics. 
+
+2. Related Work 
+
+2.1. Human Motion Generation 
+
+Human motion generation is crucial for realistic anima-tion and interactive systems, drawing interest from vision, graphics, and robotics communities. Earlier methods fo-cused on motion retrieval and interpolation, yielding plau-sible but limited results for simple actions like walking. Recent advances in deep generative models have enabled neural networks to generate more flexible and expressive human motion. GAN-based methods [1] use adversarial training with multi-scale discriminators to enhance realism and model transition dynamics. Task-specific losses fur-ther help capture motion uncertainty. Autoencoder-based approaches compress motion into latent spaces, often us-ing recurrent or transformer models [11, 22] to align mo-tion with language. Recent work improves expressiveness via body-part-aware vector quantization [23, 27]. Diffusion models have emerged as a strong alternative, offering real-ism and controllability. Text-conditioned models [28, 34] treat motion as a denoising process, while latent-space vari-ants [2] improve efficiency and structure. However, efficiently handling long, autoregressive se-quences remains challenging, especially for transformer-based diffusion models due to scalability issues. Recent work such as MotionMamba [35] addresses this with a state-space model (SSM) that uses hierarchical temporal and bidirectional spatial modeling, improving both long-term consistency and generation speed. Nevertheless, effec-tively modeling long sequences and incorporating temporal structure or rhythmic cues remain important challenges to be addressed. 
+
+2.2. Dance Generation 
+
+Early studies on music-driven dance generation regarded the task as an autoregressive modeling problem and adopted conventional machine learning techniques. While these approaches captured basic motion-music alignment, they lacked adaptability to diverse musical inputs and struggled to generate long and varied motion sequences. Transformer-based models, such as FACT [13], have demonstrated strong capabilities in modeling temporal dynamics. In addition, approaches that combine VQ-Librosa 
+
+Binary Beat feature 
+
+Gaussian 
+
+Beat Representation 
+
+Adaptive Linear 
+
+Modulation 
+
+~
+
+C
+
++
+
+Single -Modal 
+
+Mamba 
+
+Cross -Modal 
+
+Mamba 
+
+Adaptive Linear 
+
+Modulation 
+
+Feed -Forward 
+
+Network 
+
+Adaptive Linear 
+
+Modulation 
+
+Dance Decoder 
+
+MLP 
+
+MLP 
+
+Decoder Block 
+
+Decoder Block 
+
+Decoder Block 
+
+> <latexit  sha1_base64="r8W2eYnoFQcqPN4bL6QPXfDdmDA=">AAAB7XicbVBNS8NAEJ3Ur1q/qh69BIvgqSQi1WPRi8cK9gPaUDabTbt2sxt2J0Ip/Q9ePCji1f/jzX/jts1BWx8MPN6bYWZemApu0PO+ncLa+sbmVnG7tLO7t39QPjxqGZVpyppUCaU7ITFMcMmayFGwTqoZSULB2uHodua3n5g2XMkHHKcsSMhA8phTglZq9Wik0PTLFa/qzeGuEj8nFcjR6Je/epGiWcIkUkGM6fpeisGEaORUsGmplxmWEjoiA9a1VJKEmWAyv3bqnlklcmOlbUl05+rviQlJjBknoe1MCA7NsjcT//O6GcbXwYTLNEMm6WJRnAkXlTt73Y24ZhTF2BJCNbe3unRINKFoAyrZEPzll1dJ66Lq16q1+8tK/SaPowgncArn4MMV1OEOGtAECo/wDK/w5ijnxXl3PhatBSefOYY/cD5/ALHpjzo=</latexit>
+> · · ·
+
+<latexit sha1_base64="oObNnTlyjxK8swSvpWpoXQlHR14=">AAAB7HicbVBNT8JAEJ3iF+IX6tFLIzXxRFoOyJHEi0dMLJhAQ7bLFjZst83u1IQ0/AYvHjTGqz/Im//GBXpQ8CWTvLw3k5l5YSq4Rtf9tkpb2zu7e+X9ysHh0fFJ9fSsq5NMUebTRCTqMSSaCS6ZjxwFe0wVI3EoWC+c3i783hNTmifyAWcpC2IyljzilKCRfMdBxxlWa27dXcLeJF5BalCgM6x+DUYJzWImkQqidd9zUwxyopBTweaVQaZZSuiUjFnfUElipoN8eezcvjLKyI4SZUqivVR/T+Qk1noWh6YzJjjR695C/M/rZxi1gpzLNEMm6WpRlAkbE3vxuT3iilEUM0MIVdzcatMJUYSiyadiQvDWX94k3Ubda9ab941au1XEUYYLuIRr8OAG2nAHHfCBAodneIU3S1ov1rv1sWotWcXMOfyB9fkDUBuNrw==</latexit> 
+
+t
+
+C
+
+Music -Beat Mixer 
+
+Mamba Encoder 
+
+<latexit sha1_base64="W+fWw9rvsb4c+BINmuRsNkxwat8=">AAAB7HicbVBNS8NAEJ3Ur1q/qh69LDaCp5IUqR4LXjxWMLXQhrLZbtqlu5uwuxFK6G/w4kERr/4gb/4bt20O2vpg4PHeDDPzopQzbTzv2yltbG5t75R3K3v7B4dH1eOTjk4yRWhAEp6oboQ15UzSwDDDaTdVFIuI08docjv3H5+o0iyRD2aa0lDgkWQxI9hYKXBd4bqDas2rewugdeIXpAYF2oPqV3+YkExQaQjHWvd8LzVhjpVhhNNZpZ9pmmIywSPas1RiQXWYL46doQurDFGcKFvSoIX6eyLHQuupiGynwGasV725+J/Xy0x8E+ZMppmhkiwXxRlHJkHzz9GQKUoMn1qCiWL2VkTGWGFibD4VG4K/+vI66TTqfrPevG/UWldFHGU4g3O4BB+uoQV30IYACDB4hld4c6Tz4rw7H8vWklPMnMIfOJ8/RD2NpA==</latexit> 
+
+m <latexit sha1_base64="wwOd2RbWQAwlsf8NyMXmLLedfZ8=">AAAB6nicbVDLSgNBEOyNrxhfUY9eBoPgKewGiR4DXjxGNA9IljA7mU2GzGOZmRXCkk/w4kERr36RN//GSbIHTSxoKKq66e6KEs6M9f1vr7CxubW9U9wt7e0fHB6Vj0/aRqWa0BZRXOluhA3lTNKWZZbTbqIpFhGnnWhyO/c7T1QbpuSjnSY0FHgkWcwItk56IAMxKFf8qr8AWidBTiqQozkof/WHiqSCSks4NqYX+IkNM6wtI5zOSv3U0ASTCR7RnqMSC2rCbHHqDF04ZYhipV1Jixbq74kMC2OmInKdAtuxWfXm4n9eL7XxTZgxmaSWSrJcFKccWYXmf6Mh05RYPnUEE83crYiMscbEunRKLoRg9eV10q5Vg3q1fn9VadTyOIpwBudwCQFcQwPuoAktIDCCZ3iFN497L96797FsLXj5zCn8gff5A0VkjcI=</latexit> 
+
+cm
+
+Global Diffusion 
+
+Augmentation 
+
+<latexit sha1_base64="laS96ENDyegSeYFvxSwSFHYurXk=">AAAB7XicbVBNS8NAEJ3Ur1q/qh69LBbBU0mKVI8FLx4r2A9oQ9lsNu3aTTbsToRS+h+8eFDEq//Hm//GbZuDtj4YeLw3w8y8IJXCoOt+O4WNza3tneJuaW//4PCofHzSNirTjLeYkkp3A2q4FAlvoUDJu6nmNA4k7wTj27nfeeLaCJU84CTlfkyHiYgEo2ildp+FCs2gXHGr7gJknXg5qUCO5qD81Q8Vy2KeIJPUmJ7npuhPqUbBJJ+V+pnhKWVjOuQ9SxMac+NPF9fOyIVVQhIpbStBslB/T0xpbMwkDmxnTHFkVr25+J/XyzC68aciSTPkCVsuijJJUJH56yQUmjOUE0so08LeStiIasrQBlSyIXirL6+Tdq3q1av1+6tKo5bHUYQzOIdL8OAaGnAHTWgBg0d4hld4c5Tz4rw7H8vWgpPPnMIfOJ8/rRmPKg==</latexit> 
+
+· · · 
+
+<latexit sha1_base64="nrQ7d1KAk3CpPXPxMwA5LjLNmv4=">AAAB6nicbVA9SwNBEJ2LGmP8ilraLAbBKtyliJYBG8sEzQckR9jb20uW7O0du3tCOPITLLSIiK3gf7G0E/+Me0kKTXww8Hhvhpl5XsyZ0rb9ZeU2Nrfy24Wd4u7e/sFh6ei4raJEEtoiEY9k18OKciZoSzPNaTeWFIcepx1vfJ35nXsqFYvEnZ7E1A3xULCAEayNdOsPRoNS2a7Yc6B14ixJuZ5vfn/MHt8bg9Jn349IElKhCcdK9Rw71m6KpWaE02mxnygaYzLGQ9ozVOCQKjednzpF50bxURBJU0Kjufp7IsWhUpPQM50h1iO16mXif14v0cGVmzIRJ5oKslgUJBzpCGV/I59JSjSfGIKJZOZWREZYYqJNOkUTgrP68jppVytOrVJrmjSqsEABTuEMLsCBS6jDDTSgBQSG8AAzeLa49WS9WK+L1py1nDmBP7DefgCqs5HE</latexit> 
+
+dh
+
+<latexit sha1_base64="8/HisIrbRAHTMwkofqM7ooTVz2w=">AAAB6nicbVA9SwNBEJ2LGmP8ilraLAbBKtyliJYBG8sEvSSQHGFvby9Zsrd37O4J4chPsNAiIraC/8XSTvwzbj4KTXww8Hhvhpl5fsKZ0rb9ZeU2Nrfy24Wd4u7e/sFh6ei4peJUEuqSmMey42NFORPU1Uxz2kkkxZHPadsfXc/89j2VisXiTo8T6kV4IFjICNZGug36ql8q2xV7DrROnCUp1/PN74/p43ujX/rsBTFJIyo04ViprmMn2suw1IxwOin2UkUTTEZ4QLuGChxR5WXzUyfo3CgBCmNpSmg0V39PZDhSahz5pjPCeqhWvZn4n9dNdXjlZUwkqaaCLBaFKUc6RrO/UcAkJZqPDcFEMnMrIkMsMdEmnaIJwVl9eZ20qhWnVqk1TRpVWKAAp3AGF+DAJdThBhrgAoEBPMAUni1uPVkv1uuiNWctZ07gD6y3H7tfkc8=</latexit> 
+
+ds <latexit sha1_base64="laS96ENDyegSeYFvxSwSFHYurXk=">AAAB7XicbVBNS8NAEJ3Ur1q/qh69LBbBU0mKVI8FLx4r2A9oQ9lsNu3aTTbsToRS+h+8eFDEq//Hm//GbZuDtj4YeLw3w8y8IJXCoOt+O4WNza3tneJuaW//4PCofHzSNirTjLeYkkp3A2q4FAlvoUDJu6nmNA4k7wTj27nfeeLaCJU84CTlfkyHiYgEo2ildp+FCs2gXHGr7gJknXg5qUCO5qD81Q8Vy2KeIJPUmJ7npuhPqUbBJJ+V+pnhKWVjOuQ9SxMac+NPF9fOyIVVQhIpbStBslB/T0xpbMwkDmxnTHFkVr25+J/XyzC68aciSTPkCVsuijJJUJH56yQUmjOUE0so08LeStiIasrQBlSyIXirL6+Tdq3q1av1+6tKo5bHUYQzOIdL8OAaGnAHTWgBg0d4hld4c5Tz4rw7H8vWgpPPnMIfOJ8/rRmPKg==</latexit> 
+
+· · · 
+
+Key 
+
+Motions 
+
+Hard/Soft Guidance 
+
+Music & Beat Feature Extraction 
+
+Local 
+
+Diffusion 
+
+<latexit sha1_base64="laS96ENDyegSeYFvxSwSFHYurXk=">AAAB7XicbVBNS8NAEJ3Ur1q/qh69LBbBU0mKVI8FLx4r2A9oQ9lsNu3aTTbsToRS+h+8eFDEq//Hm//GbZuDtj4YeLw3w8y8IJXCoOt+O4WNza3tneJuaW//4PCofHzSNirTjLeYkkp3A2q4FAlvoUDJu6nmNA4k7wTj27nfeeLaCJU84CTlfkyHiYgEo2ildp+FCs2gXHGr7gJknXg5qUCO5qD81Q8Vy2KeIJPUmJ7npuhPqUbBJJ+V+pnhKWVjOuQ9SxMac+NPF9fOyIVVQhIpbStBslB/T0xpbMwkDmxnTHFkVr25+J/XyzC68aciSTPkCVsuijJJUJH56yQUmjOUE0so08LeStiIasrQBlSyIXirL6+Tdq3q1av1+6tKo5bHUYQzOIdL8OAaGnAHTWgBg0d4hld4c5Tz4rw7H8vWgpPPnMIfOJ8/rRmPKg==</latexit> 
+
+· · · Local 
+
+Diffusion 
+
+<latexit sha1_base64="laS96ENDyegSeYFvxSwSFHYurXk=">AAAB7XicbVBNS8NAEJ3Ur1q/qh69LBbBU0mKVI8FLx4r2A9oQ9lsNu3aTTbsToRS+h+8eFDEq//Hm//GbZuDtj4YeLw3w8y8IJXCoOt+O4WNza3tneJuaW//4PCofHzSNirTjLeYkkp3A2q4FAlvoUDJu6nmNA4k7wTj27nfeeLaCJU84CTlfkyHiYgEo2ildp+FCs2gXHGr7gJknXg5qUCO5qD81Q8Vy2KeIJPUmJ7npuhPqUbBJJ+V+pnhKWVjOuQ9SxMac+NPF9fOyIVVQhIpbStBslB/T0xpbMwkDmxnTHFkVr25+J/XyzC68aciSTPkCVsuijJJUJH56yQUmjOUE0so08LeStiIasrQBlSyIXirL6+Tdq3q1av1+6tKo5bHUYQzOIdL8OAaGnAHTWgBg0d4hld4c5Tz4rw7H8vWgpPPnMIfOJ8/rRmPKg==</latexit> 
+
+· · · 
+
+<latexit sha1_base64="wwOd2RbWQAwlsf8NyMXmLLedfZ8=">AAAB6nicbVDLSgNBEOyNrxhfUY9eBoPgKewGiR4DXjxGNA9IljA7mU2GzGOZmRXCkk/w4kERr36RN//GSbIHTSxoKKq66e6KEs6M9f1vr7CxubW9U9wt7e0fHB6Vj0/aRqWa0BZRXOluhA3lTNKWZZbTbqIpFhGnnWhyO/c7T1QbpuSjnSY0FHgkWcwItk56IAMxKFf8qr8AWidBTiqQozkof/WHiqSCSks4NqYX+IkNM6wtI5zOSv3U0ASTCR7RnqMSC2rCbHHqDF04ZYhipV1Jixbq74kMC2OmInKdAtuxWfXm4n9eL7XxTZgxmaSWSrJcFKccWYXmf6Mh05RYPnUEE83crYiMscbEunRKLoRg9eV10q5Vg3q1fn9VadTyOIpwBudwCQFcQwPuoAktIDCCZ3iFN497L96797FsLXj5zCn8gff5A0VkjcI=</latexit> 
+
+cm
+
+<latexit sha1_base64="gHMPaI72nbqZh0dG4N2NBOEbgHc=">AAAB6nicbVA9SwNBEJ2LGmP8ilraLAbBKtyliJYBG8sEzQckR9jb2yRL9j7YnRPCkZ9goUVEbAX/i6Wd+GfcfBSa+GDg8d4MM/O8WAqNtv1lZTY2t7LbuZ387t7+wWHh6Lipo0Qx3mCRjFTbo5pLEfIGCpS8HStOA0/ylje6nvmte660iMI7HMfcDeggFH3BKBrp1u9hr1C0S/YcZJ04S1KsZuvfH9PH91qv8Nn1I5YEPEQmqdYdx47RTalCwSSf5LuJ5jFlIzrgHUNDGnDtpvNTJ+TcKD7pR8pUiGSu/p5IaaD1OPBMZ0BxqFe9mfif10mwf+WmIowT5CFbLOonkmBEZn8TXyjOUI4NoUwJcythQ6ooQ5NO3oTgrL68TprlklMpVeomjTIskINTOIMLcOASqnADNWgAgwE8wBSeLWk9WS/W66I1Yy1nTuAPrLcfvOOR0A==</latexit> 
+
+dt <latexit sha1_base64="BNPmL7QbIk5svOMt6If7W/zcgJM=">AAAB6HicbZDLSgMxFIbPeK3jrerSTbAIrspMF9WNWHDjsgV7gXYomTTTxiaZIckIZegTuHGhiFt9CN/Djfg2ppeFtv4Q+Pj/c8g5J0w408bzvp2V1bX1jc3clru9s7u3nz84bOg4VYTWScxj1QqxppxJWjfMcNpKFMUi5LQZDq8nefOeKs1ieWtGCQ0E7ksWMYKNtWqimy94RW8qtAz+HApXH+5l8v7lVrv5z04vJqmg0hCOtW77XmKCDCvDCKdjt5NqmmAyxH3atiixoDrIpoOO0al1eiiKlX3SoKn7uyPDQuuRCG2lwGagF7OJ+V/WTk10EWRMJqmhksw+ilKOTIwmW6MeU5QYPrKAiWJ2VkQGWGFi7G1cewR/ceVlaJSKfrlYrnmFSglmysExnMAZ+HAOFbiBKtSBAIUHeIJn5855dF6c11npijPvOYI/ct5+AB41kBk=</latexit> 
+
+m <latexit sha1_base64="JAdZ5CFB6YswgthgnKSG0oQYxNw=">AAAB6HicbZDLSsNAFIZPvNZ4q7p0EyyCq5J0Ud2IBTcuW7AXaEOZTE/asZNJmJkIJfQJ3LhQxK0+hO/hRnwbp5eFtv4w8PH/5zDnnCDhTGnX/bZWVtfWNzZzW/b2zu7efv7gsKHiVFKs05jHshUQhZwJrGumObYSiSQKODaD4fUkb96jVCwWt3qUoB+RvmAho0QbqxZ08wW36E7lLIM3h8LVh32ZvH/Z1W7+s9OLaRqh0JQTpdqem2g/I1IzynFsd1KFCaFD0se2QUEiVH42HXTsnBqn54SxNE9oZ+r+7shIpNQoCkxlRPRALWYT87+snerwws+YSFKNgs4+ClPu6NiZbO30mESq+cgAoZKZWR06IJJQbW5jmyN4iysvQ6NU9MrFcs0tVEowUw6O4QTOwINzqMANVKEOFBAe4AmerTvr0XqxXmelK9a85wj+yHr7AQ2JkA4=</latexit> 
+
+b
+
+<latexit sha1_base64="BNPmL7QbIk5svOMt6If7W/zcgJM=">AAAB6HicbZDLSgMxFIbPeK3jrerSTbAIrspMF9WNWHDjsgV7gXYomTTTxiaZIckIZegTuHGhiFt9CN/Djfg2ppeFtv4Q+Pj/c8g5J0w408bzvp2V1bX1jc3clru9s7u3nz84bOg4VYTWScxj1QqxppxJWjfMcNpKFMUi5LQZDq8nefOeKs1ieWtGCQ0E7ksWMYKNtWqimy94RW8qtAz+HApXH+5l8v7lVrv5z04vJqmg0hCOtW77XmKCDCvDCKdjt5NqmmAyxH3atiixoDrIpoOO0al1eiiKlX3SoKn7uyPDQuuRCG2lwGagF7OJ+V/WTk10EWRMJqmhksw+ilKOTIwmW6MeU5QYPrKAiWJ2VkQGWGFi7G1cewR/ceVlaJSKfrlYrnmFSglmysExnMAZ+HAOFbiBKtSBAIUHeIJn5855dF6c11npijPvOYI/ct5+AB41kBk=</latexit> 
+
+m <latexit sha1_base64="JAdZ5CFB6YswgthgnKSG0oQYxNw=">AAAB6HicbZDLSsNAFIZPvNZ4q7p0EyyCq5J0Ud2IBTcuW7AXaEOZTE/asZNJmJkIJfQJ3LhQxK0+hO/hRnwbp5eFtv4w8PH/5zDnnCDhTGnX/bZWVtfWNzZzW/b2zu7efv7gsKHiVFKs05jHshUQhZwJrGumObYSiSQKODaD4fUkb96jVCwWt3qUoB+RvmAho0QbqxZ08wW36E7lLIM3h8LVh32ZvH/Z1W7+s9OLaRqh0JQTpdqem2g/I1IzynFsd1KFCaFD0se2QUEiVH42HXTsnBqn54SxNE9oZ+r+7shIpNQoCkxlRPRALWYT87+snerwws+YSFKNgs4+ClPu6NiZbO30mESq+cgAoZKZWR06IJJQbW5jmyN4iysvQ6NU9MrFcs0tVEowUw6O4QTOwINzqMANVKEOFBAe4AmerTvr0XqxXmelK9a85wj+yHr7AQ2JkA4=</latexit> 
+
+b
+
+<latexit sha1_base64="6jYCvLxDYXwsUEhVABN6yiZ6vgc=">AAAB73icbVC7SgNBFL3rM8ZX1NJmMAhWYTdFTGfAxjJCXpAsYXYymwyZfThzVwhLPkELGwtFbO39Ejsb/8POyaPQxAMXDufcy7n3erEUGm3701pZXVvf2MxsZbd3dvf2cweHDR0livE6i2SkWh7VXIqQ11Gg5K1YcRp4kje94eXEb95ypUUU1nAUczeg/VD4glE0UquDIuCalLu5vF2wpyDLxJmT/MV3fP9Ve7+rdnMfnV7EkoCHyCTVuu3YMbopVSiY5ONsJ9E8pmxI+7xtaEhNjJtO9x2TU6P0iB8pUyGSqfp7IqWB1qPAM50BxYFe9Cbif147Qb/spiKME+QhmwX5iSQYkcnxpCcUZyhHhlCmhNmVsAFVlKF5UdY8wVk8eZk0igWnVChd2/lKEWbIwDGcwBk4cA4VuIIq1IGBhAd4gmfrxnq0XqzXWeuKNZ85gj+w3n4AzXqUQA==</latexit> 
+
+→8
+
+<latexit sha1_base64="KRn+BSO+3i9v9+l1ZASSU1LX7qg=">AAAB7nicbZDLSgMxFIbPeK3jrerSTbAIrspMF9WNWHDjsoK9QDuUTCbThmYyIckIZehDuHGhiAs3voHv4UZ8G9PLQlt/CHz8/znknBNKzrTxvG9nZXVtfWOzsOVu7+zu7RcPDps6zRShDZLyVLVDrClngjYMM5y2paI4CTlthcPrSd66p0qzVNyZkaRBgvuCxYxgY61Wd4BNHo17xZJX9qZCy+DPoXT14V7Kty+33it+dqOUZAkVhnCsdcf3pAlyrAwjnI7dbqapxGSI+7RjUeCE6iCfjjtGp9aJUJwq+4RBU/d3R44TrUdJaCsTbAZ6MZuY/2WdzMQXQc6EzAwVZPZRnHFkUjTZHUVMUWL4yAImitlZERlghYmxF3LtEfzFlZehWSn71XL11ivVKjBTAY7hBM7Ah3OowQ3UoQEEhvAAT/DsSOfReXFeZ6UrzrznCP7Ief8B2nGS3Q==</latexit> 
+
+ˆdFigure 2. The overall architecture of MambaDance . We extract music feature m, and a novel beat representation b from the binary mask of beat of the feature (blue box). Two-stage diffusion architecture makes our approach enable length-agnostic generation in a single inference (green box). Decoder of the diffusion consists of the proposed Mamba [3, 6]-based modules, e.g., Single-Modal Mamba (SMM), Cross-Modal Mamba (CMM), and Adaptive Linear Modulation (AdaLM) (gray box). 
+
+VAE with GPT, exemplified by Bailando [24], as well as diffusion-based frameworks including EDGE [29], Lodge [15], and POPDG [17], further enhance the real-ism, diversity, and editability of generated dance motions. However, as these methods are based on Transformer ar-chitectures, they face challenges in modeling dance data, which is typically long and exhibits autoregressive depen-dencies. Recently, several works [32, 33] adopt Mamba structure [3, 6] to well capture the autoregressive nature of dance data. However, most of these studies adopt hybrid ar-chitectures, where Mamba is only partially combined with Transformers. While such designs improve local continu-ity, they still inherit the quadratic complexity and disconti-nuities of attention. 
+
+2.3. State-Space Model for Motion and Dance 
+
+Recent approaches in dance generation have emphasized the importance of long-sequence modeling and synchro-nization with music. Transformer-based models have been widely adopted due to their ability to capture global de-pendencies, but they often struggle with autoregressive consistency and computational efficiency when generating long sequences. State-space models (SSMs) have recently emerged as a promising alternative for sequence modeling. In particular, Mamba [3, 6] has been developed to efficiently model long-range autoregressive dependencies in sequen-tial data such as human motion and dance. By leveraging time-varying parameters, Mamba captures long-term de-pendencies more effectively than Transformers while main-taining linear-time complexity. In addition, its structure in-herently embeds a sequential inductive bias, which facili-tates smooth temporal continuity. Several recent works leverage Mamba structure for hu-man motion and dance generation. MotionMamba [35] utilizes hierarchical SSMs to enhance temporal coherence and spatial motion modeling in human motion genera-tion. AlignYourRhythm [5] integrates a rhythm-aware mod-ule based on Mamba to improve music-motion alignment. MegaDance [33] and MatchDance [32] adopt Mamba-Transformer hybrid architectures, leveraging Mamba for lo-cal dependency modeling and Transformer to capture global context. While these studies successfully exploit the advan-tages of Mamba, they adopt hybrid architectures, partially combining Mamba with Transformers. In contrast, to the best of our knowledge, our work is the first to fully replace Transformer-based modules with Mamba-based modules for dance generation, includ-ing single-modal and cross-modal components. We achieve structured, rhythmically aligned 3D dance generation with temporal consistency and improved computational effi-ciency, while fully leveraging autoregressive inductive bias of Mamba for long-sequence modeling. 
+
+3. Method 
+
+In this work, we propose MambaDance , a two-stage dif-fusion framework that leverages effective long and autore-gressive sequence modeling capacity of Mamba [3, 6] for music-driven 3D dance generation. The model generates plausible and natural dance motion while exploiting the in-ductive bias to model long and autoregressive 3D motion sequences of the state-space model. Considering the role of music beats that structure and anchor movements in chore-ography, we propose a new beat representation that explic-itly enhances beat influence. This representation provides an intuitive control signal and improves rhythmic guidance during dance generation. As illustrated in Fig. 2, MambaDance takes music and beat features extracted both from single raw music, and out-puts 3D dance sequences. To produce a long sequence of dance with a single inference, a global diffusion generates key motions. The key motions are augmented by mirroring and connecting adjacent motions. Then a local diffusion generates detailed movements based on the primitives with hard/soft guidance. The two diffusion models share same dance decoder structure, which consists of two MLPs and 8 decoder blocks. Each decoder block mainly comprises (i) a Single-Modal Mamba (SMM), (ii) a Cross-Modal Mamba (CMM), and (iii) Adaptive Linear Modulation (AdaLM), which is fully designed with Mamba while substituting all attention modules. 
+
+3.1. Mamba for Dance Generation 
+
+Following prior works [15, 29], we represent sliced dance motion as a sequence of SMPL [16, 20] poses d ∈
+
+Rl×Dmotion . Here, l ∈ { N, n } denotes length sliced from total L-length motion or music sequences, where N and n
+
+for global and local diffusion, respectively. Given music feature m ∈ Rl×Dmusic and beat representation b ∈ Rl×1, an MLP-based Music-Beat Mixer and a Mamba encoder pro-duce a beat-highlighted condition cm ∈ Rl×E that injects other modality information during decoding. In a Mamba-based dance decoder, an input MLP lifts a noisy motion sequence dt in timestep t to a latent zd ∈ Rl×E , a stack of decoder blocks processes the latent with conditions, and an output MLP projects back to ˆd ∈ Rl×Dmotion . Each decoder block contains a Single-Modal Mamba (SMM) , a 
+
+Cross-Modal Mamba (CMM) , a lightweight feed-forward network (FFN), and Adaptive Linear Modulation (AdaLM) .Replacing self-attention with SSM and cross-attention with CMM yields linear-time sequence processing and stable long-horizon generation compared with attention-based de-signs [3, 6]. Single-Modal Mamba (SMM) operates solely on mo-tion latents, whereas Cross-Modal Mamba (CMM) fuses motion latents with musical and diffusion timestep tokens (Fig. 3). SMM transforms input noisy motion latent with two Temporal SSM Blocks and a Bidirectional Spatial SSM Block. The Temporal SSM Block, following [3, 6], prop-agates a sequence a ∈ Rl×E along the length axis l. The Spatial SSM Block rearranges a sequence to a′ ∈ RE×l
+
+and propagates along the latent-channel axis E in a bi-directional manner to encourage cross-channel coordina-tion. In contrast, CMM performs cross-modal integration by concatenating the motion latent zd, the musical condi-Conv1D 
+
+SSM 
+
+Linear 
+
+Rearrange 
+
+Conv1D 
+
+SSM (f) 
+
+Linear 
+
+Conv1D 
+
+SSM (b) 
+
+Linear 
+
++
+
+Temporal 
+
+SSM Block 
+
+Bidirectional 
+
+Spatial 
+
+SSM Block 
+
+Single -Modal Mamba (SMM) 
+
+Temporal 
+
+SSM Block 
+
+Time axis 
+
+Cross -Modal Mamba (CMM)  
+
+> <latexit sha1_base64="UioMmw1F57Id7/dxhFFXJbyZYW0=">AAAB83icbVDLSgNBEOyNrxhfUY9eBrOCp7CbQ/QY8OIxgnlAdgmzk9lkyOyDmV4hLPkNLx4U8erPePNvnCR70MSChqKqm+6uIJVCo+N8W6Wt7Z3dvfJ+5eDw6PikenrW1UmmGO+wRCaqH1DNpYh5BwVK3k8Vp1EgeS+Y3i383hNXWiTxI85S7kd0HItQMIpG8mzbQxFxTRq2PazWnLqzBNkkbkFqUKA9rH55o4RlEY+RSar1wHVS9HOqUDDJ5xUv0zylbErHfGBoTM0iP1/ePCdXRhmRMFGmYiRL9fdETiOtZ1FgOiOKE73uLcT/vEGG4a2fizjNkMdstSjMJMGELAIgI6E4QzkzhDIlzK2ETaiiDE1MFROCu/7yJuk26m6z3nxo1FpOEUcZLuASrsGFG2jBPbShAwxSeIZXeLMy68V6tz5WrSWrmDmHP7A+fwD135BJ</latexit>
+
+→2 
+
+> <latexit sha1_base64="BIeSRnEZOm2N7c00sOehOqS000c=">AAAB83icbVDLSgNBEOyNrxhfUY9eBrOCp7CbQ/QY8OIxgnlAdgmzk9lkyOyDmV4hLPkNLx4U8erPePNvnCR70MSChqKqm+6uIJVCo+N8W6Wt7Z3dvfJ+5eDw6PikenrW1UmmGO+wRCaqH1DNpYh5BwVK3k8Vp1EgeS+Y3i383hNXWiTxI85S7kd0HItQMIpG8mzbQxFxTVzbHlZrTt1ZgmwStyA1KNAeVr+8UcKyiMfIJNV64Dop+jlVKJjk84qXaZ5SNqVjPjA0pmaRny9vnpMro4xImChTMZKl+nsip5HWsygwnRHFiV73FuJ/3iDD8NbPRZxmyGO2WhRmkmBCFgGQkVCcoZwZQpkS5lbCJlRRhiamignBXX95k3QbdbdZbz40ai2niKMMF3AJ1+DCDbTgHtrQAQYpPMMrvFmZ9WK9Wx+r1pJVzJzDH1ifP/RZkEg=</latexit>
+
+→1
+
+Figure 3. Single-Modal Mamba (left) and Cross-Modal Mamba (right). For the input sequences to the Cross-Modal Mamba, Light blue, dark blue, and pink blocks correspond to mo-tion, condition, and timestep tokens, respectively. 
+
+tion cm (mixture of music and beat information), and the diffusion timestep tokens et ∈ R2×E as [zd, c m, e t], apply-ing a Temporal SSM over the concatenated sequence, and slicing the motion part of the output. These modules serve as an effective alternative to attention modules, especially for the 3D dance data:long, complex, and time-sequential. We introduce Adaptive Linear Modulation (AdaLM), an alternative to FiLM [21], which is a simple normalization-based modulator that conditions 1D input sequences. Anal-ogous to adaptive normalization techniques [4, 9] in the 2D vision, we apply feature-wise affine modulation to group-normalized latents: 
+
+AdaLM( zd, γ, β ) = (1 + γ) GroupNorm( zd) + β,  (1) where the parameters γ, β ∈ RE are obtained by a lin-ear projection of a mean-pooled conditioning vector cmod ∈
+
+RE , computed from cm and et.
+
+3.2. Beat Representation 
+
+Prior works have identified a strong consistency between musical beats and the dance motion beats [10, 13, 15, 17, 24, 29]. Capturing this rhythmic link is essential for co-herent and expressive generation. In many existing ap-proaches [13, 15, 17, 24, 29], beat information is included in the music features. For instance, Librosa [18] is com-monly used to extract music feature mtotal ∈ RL×Dmusic ,where Dmusic = 35 whose last channel dimension corre-sponds to a binary beat signal braw ∈ RL×1. Beat-It [10] mitigates the sparsity by encoding, for each frame, the tem-poral distance to the nearest beat, but the resulting signals are still monotonic and do not explicitly model the decaying influence of off-beat frames. In practice, beats segment choreography into phrases and anchor high-kinetic movements. Therefore, an effective representation should satisfy two key properties: (i) frames closer to beats carry stronger signals, and (ii) this strength decays rapidly yet smoothly with temporal distance . We propose Gaussian beat representation , an intuitive beat rep-resentation btotal ∈ RL×1 based on Gaussian decay function, that meets both criteria and yields an interpretable, time-localized cue for decoding. We omit the subscription “total” in this subsection for simplicity. (a) 
+
+(b) 
+
+(c)        
+
+> Figure 4. Visualizations of raw beat (a), Nearest Beat Distance (NBD) (b), and our Gaussian beat representation (c). Horizon-tal axis denotes frame indices (time step) of a sequence and vertical axis indicates signal. The signal range of NBD and the proposed representation are [0 ,11] and [0 ,1] , respectively.
+
+As illustrated in Fig. 4, let braw denote the binary beat sequence braw (i) ∈ { 0, 1} at frame i ∈ { 0, . . . , L − 1}.We formulate the Nearest Beat Distance (NBD) in the spirit of Beat-It as the minimum distance from each frame to the closest preceding or following beat frame: 
+
+NBD( i) = min  dist −(i), dist +(i) , (2) where dist −(i) = i − max( j ≤ i|bj = 1) if previous beat exists else +∞, and dist +(i) = min( j ≥ i|bj = 1) −i if fol-lowing beat exists else +∞. Here, j indexes frames in the sequence. Let the beat frames be τ0 < τ 1 < · · · < τ M −1.To cover the full sequence and obtain a local tempo mea-sure, we augment boundaries with τ−1 = 0 and τM =
+
+L − 1, and define the inter-beat interval l(i) = τk+1 − τk
+
+for τk ≤ i ≤ τk+1 . To satisfy the two desiderata, i.e. ,stronger signals near beats and smooth, rapidly decaying influence away from beats, while normalizing across differ-ent tempos, we use Gaussian decay with smoothing factor 
+
+α ∈ (0 , 1) for our beat representation: 
+
+b(i) = exp − NBD( i)2
+
+2 ( α · l(i)) 2
+
+!
+
+. (3) The Gaussian provides a bell-shaped smooth, localized em-phasis around beat frames, and the tempo-adaptive band-width α · l(i) yields consistent guidance under varying beat spacings. The resulting signal is an explicit and inter-pretable rhythmic prior that aligns with the phrasing struc-ture of dance motion. 
+
+3.3. Training and Inference 
+
+Training schemes and losses. Following Lodge [15], we train the global and local diffusion models independently, and use the global key motions (hard cues dh and soft cues 
+
+ds) to guide the local model at inference time only. Di-rectly controlling only a few boundary frames via diffusion inpainting can cause incoherent transitions within each lo-cal window, so we fine-tune the local diffusion by replacing the first and last Lkey /2 frames of the noisy input dt with the corresponding ground-truth frames d0 during training. We basically use a standard reconstruction loss of the diffusion models [8] for the dance decoder fθ of our Mam-baDance , defined as: 
+
+Lsimple = Ed,t 
+
+h
+
+∥d − fθ (dt, t, m, b )∥22
+
+i
+
+. (4) Additional auxiliary losses make training stable and im-prove physical plausibility, containing position loss Lpos ,velocity loss Lvel , acceleration loss Lacc , and contact con-sistency loss on foot Lfoot . Position loss measures the simi-larity of joint positions between ground truth and predicted dance movements: 
+
+Lpos = 1
+
+l
+
+> l
+
+X
+
+> i=1
+
+FK( di)−FK( ˆdi) 22
+
+, (5) where FK( ·) denotes the forward kinematic function that converts joint angles into joint positions. Similarly, the con-tact consistency loss ensures accurate foot-ground contacts: 
+
+Lfoot = 1
+
+l−1
+
+> l−1
+
+X
+
+> i=1
+
+(FK foot ( ˆdi+1 )−FK foot ( ˆdi)) · ˆyi 22
+
+, (6) where FK foot (·) operates the forward kinematic function for foot joints only, and ˆy stands for the predicted binary foot contact label. The velocity loss and acceleration loss assess the similarity of joint velocities and accelerations: 
+
+Lvel = 1
+
+l−1
+
+> l−1
+
+X
+
+> i=1
+
+(di+1 −di) − ( ˆdi+1 − ˆdi) 22
+
+,
+
+Lacc = 1
+
+l−2
+
+> l−2
+
+X
+
+> i=1
+
+(vi+1 −vi) − (ˆ vi+1 −ˆvi) 22 .
+
+(7) Note that the joint acceleration can be calculated with the joint velocity vi = di+1 − di. The total loss is defined as combined all losses with weights: 
+
+Ltotal = Lsimple + λpos Lpos + λvel Lvel 
+
++ λacc Lacc + λfoot Lfoot . (8) Dataset Model Fidelity Beat Diversity Wins ( ↑)
+
+FID k (↓) FID g (↓) PFC (↓) BAS (↑) Div k (→) Div g (→)FineDance GT - - 0.1852 - 10.9924 7.7424 -EDGE 179.01 ±3.10 1234.28 ±236 .95 0.3994 ±0.0177 0.2261 ±0.0013 10.34 ±0.36 31.74 ±2.76 3.5% POPDG 190.23 ±1.18 1479.14 ±6.44 0.3765 ±0.0124 0.2361 ±0.0033 7.22 ±0.14 14.53 ±0.12 5.5% Lodge 84.99 ±2.07 64.57 ±10 .74 0.0585 ±0.014 0.2410 ±0.0063 7.98 ±0.20 7.67 ±0.68 35.0% 
+
+Ours 51.36 ±0.67 43.11 ±10 .54 0.0119 ±0.0008 0.2441 ±0.0044 6.38 ±0.17 6.44 ±0.88 56.0% 
+
+AIST++ GT - - 1.2544 - 9.61 7.78 -EDGE 125.99 ±128 .69 28.72 ±4.29 3.1883 ±0.5318 0.2572 ±0.0112 11.45 ±3.25 4.91 ±0.56 10.5% POPDG 777.32 ±711 .65 60.08 ±5.98 4.8615 ±0.6010 0.2318 ±0.0129 24.08 ±7.40 7.87 ±0.59 9.0% Lodge 67.13 ±2.79 28.93 ±0.47 1.4087 ±0.1296 0.2397 ±0.0158 3.34 ±0.32 3.54 ±0.14 32.0% 
+
+Ours 65.86 ±3.11 26.58 ±1.02 1.0622 ±0.2343 0.2701 ±0.0116 3.57 ±0.37 4.98 ±0.43 48.5% 
+
+Table 1. Quantitative results on the FineDance and AIST++ datasets. GT motion is used as the reference. ↓ indicates lower is better, and → indicates closer to the real motion is better. The best and second-best results are highlighted in bold and underline, respectively. 
+
+To further suppress unnecessary drift in the root, we add a root translation term λtrans Ltrans (Eq. (7) on the root posi-tion) when fine-tuning the local model. 
+
+Parallel inference with two-stage diffusion model. In-spired by two-stage diffusion model for long dance gen-eration [15], we generalize the inference pipeline to han-dle variable lengths. Given total music features mtotal ∈
+
+RL×Dmusic and Gaussian beat representations btotal ∈ RL×1,we partition them into k non-overlapping segments of length N . Recall that the length of the sliced motion and music sequences is l ∈ { N, n }, where N for global diffu-sion and n for local diffusion. Whereas the prior method targets only long sequences with (N, n ) = (1024 , 256) ,our inference supports N ∈ {128 , 256 , 1024 } and n ∈{64 , 256 }, enabling generation at multiple temporal reso-lutions while preserving the coarse-to-fine design. Specifically, in the dance decoder, using full mixture of musical condition cm,g ∈ RN ×E , the global diffusion pre-dicts characteristic key motions mkey that capture high-level choreographic patterns with elevated kinetic energy. The key motions mkey ∈ RLkey ×Dmotion includes hard cues dh (to anchor window boundaries) and soft cues ds (to shape intra-window dynamics). To exploit bilateral symmetry, we mir-ror ds and place ds in a n-length sequence for soft guidance. For sequences spanning multiple segments, we ensure con-tinuity by copying the last Lkey frames of segment i into the first Lkey frames of segment i + 1 before extracting mid-region primitives. Each segment cim,g is further divided into windows 
+
+{cjm,l }N//n j=1 , where cm,l ∈ Rn×E . We inject dh via dif-fusion inpainting at the start and end of each window to fix boundary poses for reliable stitching, and we apply ds as early-step guidance for > (1000 · s) denoising steps, where soft cue guidance scale s controls the strength. Because boundaries are anchored, windows decode independently and can be generated in parallel, and the resulting clips are concatenated to form the total dance sequence. 
+
+4. Experiments 
+
+4.1. Experiment Design 
+
+We evaluate MambaDance on AIST++ [13] and FineDance [14]. AIST++ consists of 1,408 high-quality short 3D dance sequences, performed by professional dancers across 10 genres. We use a sliced motion param-eterization of Dmotion = 151 following EDGE [29] and train with sequence length N = 128 . FineDance provides long-form dance sequences collected from online videos, covering diverse dance styles and music durations, span-ning 16 genres. We use 139-dimensional representation with sequence length N = 1024 as in Lodge [15]. These datasets jointly cover complementary regimes–short and long clips at 30 FPS–allowing us to assess robustness across temporal resolutions and data distribution. We compare against recent Transformer-based diffusion approaches for music-conditioned 3D dance generation:our method with the following baselines, which show recent ad-vances by leveraging Transformer-based diffusion architec-tures in music-conditioned 3D dance generation. • EDGE [29]: The first approach to use Transformer-based diffusion model for 3D dance generation with rich music representation from Jukebox. • POPDG [17]: A follow-up method utilizing an improved diffusion model (iDDPM [19]) based on additional align-ment module and space augmentation algorithm. • Lodge [15]: An EDGE-based two-stage diffusion frame-work with foot refine block and a multi genre discrimina-tor, focusing on long-term dance generation. Model Fidelity Beat Diversity 
+
+FID k (↓) FID g (↓) PFC (↓) BAS (↑) Div k (→) Div g (→)GT - - 0.1852 - 10.9924 7.7424 Lodge 84.99 ±2.07 64.57 ±10 .74 0.0585 ±0.014 0.2410 ±0.0063 7.98 ±0.20 7.67 ±0.68 
+
+Mamba-only 60.94 ±2.01 43.46 ±7.29 0.0180 ±0.0017 0.2402 ±0.0044 6.48 ±0.40 7.21 ±0.79 
+
+Mamba+NBD 83.55 ±1.35 38.43 ±0.71 0.0687 ±0.0046 0.2478 ±0.0054 5.3958 ±0.17 5.78 ±0.30 
+
+Ours 51.36 ±0.67 43.11 ±10 .54 0.0119 ±0.0008 0.2441 ±0.0044 6.38 ±0.17 6.44 ±0.88 
+
+Table 2. Ablation on Mamba and beat representation (FineDance). In contrast to the Transformer-based Lodge [15], “Mamba-only” denotes a fully Mamba-based model without an explicit beat prior. “Mamba+NBD” uses Nearest Beat Distance [10] as a beat representa-tion. 
+
+4.2. Evaluation Metrics 
+
+We evaluate generated dances using standard metrics fol-lowing EDGE and Lodge. To measure motion realism, we report Fr´ echet Inception Distance, computed over kinematic (FID k) and geometric ( FID g ) variants. Physical plausi-bility is assessed using the Physical Foot Contact score (PFC ). The Beat Alignment Score ( BAS ) measures how well the generated motion beats–moments where motion energy peaks (e.g., local maxima of joint speed or kinetic energy)–align with the music beats. Motion diversity is quantified by the Diversity metric, which computes the av-erage pairwise distance over kinematic ( Div k) and geomet-ric ( Div g ) features. Since the metrics do not exactly reflect human perception, we conduct user studies and report the win rate ( Wins ) of ours over the baselines. Unlike prior works [15, 17, 29], we calculate all metrics on full-length sequences rather than sliced with length N ,better reflecting global temporal coherence, aligned with the goal of generating complete dances for an entire music. In addition, we report mean and standard deviation across 10 independent runs to indicate statistical reliability. Further details regarding the evaluation metrics and the user study protocol are provided in the supplementary material. 
+
+4.3. Comparisons 
+
+We evaluate MambaDance with recent Transformer-based diffusion models, EDGE, POPDG, and Lodge, on AIST++ and FineDance. The global/local lengths are (N, n ) =(128 , 64) for AIST++ and (1024 , 256) for FineDance. Across both datasets, our method achieves the best scores on motion fidelity and beat alignment ( FID k, FID g ,
+
+PFC , BAS ) (Table 1). On FineDance, our model reduces 
+
+FID k to 51.36 (vs. 84.99 for Lodge) and FID g to 43.11 (vs. 64.57), and lowers PFC to 0.0119 (vs. 0.0585), indicat-ing more realistic dynamics and substantially more stable foot-ground interaction. BAS increases slightly to 0.2441 (vs. 0.2410 for Lodge), reflecting a consistent and notice-able gain in rhythm-motion alignment. On AIST++, Mam-baDance attains 65.86 FID k (vs. 67.13 for Lodge), 26.58 POPDG  EDGE Lodge Ours 
+
+AIST++ 
+
+> Ours  POPDG Lodge  EDGE
+
+FineDance 
+
+Figure 5. Qualitative comparison on the FineDance (top) and AIST++ (bottom) dataset. Each row shows a set of sampled frames captured at consistent intervals from the full sequence. 
+
+FID g (vs. 28.72 for EDGE), 1.0622 PFC (vs. 1.4087 for Lodge), and the highest BAS at 0.2701 (vs. 0.2572 for EDGE). Notably, our standard deviations are small across metrics, suggesting stable behavior over runs, whereas Ablations Metrics 
+
+AdaLM CMM FID k (↓) PFC (↓) BAS (↑) Div k (→) Div g (→)GT - - 0.1852 10.99 7.74 
+
+✗ ✗ 61.28 ±1.72 0.6316 ±0.0066 0.2465 ±0.0044 8.59 ±0.16 5.77 ±0.41 
+
+✗ ✓ 62.93 ±1.80 0.7878 ±0.0070 0.2479 ±0.0057 9.93 ±0.18 6.11 ±0.60 
+
+✓ ✓ 51.36 ±0.67 0.0119 ±0.0008 0.2441 ±0.0044 6.38 ±0.17 6.44 ±0.88    
+
+> Table 3. Ablation study on different decoder structures. The last row corresponds to our MambaDance .
+
+some baselines show very large variance, e.g., FID k on AIST++ and FID g on FineDance for EDGE and POPDG. In terms of the diversity, Div g 7.67 of Lodge is clos-est to GT (7.74), with ours second (6.44) on FineDance. On AIST++, Div g 7.87 of POPDG is closest to GT (7.78), and ours is second (4.98). EDGE and POPDG often reports the highest diversity, but these cases coincide with elevated 
+
+FID /PFC , indicating that some of the extra variability stem from artifacts such as foot sliding. Overall, our method fa-vors physical plausibility and beat alignment, with diversity values that are competitive but somewhat conservative rela-tive to GT. Results support two conclusions: (i) replacing attention with state-space decoding improves autoregressive motion fidelity and physical plausibility according to the large im-provements in PFC ; and (ii) an explicit beat prior yields consistently large BAS gains. The diversity is balanced rather than maximized, trading off against fidelity and physics. Furthermore, as reflected in the Wins metric from our user study, dance sequences generated by our model are consistently preferred by human evaluators over those from baseline methods. Notably, our approach maintains stable performance across both short and long sequences, whereas EDGE and POPDG tend to degrade in quality when gener-ating longer videos. As described in Fig. 5, although diversity metrics may suggest reduced variation, the qualitative results reveal dy-namic and rhythm-aligned movements. EDGE and POPDG frequently exhibit artifacts such as foot-sliding that coincide with elevated FID and Div metrics and unnaturally star-ing at one side, as visible in the supplementary videos. We strongly encourage watching the supplementary videos for complete and detailed comparisons. 
+
+4.4. Ablation Studies 
+
+We analyze the effects of the proposed beat representation and model architecture on the FineDance dataset. We use three variants on FineDance [14]: (i) Lodge [15], a Transformer-based two-stage diffusion model, (ii) “Mamba-only” which fully replaces Transformer [30] to Mamba [3, 6] without any beat representation, and (iii) “Mamba+NBD” which uses Nearest Beat Distance [10] in place of the Gaussian beat representation with our Music-Beat Mixer. Compared to Lodge, “Mamba-only” markedly improves motion fidelity and physics (lower FID k, FID g ,
+
+PFC ) with only a minor change in BAS , indicating that state-space model makes a dance decoder generate more re-alistic dynamics and more stable foot-ground interaction. Introducing the NBD prior yields the highest BAS and the lowest FID g , but it degrades not only kinematic realism and stability a lot (e.g., even higher PFC than Lodge) but also the diversity (farther Div k and Div g from GT). Our Gaus-sian beat representation strikes a balance: BAS remains high (second-best and close to NBD), while FID k and PFC 
+
+improve to the best values and diversity increases. Taken together, these results suggest that Mamba is the primary driver of fidelity gains, and our Gaussian beat prior pre-serves rhythm alignment without sacrificing naturalness. We ablate the Cross-Modal Mamba (CMM) which is our replacement of cross-attention and Adaptive Linear Mod-ulation (AdaLM) which is our group normalization based linear modulation. When a model is designed with CMM instead of cross-attention module, BAS and diversity raise (more varied motion and tighter audio-motion coupling). Adding AdaLM on top of CMM recovers stability and yields the best overall fidelity and plausibility, with BAS remaining comparable and diversity decreasing modestly. This pattern indicates that CMM supplies effective music-motion fusion, while AdaLM regularizes the fused states, acting as a lightweight stabilizer for contact and dynamics. 
+
+5. Conclusion 
+
+In this paper, we have proposed MambaDance , a novel ap-proach for music-to-3D dance generation, fully substitut-ing Mamba for Transformer. Furthermore, we introduce an informative beat representation based on Gaussian de-cay, considering the important nature of musical beats. Ex-perimental results on two datasets with different sequence lengths demonstrate the robustness and superiority of our approach over baselines. Although there is potential for advancements in applications, our work focuses on gener-ating human motion conditioned on music, not addressing the downstream stages of the production pipeline, such as rendering. A natural extension can be an end-to-end system that maps music to a dancing 3D avatar, including a render-ing stack for camera, materials, and lighting. 
+
+Acknowledgements 
+
+This work was supported by Institute of Information & communications Technology Planning & Evaluation (IITP) grant funded by the Korea government (MSIT) (No.RS-2020-II201336, Artificial Intelligence Graduate School Program (UNIST); No.RS-2022-II220612, Geometric and Physical Commonsense Reasoning based Behavior Intel-ligence for Embodied AI; No.RS-2025-25442149, LG AI STAR Talent Development Program for Leading Large-Scale Generative AI Models in the Physical AI Do-main; No.RS-2025-25442824, AI Star Fellowship Program (UNIST)), and by the InnoCORE program of the Ministry of Science and ICT (25-InnoCORE-01). Not Like Transformers: Drop the Beat Representation for Dance Generation with Mamba-Based Diffusion Model 
+
+Supplementary Material 
+
+6. Preliminaries 
+
+Selective State Space Model. State Space Models (SSMs), particularly Structured State Space Models (S4 [7]) and Mamba [3, 6], have shown superior capabilities of mod-eling long-range dependencies of sequential data. These models map an input sequence xt ∈ RT to an transited out-put sequence yt ∈ RT through a hidden state ht ∈ RN .SSM can be discretized with step size ∆ as follows: 
+
+ht = Ah t−1 + Bx t
+
+yt = C⊤ht, (9) where A ∈ RN ×N , B ∈ RN ×1, and C ∈ RN ×1 are state matrix, input matrix, and output matrix, defined by state dimension N , respectively. This system can be expressed using a global convolution with a structured convolutional kernel ¯K (note that x denotes general sequential input here): 
+
+¯K = ( C⊤ ¯B, C ⊤ ¯A ¯B, . . . , C ¯AL−1 ¯B)
+
+y = x ∗ ¯K.  (10) To deviate from linear time-invariance (LTI), Mamba1 [6] introduces selective scanning with time-varying parameters, overcoming computational challenges with associative scans. Mamba2 [3] further enhances the efficiency by conceptually connecting SSM and attention mechanism, enabling faster computations while maintain-ing competitive performance against Transformers [30]. 
+
+Diffusion Model. We adopt DDPM [8] formulation, de-fined by a forward noising process of latents {zt}Tt=1 :
+
+q(zt|x) ∼ N (√¯αtx, (1 − ¯αt)I), (11) where x ∼ p(x), and ¯αt ∈ (0 , 1) are constants which fol-low a monotonically decreasing schedule. Given musical condition cm from music feature m and beat representation 
+
+b, the diffusion model reverses the forward diffusion pro-cess to estimate ˆxθ (zt, t, m, b ) ≈ x for all timestep t, where 
+
+θ denotes the model parameters. We adopt a standard reconstruction loss of the diffusion models, defined as: 
+
+Lsimple = Ex,t 
+
+h
+
+∥x − ˆxθ (zt, t, m, b )∥22
+
+i
+
+. (12) 
+
+7. Implementation Details 
+
+We report hyperparameters as (FineDance , AIST++) .The global sequence length is N = (1024 , 128) , and the local window size is n = (256 , 64) ; both music and motion are processed at 30FPS. The global diffusion stage outputs 13 key motions mkey per sequence–5 hard ques dh and 8 soft ques ds. The key-motion length is Lkey = (8 , 4) , cho-sen relative to N . After choreographic augmentation, each 
+
+ds is mirrored to produce 16 soft-cue instances and placed at beat-aligned locations. Both global and local models are optimized with Adan [31] at learning rate of 2×10 −4. At in-ference, we use DDIM [26] sampling with 50 number of in-ference steps. The loss weights of each terms are as: λpos =(1 , 0.636) , λvel = (2 .964 , 2.964) , λacc = (2 .964 , 2.964) ,
+
+λfoot = (20 , 10 .942) , and λtrans = (0 .5, 0.5) .On the other hand, two diffusion models have same structure of dance decoder, except for the detail of SMM. We omit the Spatial SSM block of global diffusion, because the input sequence length and output sequence length are different (recall that Spatial SMM block processes a′ ∈
+
+Rl×E ). 
+
+8. Evaluation Metrics 
+
+To quantitatively evaluate the quality of the generated dance motions, we adopt several commonly used metrics from prior works. We used a sequence length of 128, which slightly differs from the original baseline setting of 150, and calculated all metrics for whole integrated dance, so the metric values may differ from those reported in prior works. 
+
+Motion Quality. To evaluate the quality of generated mo-tions, we compute the Fr´ echet Inception Distance ( FID ) be-tween motion features of generated and ground truth motion sequences. For each motion, we extract kinematic and ge-ometric features, which respectively capture physical natu-ralness and overall dance choreography. 
+
+Physical Foot Contact Score. To evaluate the physical plausibility of foot movements in response to dance mo-tion, we adopt the Physical Foot Contact Score ( PFC ) pro-posed in EDGE [29]. This physically-inspired metric as-sesses whether foot-ground interactions are realistic or not without requiring explicit physical modeling. It evaluates the center of mass (COM) acceleartion along both horizon-tal plane and vertical axiz. Lower PFC scores indicate more physically plausible motions. Physical Body Contact Score. Inspired by POPDG [17], 
+
+PBC measures the overall physical feasibility of full-body movements by analyzing inter-limb and upper-body con-tacts to identify implausible interpenetrations or unnatural poses. 
+
+Motion Diversity. To assess the diversity of the generated motions, we compute the average feature distance of gen-erated motions and ground truth motions. Following Bai-lando [24], we consider both kinematic and geometric fea-tures, denoted as Div k and Div g , repectively. Higher values indicate greater variability in motion patterns. 
+
+Beat Alignment Score. To evaluate the beat consistency between the generated dance and the music, we follow Bai-lando [24] and compute the average temporal distance be-tween each music beat and its nearest motion beat. A higher 
+
+BAS value indicates better synchronization between the motion and the rhythm of the music. 
+
+User Study (Wins) For the user study, we gathered 20 participants. Each participant evaluated dance videos gener-ated from 2 datasets, 10 music tracks, and 4 models ( Mam-baDance , EDGE [29], POPDG [17], and Lodge [15]). In total, every participant watched 2 × 10 × 4 dance videos, where each set consisted of four sequences generated for the same music by the four models. Participants were asked to select the best video in each set according to the following criteria: • Which video demonstrates the most natural dance move-ments? • Which video aligns best with the music in terms of beat and rhythm synchronization? • Which video exhibits the most diverse and dynamic movements? To mitigate positional bias, the order of the four videos within each set was randomized. 
+
+References 
+
+[1] Emad Barsoum, John Kender, and Zicheng Liu. Hp-gan: Probabilistic 3d human motion prediction via gan. In 
+
+CVPRW , 2018. 2 [2] Xin Chen, Biao Jiang, Wen Liu, Zilong Huang, Bin Fu, Tao Chen, and Gang Yu. Executing your commands via motion diffusion in latent space. In CVPR , 2023. 2 [3] Tri Dao and Albert Gu. Transformers are ssms: General-ized models and efficient algorithms through structured state space duality. In ICML , 2024. 3, 4, 8, 1 [4] Prafulla Dhariwal and Alexander Nichol. Diffusion models beat gans on image synthesis. In NeurIPS , 2021. 4 [5] Congyi Fan, Jian Guan, Xuanjia Zhao, Dongli Xu, Youtian Lin, Tong Ye, Pengming Feng, and Haiwei Pan. Align your rhythm: Generating highly aligned dance poses with gating-enhanced rhythm-aware feature representation. In ICCV ,2025. 3 [6] Albert Gu and Tri Dao. Mamba: Linear-time sequence modeling with selective state spaces, 2023. arXiv preprint arXiv:2312.00752. 3, 4, 8, 1 [7] Albert Gu, Karan Goel, and Christopher R´ e. Efficiently mod-eling long sequences with structured state spaces. In ICLR ,2022. 1 [8] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffu-sion probabilistic models. In NeurIPS , 2020. 5, 1 [9] Xun Huang and Serge Belongie. Arbitrary style transfer in real-time with adaptive instance normalization. In ICCV ,2017. 4 [10] Zikai Huang, Xuemiao Xu, Cheng Xu, Huaidong Zhang, Chenxi Zheng, Jing Qin, and Shengfeng He. Beat-it: Beat-synchronized multi-condition 3d dance generation. In 
+
+ECCV , 2024. 2, 4, 7, 8 [11] Boeun Kim, Jungho Kim, Hyung Jin Chang, and Jin Young Choi. Most: Motion style transformer between diverse action contents. In CVPR , 2024. 2 [12] Jiaman Li, Yihang Yin, Hang Chu, Yi Zhou, Tingwu Wang, Sanja Fidler, and Hao Li. Learning to generate diverse dance motions with transformer, 2020. arXiv preprint arXiv:2008.08171. 1 [13] Ruilong Li, Shan Yang, David A Ross, and Angjoo Kanazawa. Ai choreographer: Music conditioned 3d dance generation with aist++. In ICCV , 2021. 1, 2, 4, 6 [14] Ronghui Li, Junfan Zhao, Yachao Zhang, Mingyang Su, Zeping Ren, Han Zhang, Yansong Tang, and Xiu Li. Finedance: A fine-grained choreography dataset for 3d full body dance generation. In ICCV , 2023. 1, 2, 6, 8 [15] Ronghui Li, YuXiang Zhang, Yachao Zhang, Hongwen Zhang, Jie Guo, Yan Zhang, Yebin Liu, and Xiu Li. Lodge: A coarse to fine diffusion network for long dance genera-tion guided by the characteristic dance primitives. In CVPR ,2024. 1, 2, 3, 4, 5, 6, 7, 8 [16] Matthew Loper, Naureen Mahmood, Javier Romero, Gerard Pons-Moll, and Michael J Black. Smpl: A skinned multi-person linear model. ACM TOG , 2015. 4 [17] Zhenye Luo, Min Ren, Xuecai Hu, Yongzhen Huang, and Li Yao. Popdg: Popular 3d dance generation with popdanceset. In CVPR , 2024. 1, 2, 3, 4, 6, 7 [18] Brian McFee, Colin Raffel, Dawen Liang, Daniel P.W. Ellis, Matt McVicar, Eric Battenberg, and Oriol Nieto. librosa: Audio and music signal analysis in python. In Proceeding of the 14th Python in Science Conference , 2015. 4 [19] Alexander Quinn Nichol and Prafulla Dhariwal. Improved denoising diffusion probabilistic models. In ICML , 2021. 6 [20] Georgios Pavlakos, Vasileios Choutas, Nima Ghorbani, Timo Bolkart, Ahmed A. A. Osman, Dimitrios Tzionas, and Michael J. Black. Expressive body capture: 3d hands, face, and body from a single image. In CVPR , 2019. 4 [21] Ethan Perez, Florian Strub, Harm De Vries, Vincent Du-moulin, and Aaron Courville. Film: Visual reasoning with a general conditioning layer. In AAAI , 2018. 4 [22] Mathis Petrovich, Michael J. Black, and G¨ ul Varol. Action-conditioned 3d human motion synthesis with transformer vae. In ICCV , 2021. 2 [23] Mathis Petrovich, Michael J. Black, and G¨ ul Varol. Temos: Generating diverse human motions from textual descriptions. In ECCV , 2022. 2 [24] Li Siyao, Weijiang Yu, Tianpei Gu, Chunze Lin, Quan Wang, Chen Qian, Chen Change Loy, and Ziwei Liu. Bailando: 3d dance generation via actor-critic gpt with choreographic memory. In CVPR , 2022. 1, 2, 3, 4 [25] Li Siyao, Weijiang Yu, Tianpei Gu, Chunze Lin, Quan Wang, Chen Qian, Chen Change Loy, and Ziwei Liu. Bailando++: 3d dance gpt with choreographic memory. IEEE TPAMI ,2023. 1, 2 [26] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denois-ing diffusion implicit models. In ICLR , 2021. 1 [27] Guy Tevet, Brian Gordon, Amir Hertz, Amit H Bermano, and Daniel Cohen-Or. Motionclip: Exposing human motion generation to clip space. In ECCV , 2022. 2 [28] Guy Tevet, Jonathan Gordon, Amir Hertz, et al. Human mo-tion diffusion model. In ICLR , 2023. 2 [29] Jonathan Tseng, Rodrigo Castellon, and Karen Liu. Edge: Editable dance generation from music. In CVPR , 2023. 1, 2, 3, 4, 6, 7 [30] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-reit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. NeurIPS , 2017. 1, 8 [31] Xingyu Xie, Pan Zhou, Huan Li, Zhouchen Lin, and Shuicheng YAN. Adan: Adaptive nesterov momentum al-gorithm for faster optimizing deep models. IEEE TPAMI ,2024. 1 [32] Kaixing Yang, Xulong Tang, Yuxuan Hu, Jiahao Yang, Hongyan Liu, Qinnan Zhang, Jun He, and Zhaoxin Fan. Matchdance: Collaborative mamba-transformer architecture matching for high-quality 3d dance synthesis, 2025. arXiv preprint arXiv:2505.14222. 3 [33] Kaixing Yang, Xulong Tang, Ziqiao Peng, Yuxuan Hu, Jun He, and Hongyan Liu. Megadance: Mixture-of-experts ar-chitecture for genre-aware 3d dance generation, 2025. arXiv preprint arXiv:2505.17543. 3 [34] Wen Zhang, Xiaojie Peng, Yebin Ma, et al. Motiondiffuse: Text-driven human motion generation with diffusion model. 
+
+IEEE TPAMI , 2024. 2 [35] Zeyu Zhang, Akide Liu, Ian Reid, Richard Hartley, Bohan Zhuang, and Hao Tang. Motion mamba: Efficient and long sequence motion generation. In ECCV , 2024. 2, 3
