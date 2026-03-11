@@ -1,0 +1,504 @@
+Title: The Coupling Within: Flow Matching via Distilled Normalizing Flows
+
+URL Source: https://arxiv.org/pdf/2603.09014v1
+
+Published Time: Wed, 11 Mar 2026 00:23:38 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+David Berthelot 1 Tianrong Chen 1 Jiatao Gu 1 Marco Cuturi 1 Laurent Dinh 1 Bhavik Chandna 2
+
+Michal Klein 1 Josh Susskind 1 Shuangfei Zhai 1
+
+# Abstract 
+
+Flow models have rapidly become the go-to method for training and deploying large-scale generators, owing their success to inference-time flexibility via adjustable integration steps. A cru-cial ingredient in flow training is the choice of 
+
+coupling measure for sampling noise/data pairs that define the flow matching (FM) regression loss. While FM training defaults usually to in-dependent coupling, recent works show that adap-tive couplings informed by noise/data distribu-tions (e.g., via optimal transport, OT) improve both model training and inference. We radical-ize this insight by shifting the paradigm: rather than computing adaptive couplings directly, we use distilled couplings from a different, pretrained model capable of placing noise and data spaces in bijection —a property intrinsic to normalizing flows (NF) through their maximum likelihood and invertibility requirements. Leveraging recent ad-vances in NF image generation via auto-regressive (AR) blocks, we propose Normalized Flow Match-ing (NFM), a new method that distills the quasi-deterministic coupling of pretrained NF models to train student flow models. These students achieve the best of both worlds: significantly outperform-ing flow models trained with independent or even OT couplings, while also improving on the teacher AR-NF model. 
+
+# 1. Introduction 
+
+Flow Matching (FM) (Lipman et al., 2023; Albergo et al., 2023; Peluchetti, 2022; Lipman et al., 2024) is a training paradigm proposed to learn Neural-ODE models (Chen et al., 2018) so that they can flow from a distribution onto another, e.g. Gaussian to data. FM reflects the way flow models are used at inference time, in that the flow’s time-parameterized velocity is trained to transport noise progres-sively towards data samples using a regression loss. At train time, the model is given pairs of noise and data samples; the velocity is trained to point from that noise towards data at any barycenter between the two. At inference time, that 
+
+Figure 1. FM vs NFM training 
+
+velocity is paired with an ODE integrator to recover outputs. 
+
+On the coupling within flow matching. A crucial element in this training procedure lies in the choice of a coupling measure used to sample noise/data pairs. While it is known that the independent coupling can, in theory, help the flow model recover a viable flow (one that satisfies the marginal requirement that flowing all possible noise vectors would recover all data points), this is rarely the case and that defi-ciency has encouraged iterative approaches such as rectified flows (Liu et al., 2022). Alternatively, several attempts have been made to substitute to the naive independent coupling a data informed one, using for instance ideas from optimal transport (OT) (Tong et al., 2023; Pooladian et al., 2023; Davtyan et al., 2025; Zhang et al., 2025; Mousavi-Hosseini et al., 2025). While these approaches can yield substantial improvements and better inference performance, they rely on the fairly simple intuition that flow models can be best trained when provided a good coupling. This raises a very natural question: Can we explore a more sophisticated, data-informed and even better approach to define the noise/data coupling used in FM? In other words, can the simple geo-metric considerations used so far in OT to define a coupling be superseded by an alternative approach? 
+
+Normalizing Flows. To obtain such an elusive coupling, we turn our attention to normalizing flows. Unlike flow models 1
+
+> arXiv:2603.09014v1 [cs.LG] 9 Mar 2026 The Coupling Within: Flow Matching via Distilled Normalizing Flows
+
+trained with flow matching, normalizing Flows (NF) (Tabak & Vanden-Eijnden, 2010; Dinh et al., 2015; Rezende & Mo-hamed, 2015) do not suffer from any ambiguity when it comes to coupling noise to data: they learn, by construction, a bijection between the data and a Gaussian noise source, and rely on the maximum likelihood principle to fit that bijection. That bijectivity hinges on the fact that their archi-tecture be completely invertible . In practice, their training is done by feeding data to a neural network that turns it into a noise vector, whose Gaussian negative log-likelihood (NLL) is minimized, thereby mapping data to noise. At inference, the mapping from noise to data can be recovered by apply-ing the network’s inverse. Recently, NF regained attention with Transformer Auto-Regressive Normalizing Flows, in short TarFlow (Zhai et al., 2025), which achieved promising experimental results for generation and likelihood estima-tion (Gu et al., 2025). The auto-regressive nature of these variants suffers from high latency sampling since each patch is generated sequentially for each block. 
+
+NF for FM. In this work, we propose a new method, Nor-malized Flow Matching (NFM), that organically combines the best of both FM and NF worlds: we first train a NF model, which encodes a fast and bijective mapping from data to noise; a subsequent flow model is trained using FM based on the coupling encoded by the NF’s map. We show that the resulting model manages to beat both the FM and NF models trained from scratch. More precisely, our contributions are: • NFM, a simple coupling method that trains an FM model from the couplings produced by an NF teacher. The re-sulting students’ sampling latency is orders of magnitude faster than the teacher’s while, surprisingly, also signifi-cantly surpassing its FID. • An analysis of structure of the NF Gaussian space, which, despite not having the same neighborhood properties as its input space, is facilitating FM convergence. • In-depth experiments and ablations to tease apart the ef-fects of couplings on convergence and FID. 
+
+# 2. Preliminaries 
+
+In the following, we denote an n-dimensional data sam-ple as x ∈ X ⊆ Rn and its categorical label/class as 
+
+c ∈ { 0, ..., k − 1} for a total of k classes. We denote a random Gaussian noise sample as ϵ ∼ N (0 , I n). In the doc-ument we adopt a diffusion type of convention for notation consistency between NF and FM. Consequently, x refers to data, ϵ to noise. 
+
+2.1. Flow Matching 
+
+The training process of Flow Matching, as well as diffusion models, consists of first constructing a data distribution which interpolates random pairs of data and noise, which is known as the coupling process. This is followed by a denoising objective that predicts the velocity term. Formally, for t ∈ [0 , 1] , we have xt = (1 − t) · x + t · ϵ, where x ∈ X,
+
+ϵ ∼ N (0 , I n). Without loss of generality, in our diffusion convention x0 = x and x1 = ϵ.The neural network fFM (xt, c, t ) is then trained with the loss: 
+
+LFM = ∥fFM (xt, c, t ) − vt∥22, (1) where vt = ϵ − x is the velocity term. Due to the stochastic nature of the construction of xt, the optimal solution for Eq.1 does not reach zero. As a result, during inference, one needs to resort to an iterative proce-dure which starts from noise and gradually moves towards data. The inference procedure is defines as follows: 
+
+x1 ∼ N (0 , I n), x t−∆t = xt − ∆t f FM (xt, c, t ). (2) 2.1.1. N OISE /D ATA COUPLING 
+
+One important design choice required to define the flow matching procedure lies in the choice of a noise/data cou-pling. Although the independent coupling (sampling inde-pendently Gaussian noise and data uniformly at random in the dataset) is the most standard (Lipman et al., 2024, §4.8.3), one can benefit from selecting noise data pairs using a more careful pattern, with the intent of speeding training by assigning with a marginal-preserving coupling measure some noise regions to nearby data points. That idea has been implemented to produce optimal transport-inspired couplings, starting with finite sample based ap-proaches (Tong et al., 2023; Pooladian et al., 2023; Davtyan et al., 2025; Zhang et al., 2025) and culminating with Semi-Discrete Optimal-Transport (SD-FM) - the semidiscrete de-terministic rule proposed by (Mousavi-Hosseini et al., 2025) to assign to any noise a specific point in the dataset using a lookup process. While these approaches can yield sub-stantial improvements, they are model agnostic and can be best described as pre-processing steps that settle for specific rules to associate noise to data. 
+
+2.2. Normalizing Flows 
+
+The ideal coupling method should be one that directly maps a data point to a point from the Gaussian distribution, in which case the velocity prediction admits zero theoretical errors and sampling becomes one step. It turns out that there exists a family of learning algorithms whose objective serves this exact purpose: Normalizing Flows (NFs). 2The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+NFs are likelihood based methods trained with the change of variable formula. To be concrete, it learns an invertible function f (x, c ) which is optimized with the following loss: 
+
+LNF = 12 ∥fNF (x, c )∥22 − log det ∂f NF 
+
+∂x . (3) Historically, NFs are known to not scale well to large com-plex datasets. Recently, this has changed with TarFlow (Zhai et al., 2025) which used a Transformer based architecture for auto-regressive flows (Papamakarios et al., 2017) (AF) to achieve competitive performance on image modeling tasks. Beside the architectural improvements, another important ingredient of TarFlow is that it applies a small amount of Gaussian noise to the inputs, namely x′ = x + ηϵ ′, where 
+
+η is a small value, before passing it to the network. This is found to greatly boost the generalization of the trained model. 
+
+2.3. Related works 
+
+Accelerating sampling is a central research question for practical applications both for NF and FM. In the NF con-text, while iterative approaches such as Jacobi iterations and speculative sampling (Wiggers & Hoogeboom, 2020; Song et al., 2021b; Chen et al., 2023; Monea et al., 2023; Teng et al., 2025; Liu & Qin, 2025) provide a training-free strat-egy to accelerate decoding, distillation approaches (Hinton et al., 2014; Lu et al., 2025) yield a more consistent and significant speedup for normalizing flows (Oord et al., 2018; Huang et al., 2020; Baranchuk et al., 2021; Walton et al., 2025), as long as an additional computational time is spent on training the distilled model. Other approaches focus on creating a hybrid model between NF and FM: Diffusion Normalizing Flow (DiffFlow) (Zhang & Chen, 2021) unifies normalizing flows and diffusion mod-els by learning both the forward and backward stochastic differential equations jointly, minimizing the KL divergence between their trajectory distributions. DiNof (Zand et al., 2024) introduces a hybrid generative model that combines stochastic diffusion processes with deterministic normaliz-ing flows, using the flow network to parameterize a data-dependent prior at an intermediate diffusion timestep rather than relying solely on Gaussian noise. Our method belongs to each category: it can be viewed both as a distillation of the NF model resulting in lower latency and better FID and as a hybrid model combining NF and FM in possibly the most straightforward manner. 
+
+# 3. Method 
+
+3.1. Motivation 
+
+As noted in Sec.2.1.1, OT finds an assignment between all data samples and all regions of the Gaussian space. We build on the observation that NF is performing a similar task of mapping data samples to the Gaussian space. In other words, our method is built on the natural synergy between distilling a NF model and learning effectively a diffusion model where the noise is essentially determined by the sample itself. One particularly interesting point is that contrary to OT which, as the name says, optimally maps between the dis-tributions, the learned NF mapping makes no claim about optimality and is likely sub-optimal since it is determined by the neural network capacity to model the data. However, as will be shown in the experiments section, it turns out that such a sub-optimal mapping can outperform OT in the class-conditional setting. 
+
+3.2. NFM 
+
+Our method distills a pretrained and frozen NF teacher fNF 
+
+to a student g which can be any architecture and, unlike the teacher, does not have to be invertible. The training procedure mirrors the FM one, the difference being that instead of using random noise ϵ ∼ N (0 , I n), we use the Gaussian representation zϵ′ ∈ Rn produced by the teacher model: 
+
+zϵ′ = fNF (x + ηϵ ′, c )/σ f ,where ϵ′ ∼ N (0 , I n), η is the regularization noise amount originally used when training fNF and σf ∈ Rn is the teacher’s output normalization vector that enforces expected unit norm, e.g., σ2 
+
+> f
+
+= E(x,c )∼X,ϵ ′∼N (0 ,I n)[fNF (x+ηϵ ′, c )2].As previously mentioned, we simply substitute zϵ′ to ϵ,consequently the loss for FM distillation is: 
+
+LFM = ∥g((1 − t) · x + t · zϵ′ , c, t ) − (zϵ′ − x)∥22.This substitution does not change the Flow Matching ob-jective: for a fixed noise schedule, FM remains the same weighted-ELBO/path-KL regression of a vector field along the linear interpolant. We only replace the endpoint cou-pling (x, ϵ ) with (x, z ϵ′ ) where zϵ is normalized to be ap-proximately N (0 , I n) marginally. Accordingly, the training target is still the endpoint difference vt = xsource − xtarget ,here vt = zϵ′ − x, while the time-dependent weighting is unchanged because it depends solely on the chosen sched-ule. Comparing the maximum training noise added in our method with the one added in FM, we find that t = η/ (1+ η)
+
+3The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+by converting from the variance exploding setting to the mean preserving one. Since in practice TarFlow uses a small value for η, our method effectively trains Flow Match-ing with much less noise. To illustrate this with an example, for ImageNet64 TarFlow uses η = 0 .05 resulting in max-imum flow matching noise level of 0.0476 in our method while the original flow matching maximum noise is 1.0000 ,potentially making the inference path straighter. Beyond using a lower maximum noise level (as quantified above), the teacher-induced coupling typically reduces the condi-tional velocity variance Var( vt | xt, t ) which in our case is vt = zϵ′ − x as to opposed to vt = ϵ − x in vanilla FM. This yields (i) lower target/gradient variance and thus more stable sample-efficient optimization, and (ii) a smoother conditional-mean field uq (xt, t ) = E[vt | xt, t ], which em-pirically reduces trajectory curvature and improves ODE integration stability, often requiring fewer steps. As is typically done for both NF and FM to make guidance work, we randomly drop the class label by setting it to ∅
+
+with probability p during training. Generative sampling for NFM is the same as for FM. 
+
+3.3. Normalizing Flows z-space structure 
+
+Normalizing Flows project an input x′ ∈ Rn to a Gaussian representation zϵ′ ∈ Rn. One question that arises is where are the points projected exactly: do neighbors remain neigh-bors after projection? Surprisingly the answer is no, at least in the case of TarFlow. We cannot comment about other NF designs as studying all of them is beyond the scope of this paper. Let’s recall that x′ = x + ηϵ ′. We use the distance d(a, b ) = 
+
+∥a − b∥2/√2n to define: 
+
+dx(x1, ϵ 1, x 2, ϵ 2) = d(x1 + ηϵ 1, x 2 + ηϵ 2),
+
+dz (x1, ϵ 1, x 2, ϵ 2) = d(f (x1 + ηϵ 1, c 1), f (x2 + ηϵ 2, c 2)) .Tab.1,2 present the average distances in input x-space and output z-space for various scenarii on the entire dataset for ImageNet64 and ImageNet256. The first group x1̸ = x2, ϵ 1̸ = ϵ2, represents the average distances between different samples and their representa-tions with different noises. We observe that dz = 1 in this case, since the NF learns z representations that are on the surface of a Gaussian unit sphere. The x representations get further apart as expected when more noise is added, e.g. dx
+
+increases with η.The second group x1 = x2, ϵ 1̸ = ϵ2, represents how spread apart are the representations for each image. We see that 
+
+dx = η which confirms representations of x are at distance 
+
+η of x as expected. More interestingly, the dz columns shows that the z representations are much more spread apart                                                
+
+> Table 1. z-space structure for ImageNet64
+> x1̸=x2x1=x2x1̸=x2
+> ϵ1̸=ϵ2ϵ1̸=ϵ2ϵ1=ϵ2
+> ηdxdzdxdzdxdz
+> 0.025 0.50 1.00 0.025 0.78 0.50 0.67 0.05 0.50 1.00 0.05 0.85 0.50 0.57 0.10.51 1.00 0.10 0.90 0.50 0.47 0.20.54 1.00 0.20 0.94 0.50 0.37
+
+on the unit sphere than they are initially in the x-space. For example, in Tab.1 for η = 0 .05 , the corresponding distance between representations is 0.85 which is pretty high considering 1.00 is the perfect Gaussian sphere coverage. Put another way, a single sample’s representations cover a large area of the Gaussian sphere. And as expected, the larger η, the larger dz .Finally in group 3, we look at the distances between different images under the same noise, e.g. x1̸ = x2, ϵ 1 = ϵ2. The dx
+
+column in this case simply captures the distance between im-ages: it is fixed and only depends on the dataset and the nor-malization of the input space. More interesting is the dz col-umn which measures the distance between image representa-tions. First we observe that the greater η, e.g. the more noise we add, the lower dz , e.g. the closer images representations are squeezed together. Second, for the values of η which yield best FIDs, as will be seen in the next section, we ob-serve that dx = dz . This is unexpected, and we do not know whether it is pure coincidence or not. Third, we finally ob-serve that dz (x1 = x2, ϵ 1̸ = ϵ2) > d z (x1̸ = x2, ϵ 1 = ϵ2),in other words image representations are closer to other im-ages representations under the same noise than they are to themselves under different noises. This is the most counter-intuitive observation of all, as the many representations of the same image are not its nearest neighbors in z-space while they are in x-space. As we will see experimentally in the next section, despite the unexpected structure of the NF’s z-space, using a normaliz-ing flow coupling still yields large gains in convergence and few-step FID for Flow Matching. 
+
+# 4. Experiments 
+
+We used ImageNet at resolutions 64 and 256 for our experi-ments. Resizing was done using the PIL library box resize method as in (Chrabaszcz et al., 2017). For ImageNet256, we use a pretrained variational auto-encoder from Stable Diffusion (Rombach et al., 2022) 1 to transform the data from pixel space to latent space. The probability to drop a class label is set to p = 0 .1 for all methods, including 
+
+> 1https://huggingface.co/stabilityai/ sd-vae-ft-mse
+
+4The Coupling Within: Flow Matching via Distilled Normalizing Flows                                                                  
+
+> Table 2. z-space structure for ImageNet256
+> x1̸=x2x1=x2x1̸=x2
+> ϵ1̸=ϵ2ϵ1̸=ϵ2ϵ1=ϵ2
+> ηdxdzdxdzdxdz
+> 0.025 0.80 1.00 0.025 0.26 0.80 0.99 0.050 0.80 1.00 0.05 0.37 0.80 0.97 0.100 0.80 1.00 0.10 0.50 0.80 0.93 0.250 0.83 1.00 0.25 0.69 0.80 0.80 0.300 0.85 1.00 0.30 0.72 0.80 0.76 0.400 0.89 1.00 0.40 0.77 0.80 0.70 0.500 0.94 1.00 0.50 0.81 0.80 0.64
+
+teacher training. Pixel images are represented on the [−1, 1] 
+
+interval. For consistency, we trained TarFlow teachers, stu-dents and baselines using our own re-implementations and on the same datasets 2. All of our experiments are in the class-conditional setting. The TarFlow teacher models are named as TF-blocks ×
+
+depth -channels/patch , for example TF-6 ×2+2 ×26-768/2 is a TarFlow model with 6 meta-blocks of depth 2
+
+and 2 meta-blocks of depth 26 and patch size 2. Teach-ers are trained for 512 MiB (Mebibytes, e.g. 1MiB = 2 20 =1 048 576 ) samples ( ∼ 420 epochs). All FM students and baseline runs are trained for 256 MiB 
+
+samples ( ∼ 210 epochs). Noise levels t are sampled from the logit-normal distribution (Aitchison, 1982; Esser et al., 2024) lognorm (a, b ) = sigmoid (a + b · N (0 , 1)) with a =
+
+−0.2 and b = 1 . Sampling uses either Euler (Euler, 1768; Song et al., 2021a) or Heun (Heun, 1900; Karras et al., 2022) solvers: Euler when NFE ≤ 5 and Heun when NFE ≥ 5
+
+(since NFE = 2 ×steps −1), where NFE denotes the number of function evaluations. Unless stated otherwise, we use the schedule t2 = {12, (1 − δt )2, . . . , (δt )2} with δt = 1 /steps .Following commonly accepted practice, all reported Fr ´echet Inception Distance (FID) (Dowson & Landau, 1982) results are measured between the training dataset distribution and 
+
+50 000 randomly generated samples. Unless stated other-wise all reported FIDs numbers use guidance. The actual guidance value is determined per experiment (model, sam-pler, NFEs) by means of a Golden Section Search (Kiefer, 1953). For computational efficiency we do a 12 iterations search using a quick FID approximation by computing it on only 8 192 randomly generated samples. The optimal guidance parameter is ultimately rounded to two signifi-cant digits and is then used to generate the 50 000 samples required to compute the reported FID.                 
+
+> 2https://github.com/apple/ml-nfm
+> Table 3. Curvature κon ImageNet64 SOLVER NFE FM SD-FM NFM HEUN (t2)31 0.0864 0.0767 0.0435
+> EULER (t)128 0.0386 0.0289 0.0181
+
+4.1. SotA comparisons 
+
+Comparisons can be found in Tab.4,6 where FID at various training points are shown. For easier and more detailed visu-alization, the FIDs are also presented as curves as function of training samples seen in Fig.2,3. From a distillation perspective, the student can match and even outperform the FID of the teacher, while being faster and using fewer weights. The student outperforming the teacher is, however, surprising. 4.1.1. C ONVERGENCE ANALYSIS AND COUPLINGS 
+
+We also verify experimentally that data-noise coupling should accelerate the training of diffusion models in Tab.4,6 and Fig.2,3. Both SD-FM and TarFlow couplings acceler-ate convergence resulting in better FID values earlier on than the random noise baseline. This effect is particularly noticeable with less NFEs, like 15 and 7, where both meth-ods achieve significant gains over the vanilla FM. TarFlow couplings performs particularly well, yielding FIDs that out-performs both by a large margin. We want to make it clear that we are not opposing NFM and SD-FM, we see them as potentially complementary techniques. A deeper discussion on the couplings differences and complementarity can be found in Sec.5.1. In Tab.3, we report the curvature (Lee et al., 2023) com-puted on 50 000 randomly generated samples without CFG. Euler( t) indicates applying the Euler solver to a linear sched-ule t = {1, 1 − δt, . . . , δt } with δt = 1 /steps and Heun( t2)indicates applying the Heun solver to the square schedule 
+
+t2 already mentioned earlier. x1, . . . , x m with xi ∈ Rn
+
+are the samples produced by the solver and v(i) 
+
+> t
+
+is the velocity predicted by the FM neural network to denoise from xi to xi+1 . The curvature is computed as follows: 
+
+κ = Ei[∥x1 − xm − v(i) 
+
+> t
+
+∥22]/n . By definition the curvature is not comparable across solvers and timestep schedules. We observe for each solver/schedule that NFM produces significantly straighter paths than FM and SD-FM. For ImageNet256, we only report the Gaussian noise base-line and TarFlow couplings. Like for ImageNet64, TarFlow couplings accelerate convergence resulting in lower FIDs and gains are particularly significant with less NFEs. 5The Coupling Within: Flow Matching via Distilled Normalizing Flows 32 64 128 256 
+
+> Training length (MiB samples)
+> 2.0
+> 4.0
+> 8.0
+> FID
+> TF Teacher
+> FM
+> SD-FM
+> NFM
+
+Figure 2. FID convergence on ImageNet64 
+
+Table 4. FID comparisons ImageNet64 with SiT-XL/4 for TarFlow teacher TF-6 ×2+2 ×26-1024/2 with FID= 1.98 .METHOD NFE FID 
+
+32 MIB 64 MIB 128 MIB 256 MIB
+
+FM 31 14 .33 6.11 3.56 2.57 
+
+SD-FM 31 13 .83 6.06 3.63 2.68 
+
+NFM 31 8.73 3.33 2.17 1.78 
+
+FM 15 17 .15 7.47 5.24 4.80 
+
+SD-FM 15 14 .45 6.39 3.98 3.15 
+
+NFM 15 9.47 3.65 2.53 2.15 
+
+FM 7 20 .33 14 .87 12 .74 13 .01 
+
+SD-FM 7 17 .02 9.61 7.10 6.41 
+
+NFM 7 11.01 5.03 3.76 3.23 
+
+4.1.2. L ATENCY GAINS 
+
+As shown in Tab.8, the distilled networks have lower latency than the original teacher, as is expected. Surprisingly, not only can the student outperform the teacher’s FID as previ-ously mentioned but it also achieves a 32 × faster latency. 4.1.3. P AIRWISE VS DISTRIBUTIONAL DISTILLATION 
+
+Fig.4 shows random samples using the same seeds to sample from the ImageNet64 models. Rows 1, 2, 3 contain resp. samples from the TF teacher, and the FM(31) and FM(7) students with respective FIDs ( 1.98 , 1.78 , 3.23 ) from Tab.4. Labels were manually picked to present diverse cases. While the loss we used in our method should result in pair-wise matching, it is clear from the samples that it is only loosely the case. Indeed, the samples while often sharing some similarity are still different from each other. The outcome is that in practice the distillation behaves as distri-butional matching. While we cannot say for sure what causes this phenomenon, multiple conjectures can be considered: • The teacher and student inductive biases are different due 
+
+Table 5. FID vs NFEs comparisons for ImageNet64 with SiT-XL/4 for TarFlow teacher TF-6 ×2+2 ×26-1024/2 with FID= 1.98 .SOLVER NFE FM SD-FM NFM HEUN 31 2.57 2.68 1.78 
+
+HEUN 15 4.80 3.15 2.15 
+
+HEUN 7 13.01 6.41 3.23 
+
+HEUN 5 17.56 9.29 4.01 
+
+EULER 5 21.05 12.18 3.92 
+
+EULER 4 21.81 13.76 4.47 
+
+EULER 3 40.47 20.69 6.34 32 64 128 256 
+
+> Training length (MiB samples)
+> 2.0
+> 4.0
+> 8.0
+> FID
+> TF Teacher
+> FM
+> NFM
+
+Figure 3. FID convergence on ImageNet256 (31 NFE sampling) 
+
+to the choice of different architectures. • The FM sampling itself does introduce noise. 
+
+4.2. Teacher impact 
+
+We trained various teachers by changing the patch size and the network’s number of channels. For each teacher, we trained a corresponding distilled student for FM. In Tab.9, we report the model size, negative likelihood (NLL) and FIDs for the teacher and student. It can be observed that the FID of the student correlates relatively well with the NLL of the teacher. The teacher size or choice of sub-blocks seems less directly correlated to FID, although it obviously has an impact on the NLL. Overfitting could explain why for the largest teacher, the correlation starts to break down. The general takeaway is that better teachers from the per-spective of NLL learn better Gaussian representations which in turn yield better performing students. In particular, sev-eral of the teachers have the same number of parameters but their respective NLL correlates directly with the FID obtained post-distillation. 4.2.1. N OISE IMPACT 
+
+Let us recall that TarFlow models used as teachers are trained with a certain amount of noise η added to the input 
+
+x to prevent infinite NLL and NaNs during the training pro-cess. When doing image generation for TarFlow, the noisi-6The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+Table 6. FID comparisons ImageNet256 with SiT-XL/2 for TarFlow teacher TF-6 ×2+2 ×26-1024/1 with FID= 3.96 .METHOD NFE FID 
+
+32 MIB 64 MIB 128 MIB 256 MIB
+
+FM 31 12 .33 4.93 3.05 2.30 
+
+NFM 31 9.68 4.17 2.78 2.29 
+
+FM 15 12 .40 5.07 3.37 2.84 
+
+NFM 15 10.36 4.14 2.84 2.45 
+
+FM 7 19 .92 13 .72 13 .60 12 .41 
+
+NFM 7 10.99 5.14 3.93 3.43 
+
+Table 7. FID vs NFEs comparisons for ImageNet256 with SiT-XL/2 for TarFlow teacher TF-6 ×2+2 ×26-1024/1 with FID= 3.96 .SOLVER NFE FM NFM 
+
+128 MIB 256 MIB 128 MIB 256 MIB
+
+HEUN 31 3.05 2.30 2.78 2.29 
+
+HEUN 15 3.37 2.84 2.84 2.45 
+
+HEUN 7 13.60 12.41 3.93 3.43 
+
+HEUN 5 48.51 48.73 6.43 5.75 
+
+EULER 5 11.60 10.48 4.72 4.04 
+
+EULER 4 37.23 33.63 6.94 6.10 
+
+fied image x′ is generated from x + ηϵ ′ = x′ = f −1(z, c ).The noise ϵ′ must be removed from x′ to obtain x. This is done classically in TarFlow by a gradient descent step, 
+
+ϵ = ∇x′ f (x′, c ). Consequently TarFlow training involves finding a good η that yields low FID samples. However, in the context of distillation we use only TarFlow’s forward pass f but not f −1 nor its denoising process. There-fore the rules for picking η are less clear: how do we pick a good η that yields low FID samples once the teacher is dis-tilled? In practice, we picked η following TarFlow’s paper to train teachers optimized towards sampling. In this section, we take a closer look at what happens when we train the same TarFlow model with various η and distill them. Tab.10 shows the results. Interestingly, and conve-niently, it appears that the best η for teacher sampling are also the best ones for teacher distillation. This seems to point to a much more fundamental role for η than just pre-venting infinite NLL, as it connects to the generation quality of both the teacher and of the student. It is also worth noting that, as expected, the final NLL is greatly influenced by η. However when varying η FID no longer correlates with NLL. Consequently the correla-tion observed between NLL and FID in Sec.4.2 appears restricted to the same fixed values of η.
+
+Table 8. Latency vs FID ImageNet64 with SiT-XL/4 students and TF-6 ×2+2 ×26-1024/2 teacher. METHOD FID LATENCY SPEEDUP 
+
+TAR FLOW 1.98 10 .7965 1×
+
+NFM(31) 1.78 0.3376 32 ×
+
+NFM(15) 2.15 0.1585 68 ×
+
+NFM(7) 3.23 0.0744 145 ×
+
+(a) With CFG 
+
+(b) Without CFG 
+
+Figure 4. ImageNet64 same-seed random samples. Rows 1,2,3 are resp. from TF teacher, FM(31) student and FM(7) student. 
+
+4.3. Unguided behavior 
+
+Thus far, all comparisons made use of guidance since it is what gives the best results and what is typically used in real world applications. In this section, we take a look at unguided FID numbers. Fig.5 reports the FID evolution as training progresses for NFE= 31 , 7. As expected, while the absolute FID numbers are higher overall, the gains remain similar to the ones with CFG from Fig.2. 
+
+# 5. Discussions 
+
+5.1. Optimal coupling 
+
+We consider multiple potential explanations as to why NF is outperforming SD-FM in the class-conditional setting: • Label handling : SD-FM handles labels by adding a fixed cost when the labels don’t match between distributions 
+
+cost · (y1̸ = y2). This in itself is a workaround to fit the categorical label in the OT setting, but is not a pure OT handling because labels are not known topologically, only categorically. To illustrate this point, OT does not know that a cat label is closer to a dog than to a car. Meanwhile, 7The Coupling Within: Flow Matching via Distilled Normalizing Flows                               
+
+> Table 9. TarFlow teacher impact on FM student for ImageNet64, T/S columns for FID contain Teacher and Student FIDs TEACHER SIZE NLL FID (T/S) TF-6 ×2+2 ×26-768/4 460 K-2.1252 3.93 /2.67
+> TF-6 ×2+2 ×26-768/2 460 K-2.1410 2.14 /1.80
+> TF-6 ×2+2 ×26-1024/2 823 K-2.1500 1.98 /1.78
+> TF-6 ×2+2 ×26-1536/2 1839 K-2.1691 2.21 /1.84
+> TF-8 ×8-768/2 460 K-2.1353 3.42 /2.41
+> Table 10. TF-6 ×2+2 ×26-1024/2 teacher noise impact on FM stu-dent for ImageNet64, T/S columns for FID contain Teacher and Student FIDs.
+> ηNLL FID (T/S)
+> 0.025 -2.6223 2.40 /1.85 0.05 -2.1500 1.98 /1.78 0.1-1.6040 1.95 /1.84 0.2-1.0040 3.67 /2.31
+
+NF uses the label to form a conditional bijection allowing it to learn from the data. • Inductive biases : SD-FM only relies on learned potentials 
+
+gi to produce assignment costs. Meanwhile, TarFlow per-forms a direct assignment using a learned neural network. Clearly TarFlow can produce more complex assignments. The student itself is also based on a neural network, albeit a different one from the teacher. It is possible, that the inductive biases of the teacher match better the inductive biases of the FM students than SD-FM. Following on that line of thinking, there could be other coupling methods yet to be discovered that would outperform both SD-FM and TarFlow by targeting the inductive biases of the students. As previously mentioned, we see SD-FM and TarFlow as complementary. While this is beyond the scope of this pa-per and left for further research, one can envision getting the best of both of worlds by combining them. Consider that TarFlow maps real samples to a pseudo-Gaussian space which Gaussian-ness depends on the neural network capac-ity to minimize the objective (Eq.3) for the training data. Therefore it might be advantageous to use SD-FM to map a true Gaussian space to TarFlow’s pseudo-Gaussian one. This would possibly preserve high quality generation by compensating for the less Gaussian spaces produced by NF models of lesser capacity or trained for shorter durations. 
+
+5.2. Latent Encoding vs Noise Encoding 
+
+One could object that we did not account for the time to train the teacher and this is a valid concern: Training TarFlow is considerably more costly than solving a semi-discrete optimal transport problem as in SD-FM, and furthermore 32 64 128 256  
+
+> Training length (MiB samples)
+> 4
+> 8
+> 16
+> 32
+> FID
+> 7 NFE: FM
+> 7 NFE: SD-FM
+> 7 NFE: NFM
+> 31 NFE: FM
+> 31 NFE: SD-FM
+> 31 NFE: NFM
+> Figure 5. FID convergence on ImageNet64 without CFG
+
+vanilla FM does not even need to learn a coupling in the first place before training. If the goal is to produce a NF model used for purposes such as density/NLL estimation and to further distill this model to produce fast generation in addition then it is advantageous to use our method since the NF training cost is required regardless. More broadly, NFs offer a way to encode data as noise anal-ogous to how Auto-Encoders (AE) encode data as mean-ingful representations. Indeed, while AEs are classically used to learn latent representations of data x, NFs do the same task for Gaussian representations, their bijective na-ture making them akin of lossless AEs. This observation opens the door to offering pretrained foundation NF models for downstream applications such as data-noise coupling in the diffusion setting, just like is currently the case with AEs for latent representations. Such pretrained NF models could be reused, just like pretrained AEs are currently reused for various tasks. This is an exciting avenue for future work. 
+
+# 6. Conclusion 
+
+We presented NFM, a new data-noise coupling method that accelerates training of FM models, while allowing fewer step sampling. This method can also be seen as a distilla-tion of NF models, in particular AR-NF models, not only drastically improving their sampling latency but also even improving the teacher’s FID. Our proposed method pur-posefully avoids the use of perceptual losses in order to remain general and potentially be applicable to other do-mains than images. In addition, we provided an analysis of the z-space produced by NF, probing its inner properties from a neighborhood lens. In this analysis, we showed that the NF pseudo-Gaussian space has a structure which does not preserve the input space neighborhood properties. 8The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+Future work : While latency gains are very significant over AR-NF, further such gains are likely possible simply by distilling the learned FM models. Along the same line of thought, application to Mean Flows (Geng et al., 2025) look like an interesting line of research, since their training might benefit more from lower noise. More fundamentally, the structure of the z-space remains enigmatic due to the nearest neighbors in x-space not being the same in z-space. One im-portant question that needs to be elucidated is whether such structure is inherent to NF or not. And a follow up question is whether or not preserving, even partially, the neighbor-hood property is really beneficial to FM. As mentioned in Sec.5, combining SD-FM and NFM also appears like an ex-citing prospect. Looking ahead, NFM could enable reusable foundation models that encode data as noise—much like AEs do for representations—and scale to text-image genera-tion by leveraging teachers such as (Gu et al., 2025). 
+
+# Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+# Acknowledgments 
+
+We wish to thank Preetum Nakkiran, Huangjie Zheng, Barry Theobald and Miguel Angel Bautista Martin for their invalu-able feedback. 
+
+# References 
+
+Aitchison, J. The statistical analysis of compositional data. 
+
+Journal of the Royal Statistical Society: Series B (Method-ological) , 44(2):139–160, 1982. Albergo, M. S., Boffi, N. M., and Vanden-Eijnden, E. Stochastic interpolants: A unifying framework for flows and diffusions. arXiv preprint arXiv:2303.08797 , 2023. Baranchuk, D., Aliev, V., and Babenko, A. Distilling the knowledge from conditional normalizing flows. arXiv preprint arXiv:2106.12699 , 2021. Chen, C., Borgeaud, S., Irving, G., Lespiau, J.-B., Sifre, L., and Jumper, J. Accelerating large language model decoding with speculative sampling. arXiv preprint arXiv:2302.01318 , 2023. Chen, R. T., Rubanova, Y., Bettencourt, J., and Duvenaud, D. K. Neural ordinary differential equations. Advances in neural information processing systems , 31, 2018. Chrabaszcz, P., Loshchilov, I., and Hutter, F. A down-sampled variant of imagenet as an alternative to the CIFAR datasets. CoRR , abs/1707.08819, 2017. URL 
+
+http://arxiv.org/abs/1707.08819 .Davtyan, A., Dadi, L. T., Cevher, V., and Favaro, P. Faster inference of flow-based generative models via improved data-noise coupling. In The Thirteenth International Con-ference on Learning Representations , 2025. Dinh, L., Krueger, D., and Bengio, Y. NICE: non-linear independent components estimation. In Bengio, Y. and LeCun, Y. (eds.), 3rd International Conference on Learn-ing Representations, ICLR 2015, San Diego, CA, USA, May 7-9, 2015, Workshop Track Proceedings , 2015. URL 
+
+http://arxiv.org/abs/1410.8516 .Dowson, D. C. and Landau, B. V. The f ´echet distance between multivariate normal distributions. Journal of Multivariate Analysis , 12(3):450–455, 1982. Esser, P., Kulal, S., Blattmann, A., Entezari, R., M ¨uller, J., Saini, H., Levi, Y., Lorenz, D., Sauer, A., Boesel, F., Podell, D., Dockhorn, T., English, Z., and Rombach, R. Scaling rectified flow transformers for high-resolution image synthesis. In Forty-first International Conference on Machine Learning, ICML 2024, Vienna, Austria, July 21-27, 2024 . OpenReview.net, 2024. URL https:// openreview.net/forum?id=FPnUhsQJ5B .Euler, L. Institutionum Calculi Integralis , volume 1. Impen-sis Academiae Imperialis Scientiarum, 1768. Geng, Z., Deng, M., Bai, X., Kolter, J. Z., and He, K. Mean flows for one-step generative modeling. 
+
+CoRR , abs/2505.13447, 2025. doi: 10.48550/ARXIV. 2505.13447. URL https://doi.org/10.48550/ arXiv.2505.13447 .Gu, J., Chen, T., Berthelot, D., Zheng, H., Wang, Y., Zhang, R., Dinh, L., Bautista, M. ´A., Susskind, J. M., and Zhai, S. Starflow: Scaling latent normalizing flows for high-resolution image synthesis. CoRR , abs/2506.06276, 2025. doi: 10.48550/ARXIV.2506.06276. URL https:// doi.org/10.48550/arXiv.2506.06276 .Heun, K. Neue methoden zur approximativen integra-tion der differentialgleichungen einer unabh ¨angigen ver ¨anderlichen. Zeitschrift f ¨ur Mathematik und Physik ,45:23–38, 1900. Hinton, G., Vinyals, O., and Dean, J. Dark knowledge. 
+
+Presented as the keynote in BayLearn , 2(2):4, 2014. Huang, C.-W., Ahmed, F., Kumar, K., Lacoste, A., and Courville, A. Probability distillation: A caveat and al-ternatives. In Uncertainty in Artificial Intelligence , pp. 1212–1221. PMLR, 2020. 9The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+Karras, T., Aittala, M., Aila, T., and Laine, S. Elucidating the design space of diffusion-based generative models. In 
+
+Proc. NeurIPS , 2022. Kiefer, J. Sequential minimax search for a maximum. Pro-ceedings of the American Mathematical Society , 4(3): 502–506, 1953. Lee, S., Kim, B., and Ye, J. C. Minimizing trajectory curvature of ode-based generative models. In Krause, A., Brunskill, E., Cho, K., Engelhardt, B., Sabato, S., and Scarlett, J. (eds.), International Conference on Ma-chine Learning, ICML 2023, 23-29 July 2023, Hon-olulu, Hawaii, USA , volume 202 of Proceedings of Machine Learning Research , pp. 18957–18973. PMLR, 2023. URL https://proceedings.mlr.press/ v202/lee23j.html .Lipman, Y., Chen, R. T. Q., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. In The Eleventh International Conference on Learning Repre-sentations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023 .OpenReview.net, 2023. URL https://openreview. net/forum?id=PqvMRDCJT9t .Lipman, Y., Havasi, M., Holderrieth, P., Shaul, N., Le, M., Karrer, B., Chen, R. T., Lopez-Paz, D., Ben-Hamu, H., and Gat, I. Flow matching guide and code. arXiv preprint arXiv:2412.06264 , 2024. Liu, B. and Qin, Z. Accelerate tarflow sampling with gs-jacobi iteration. arXiv preprint arXiv:2505.12849 , 2025. Liu, X., Gong, C., and Liu, Q. Flow straight and fast: Learning to generate and transfer data with rectified flow. 
+
+arXiv preprint arXiv:2209.03003 , 2022. Lu, Y., Sun, Q., Wang, X., Jiang, Z., Zhao, H., and He, K. Bidirectional normalizing flow: From data to noise and back. CoRR , abs/2512.10953, 2025. doi: 10.48550/ ARXIV.2512.10953. URL https://doi.org/10. 48550/arXiv.2512.10953 .Monea, G., Joulin, A., and Grave, E. Pass: Parallel specula-tive sampling. arXiv preprint arXiv:2311.13581 , 2023. Mousavi-Hosseini, A., Zhang, S. Y., Klein, M., and Cuturi, M. Flow matching with semidiscrete couplings. arXiv preprint arXiv:2509.25519 , 2025. Oord, A., Li, Y., Babuschkin, I., Simonyan, K., Vinyals, O., Kavukcuoglu, K., Driessche, G., Lockhart, E., Cobo, L., Stimberg, F., et al. Parallel wavenet: Fast high-fidelity speech synthesis. In International conference on machine learning , pp. 3918–3926. PMLR, 2018. Papamakarios, G., Pavlakou, T., and Murray, I. Masked autoregressive flow for density estimation. Advances in neural information processing systems , 30, 2017. Peluchetti, S. Non-denoising forward-time diffusions, 2022. URL https://openreview.net/forum? id=oVfIKuhqfC .Pooladian, A.-A., Ben-Hamu, H., Domingo-Enrich, C., Amos, B., Lipman, Y., and Chen, R. T. Multisample flow matching: Straightening flows with minibatch cou-plings. In International Conference on Machine Learning ,pp. 28100–28127. PMLR, 2023. Rezende, D. J. and Mohamed, S. Variational inference with normalizing flows. In Bach, F. R. and Blei, D. M. (eds.), Proceedings of the 32nd International Confer-ence on Machine Learning, ICML 2015, Lille, France, 6-11 July 2015 , volume 37 of JMLR Workshop and Conference Proceedings , pp. 1530–1538. JMLR.org, 2015. URL http://proceedings.mlr.press/ v37/rezende15.html .Rombach, R., Blattmann, A., Lorenz, D., Esser, P., and Ommer, B. High-resolution image synthesis with latent diffusion models. In IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2022, New Or-leans, LA, USA, June 18-24, 2022 , pp. 10674–10685. IEEE, 2022. doi: 10.1109/CVPR52688.2022.01042. URL https://doi.org/10.1109/CVPR52688. 2022.01042 .Song, J., Meng, C., and Ermon, S. Denoising diffusion implicit models. In International Conference on Learning Representations , 2021a. Song, Y., Meng, C., Liao, R., and Ermon, S. Accelerating feedforward computation via parallel nonlinear equation solving. In International Conference on Machine Learn-ing , pp. 9791–9800. PMLR, 2021b. Tabak, E. G. and Vanden-Eijnden, E. Density estimation by dual ascent of the log-likelihood. 2010. Teng, Y., Shi, H., Liu, X., Ning, X., Dai, G., Wang, Y., Li, Z., and Liu, X. Accelerating auto-regressive text-to-image generation with training-free speculative jacobi decoding. In The Thirteenth International Conference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net, 2025. URL https:// openreview.net/forum?id=LZfjxvqw0N .Tong, A., Fatras, K., Malkin, N., Huguet, G., Zhang, Y., Rector-Brooks, J., Wolf, G., and Bengio, Y. Improving and generalizing flow-based generative models with mini-batch optimal transport. arXiv preprint arXiv:2302.00482 ,2023. Walton, S., Klyukin, V., Artemev, M., Derkach, D., Orlov, N., and Shi, H. Distilling normalizing flows. In Pro-ceedings of the Computer Vision and Pattern Recognition Conference , pp. 3337–3346, 2025. 10 The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+Wiggers, A. and Hoogeboom, E. Predictive sampling with forecasting autoregressive models. In International Con-ference on Machine Learning , pp. 10260–10269. PMLR, 2020. Zand, M., Etemad, A., and Greenspan, M. A. Diffu-sion models with deterministic normalizing flow priors. 
+
+Trans. Mach. Learn. Res. , 2024, 2024. URL https: //openreview.net/forum?id=ACMNVwcR6v .Zhai, S., Zhang, R., Nakkiran, P., Berthelot, D., Gu, J., Zheng, H., Chen, T., Bautista, M. ´A., Jaitly, N., and Susskind, J. M. Normalizing flows are capable generative models. In Forty-second International Conference on Machine Learning, ICML 2025, Vancouver, BC, Canada, July 13-19, 2025 . OpenReview.net, 2025. URL https: //openreview.net/forum?id=2uheUFcFsM .Zhang, Q. and Chen, Y. Diffusion normalizing flow. In Ranzato, M., Beygelzimer, A., Dauphin, Y. N., Liang, P., and Vaughan, J. W. (eds.), Advances in Neural Information Processing Systems 34: Annual Conference on Neural Information Processing Systems 2021, NeurIPS 2021, December 6-14, 2021, virtual , pp. 16280– 16291, 2021. URL https://proceedings. neurips.cc/paper/2021/hash/ 876f1f9954de0aa402d91bb988d12cd4-Abstract. html .Zhang, S., Mousavi-Hosseini, A., Klein, M., and Cuturi, M. On fitting flow models with large sinkhorn couplings. 
+
+arXiv e-prints , pp. arXiv–2506, 2025. 11 The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+# A. Loss convergence curves. 
+
+In Fig.6, we plot the loss convergence for FM, SD-FM and NFM. It is immediately clear that better couplings yield lower losses, so much so we resorted to plotting them in log-space to better visualize the magnitude differences. While the loss gains are far greater than FID gains for NFE = 31 , these loss gains might explain why bigger FID gains are observed for lower NFE counts as shown in Tab.5. 0 50 100 150 200 250     
+
+> Training length (MiB samples)
+> 24
+> 23
+> 22
+> 21
+> FM  FM
+> SD-FM
+> NFM
+
+(a) ImageNet64 0 50 100 150 200 250    
+
+> Training length (MiB samples)
+> 22
+> 21
+> FM
+> FM
+> NFM
+
+(b) ImageNet256 
+
+Figure 6. FM loss convergence 
+
+# B. Samples 
+
+12 The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+(a) TarFlow Teacher 
+
+(b) FM Student (rows 1, 2, 3 show 31 , 15 , 7 NFEs with Heun solver, rows 4, 5, 6, 7 show 6, 5, 4, 3 NFEs with Euler solver) 
+
+Figure 7. ImageNet64 samples for class 12: house finch. 
+
+(a) TarFlow Teacher 
+
+(b) FM Student (rows 1, 2, 3 show 31 , 15 , 7 NFEs with Heun solver, rows 4, 5, 6, 7 show 6, 5, 4, 3 NFEs with Euler solver) 
+
+Figure 8. ImageNet64 samples for class 207: golden retriever. 
+
+13 The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+(a) TarFlow Teacher 
+
+(b) FM Student (rows 1, 2, 3 show 31 , 15 , 7 NFEs with Heun solver, rows 4, 5, 6, 7 show 6, 5, 4, 3 NFEs with Euler solver) 
+
+Figure 9. ImageNet64 samples for class 309: bee. 
+
+(a) TarFlow Teacher 
+
+(b) FM Student (rows 1, 2, 3 show 31 , 15 , 7 NFEs with Heun solver, rows 4, 5, 6, 7 show 6, 5, 4, 3 NFEs with Euler solver) 
+
+Figure 10. ImageNet64 samples for class 417: balloon. 
+
+14 The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+(a) TarFlow Teacher 
+
+(b) FM Student (rows 1, 2, 3 show 31 , 15 , 7 NFEs with Heun solver, rows 4, 5, 6, 7 show 6, 5, 4, 3 NFEs with Euler solver) 
+
+Figure 11. ImageNet64 samples for class 554: fireboat. 
+
+(a) TarFlow Teacher 
+
+(b) FM Student (rows 1, 2, 3 show 31 , 15 , 7 NFEs with Heun solver, rows 4, 5, 6, 7 show 6, 5, 4, 3 NFEs with Euler solver) 
+
+Figure 12. ImageNet64 samples for class 985: daisy. 
+
+15 The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+(a) TarFlow Teacher 
+
+(b) FM Student (rows 1, 2, 3 show 31 , 15 , 7 NFEs with Heun solver, rows 4, 5, 6 show 6, 5, 4 NFEs with Euler solver) 
+
+Figure 13. ImageNet256 samples for class 12: house finch. 
+
+(a) TarFlow Teacher 
+
+(b) FM Student (rows 1, 2, 3 show 31 , 15 , 7 NFEs with Heun solver, rows 4, 5, 6 show 6, 5, 4 NFEs with Euler solver) 
+
+Figure 14. ImageNet256 samples for class 207: golden retriever. 
+
+16 The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+(a) TarFlow Teacher 
+
+(b) FM Student (rows 1, 2, 3 show 31 , 15 , 7 NFEs with Heun solver, rows 4, 5, 6 show 6, 5, 4 NFEs with Euler solver) 
+
+Figure 15. ImageNet256 samples for class 309: bee. 
+
+(a) TarFlow Teacher 
+
+(b) FM Student (rows 1, 2, 3 show 31 , 15 , 7 NFEs with Heun solver, rows 4, 5, 6 show 6, 5, 4 NFEs with Euler solver) 
+
+Figure 16. ImageNet256 samples for class 417: balloon. 
+
+17 The Coupling Within: Flow Matching via Distilled Normalizing Flows 
+
+(a) TarFlow Teacher 
+
+(b) FM Student (rows 1, 2, 3 show 31 , 15 , 7 NFEs with Heun solver, rows 4, 5, 6 show 6, 5, 4 NFEs with Euler solver) 
+
+Figure 17. ImageNet256 samples for class 554: fireboat. 
+
+(a) TarFlow Teacher 
+
+(b) FM Student (rows 1, 2, 3 show 31 , 15 , 7 NFEs with Heun solver, rows 4, 5, 6 show 6, 5, 4 NFEs with Euler solver) 
+
+Figure 18. ImageNet256 samples for class 985: daisy. 
+
+18

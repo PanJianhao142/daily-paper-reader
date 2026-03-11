@@ -1,0 +1,1246 @@
+Title: Test-time Ego-Exo-centric Adaptation for Action Anticipation via Multi-Label Prototype Growing and Dual-Clue Consistency
+
+URL Source: https://arxiv.org/pdf/2603.09798v1
+
+Published Time: Wed, 11 Mar 2026 01:25:17 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Test-time Ego-Exo-centric Adaptation for Action Anticipation via Multi-Label Prototype Growing and Dual-Clue Consistency 
+
+## Zhaofeng Shi, Heqian Qiu *, Lanxiao Wang *, Qingbo Wu, Fanman Meng, Lili Pan, Hongliang Li *
+
+## University of Electronic Science and Technology of China, Chengdu, China  
+
+> {zfshi }@std.uestc.edu.cn {hqqiu,lanxiaowang,qbwu,fmmeng,lilipan,hlli }@uestc.edu.cn
+
+## Abstract 
+
+Efficient adaptation between Egocentric (Ego) and Exocen-tric (Exo) views is crucial for applications such as human-robot cooperation. However, the success of most existing Ego-Exo adaptation methods relies heavily on target-view data for training, thereby increasing computational and data collection costs. In this paper, we make the first explo-ration of a Test-time Ego-Exo Adaptation for Action Antici-pation (TE 2A3) task, which aims to adjust the source-view-trained model online during test time to anticipate target-view actions. It is challenging for existing Test-Time Adap-tation (TTA) methods to address this task due to the multi-action candidates and significant temporal-spatial inter-view gap. Hence, we propose a novel Dual-Clue enhanced Prototype Growing Network (DCPGN), which accumulates multi-label knowledge and integrates cross-modality clues for effective test-time Ego-Exo adaptation and action antic-ipation. Specifically, we propose a Multi-Label Prototype Growing Module (ML-PGM) to balance multiple positive classes via multi-label assignment and confidence-based reweighting for class-wise memory banks, which are up-dated by an entropy priority queue strategy. Then, the Dual-Clue Consistency Module (DCCM) introduces a lightweight narrator to generate textual clues indicating action pro-gressions, which complement the visual clues containing various objects. Moreover, we constrain the inferred tex-tual and visual logits to construct dual-clue consistency for temporally and spatially bridging Ego and Exo views. Extensive experiments on the newly proposed EgoMe-anti and the existing EgoExoLearn benchmarks show the effec-tiveness of our method, which outperforms related state-of-the-art methods by a large margin. Code is available at https://github.com/ZhaofengSHI/DCPGN. 
+
+## 1. Introduction 
+
+By virtue of mirror neurons [21, 51], humans can seam-lessly switch between exocentric (Exo) and egocentric 
+
+> *Corresponding authors.
+
+(Ego) views and map out the upcoming activities in the fu-ture. For example, a person may observe a cooking process from an Exo view, then naturally understand and take over the remaining operations in Ego perspective. This amazing capability is also fundamental in computer vision systems with a wide range of applications, such as human-robot co-operation [25, 27, 54] and embodied AI [10, 67, 80]. Despite the success in studies on action recognition [23, 59, 64, 68] or anticipation [13, 15, 40] in a single view, the models lapse when applied to the other perspective due to completely different camera recording angles and styles. Therefore, an increasing number of works [17, 20, 28, 32, 45] have attempted to replicate the aforementioned human instinct of Ego-Exo adaptation. In detail, some works fol-low a pretrain-finetune scheme [37, 42, 50, 73], which first performs source-view training or cross-view representation learning and then uses labeled data for finetuning. For in-stance, Exo2EgoDVC [42] leverages large-scale Exo videos to augment Ego dense video captioning. AE2 [73] learns view-invariant representations via unpaired videos to facil-itate multiple downstream tasks. Although having achieved desirable performance, they require labour-intensive target-view labeling for supervision. To alleviate this limitation, some works adopt the idea of unsupervised domain adap-tation (UDA) [14, 55, 61, 74], like Sync [46] using the la-beled Exo data and unlabeled synchronized Ego-Exo pairs for temporal action segmentation in the Ego view. GCEAN [55] transfers knowledge from the labeled source view to the unlabeled target view during training for procedural ac-tivity understanding. However, these methods still require access to unlabeled target-view data for training, creating a bottleneck in their employment due to the additional com-putational and data collection costs. Consequently, we elicit a question: Can we directly adapt the model to anticipate the target-view actions without re-training requirements? 
+
+In this paper, we formulate this question as a Test-Time Adaptation (TTA) [11, 12, 57, 63, 69, 78] problem, and make the first exploration of a Test-time Ego-Exo Adapta-tion for Action Anticipation (TE 2A3) task as shown in Fig. 1. This task aims to adjust the source-view-trained model     
+
+> arXiv:2603.09798v1 [cs.CV] 10 Mar 2026 Place Notebook
+> Walk to Backpack
+> Exocentric (Source-view) Observation Future Exo Video
+> Egocentric (Target-view) Observation
+> Supervised
+> Training
+> Input
+> Trained Model
+> Open Backpack
+> Mutiple Actions
+> Place Notebook
+> Close Backpack
+> Multiple Actions
+> Online
+> Adapt
+> Open Backpack
+> Training Stage Testing Stage
+> Parameter
+> Initialization
+> Model
+> Close Backpack
+> Temporal Progress Spatial Objects
+> Ego-Exo
+> View Gap
+
+Figure 1. Schematic of the newly proposed TE 2A3 task. 
+
+online during test time to anticipate the upcoming actions in the target view. This task is challenging due to its multi-action candidates and significant Ego-Exo spatial-temporal gap. Specifically, on the one hand, most TTA methods [34, 57, 63] use entropy-based or cache-based strategies to emphasize a single class with the highest confidence. How-ever, it leads to sub-optimal performance in the proposed task because each event in the real-world scenarios typi-cally comprises multiple atomic actions, which need to be anticipated simultaneously. On the other hand, despite the success of current methods [26, 70] in image-level cross-domain TTA, they struggle with the adaptation between Ego and Exo videos, which exhibit a more remarkable inter-view gap in spatial (i.e., inconsistent layout and interfer-ential objects) and temporal (i.e., asynchronous progress of actions) dimensions shown in green dashed boxes in Fig. 1. To tackle the above problems, we propose a novel Dual-Clue enhanced Prototype Growing Network (DCPGN), which progressively accumulates multi-label knowledge and integrates clues from different modalities for effective test-time Ego-Exo adaptation and action anticipation. In de-tail, to prevent the model from being biased to the most con-fident class while overlooking others, we propose a Multi-Label Prototype Growing Module (ML-PGM). It assigns multiple pseudo labels to the extracted representations and performs confidence-based reweighting to balance multi-ple positive classes. Meanwhile, an entropy priority queue strategy is also applied to update reliable representations for class-wise memory banks. In addition, we leverage an on-the-shelf CLIP model and propose a Dual-Clue Consistency Module (DCCM). Specifically, we introduce a lightweight narrator to generate descriptions as textual clues, which nat-urally serve as indicators for temporal action progressions to complement visual clues containing various spatial ob-jects. Then, we constrain their inferred logits to construct the dual-clue consistency for explicitly bridging the Ego and Exo videos in temporal and spatial dimensions. For a com-prehensive evaluation, we not only evaluate our method on the existing EgoExoLearn benchmark, but also construct a brand-new EgoMe-anti benchmark based on the EgoMe [45] dataset, which captures paired videos from the perspec-tives of observer and follower in diverse real-life scenarios. The major contributions can be concluded as follows: • To the best of our knowledge, it is the first exploration of the Test-time Ego-Exo Adaptation for Action Antic-ipation (TE 2A3) task. Moreover, we propose a Dual-Clue enhanced Prototype Growing Network (DCPGN) to progressively accumulate multi-label knowledge and in-tegrate clues from different modalities for effective test-time Ego-Exo adaptation and action anticipation. • We develop a Multi-Label Prototype Growing Module (ML-PGM) for balancing multiple positive classes via multi-label assignment and confidence-based reweighting under an entropy priority queue strategy. And the Dual-Clue Consistency Module (DCCM) introduces the textual and visual clues to construct dual-clue consistency to ex-plicitly bridge the Ego-Exo temporal-spatial gap. • We construct a brand-new EgoMe-anti benchmark, and extensive experiments on the EgoExoLearn and EgoMe-anti benchmarks show that our method outperforms the related state-of-the-art methods by a large margin. 
+
+## 2. Related Work 
+
+2.1. Ego-Exo Cross-view Understanding 
+
+Understanding the ongoing or upcoming activities across Ego and Exo views is essential for AI [30, 41] to emu-late human imitation progress, and many Ego-Exo datasets [8, 24, 28, 49, 52, 58] have been proposed. EgoExo-4D [17] is currently the largest dataset with multi-view videos. EgoExo-Fitness [32] provides whole-body videos in fitness scenes. EgoExoLearn [20] contains asynchronous videos and introduces the cross-view action anticipation task. EgoMe [45] consists of paired Ego-Exo videos with detailed annotations. Inspired by EgoExoLearn, we con-struct a brand-new EgoMe-anti to support our research. Meanwhile, many works associate Ego and Exo videos to learn view-unified representations [2, 31, 37, 73] for various downstream tasks, such as cross-view association [18, 72], action recognition [19, 31, 44, 60], video caption-ing [42, 55], and action anticipation or planning [20, 77]. The corresponding methods can be summarized in three main directions: cross-view co-training [42, 66, 72], un-supervised adaptation [55, 71], and knowledge distillation [31, 47, 53]. Quattrocchi et al. [46] have proposed an ex-cellent method, which uses labeled Exo data and unlabeled Exo-Ego videos for cross-view transferring with outstand-ing performance. Unlike the above works requiring target-view data during training, our TE 2A3 task aims at efficient online test-time adaptation with unlabeled target-view data. 
+
+2.2. Test-Time Adaptation 
+
+Test-Time Adaptation (TTA) aims to adapt to the target dis-tribution by adjusting the model online during the testing Exo (Source-view) Observation                  
+
+> Visual Encoder
+> …
+> Source-view Frame Features
+> …
+> Source-view
+> Upcoming Actions
+> Training Stage
+> …
+> SL
+> Predicted Logits
+> …
+> Temporal Module
+> Feature Converter
+> …
+> Anticipation Head
+> Anticipation Network
+> …
+> Target-view
+> Upcoming Actions
+> (a) Multi-Label Prototype Growing Module (ML-PGM)
+> Anticipation
+> Network
+> Predicted Logits
+> …
+> Batched Representations
+> Avg
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> Multi-Label Assignment
+> Batched Logits
+> …
+> Label Set
+> …
+> TopK
+> TopK
+> TopK
+> TopK
+> Confidence-weighted Prototype Growing
+> Step 1 Step2 Step N
+> …
+> Logits …
+> Prototypes
+> …
+> CCC
+> S
+> Prototype Logits
+> …
+> Testing Stage
+> Ego (Target-view) Observation
+> …
+> Visual
+> Encoder
+> …
+> Frame Features
+> (b) Dual-Clue Consistensy Module (DCCM)
+> Lightweight Narrator
+> CConfidence Calculation EEntropy Calculation SSimilarity Calculation Add Operation Priority Queue Update
+> 
+> Visual Clue
+> Ego (Target-view) Observation
+> …
+> Frame Features
+> …
+> Textual Clue
+> Visual Encoder
+> Text Encoder
+> Learnable
+> Prompts
+> +
+> Categories
+> Class 1
+> Class 2
+> …
+> Class N
+> …
+> …
+> Visual Logits
+> Textual Logits
+> Inference
+> Inference
+> Text Encoder
+> C
+
+L                   
+
+> EE
+> S
+> S
+> Hold ared clothing hanging
+> on a purple hanger with right
+> hand holding the right side of
+> the clothing and move the
+> clothing toward a cabinet
+> ( ) T
+> E
+> ( ) V
+> E
+> ( ) T
+> E2
+> 
+> 1
+> 
+
+
+
+> Last
+> Frame
+
+Figure 2. Overview of our DCPGN. The model is trained using the source-view data. During testing, the ML-PGM assigns each represen-tation to multiple labels, then performs confidence-based reweighting under an entropy priority queue strategy to balance multiple positive classes. Moreover, to complement the visual clue containing various objects, the DCCM incorporates a lightweight narrator to generate descriptions for action progressions with nouns (green) and verbs (purple). We integrate cross-modality clues by constraining their logits for temporally and spatially bridging the view gap. Finally, the prototype, visual, and textual logits are added for target-view anticipation. 
+
+stage with unlabeled data. Tent [63] is a pioneering method that adjusts the batch normalization (BN) parameters by en-tropy optimization. LAME [4] adopts Laplacian adjusted maximum likelihood estimation to tune the output. Then, lots of works integrate TTA with CLIP [48]. Some works [1, 9, 35, 38, 76] introduce learnable prompts. For example, TPT [57] uses prompts and minimizes the entropies of aug-mented views, and Diff-TPT [12] improves it by leveraging diffusion models [6, 39]. Some works consider establish-ing caches [22, 26, 78, 79] or prototypes [33, 75] during test time, which dynamically maintain the historical sam-ples with high confidence. ZERO [11] is a simple yet ef-fective method that sets the softmax temperature to zero to convert the probabilities into one-hot results. ML-TTA [70] achieves multi-label TTA via bound entropy minimization, whereas it is for image-level classification rather than Ego-Exo video-level anticipation in our TE 2A3 task. Recently, TTA technology has been extended to fields such as image segmentation [56], image restoration [16], object detection [65], video classification [34], depth com-pletion [43], cross-modal retrieval [29], and so on. Unlike these works, we adapt between the Ego and Exo videos with a significant inter-view gap for the action anticipation task. 
+
+## 3. Method 
+
+To address the TE 2A3 task, we propose a Dual-Clue en-hanced Prototype Growing Network (DCPGN) as shown in Fig. 2. In the training stage, the model is trained via a BCE loss denoted as LS relying on the source-view labeled data. Following the common setting [20], we utilize a frozen CLIP [48] as the visual encoder to extract the frame fea-tures, and a trainable TA3N [5] to anticipate the upcoming actions. During testing, we first propose a Multi-Label Pro-totype Growing Module (ML-PGM), which progressively accumulates multi-label knowledge to learn unbiased proto-types to balance multiple positive classes. Then, the Dual-Clue Consistency Module (DCCM) constructs consistency between the visual and textual clues for explicitly bridging the Ego-Exo temporal-spatial inter-view gap. 
+
+3.1. Preliminaries 
+
+3.1.1. Action Anticipation 
+
+Action anticipation aims to forecast the upcoming fine-level actions based on the observation video, with many potential applications such as AI assistance [36]. Following the com-mon settings [7, 20], we represent the actions with noun and verb classes. In detail, given an action event denoted as 
+
+e = ( ts, t e, c ), where ts, te, c denote the start timestamp, end timestamp, and classes, respectively. The model can only access an τo second observation video clip O from the time of ts − (τi + τo) to ts − τi to anticipate the classes 
+
+c = {yi}Nu
+
+i=1 ∈ C , where τi is the interval time, Nu denotes the number of upcoming actions, and C means the class set. Algorithm 1 Multi-Label Prototype Growing Module 
+
+Input: A source-view model MS = {E , AS }, observation video batches {O 1, · · · O Nb }, where On = {OTj }bs j=1 ,number of classes C′, and hyperparameters K and N ;
+
+Output: Target-view prototype classifier P T ; 
+
+> 1:
+
+Initialize C′ class memory banks {B i}C′ 
+
+> i=1
+
+as empty;  
+
+> 2:
+
+for batch=1 to Nb do  
+
+> 3:
+
+for j=1 to bs do  
+
+> 4:
+
+{ ¯f Tv,j ; LTj } ← A S (E(OTj )) ; // Extract video-level representation ¯f Tv,j and predict initial logits LTj 
+
+> 5:
+
+{Y TK,j ; LTK,j } ← LTj ; // Assign Top-K pseudo labels Y TK,j and obtain the confidence scores LTK,j 
+
+of the j-th sample in the batch as in Eq. (1)  
+
+> 6:
+
+HTj ← En (LTj ); // Calculate entropy as in Eq. (2)  
+
+> 7:
+
+end for  
+
+> 8:
+
+{B new i }C′ 
+
+> i=1
+
+← {B i}C′
+
+> i=1
+
+; // Update memory banks (maximum capacity N ) via entropy as in Eq. (3)  
+
+> 9:
+
+P T ← {B new i }C′
+
+> i=1
+
+; // Perform confidence-based reweighting to obtain prototype classifier in Eq. (4)  
+
+> 10:
+
+end for 3.1.2. Problem Definition for the TE 2A3 task 
+
+We make the first exploration of the TE 2A3 task, which ad-justs the source-view-trained model during test time for ac-tion anticipation in the target view. We define one of the annotated Ego or Exo views as the “source view”, while the other unlabeled view as the “target view”. We first perform supervised training based on the source-view dataset DS =
+
+{(OSi , Y Si )}Ns
+
+> i=1
+
+, where OSi , Y Si denote the source-view ob-servations and ground-truth labels, and Ns means the num-ber of data. The trained model can be denoted as MS . Dur-ing the test time, the model MS is real-time adjusted by a online stream of target-view data DT = {OTj }Nt 
+
+> j=1
+
+to ob-tain MS→T , which encourages the model to adapt to target-view videos to accurately anticipate the upcoming actions. 
+
+3.2. Multi-Label Prototype Growing Module 
+
+Most of the current TTA works adopt entropy-based op-timization [11, 63] or cache construction [26, 57] methods. Although effective in single-label tasks, they cause biased predictions towards the most confident class and yield un-satisfactory results in our TE 2A3 task, which involves mul-tiple action candidates. Therefore, as shown in panel (a) of Fig. 2, we propose a Multi-Label Prototype Growing Mod-ule (ML-PGM). It first assigns multiple pseudo labels to the extracted representations and then performs confidence-based reweighting. This process is updated via an entropy priority queue strategy to balance multiple positive classes. The overall progress of ML-PGM is shown in Algorithm 1. The source-view model is denoted as MS = {E , AS },where E is the fixed visual encoder and AS is the anticipa-tion network. Given a target-view observation OT , we first utilize E to extract the frame features F T ∈ RL×C , where L
+
+denotes the number of sampled frames and C is the feature dimension. Then, we feed the F T into AS to obtain the in-termediate representations ¯F T and the initial predicted log-its LT = {lTi }C′
+
+> i=1
+
+, where C′ is the total number of classes. Next, we average ¯F T to obtain the video-level representa-tion ¯f Tv ∈ RC1 . Moreover, we assign the Top-K classes as pseudo labels to the video-level representation and obtain the corresponding confidence scores based on the logits: 
+
+{Y TK ; LTK } = {yc; lTc |c ∈ C , I(Rank ↓(LT ) ≤ K)} (1) where Y TK denotes the assigned Top-K pseudo labels, and 
+
+LTK is the corresponding confidence scores. I(·) denotes the indicator function, and Rank ↓(·) represents the decreasing ranking. To measure the reliability of the pseudo labels, we also compute the entropy of predicted logits as follows: 
+
+HT = En (LT ) = −
+
+> C′
+
+X
+
+> i=1
+
+σ(lTi ) log σ(lTi ) (2) where HT is the entropy and σ(·) means softmax function. Hence, we obtain a data tuple T = ( ¯f Tv , Y TK , L TK , HT ).We initialize the memory banks {B i}C′ 
+
+> i=1
+
+for each class. When a batch of data tuples {T j }bs j=1 arrives, an entropy pri-ority queue strategy is applied. Specifically, for the j-th data in the current batch, consider a representation ¯f Tv,j with the class-i pseudo label yi,j ∈ Y TK,j , if Bi is not full, we directly add the ¯f Tv,j , confidence lTi,j ∈ LTK,j , and entropy HTj to Bi.If Bi is full, we retain the corresponding representations and confidence scores with the lowest N entropies, where N is the maximum capacity. This process can be formulated as: 
+
+Bnew i =
+
+
+
+Bi ∪ { ¯f Tv,j , l Ti,j , HTj } if |B i| < N 
+
+{ ¯f Tv , l Ti , HT } ∈ {B i ∪ { ¯f Tv,j , l Ti,j , HTj }| I(Rank ↑(HT ) ≤ N )} if |B i| = N
+
+(3) Since lower entropy implies lower prediction uncertainty [75], the representations and pseudo labels in memory banks become more reliable over time during the test stage. However, in some circumstances, a few negative classes with low confidence may be included in the TopK classes and thus incorrectly assigned as pseudo labels during up-dating. To mitigate such interference, we leverage the confi-dence to reweight the representations in the memory bank to calculate the prototypes. Assume that the updated memory bank of class i is denoted as Bnew i = { ¯f Tv,k , l Ti,k , HTk }N ′≤Nk=1 ,where k denotes the data index in Bnew i , and N ′ is the num-ber of stored representations. For class i, we weight the video-level representations ¯f Tv,k to calculate its prototype: 
+
+pTi = 
+
+> N′
+
+X
+
+> k=1
+
+η(lTi,k ) · ¯f Tv,k (4) η(·) is a normalization operation. The prototype classifier is denoted as P T ∈ RC′×C1 , and we compute the similarity between P T and ¯f Tv to get the prototype logits Lp ∈ RC′
+
+.
+
+3.3. Dual-Clue Consistency Module 
+
+Due to inconsistent spatial objects and asynchronous tem-poral progressions, the Ego and Exo videos exhibit a signif-icant inter-view gap, which prevents the source-view model from maintaining its learned mapping from observation to the target-view upcoming actions. Moreover, the ML-PGM suffers from the inevitable prototype instability in the ini-tial few adaptation steps. Therefore, as shown in panel (b) of Fig. 2, we design a simple yet effective Dual-Clue Con-sistency Module (DCCM). Specifically, we first introduce a lightweight narrator to generate textual clues to comple-ment visual clues. Then, their inferred logits are constrained to construct the dual-clue consistency for explicitly bridging the Ego-Exo gap in temporal and spatial dimensions. The observation videos contain abundant clues, such as potential interactive objects and ongoing activities, which are highly relevant to the upcoming actions. Therefore, we first extract the final frame of the given observation as the visual clue ¯VC , which contains various visual objects in the scene. Nevertheless, although the visual clue provides rich spatial information, it is insufficient to establish correla-tions between clues and upcoming actions because a single frame cannot reflect the temporal progression. Therefore, we introduce an extra lightweight narrator, which models the dependencies between observation frames and generates view-agnostic descriptions, naturally serving as indicators for temporal activities in progress. Thanks to open-source datasets [17, 20, 45] with fine-level language annotations, we first collect a series of video-text pairs {Vi, T i}Ni=1 from existing datasets. Then, we use the frozen visual encoder E
+
+to extract the frame features FV for each video. Next, we leverage the frame features and their captions to train a uni-versal narrator N (·) based on GRU units with an attention mechanism for computational efficiency, whose details are available in the Supplementary Material. During testing, we use the frozen narrator to generate textual clues, as follows: 
+
+¯TC = {w1, w 2, · · · wLt } = N (F T ) (5) where ¯TC denotes the description as text clue, wi means the generated words, and Lt is the length of the textual clue. Inspired by previous works [53, 81], we adopt the on-the-shelf CLIP [48], which is pre-trained on the world-scale paired data to correlate the mined clues and action class la-bels. We denote the CLIP visual encoder as E′ 
+
+> V
+
+(·) and the CLIP textual encoder is E′ 
+
+> T
+
+(·). The features of the visual clue ¯VC and the textual clue ¯TC are extracted as follows: 
+
+¯fv = E′ 
+
+> V
+
+( ¯VC ) ¯ft = E′ 
+
+> T
+
+( ¯TC ) (6) where ¯fv ∈ RC and ¯ft ∈ RC denote the extracted visual and textual clue features, respectively. In addition, we insert the learnable prompts pl ∈ RLp×C into the embeddings of the action classes and extract the corresponding features: 
+
+¯Tcls = {[pl; Embed (yc)] | c ∈ C} (7) 
+
+¯Fl = { ¯fl, 1, · · · ¯fl,C ′ } = E′ 
+
+> T
+
+( ¯Tcls ) (8) where [; ] means the concatenation operation, Embed (·) is the CLIP embedding operation, and ¯Fl = { ¯fl,i }C′ 
+
+> i=1
+
+∈
+
+RC′×C denotes the learnable features of action classes. Then, we calculate the similarity between the visual or textual clue features and the learnable class features to infer their respective logits, which can be formulated as follows: 
+
+lv,i = ¯fv · ( ¯fl,i )T
+
+|| ¯fv || 2 · || ¯fl,i || 2
+
+· μ1 lt,i = ¯ft · ( ¯fl,i )T
+
+|| ¯ft|| 2 · || ¯fl,i || 2
+
+· μ2 (9) where Lv = {lv,i }C′ 
+
+> i=1
+
+and Lt = {lt,i }C′ 
+
+> i=1
+
+denote the in-ferred visual and textual logits, and μ1, μ2 are scaling hy-perparameters. Next, we use the softmax normalization to obtain the probability distribution responses Pv and Pt for 
+
+Lv and Lt, respectively. And we constrain the inferred log-its from cross-modality clues through a Kullback-Leibler (KL) divergence to construct the dual-clue consistency for a comprehensive temporal-spatial correlation between the mined clues and action classes to be anticipated. The con-sistency loss LC can be computed as follows: 
+
+LC = KL (Pv || Pt) + KL (Pt|| Pv ) = 
+
+> C′
+
+X
+
+> i
+
+Pv (i) log Pv (i)
+
+Pt(i) +
+
+> C′
+
+X
+
+> i
+
+Pt(i) log Pt(i)
+
+Pv (i) (10) Finally, we weighted add the visual logits Lv , and textual logits Lt, and the aforementioned prototype logits Lp as the target-view anticipation result Lf inal , as follows: 
+
+Lf inal = Lp + α · (Lv + Lt) (11) where α is a hyperparameter to balance the distinct logits. 
+
+## 4. Experiments 
+
+4.1. Experimental Settings 
+
+4.1.1. Benchmarks and Evaluation Metrics 
+
+We construct a novel EgoMe-anti benchmark based on the EgoMe [45] dataset. Specifically, EgoMe contains 7902 video pairs of Exo observer and Ego follower with a total duration of 82 hours, including detailed annotations such as fine-level timestamps and descriptions. However, the orig-inal annotations are raw descriptive sentences rather than fine-grained noun or verb classes. Therefore, we first filter the videos and only retain the correctly following Ego-Exo pairs. Then, we use the Spacy library to extract verbs and nouns from sentences, transform them into base form, and Table 1. Quantitative results on the EgoMe-anti and EgoExoLearn benchmarks under the Exo2Ego and Ego2Exo settings.                                                                                    
+
+> Methods
+> EgoMe-anti EgoExoLearn
+> Exo2Ego Ego2Exo Exo2Ego Ego2Exo Noun Verb Noun Verb Noun Verb Noun Verb Ours without Adaptation 71.94 32.46 64.24 30.07 31.91 34.36 35.28 33.03 Tent [63] 74.14 35.63 68.50 32.32 34.71 36.22 38.61 35.04 TPT [57] 74.88 35.97 68.65 32.55 35.29 36.48 38.82 35.14 VITTA [34] 75.65 35.94 68.68 33.84 35.06 36.44 39.17 35.65 TDA [26] 76.96 36.66 69.52 33.45 36.11 36.79 39.81 35.11 ZERO [11] 75.19 36.03 69.12 33.30 37.19 36.76 40.27 36.73 TCA [69] 77.23 36.33 69.27 34.08 35.00 36.95 38.84 36.18 ML-TTA [70] 77.11 36.92 69.46 34.39 36.35 37.67 42.96 40.43
+> DCPGN (Ours) 79.03 43.84 72.01 40.10 46.26 42.98 48.48 46.51
+
+perform synonym fusion and replacement. Finally, we re-move low-frequency (below 0.5 %) and anomalous classes. Meanwhile, Ego and Exo data are constrained to share iden-tical label sets. We also evaluate our method on EgoEx-oLearn [20]. EgoExoLearn is for bridging asynchronous Ego and Exo procedural activities. It contains 120 hours of videos on daily and professional scenes. In addition, it pro-vides annotations such as fine and coarse-level noun/verb classes, timestamps, and descriptions. We perform experi-ments on its official action anticipation benchmark. Following common settings [7, 20], we define two set-tings: Exo2Ego and Ego2Exo to predict the noun/verb classes, and use the class-mean Top-5 recall for evaluation. 
+
+4.1.2. Implementation Details 
+
+Following the pioneering work [20], we use CLIP (ViT-L/14) [48] as the visual encoder. The observation time τo
+
+and interval time τi are set to 2s and 1s, respectively. For an observation video, we uniformly sample 5 frames as in-put. The feature dimension C of the visual encoder is 768, and C1 of the anticipation network is set to 512. The hy-perparameter K is set to 5 for EgoExoLearn benchmark, while K is 3 for EgoMe-anti , and the maximum capacity 
+
+N of a memory bank is set to 500. The scaling parameters 
+
+μ1, μ2 are set to 1.0 and 0.5 respectively and α is 0.5. The length of the learnable prompts Lp is set to 4. Moreover, the narrator N (·) is implemented following the official video-caption.pytorch library. In the testing stage, the batch size is set to 64 without any data augmentation strategies. The learnable prompts are optimized online by the SGD [3] op-timizer, and the learning rate is 1e-4 for EgoExoLearn and 5e-4 for EgoMe-anti due to the difference in dataset scale. 
+
+4.2. Comparison with State-of-the-Art Methods 
+
+We compare our DCPGN with many image-level or video-level TTA methods, i.e., Tent [63], TPT [57], VITTA [34], TDA [26], ZERO [11], TCA [69], and ML-TTA [70]. We re-implement these methods according to their officially re-leased codes. Moreover, we conduct experiments under the same settings and backbone to ensure a fair comparison. The left panel in Table 1 shows the performance on the EgoMe-anti benchmark, and the results show that our DCPGN significantly outperforms the other related TTA methods. For the Exo2Ego setting, DCPGN surpasses the second-place TCA [69] by 1.80 % in the noun anticipation, and outperforms the recent ML-TTA [70] by 6.92 % in verb. For the Ego2Exo setting, which also has many applications such as multi-robot collaboration, our DCPGN also yields performance gains of 2.49 % and 5.71 % in the noun and verb anticipation, respectively. We also evaluate our method on the common EgoExoLearn benchmark. The results in the right panel in Table 1 demonstrate the superiority of our method compared with other TTA methods. The recently proposed ML-TTA [70] utilizes the label binding strategy for the multi-label image-level TTA and achieves a high per-formance on EgoExoLearn . However, our DCPGN explic-itly bridges the significant inter-view gap in temporal and spatial dimensions for video-level action anticipation. It re-markably outperforms ML-TTA by 9.91 % and 5.31 % in the noun/verb anticipation under the Exo2Ego setting, and by 5.52 % and 6.08 % under the Ego2Exo setting. The above results demonstrate the effectiveness of our method in bal-ancing multiple positive classes and bridging the Ego and Exo videos in temporal and spatial dimensions. 
+
+4.3. Ablation Study 
+
+In Table 2, we evaluate the key components of our DCPGN. In the second row, we remove the dual-clue consistency loss LC , exhibiting a 0.36 %, 1.12 %, 0.72 %, 0.90 % drop on 
+
+EgoMe-anti , and 1.46 %, 0.25 %, 0.51 %, 0.67 % on EgoEx-oLearn , showing its effectiveness in correlating the cross-modality clues. In the third and fourth rows, we remove the visual and textual clues, respectively, and all metrics de-crease compared to the second row. Furthermore, the results of noun anticipation decrease more when removing the vi-sual clues, while removing the textual clues leads to a more Table 2. Ablation results under the Exo2Ego and Ego2Exo benchmarks on the EgoMe-anti and EgoExoLearn benchmarks. LC is the dual-clue consistency loss. “VC” and “TC” denote the visual clues and textual clues, respectively. “Conf” represents the confidence-based reweighting, and “ML” denotes the multi-label assignment. “S” means only assign a single class as the pseudo label for the representation. 
+
+LC VC TC Conf ML 
+
+EgoMe-anti EgoExoLearn 
+
+Exo2Ego Ego2Exo Exo2Ego Ego2Exo Noun Verb Noun Verb Noun Verb Noun Verb 
+
+✓ ✓ ✓ ✓ ✓ 79.03 43.84 72.01 40.10 46.26 42.98 48.48 46.51 
+
+✓ ✓ ✓ ✓ 78.67 42.72 71.29 39.20 44.80 42.73 47.97 45.84 
+
+✓ ✓ ✓ 76.92 42.37 69.65 37.99 41.32 42.25 45.73 45.23 
+
+✓ ✓ ✓ 77.56 42.15 70.47 37.66 41.94 41.93 45.88 43.72 
+
+✓ ✓ 76.11 40.84 69.21 37.55 38.43 40.54 44.53 43.25 
+
+✓ 74.63 39.87 68.76 36.84 37.76 39.33 43.47 42.01 S 72.74 35.47 65.51 32.34 34.70 34.98 38.49 37.71 71.94 32.46 64.24 30.07 31.91 34.36 35.28 33.03 
+
+significant drop in verb anticipation. Such results indicate that visual clues mainly contain spatial object information, while textual clues indicate temporal dependencies of ac-tivities. Next, we remove the entire DCCM, and the results under all settings drop remarkably, demonstrating its effec-tiveness in bridging the significant Ego-Exo inter-view gap. Then, we evaluate the ML-PGM in rows 5-8. In the sixth row, we remove the confidence-based reweighting operation in the ML-PGM, leading to a decrease of 1.48 %, 0.97 %,0.45 %, 0.71 % on EgoMe-anti , and 0.67 %, 1.21 %, 1.06 %,1.24 % on EgoExoLearn , which shows its effectiveness in mitigating the interference of potential negative classes. In addition, we only assign the Top-1 class rather than Top-K classes as the pseudo label in row seven, causing a sig-nificant drop of 1.89 %, 4.40 %, 3.25 %, 4.50 %, and 3.06 %,4.36 %, 4.98 %, 4.30 % on the two benchmarks, respectively. It shows the effectiveness of our method to perform multi-label assignment to balance multiple positive classes. 
+
+4.4. In-depth Analysis 
+
+4.4.1. Analysis of Multi-Label Assignment 
+
+K is an important hyperparameter, which facilitates the ML-PGM to balance multiple positive classes. Thus, we conduct experiments to analyze the effect of different set-tings of K in Table 3 on distinct benchmarks. The results show that the best performance is achieved on EgoMe-anti 
+
+when K is 3, while the optimal K is 5 on EgoExoLearn .The reason for the different K setting is that the actions in the videos of EgoExoLearn tend to be more compact than those in EgoMe-anti (i.e., average number of actions per time segment under the same setting: 2.46 vs. 1.70). Hence, we dynamically set the hyperparameter K for differ-ent benchmarks. In addition, when the value of K is 1 (i.e., only assign a single label), the performance deteriorates re-markably under all settings. It demonstrates that traditional single-label methods are likely to cause over-confident pre-                                                   
+
+> Table 3. Analysis of the number of assigned pseudo labels K.
+> EgoMe-anti
+> KExo2Ego Ego2Exo Noun Verb Noun Verb
+> K=1 76.12 39.89 69.55 36.49
+> K=2 77.89 42.65 70.67 38.97
+> K=3 79.03 43.84 72.01 40.10
+> K=4 78.95 43.65 71.43 40.42
+> K=5 78.58 42.98 71.22 40.04
+> EgoExoLearn
+> KExo2Ego Ego2Exo Noun Verb Noun Verb
+> K=1 41.77 35.26 45.38 40.08
+> K=2 45.02 36.95 47.29 40.05
+> K=3 45.69 37.73 48.15 40.23
+> K=4 46.15 38.07 47.98 44.58
+> K=5 46.26 42.98 48.48 46.51
+
+dictions and introduce noise. We address this problem via multi-label assignment and confidence-based reweighting updated by an entropy priority queue strategy. 
+
+4.4.2. Analysis of Model Complexity 
+
+In Table 4, we only incorporate the correlation between visual information and learnable textual classes into the source-view model as the baseline, as with many current CLIP-based TTA methods (e.g., TPT [57]). The baseline model has a total parameter count of 251.18 MB and an inference computational complexity of 367.55 GFLOPs. In the second column, we add the Multi-Label Prototype Growing Module (ML-PGM), which only introduces 8.54 MB parameters of the memory banks for all classes with negligible computational costs. In addition, because the lightweight narrator takes the extracted frame features as in-Table 4. The inference FLOPs and the number of parameters of the baseline model and key components in the proposed method. “NG” denotes the narration generation, and “TCFE” represents the textual clue feature extraction. Baseline ML-PGM NG TCFE FLOPs (G) 367.55 0.00 0.03 4.06 
+
+#Params (MB) 251.18 8.54 2.38 54.04 Assign a single pseudo class w/o Conf-based reweighting Our DCPGN 
+
+Figure 3. Visualization of representations in memory banks and the corresponding prototypes of several classes. Dots denote saved representations and stars denote prototypes (best viewed in color). 
+
+put, it requires low computational complexity and parame-ters (i.e., 0.03 GFLOPs and 2.38 MB), as shown in the third column. And the feature extraction of the generated textual clues introduces 4.06 GFLOPs of computational complexity and 54.04 MB of parameters. Considering the performance improvement, the increased computational complexity and parameters of the above key components are tolerable. 
+
+4.4.3. Analysis of Representations and Prototypes 
+
+To intuitively visualize the representations in memory banks and the corresponding class prototypes, we use t-SNE [62] to project them into 2-D planes as shown in Fig. 3. In prac-tice, we select five dominant classes with the most samples and visualize the corresponding representations and proto-types under the setting of the EgoExoLearn benchmark. In the first column, we visualize the representations of the model that only assigns the most confident class. The result shows that there are only a few representations as-signed to class 16 (circled in black dashed line), which in-dicates that most representations are biased toward classes with higher confidence and other positive classes with rel-atively low confidence are sidelined, causing inter-class imbalance and unreliable predictions. In the second col-umn, we visualize the representations without confidence-based reweighting. Although the result shows balanced and distinctive representations, some prototypes are extremely close (circled in red dashed line). The reason is likely that the prototypes are calculated by naively averaging the rep-resentations and are disturbed by potential negative sam-ples. Finally, our DCPGN dynamically assigns multiple pseudo labels to mitigate over-confident predictions and uses confidence-based reweighting to mitigate the interfer-ence of negative classes. In the third column, the class-Egocentric (Target-view) Observation Future Egocentric Actions         
+
+> without DCCM
+> Time (s)
+> Top-5 Noun
+> Table
+> Scissors
+> Paper
+> Pen
+> Eraser
+> Top-5 Verb
+> Arrange
+> Cut
+> Fold
+> Give
+> Reach
+> with DCCM
+> Visual Clue
+> With the left hand
+> pick up the blue
+> tape on the table
+> and operate a red
+> scissor for cutting
+> Textual Clue
+> Top-5 Noun
+> Scissors
+> Tape
+> Table
+> Chair
+> Paper
+> Top-5 Verb
+> Cut
+> Use/Operate
+> Hold
+> Arrange
+> Fold
+> Ground-Truth
+> Verb GT
+> Use/Operate
+> Cut
+> Noun GT
+> Table
+> Scissors
+> Tape
+> …
+
+Figure 4. Visualization of noun and verb anticipation candidates with or without DCCM under the Exo2Ego setting. 
+
+wise representations and prototypes can be explicitly distin-guished, which shows the effect of the proposed ML-PGM. 
+
+4.4.4. Analysis of Visual and Textual Clues 
+
+Following the common evaluation setting [20], the model is required to output five noun or verb candidates to anticipate the upcoming actions. To intuitively show the effectiveness of the proposed DCCM, we present an example to anticipate nouns and verbs under the Exo2Ego setting in Fig. 4. In detail, the target-view Ego observation shows the sub-ject holding a blue tape and preparing to use a pair of red scissors, and the activity in the future is using the scissors on the table to cut the tape. Due to the significantly different object appearance and activity progress of different views, the model without DCCM only anticipates the verb “cut” and nouns “table”, “scissors” in the first column. In the sec-ond column, we introduce visual and textual clues that are rich in information about spatial objects and temporal action progressions. Then, we adopt an on-the-shelf CLIP to infer their respective logits and construct dual-clue consistency to bridge the inter-view gap. Therefore, the ground-truth nouns or verbs are accurately included in the predicted Top-5 candidates with the highest confidence scores among the candidates, demonstrating the effectiveness of our DCCM. 
+
+## 5. Conclusion 
+
+In this paper, we propose a novel TE 2A3 task, which aims to adjust the source-view-trained model during testing to anticipate actions in the target view. To tackle this prob-lem, we propose a Dual-Clue enhanced Prototype Grow-ing Network (DCPGN), including a Multi-Label Prototype Growing Module (ML-PGM), which balances multiple pos-itive classes via multi-label assignment and confidence-based reweighting under an entropy priority queue strat-egy. Then, we propose a Dual-Clue Consistency Module (DCCM) to construct dual-clue consistency by constrain-ing the logits inferred from the textual and visual clues to bridge the Ego-Exo temporal-spatial view gap. Extensive experiments on the EgoExoLearn and our newly proposed 
+
+EgoMe-anti demonstrate the effectiveness of our method, which outperforms other related works by a large margin. Acknowledgments 
+
+This work was supported in part by the National Natural Science Foundation of China (No. U23A20286 and No. 62301121), Sichuan Science and Technology Program (No. 2026NSFSC1478), China Postdoctoral Science Foundation (No. 2025M783502 and No. GZB20240120). 
+
+## References 
+
+[1] Jameel Abdul Samadh, Mohammad Hanan Gani, Noor Hus-sein, Muhammad Uzair Khattak, Muhammad Muzammal Naseer, Fahad Shahbaz Khan, and Salman H Khan. Align your prompts: Test-time prompting with distribution align-ment for zero-shot generalization. Advances in Neural Infor-mation Processing Systems , 36:80396–80413, 2023. 3 [2] Shervin Ardeshir and Ali Borji. An exocentric look at ego-centric actions and vice versa. Computer Vision and Image Understanding , 171:61–68, 2018. 2 [3] L´ eon Bottou. Large-scale machine learning with stochas-tic gradient descent. In Proceedings of COMPSTAT’2010: 19th International Conference on Computational Statistic-sParis France, August 22-27, 2010 Keynote, Invited and Con-tributed Papers , pages 177–186. Springer, 2010. 6 [4] Malik Boudiaf, Romain Mueller, Ismail Ben Ayed, and Luca Bertinetto. Parameter-free online test-time adaptation. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pages 8344–8353, 2022. 3 [5] Min-Hung Chen, Zsolt Kira, Ghassan AlRegib, Jaekwon Yoo, Ruxin Chen, and Jian Zheng. Temporal attentive align-ment for large-scale video domain adaptation. In Proceed-ings of the IEEE/CVF International Conference on Com-puter Vision (ICCV) , 2019. 3 [6] Florinel-Alin Croitoru, Vlad Hondru, Radu Tudor Ionescu, and Mubarak Shah. Diffusion models in vision: A survey. 
+
+IEEE Transactions on Pattern Analysis and Machine Intelli-gence , 45(9):10850–10869, 2023. 3 [7] Dima Damen, Hazel Doughty, Giovanni Maria Farinella, Antonino Furnari, Evangelos Kazakos, Jian Ma, Davide Moltisanti, Jonathan Munro, Toby Perrett, Will Price, et al. Rescaling egocentric vision: Collection, pipeline and chal-lenges for epic-kitchens-100. International Journal of Com-puter Vision , 130(1):33–55, 2022. 3, 6, 15 [8] Fernando De la Torre, Jessica Hodgins, Adam Bargteil, Xavier Martin, Justin Macey, Alex Collado, and Pep Beltran. Guide to the carnegie mellon university multimodal activity (cmu-mmac) database. 2009. 2 [9] Mario D¨ obler, Robert A Marsden, Tobias Raichle, and Bin Yang. A lost opportunity for vision-language models: acomparative study of online test-time adaptation for vision-language models. In European Conference on Computer Vi-sion , pages 117–133. Springer, 2024. 3 [10] Jiafei Duan, Samson Yu, Hui Li Tan, Hongyuan Zhu, and Cheston Tan. A survey of embodied ai: From simulators to research tasks. IEEE Transactions on Emerging Topics in Computational Intelligence , 6(2):230–244, 2022. 1 [11] Matteo Farina, Gianni Franchi, Giovanni Iacca, Massimil-iano Mancini, and Elisa Ricci. Frustratingly easy test-time adaptation of vision-language models. Advances in Neural Information Processing Systems , 37:129062–129093, 2024. 1, 3, 4, 6, 13, 16 [12] Chun-Mei Feng, Kai Yu, Yong Liu, Salman Khan, and Wangmeng Zuo. Diverse data augmentation with diffusions for effective test-time prompt tuning. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 2704–2714, 2023. 1, 3 [13] Harshala Gammulle, Simon Denman, Sridha Sridharan, and Clinton Fookes. Predicting the future: A jointly learnt model for action anticipation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 5562– 5571, 2019. 1 [14] Yaroslav Ganin and Victor Lempitsky. Unsupervised domain adaptation by backpropagation. In International conference on machine learning , pages 1180–1189. PMLR, 2015. 1 [15] Dayoung Gong, Joonseok Lee, Manjin Kim, Seong Jong Ha, and Minsu Cho. Future transformer for long-term action anticipation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 3052– 3061, 2022. 1 [16] Yuanbiao Gou, Haiyu Zhao, Boyun Li, Xinyan Xiao, and Xi Peng. Test-time degradation adaptation for open-set image restoration. arXiv preprint arXiv:2312.02197 , 2023. 3 [17] Kristen Grauman, Andrew Westbury, Lorenzo Torresani, Kris Kitani, Jitendra Malik, Triantafyllos Afouras, Kumar Ashutosh, Vijay Baiyya, Siddhant Bansal, Bikram Boote, et al. Ego-exo4d: Understanding skilled human activity from first-and third-person perspectives. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 19383–19400, 2024. 1, 2, 5 [18] Sihong Huang, Jiaxin Wu, Xiaoyong Wei, Yi Cai, Dongmei Jiang, and Yaowei Wang. Sound bridge: Associating ego-centric and exocentric videos via audio cues. In Proceedings of the Computer Vision and Pattern Recognition Conference ,pages 28942–28951, 2025. 2 [19] Yi Huang, Xiaoshan Yang, Junyun Gao, and Changsheng Xu. Holographic feature learning of egocentric-exocentric videos for multi-domain action recognition. IEEE Transac-tions on Multimedia , 24:2273–2286, 2021. 2 [20] Yifei Huang, Guo Chen, Jilan Xu, Mingfang Zhang, Li-jin Yang, Baoqi Pei, Hongjie Zhang, Lu Dong, Yali Wang, Limin Wang, et al. Egoexolearn: A dataset for bridging asyn-chronous ego-and exo-centric view of procedural activities in real world. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 22072– 22086, 2024. 1, 2, 3, 5, 6, 8, 13, 14, 15 [21] Marco Iacoboni. Imitation, empathy, and mirror neurons. 
+
+Annual review of psychology , 60(1):653–670, 2009. 1 [22] Yusuke Iwasawa and Yutaka Matsuo. Test-time classifier adjustment module for model-agnostic domain generaliza-tion. Advances in Neural Information Processing Systems ,34:2427–2440, 2021. 3 [23] Hueihan Jhuang, Juergen Gall, Silvia Zuffi, Cordelia Schmid, and Michael J Black. Towards understanding ac-tion recognition. In Proceedings of the IEEE international conference on computer vision , pages 3192–3199, 2013. 1 [24] Baoxiong Jia, Yixin Chen, Siyuan Huang, Yixin Zhu, and Song-Chun Zhu. Lemma: A multi-view dataset for le arning m ulti-agent m ulti-task a ctivities. In European Conference on Computer Vision , pages 767–786. Springer, 2020. 2 [25] Soo-Han Kang and Ji-Hyeong Han. Video captioning based on both egocentric and exocentric views of robot vision for human-robot interaction. International Journal of Social Robotics , 15(4):631–641, 2023. 1 [26] Adilbek Karmanov, Dayan Guan, Shijian Lu, Abdulmotaleb El Saddik, and Eric Xing. Efficient test-time adaptation of vision-language models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 14162–14171, 2024. 2, 3, 4, 6, 13, 16 [27] Nejc Kozamernik, Janez Zaletelj, Andrej Koˇ sir, Filip ˇSuligoj, and Drago Braˇ cun. Visual quality and safety mon-itoring system for human-robot cooperation. The Interna-tional Journal of Advanced Manufacturing Technology , 128 (1):685–701, 2023. 1 [28] Taein Kwon, Bugra Tekin, Jan St¨ uhmer, Federica Bogo, and Marc Pollefeys. H2o: Two hands manipulating objects for first person interaction recognition. In Proceedings of the IEEE/CVF international conference on computer vision ,pages 10138–10148, 2021. 1, 2 [29] Haobin Li, Peng Hu, Qianjun Zhang, Xi Peng, Xiting Liu, and Mouxing Yang. Test-time adaptation for cross-modal retrieval with query shift. arXiv preprint arXiv:2410.15624 ,2024. 3 [30] Xiang Li, Heqian Qiu, Lanxiao Wang, Hanwen Zhang, Chenghao Qi, Linfeng Han, Huiyu Xiong, and Hongliang Li. Challenges and trends in egocentric vision: A survey. 
+
+arXiv preprint arXiv:2503.15275 , 2025. 2 [31] Yanghao Li, Tushar Nagarajan, Bo Xiong, and Kristen Grau-man. Ego-exo: Transferring visual representations from third-person to first-person videos. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 6943–6953, 2021. 2 [32] Yuan-Ming Li, Wei-Jin Huang, An-Lan Wang, Ling-An Zeng, Jing-Ke Meng, and Wei-Shi Zheng. Egoexo-fitness: Towards egocentric and exocentric full-body action under-standing. In European Conference on Computer Vision ,pages 363–382. Springer, 2024. 1, 2 [33] Yiwen Liang, Hui Chen, Yizhe Xiong, Zihan Zhou, Mengyao Lyu, Zijia Lin, Shuaicheng Niu, Sicheng Zhao, Jungong Han, and Guiguang Ding. Advancing reliable test-time adaptation of vision-language models under visual vari-ations. arXiv preprint arXiv:2507.09500 , 2025. 3 [34] Wei Lin, Muhammad Jehanzeb Mirza, Mateusz Kozinski, Horst Possegger, Hilde Kuehne, and Horst Bischof. Video test-time adaptation for action recognition. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pat-tern Recognition , pages 22952–22961, 2023. 2, 3, 6, 13, 16 [35] Zichen Liu, Hongbo Sun, Yuxin Peng, and Jiahuan Zhou. Dart: Dual-modal adaptive online prompting and knowl-edge retention for test-time adaptation. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 14106– 14114, 2024. 3 [36] Yuwen Lu, Yuewen Yang, Qinyi Zhao, Chengzhi Zhang, and Toby Jia-Jun Li. Ai assistance for ux: A literature review through human-centered ai. ArXiv , abs/2402.06089, 2024. 3 [37] Mi Luo, Zihui Xue, Alex Dimakis, and Kristen Grauman. Viewpoint rosetta stone: Unlocking unpaired ego-exo videos for view-invariant representation learning. In Proceedings of the Computer Vision and Pattern Recognition Conference ,pages 15802–15812, 2025. 1, 2 [38] Xiaosong Ma, Jie Zhang, Song Guo, and Wenchao Xu. Swapprompt: Test-time prompt adaptation for vision-language models. Advances in Neural Information Process-ing Systems , 36:65252–65264, 2023. 3 [39] Hefei Mei, Minjing Dong, and Chang Xu. Efficient image-to-image diffusion classifier for adversarial robustness. In 
+
+Proceedings of the AAAI Conference on Artificial Intelli-gence , pages 6081–6089, 2025. 3 [40] Himangi Mittal, Nakul Agarwal, Shao-Yuan Lo, and Kwon-joon Lee. Can’t make an omelette without breaking some eggs: Plausible action anticipation using large video-language models. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 18580–18590, 2024. 1 [41] Tushar Nagarajan and Kristen Grauman. Shaping embodied agent behavior with activity-context priors from egocentric video. Advances in Neural Information Processing Systems ,34:29794–29805, 2021. 2 [42] Takehiko Ohkawa, Takuma Yagi, Taichi Nishimura, Ryosuke Furuta, Atsushi Hashimoto, Yoshitaka Ushiku, and Yoichi Sato. Exo2EgoDVC: Dense video captioning of ego-centric procedural activities using web instructional videos. In Proceedings of the IEEE/CVF Winter Conference on Ap-plications of Computer Vision (WACV) , 2025. 1, 2 [43] Hyoungseob Park, Anjali Gupta, and Alex Wong. Test-time adaptation for depth completion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 20519–20529, 2024. 3 [44] Jungin Park, Jiyoung Lee, and Kwanghoon Sohn. Bootstrap your own views: Masked ego-exo modeling for fine-grained view-invariant video representations. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 13661–13670, 2025. 2 [45] Heqian Qiu, Zhaofeng Shi, Lanxiao Wang, Huiyu Xiong, Xi-ang Li, and Hongliang Li. Egome: Follow me via egocentric view in real world. arXiv preprint arXiv:2501.19061 , 2025. 1, 2, 5, 14, 15 [46] Camillo Quattrocchi, Antonino Furnari, Daniele Di Mauro, Mario Valerio Giuffrida, and Giovanni Maria Farinella. Syn-chronization is all you need: Exocentric-to-egocentric trans-fer for temporal action segmentation with unlabeled synchro-nized video pairs. In European Conference on Computer Vi-sion , pages 253–270. Springer, 2024. 1, 2 [47] Gorjan Radevski, Dusan Grujicic, Matthew Blaschko, Marie-Francine Moens, and Tinne Tuytelaars. Multimodal distillation for egocentric action recognition. In Proceedings of the IEEE/CVF International Conference on Computer Vi-sion , pages 5213–5224, 2023. 2 [48] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervi-sion. In International conference on machine learning , pages 8748–8763. PmLR, 2021. 3, 5, 6 [49] Nishant Rai, Haofeng Chen, Jingwei Ji, Rishi Desai, Kazuki Kozuka, Shun Ishizaka, Ehsan Adeli, and Juan Carlos Niebles. Home action genome: Cooperative compositional action understanding. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 11184–11193, 2021. 2 [50] Dominick Reilly, Manish Kumar Govind, Le Xue, and Sri-jan Das. From my view to yours: Ego-augmented learning in large vision language models for understanding exocen-tric daily living activities. arXiv preprint arXiv:2501.05711 ,2025. 1 [51] Giacomo Rizzolatti and Laila Craighero. The mirror-neuron system. Annu. Rev. Neurosci. , 27(1):169–192, 2004. 1 [52] Fadime Sener, Dibyadip Chatterjee, Daniel Shelepov, Kun He, Dipika Singhania, Robert Wang, and Angela Yao. As-sembly101: A large-scale multi-view video dataset for un-derstanding procedural activities. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 21096–21106, 2022. 2 [53] Zhaofeng Shi, Heqian Qiu, Lanxiao Wang, Fanman Meng, Qingbo Wu, and Hongliang Li. Cognition transferring and decoupling for text-supervised egocentric semantic segmen-tation. IEEE Transactions on Circuits and Systems for Video Technology , 2024. 2, 5 [54] Zhaofeng Shi, Qingbo Wu, Fanman Meng, Linfeng Xu, and Hongliang Li. Cross-modal cognitive consensus guided audio-visual segmentation. IEEE Transactions on Multime-dia , 2024. 1 [55] Zhaofeng Shi, Heqian Qiu, Lanxiao Wang, Qingbo Wu, Fan-man Meng, and Hongliang Li. Unsupervised ego-and exo-centric dense procedural activity captioning via gaze consen-sus adaptation. In Proceedings of the 33rd ACM Interna-tional Conference on Multimedia , pages 3731–3740, 2025. 1, 2 [56] Inkyu Shin, Yi-Hsuan Tsai, Bingbing Zhuang, Samuel Schulter, Buyu Liu, Sparsh Garg, In So Kweon, and Kuk-Jin Yoon. Mm-tta: multi-modal test-time adaptation for 3d se-mantic segmentation. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 16928–16937, 2022. 3 [57] Manli Shu, Weili Nie, De-An Huang, Zhiding Yu, Tom Goldstein, Anima Anandkumar, and Chaowei Xiao. Test-time prompt tuning for zero-shot generalization in vision-language models. Advances in Neural Information Process-ing Systems , 35:14274–14289, 2022. 1, 2, 3, 4, 6, 7, 13, 16 [58] Gunnar A Sigurdsson, Abhinav Gupta, Cordelia Schmid, Ali Farhadi, and Karteek Alahari. Charades-ego: A large-scale dataset of paired third and first person videos. arXiv preprint arXiv:1804.09626 , 2018. 2 [59] Zehua Sun, Qiuhong Ke, Hossein Rahmani, Mohammed Bennamoun, Gang Wang, and Jun Liu. Human action recog-nition from various data modalities: A review. IEEE trans-actions on pattern analysis and machine intelligence , 45(3): 3200–3225, 2022. 1 [60] Thanh-Dat Truong and Khoa Luu. Cross-view action recog-nition understanding from exocentric to egocentric perspec-tive. Neurocomputing , 614:128731, 2025. 2 [61] Eric Tzeng, Judy Hoffman, Ning Zhang, Kate Saenko, and Trevor Darrell. Deep domain confusion: Maximizing for domain invariance. arXiv preprint arXiv:1412.3474 , 2014. 1 [62] Laurens Van der Maaten and Geoffrey Hinton. Visualizing data using t-sne. Journal of machine learning research , 9 (11), 2008. 8, 17 [63] Dequan Wang, Evan Shelhamer, Shaoteng Liu, Bruno Ol-shausen, and Trevor Darrell. Tent: Fully test-time adaptation by entropy minimization. arXiv preprint arXiv:2006.10726 ,2020. 1, 2, 3, 4, 6, 13, 16 [64] Huiyu Wang, Mitesh Kumar Singh, and Lorenzo Torresani. Ego-only: Egocentric action detection without exocentric transferring. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 5250–5261, 2023. 1 [65] Kunyu Wang, Xueyang Fu, Xin Lu, Chengjie Ge, Chengzhi Cao, Wei Zhai, and Zheng-Jun Zha. Efficient test-time adap-tive object detection via sensitivity-guided pruning. In Pro-ceedings of the Computer Vision and Pattern Recognition Conference , pages 10577–10586, 2025. 3 [66] Qitong Wang, Long Zhao, Liangzhe Yuan, Ting Liu, and Xi Peng. Learning from semantic alignment between unpaired multiviews for egocentric video recognition. In Proceedings of the IEEE/CVF International Conference on Computer Vi-sion , pages 3307–3317, 2023. 2 [67] Tai Wang, Xiaohan Mao, Chenming Zhu, Runsen Xu, Ruiyuan Lyu, Peisen Li, Xiao Chen, Wenwei Zhang, Kai Chen, Tianfan Xue, et al. Embodiedscan: A holistic multi-modal 3d perception suite towards embodied ai. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 19757–19767, 2024. 1 [68] Xiaohan Wang, Linchao Zhu, Heng Wang, and Yi Yang. In-teractive prototype learning for egocentric action recogni-tion. In Proceedings of the IEEE/CVF International Con-ference on Computer Vision , pages 8168–8177, 2021. 1 [69] Zixin Wang, Dong Gong, Sen Wang, Zi Huang, and Yadan Luo. Is less more? exploring token condensation as training-free test-time adaptation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 144– 154, 2025. 1, 6, 13, 16 [70] Xiangyu Wu, Feng Yu, Qing-Guo Chen, Yang Yang, and Jianfeng Lu. Multi-label test-time adaptation with bound en-tropy minimization. arXiv preprint arXiv:2502.03777 , 2025. 2, 3, 6, 14, 15, 16 [71] Haifeng Xia, Pu Wang, and Zhengming Ding. Incomplete multi-view domain adaptation via channel enhancement and knowledge transfer. In European Conference on Computer Vision , pages 200–217. Springer, 2022. 2 [72] Jilan Xu, Yifei Huang, Junlin Hou, Guo Chen, Yuejie Zhang, Rui Feng, and Weidi Xie. Retrieval-augmented egocentric video captioning. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , pages 13525–13536, 2024. 2 [73] Zihui Sherry Xue and Kristen Grauman. Learning fine-grained view-invariant representations from unpaired ego-exo videos via temporal alignment. Advances in Neural In-formation Processing Systems , 36:53688–53710, 2023. 1, 2[74] Jinyu Yang, Jingjing Liu, Ning Xu, and Junzhou Huang. Tvt: Transferable vision transformer for unsupervised do-main adaptation. In Proceedings of the IEEE/CVF winter conference on applications of computer vision , pages 520– 530, 2023. 1 [75] Ce Zhang, Simon Stepputtis, Katia Sycara, and Yaqi Xie. Dual prototype evolving for test-time generalization of vision-language models. Advances in Neural Information Processing Systems , 37:32111–32136, 2024. 3, 4 [76] Ding-Chu Zhang, Zhi Zhou, and Yu-Feng Li. Robust test-time adaptation for zero-shot prompt tuning. In Proceed-ings of the AAAI Conference on Artificial Intelligence , pages 16714–16722, 2024. 3 [77] Haoyu Zhang, Qiaohui Chu, Meng Liu, Yunxiao Wang, Bin Wen, Fan Yang, Tingting Gao, Di Zhang, Yaowei Wang, and Liqiang Nie. Exo2ego: Exocentric knowledge guided mllm for egocentric video understanding. arXiv preprint arXiv:2503.09143 , 2025. 2 [78] Renrui Zhang, Wei Zhang, Rongyao Fang, Peng Gao, Kun-chang Li, Jifeng Dai, Yu Qiao, and Hongsheng Li. Tip-adapter: Training-free adaption of clip for few-shot classi-fication. In European conference on computer vision , pages 493–510. Springer, 2022. 1, 3 [79] Taolin Zhang, Jinpeng Wang, Hang Guo, Tao Dai, Bin Chen, and Shu-Tao Xia. Boostadapter: Improving vision-language test-time adaptation via regional bootstrapping. Advances in Neural Information Processing Systems , 37:67795–67825, 2024. 3 [80] Weixia Zhang, Chao Ma, Qi Wu, and Xiaokang Yang. Language-guided navigation via cross-modal grounding and alternate adversarial learning. IEEE Transactions on Circuits and Systems for Video Technology , 31(9):3469–3481, 2020. 1[81] Yiwu Zhong, Jianwei Yang, Pengchuan Zhang, Chun-yuan Li, Noel Codella, Liunian Harold Li, Luowei Zhou, Xiyang Dai, Lu Yuan, Yin Li, et al. Regionclip: Region-based language-image pretraining. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 16793–16803, 2022. 5 Test-time Ego-Exo-centric Adaptation for Action Anticipation via Multi-Label Prototype Growing and Dual-Clue Consistency 
+
+# Supplementary Material 
+
+## A. Details of State-of-the-Art Methods 
+
+In this section, we introduce some technical and re-implementation details of the related state-of-the-art com-parison methods. 
+
+A.1. Tent 
+
+Tent [63] is the pioneering work that utilizes target-domain data to adjust the trained model during test time via an en-tropy minimization strategy. It systematically defines the settings of fully test-time adaptation (TTA), i.e., fully TTA is independent of the training data and training loss, and adapts the model by optimizing an unsupervised loss dur-ing testing based on the unlabeled test data stream. Tech-nically, it adjusts the affine parameters in batchnorm layers by minimizing the calculated entropy of the predicted log-its. In this paper, we re-implement Tent for the TE 2A3 task under the same settings as with our method. Due to the ac-tion anticipation model [20] not containing batchnorm lay-ers, we practically select the parameters of the bias layers in the anticipation head, and the learning rate is set to 1e-4 for 
+
+EgoExoLearn and 1e-3 for EgoMe-anti for optimization. 
+
+A.2. TPT 
+
+TPT [57] is the first work to perform prompt tuning based on the CLIP model. TPT achieves test-time adaptation by augmenting a single test image to diverse views and minimizing entropy to optimize the learnable prompts. In this paper, we conduct re-implementation according to the “TPT+CoOp” setting in this work. Since our TE 2A3 task focuses on the adaptation of video rather than image, we adjust the original spatial cropping augmentation to the tem-poral re-sampling strategy to suit our task. In addition, we initialize the learnable prompts with “a photo of a”, whose length is 4 as in our work. For optimization, the learning rate is set to 1e-5 on the EgoExoLearn and 1e-4 for the 
+
+EgoMe-anti benchmark. 
+
+A.3. VITTA 
+
+VITTA [34] is the first TTA work for video-level action recognition. To address unanticipated distribution shifts of different-domain videos, VITTA first adopts a feature distribution alignment technique to align the estimated on-line statistics of the training and testing sets. Additionally, it constrains the predictions of different temporally aug-mented views to construct consistency. We re-implement this work according to its original settings. In detail, we first save the mean and variance for the features of the train-ing set under all settings. Then, we employ momentum updating to obtain the mean and variance of the test set. Moreover, we adopt L1 losses to align the training and test-ing mean and variance statistics of each layer, and estab-lish consistency between temporal augmented views. The learning rates are set to 1e-5 and 1e-4 for EgoExoLearn 
+
+and EgoMe-anti , respectively. The quantitative results show that, even though VITTA accesses the statistics of the train-ing set, our method still outperforms it by a large margin. 
+
+A.4. TDA 
+
+TDA [26] is a training-free method for effective and effi-cient test-time adaptation. To tackle the distribution shifts between the source and target domains, TDA introduces a lightweight key-value cache and progressively refines the saved pseudo-labels for efficient adaptation to test data. Moreover, TDA also incorporates a negative cache branch to mitigate the impact of noise and achieves high perfor-mance for image-level TTA. In this paper, we adjust the hand-crafted prompt to be the same as our method (i.e., “a photo of a”) for a fair comparison. Furthermore, other hy-perparameters such as threshold values for negative pseudo-labeling and testing feature selection are set following the official settings for re-implementation. 
+
+A.5. ZERO 
+
+ZERO [11] is a simple yet effective method by setting the softmax temperature to zero. In detail, to address the model’s poor generalization capability when presented with challenging examples, ZERO conducts thorough theoretical and empirical analysis. Technically, ZERO first augments the input image into multiple views, then feeds the images into the model to obtain anticipation logits. Next, it remains the confident predictions, and it finally sets the softmax tem-perature to zero. Following this paradigm, we conduct the temporal augmentation instead of the spatial augmentation specific to the video-level task. Then, we re-implement the ZERO method under its official settings for our TE 2A3 task on the EgoExoLearn and EgoMe-anti benchmarks. 
+
+A.6. TCA 
+
+TCA [69] stands for Token Condensation Adaptation, which is an efficient training-free adaptation method to pro-gressively refine the token selection process during test time. In detail, TCA first introduces a token reservoir to track and store class tokens sensitive to the domain shifts. Then, TCA dynamically adjusts multi-head attention maps based on the current data and accumulated knowledge. Fi-nally, predictions are inferred not only from image-text sim-ilarity but also from correlations between visual features and tokens, which facilitates leveraging historical informa-tion for effective and efficient adaptation. In this paper, we re-implement this excellent work for the proposed TE 2A3
+
+task on the EgoExoLearn and EgoMe-anti benchmarks ac-cording to the official setting of TCA. 
+
+A.7. ML-TTA 
+
+ML-TTA [70] is a multi-label TTA method using the bound entropy minimization strategy. In detail, ML-TTA first de-scribes the input images to determine the number of posi-tive classes. Then, it infers a weak and a strong label set. Next, ML-TTA performs the label-binding strategy to bind the potential positive classes to mitigate the over-confident problem of plain entropy-based optimization, and conducts prompt learning for the two branches, respectively. The in-ferred logits of the two branches are added to obtain the final result. While effective, ML-TTA is for image-level TTA rather than video-level Ego-Exo adaptation and antic-ipation. In this paper, we directly utilize fine-level annota-tions from the original datasets [20, 45] as descriptions for the input target-view videos. The learning rates are set to 1e-4 and 5e-4 for the EgoExoLearn and EgoMe-anti bench-marks for optimization. Despite our method employing the predicted descriptions while ML-TTA utilizes manually la-beled caption annotations, our approach still surpasses ML-TTA by a large margin under all settings, which demon-strates the effectiveness of the proposed method. 
+
+## B. Details of Lightweight Narrator 
+
+In this section, we introduce more architectural and imple-mentation details of the lightweight narrator N (·) in the Dual-Clue Consistency Module (DCCM) in Section 3.3. The architecture of the N (·) follows “S2VTAttModel” in the official video-caption.pytorch library, which is a well-known open-source library for video captioning. The narra-tor is composed of an encoder and a decoder based on linear layers, GRU units, and attention layers. Assuming the input video frame features are denoted as F T , we first convert F T
+
+into sequential features, as follows: 
+
+XT = {xT 
+
+> 1
+
+, x T 
+
+> 2
+
+, · · · , x TL } = FV (F T ) (1) where FV (·) is an MLP comprising three linear layers, 
+
+XT = {xT 
+
+> 1
+
+, x T 
+
+> 2
+
+, · · · , x TL } ∈ RL×C means the converted input features, L denotes the number of input video frames. Then, we utilize GRU units to model the temporal depen-dencies between the video frames. Taking the t-th timestep as an example, the calculation process is as follows: 
+
+rt = s(Wir xTt + bir + Whr ˆht−1 + bhr ) (2) 
+
+zt = s(Wiz xTt + biz + Whz ˆht−1 + bhz ) (3) 
+
+nt = tanh( Win xTt + bin + rt ∗ (Whn ˆht−1 + bhn )) (4) 
+
+ˆht = (1 − zt) ∗ nt + zt ∗ ˆht−1 (5) where ˆht is the hidden state at the timestamp t, s(·) is the sigmoid function, ∗ is the Hadamard product, and W , b are learnable weights and biases, respectively. The output of the encoder can be represented as ˆH = {ˆh1, ˆh2, · · · ˆhL} ∈ 
+
+RL×Ch , where Ch is the dimension of the hidden state. In the decoder, an attention mechanism is first applied: 
+
+O1 = tanh( W1[ ˆH; t(ˆhL)] + b1) (6) 
+
+Att = {α1, α 2, · · · αL} = σ(W2O1 + b2) (7) 
+
+ctx =
+
+> L
+
+X
+
+> i=1
+
+αi · ˆhi (8) where t(·) is the tile operation, σ is softmax function, ctx ∈
+
+RCh denotes the context feature. Then, we concatenate the context feature ctx with embeddings of the decoded words (each sentence begins with the <sos > token), and initialize the hidden state of the decoder with the encoder’s final hid-den state ˆhL. Finally, we adopt a GRU-based layer and a 2-layer MLP to decode the final sentence autoregressively. For practical implementation, we collect view-agnostic video-text pairs {Vi, T i}Ni=1 for training the narrator. In detail, we first remove all videos and corresponding anno-tations relevant to the data for test-time adaptation in the proposed TE 2A3 task under all settings from the original EgoMe [45] and EgoExoLearn [20] datasets. Then, we in-tegrate the Ego and Exo video clips and the raw textual de-scriptions within the original dataset to construct the video captioning dataset {Vi, T i}Ni=1 . However, the description labeling rules are different for Ego and Exo videos in the EgoMe dataset (i.e., descriptions of Exo videos include at-tributes of the demonstrator). Therefore, we uniformly pre-process the texts in the video captioning dataset to concen-trate on procedural activities and exclude potential view-specific information. Finally, we utilize the above video captioning dataset to train the lightweight narrator N (·) to generate view-agnostic textual clues, facilitating the adap-tation between Ego and Exo views during test time. Specif-ically, we set the feature dimension Ch to 512. The maxi-mum sentence length is set to 28, and each sentence begins with the <sos > token and ends with the <eos > token. Ad-ditionally, the sampling strategy of video frame features is identical to that in the action anticipation network (i.e., uni-formly sample 5 frames as input). We train the narrator network for 1000 epochs with a batch size of 1024. The dropout rate is 0.5 and 0.2 for the linear and GRU-based layers, respectively, which helps alleviate overfitting. More-over, we set the initial learning rate to 5e-4 and apply a learning rate decay strategy, in which the learning rate is reduced to 80 % of its original value every 200 epochs. Table A1. The number of samples under each view of the train /val /test set of the EgoMe-anti and EgoExoLearn benchmarks. 
+
+Subset 
+
+EgoMe-anti EgoExoLearn 
+
+Exo Ego Exo Ego Noun Verb Noun Verb Noun Verb Noun Verb Train set 8336 8336 8939 8939 11762 17516 78055 33496 Validation set 1817 1817 1970 1970 8235 1960 84726 91454 Test set 3584 3584 3889 3889 12395 5371 15231 50471 
+
+## C. Details of the Benchmarks 
+
+In this section, we show more details of our newly proposed 
+
+EgoMe-anti and the existing EgoExoLearn benchmarks to support the TE 2A3 task. 
+
+C.1. EgoMe-anti 
+
+The EgoMe-anti benchmark is constructed based on the re-cent EgoMe [45] dataset, which follows the imitation learn-ing process in real-world scenarios. In detail, it contains 82.8 hours of Exo observation and Ego following videos and covers up to 41 real-world scenarios such as the li-brary, classroom, gym, and so on. The video durations range widely from 3 seconds to over 60 seconds, and most of the videos last from 10 to 25 seconds. Moreover, each video contains 2 to above 15 fine-level consecutive and non-overlapped atomic actions with timestamps and descrip-tions. We exclude the incorrectly following videos and leverage the fine-level timestamps and description annota-tions to construct the EgoMe-anti benchmark, whose sam-ple numbers of the train /val /test sets are shown in the left panel of Table A1. Because we extract nouns and verbs from the raw sentences simultaneously, the number of sam-ples remains identical in noun or verb anticipation tasks un-der the same perspective. Finally, we summarize 35 noun and 29 verb categories for the action anticipation task. 
+
+C.2. EgoExoLearn 
+
+The EgoExoLearn benchmark in our work directly follows the official cross-view action anticipation benchmark pro-posed in EgoExoLearn [20], which is an excellent dataset containing large-scale asynchronous Ego and Exo videos of procedural activities in daily and professional scenarios. Specifically, it comprises up to 745 long videos with a total duration of around 120 hours. The video recording is ori-ented towards 5 types of daily cooking tasks and 3 types of chemical laboratory tasks, which are recorded in 4 kinds of different kitchens and 3 kinds of laboratories to ensure data diversity. This dataset also contains detailed coarse-grained and fine-grained timestamps, descriptions, and noun/verb categories. Therefore, the EgoExoLearn benchmark for the action anticipation task is constructed based on the fine-grained annotations with massive samples, and the number of samples of each subset in the Ego or Exo perspectives is represented in the right panel in Table A1. In addition, 
+
+EgoExoLearn has 31 noun and 19 verb categories for the action anticipation task. 
+
+## D. Results in Top-1 Recall Evaluation 
+
+In addition to the common Top-5 recall evaluation met-ric [7, 20], we also evaluate our DCPGN and comparison methods under the Top-1 recall metric for more compre-hensive evaluation. As shown in Table A2, our method still outperforms other comparison methods by a large mar-gin. In detail, it surpasses the most recent ML-TTA [70] by 4.52 %, 10.11 %, 5.43 %, 7.69 % on the EgoMe-anti bench-mark, and by 6.75 %, 4.15 %, 6.29 %, 8.85 % on the EgoEx-oLearn benchmark, which further demonstrates the effec-tiveness and superiority of the proposed DCPGN. 
+
+## E. Analysis of Hyperparameters 
+
+In this section, we conduct comprehensive experiments to analyze several hyperparameters in the proposed method. Moreover, we report the results under Exo2Ego and Ego2Exo settings on the EgoMe-anti and EgoExoLearn 
+
+benchmarks. 
+
+E.1. Analysis of memory bank capacity N
+
+In Table A3, we conduct experiments under different set-tings of the hyperparameter N , which denotes the maxi-mum capacity of the memory bank for each class. Specifi-cally, we set the value of N to 100, 200, 300, 400, and 500 and report the number of parameters (including the saved data in the memory banks) and quantitative results under all settings on the EgoMe-anti and EgoExoLearn benchmarks. The experimental results show that the performances fluc-tuate within a relatively small range, and the number of parameters is tolerable under all settings of N . It demon-strates the effectiveness of the proposed memory banks in the ML-PGM, which can achieve high performance even though the memory bank capacity is limited. Moreover, the model reaches the highest performance when N is 500. Considering its superior performance and tolerable number of parameters, we finally set N to 500 in our DCPGN. Table A2. Quantitative results on the EgoMe-anti and EgoExoLearn under the Exo2Ego and Ego2Exo settings in Top-1 recall evaluation. 
+
+Methods 
+
+EgoMe-anti EgoExoLearn 
+
+Exo2Ego Ego2Exo Exo2Ego Ego2Exo Noun Verb Noun Verb Noun Verb Noun Verb Ours without Adaptation 27.30 6.24 22.72 6.45 6.07 5.43 6.90 5.35 Tent [63] 31.72 8.09 26.92 8.98 7.72 6.57 7.98 5.40 TPT [57] 31.97 8.05 27.14 8.89 8.11 6.35 8.13 5.43 VITTA [34] 32.21 8.75 26.87 9.14 7.49 6.13 8.27 5.56 TDA [26] 33.42 10.60 27.18 10.46 8.26 6.59 8.41 5.48 ZERO [11] 32.50 10.02 25.82 10.26 9.48 8.73 10.27 7.42 TCA [69] 32.35 8.45 27.36 9.07 7.85 6.22 8.05 5.55 ML-TTA [70] 33.48 10.37 27.80 10.06 10.39 7.40 10.01 5.38 
+
+DCPGN (Ours) 38.00 20.48 33.23 17.75 17.14 11.55 16.30 14.23   
+
+> Table A3. Analysis of the maximum capacity Nof the memory bank. Note that the saved data in the memory banks is also included in the statistics of the number of parameters.
+
+N
+
+EgoMe-anti EgoExoLearn 
+
+#Params (MB) Exo2Ego Ego2Exo Exo2Ego Ego2Exo Noun Verb Noun Verb Noun Verb Noun Verb 100 78.99 43.64 71.97 39.62 45.07 42.60 47.48 45.58 1.71 200 79.24 42.47 71.97 39.71 45.36 42.72 47.87 45.61 3.42 300 78.95 42.95 71.81 39.82 45.50 43.00 48.18 45.99 5.13 400 78.86 43.17 71.57 38.95 45.78 42.74 48.06 46.10 6.84 500 79.03 43.84 72.01 40.10 46.26 42.98 48.48 46.51 8.54 
+
+E.2. Analysis of hyperparameter α
+
+In Table A4, we conduct quantitative experiments under all settings on the two benchmarks to analyze the hyperparam-eter α, which is used to balance the distinct logits from ML-PGM and DCCM. Keeping other hyperparameters and set-tings unchanged, we set the balance coefficient α to 0.25, 0.50, 0.75, and 1.00, and report their respective results. The results in Table A4 show that the model achieves the best performance when α is set to 0.5. Furthermore, the model is not sensitive to the settings of α within the range from 0.25 to 1.0, which indicates the robustness of the model to different settings of the balancing hyperparameter, demon-strating the effectiveness of the proposed method. 
+
+E.3. Analysis of hyperparameter μ1
+
+In Table A5, we quantitatively analyze the hyperparameter 
+
+μ1, which is used to scale the visual logits inferred based on the visual clue in the proposed DCCM. In detail, we conduct experiments and report the performances under Exo2Ego and Ego2Exo settings on the two benchmarks, where the hyperparameter μ1 is set to 0.25, 0.5, 0.75, and 1.0, re-spectively, and other hyperparameters remain unchanged. The results show that the model exhibits robustness to the change of μ1, i.e., the metrics fluctuate within 1.5 %. Fi-nally, we set μ1 to 1.0, in which case the model yields opti-mal performance under both view adaptation settings. 
+
+E.4. Analysis of hyperparameter μ2
+
+In Table A6, we set the hyperparameter μ2 for scaling the textual logits to 0.25, 0.5, 0.75, and 1.0, and conduct ex-periments to analyze its effects comprehensively. The ex-perimental results show that when the hyperparameter μ2 is set to 0.5, the model achieves the best performance under all settings on EgoMe-anti . For the EgoExoLearn bench-mark, the model yields the best metrics under the Ego2Exo setting and second-place results under the Exo2Ego setting. Therefore, we finally assign the hyperparameter μ2 to 0.5 in our model. In addition, the final performance remains stable when the hyperparameter μ2 is changed from 0.25 to 1.0, which demonstrates the robustness of the proposed DCPGN to different μ2 values. 
+
+E.5. Analysis of the number of test samples Ntest 
+
+The number of test samples Ntest is crucial for the memory banks in the Multi-Label Prototype Growing Module (ML-PGM) to create reliable and meaningful prototypes. There-fore, it is necessary to ablate the number of samples during the test-time adaptation process. In Table A7, we conduct Table A4. Analysis of the hyperparameter α for balancing distinct logits inferred by ML-PGM and DCCM. 
+
+α
+
+EgoMe-anti EgoExoLearn 
+
+Exo2Ego Ego2Exo Exo2Ego Ego2Exo Noun Verb Noun Verb Noun Verb Noun Verb 0.25 78.61 42.64 71.85 39.21 44.44 42.89 47.70 46.22 0.50 79.03 43.84 72.01 40.10 46.26 42.98 48.48 46.51 
+
+0.75 79.19 41.62 71.09 37.81 45.39 42.62 48.43 46.31 1.00 78.17 40.89 71.37 38.31 45.37 41.98 48.13 46.11   
+
+> Table A5. Analysis of the hyperparameter μ1for scaling the visual logits in the DCCM.
+
+μ1
+
+EgoMe-anti EgoExoLearn 
+
+Exo2Ego Ego2Exo Exo2Ego Ego2Exo Noun Verb Noun Verb Noun Verb Noun Verb 0.25 77.52 43.16 71.41 38.90 45.36 42.82 48.10 46.26 0.50 78.57 42.62 71.67 39.62 45.53 42.97 48.08 45.89 0.75 78.47 42.37 71.82 39.40 45.59 42.93 48.38 45.66 1.00 79.03 43.84 72.01 40.10 46.26 42.98 48.48 46.51   
+
+> Table A6. Analysis of the hyperparameter μ2for scaling the textual logits in the DCCM.
+
+μ2
+
+EgoMe-anti EgoExoLearn 
+
+Exo2Ego Ego2Exo Exo2Ego Ego2Exo Noun Verb Noun Verb Noun Verb Noun Verb 0.25 78.48 42.98 71.90 39.37 43.99 42.62 47.90 46.14 0.50 79.03 43.84 72.01 40.10 46.26 42.98 48.48 46.51 
+
+0.75 78.86 42.76 71.87 39.05 46.27 42.78 48.34 46.14 1.00 77.99 42.39 70.60 39.21 44.33 43.01 48.39 45.68 ablation experiments of the number of test samples Ntest 
+
+on the EgoMe-anti benchmark with a fixed random seed, which show that reliable prototypes can be created when using only 25 % samples of the full test set (972 Ego or 896 Exo samples), with only a slight performance drop com-pared to using the full test set. It further demonstrates the effectiveness of the proposed ML-PGM, which can achieve promising performance even with a small test set. 
+
+## F. More Visualization Results 
+
+In this section, we show more visualization results, such as the t-SNE visualization results and the noun/verb anticipa-tion examples to verify the effectiveness of our method. 
+
+F.1. t-SNE visualizations 
+
+We conduct more experiments by means of t-SNE [62] to visualize representations in the memory banks and the corresponding prototypes under all settings on the EgoEx-oLearn and EgoMe-anti benchmarks in Fig. A1. Practi- 
+
+> Table A7. Ablation on the number of test samples on EgoMe-anti
+> benchmark (with 3889 Ego and 3584 Exo test samples in total).
+
+Ntest 
+
+Exo2Ego Ego2Exo Noun Verb Noun Verb Full 79.03 43.84 72.01 40.10 
+
+50 % 78.59 42.76 71.38 39.28 25 % 78.41 42.38 71.01 38.76 10 % 75.42 38.32 64.84 35.75 5% 72.84 36.08 63.40 33.51 cally, we visualize five dominant classes with the most sam-ples following the settings in Section 4.4.3 for ease of anal-ysis. We visualize representations and prototypes of the model that only assigns a single class, the model without confidence-based reweighting, and the final DCPGN model. In the first column, the visualization results show that some Assign a single pseudo class w/o Conf-based reweighting Our DCPGN Assign a single pseudo class w/o Conf-based reweighting Our DCPGN 
+
+> Exo2Ego Ego2Exo
+> Exo2Ego Ego2Exo
+
+Figure A1. t-SNE visualization of representations in the memory banks and the corresponding prototypes of five dominant classes under Exo2Ego and Ego2Exo settings. The left panel shows the results on the EgoExoLearn benchmark and the right panel shows the results on the EgoMe-anti benchmark. Dots denote class-wise representations and stars denote prototypes (best viewed in color). 
+
+classes are assigned only a small number of representations, and prototypes of different classes are highly overlapping in some cases. It further verifies that the single-label assign-ment strategy may lead to remarkable inter-class imbalance and unreliable prototypes, which cause performance degra-dation. The results of the model without confidence-based reweighting are presented in the second column, which show that distinct classes form balanced representations and can be well distinguished. Note that it is normal for over-lapping representation clusters of different classes, because each selected representation sample is assigned to multiple pseudo labels. However, due to the interference of the po-tential negative samples and highly overlapping representa-tions across many classes, some prototypes are extremely close, which impairs the model’s class-wise discriminative capability. Finally, in the third column, we visualize the representations and prototypes of our DCPGN. The results show that the representations are balanced and prototypes can be explicitly distinguished, which demonstrates the ef-fectiveness of the multi-label assignment and confidence-based reweighting strategies in the ML-PGM of the pro-posed DCPGN. 
+
+F.2. Noun/verb anticipation visualizations 
+
+In this section, we conduct more experiments to visualize the noun and verb anticipation results of the model with or without DCCM in Fig. A2 and Fig. A3, respectively. We vi-sualize the Top-5 noun/verb anticipation candidates and the corresponding visual and textual clues under the Exo2Ego and Ego2Exo settings on EgoExoLearn and EgoMe-anti .
+
+F.2.1. Noun anticipation results 
+
+In Fig. A2, we comprehensively visualize the results of the anticipated noun candidates and the corresponding vi-sual and textual clues in the proposed DCCM. The exper-imental results show that visual and textual clues can ef-fectively convey information about nouns in the upcoming actions under both Exo2Ego and Ego2Exo settings on the two benchmarks. In the example under the Exo2Ego set-ting on the EgoExoLearn benchmark (left panel), the model without DCCM cannot anticipate the active noun “pot” in the future. However, the visual clue in DCCM clearly con-tains the “pot”, which facilitates the subsequent noun antic-ipation. For the Ego2Exo example on EgoExoLearn , due to the visual clue clearly presenting “meat” in the pot and the textual clue comprising the word “meat”, the model with DCCM can precisely anticipate the “meat/beef” class, which is active in the following stir-frying process. For the examples on the EgoMe-anti benchmark (right panel), in the upper Exo2Exo example, the visual and textual clues of DCCM both present the “book” semantic, and success-fully anticipate the active “book/notebook” class. Similarly, in the lower Ego2Exo example, the model without DCCM fails to anticipate the “hanger” class, which is an impor-tant object in the cloth-picking process. Nevertheless, the DCCM provides clues of “hanger” in both visual and tex-tual modalities and accurately anticipates the corresponding noun class. The above visualization examples demonstrate that the proposed DCCM can explicitly mitigate the spatial gap between the Ego and Exo perspectives, thereby facili-tating accurate noun anticipation. 
+
+F.2.2. Verb anticipation results 
+
+In Fig. A3, we conduct more experiments to visualize the anticipated verbs as well as the visual and textual clues un-der both Exo2Ego and Ego2Exo settings on the EgoEx-oLearn (left panel) and EgoMe-anti (right panel) bench-marks. Because it is difficult for single-frame visual clues to reflect the temporal activity progressions, textual clues become more essential in the verb anticipation task. In Exocentric (Target-view) Observation Future Exocentric Actions 
+
+without DCCM 
+
+Time (s) 
+
+Top-5 Noun 
+
+Shovel/Spade 
+
+Pants/Jeans 
+
+with DCCM 
+
+Visual Clue      
+
+> Pour the remaining hot
+> oil in the spoon and
+> starch from the sliced
+> meat into the pot .
+
+Textual Clue 
+
+Ground-Truth 
+
+…
+
+Lid/Cap 
+
+Spoon 
+
+Top-5 Noun 
+
+Pot 
+
+Meat/Beef 
+
+Top-5 Noun 
+
+Pot 
+
+Spoon 
+
+Lid/Cap 
+
+…
+
+Meat/Beef 
+
+Pot Lid/Cap 
+
+Spoon 
+
+Shovel/Spade 
+
+Egocentric (Target-view) Observation Future Egocentric Actions 
+
+without DCCM 
+
+Time (s) 
+
+Top-5 Noun 
+
+Water 
+
+Meat/Beef 
+
+with DCCM 
+
+Visual Clue     
+
+> Pick up the bowl
+> containing the oil from
+> the table .
+
+Textual Clue 
+
+Ground-Truth 
+
+…
+
+Oil/Fat 
+
+Plate/Dish 
+
+Top-5 Noun 
+
+Oil/Fat 
+
+Pot 
+
+Top-5 Noun 
+
+Pot 
+
+Oil/Fat 
+
+…
+
+Bowl 
+
+Bowl Bowl 
+
+Table 
+
+Plate/Dish 
+
+Exocentric (Target-view) Observation Future Exocentric Actions 
+
+without DCCM 
+
+Time (s) 
+
+Top-5 Noun 
+
+Water 
+
+with DCCM 
+
+Visual Clue      
+
+> Holds a blue hanger
+> with hand and uses the
+> left hand hold the
+> clothes next to a bed .
+
+Textual Clue 
+
+Ground-Truth 
+
+…
+
+Pants/Jean 
+
+Door 
+
+Top-5 Noun 
+
+Pants/Jean 
+
+Cloth 
+
+Top-5 Noun 
+
+Cloth 
+
+Bed 
+
+Hanger 
+
+…
+
+Pants/Jean 
+
+Cloth Hanger 
+
+Door 
+
+Bed 
+
+Bed 
+
+Egocentric (Target-view) Observation Future Egocentric Actions 
+
+without DCCM 
+
+Time (s) 
+
+Top-5 Noun 
+
+Scissors 
+
+with DCCM 
+
+Visual Clue         
+
+> Hold the zipper of the
+> black bag with books
+> on the lap next to a
+> black chair .
+
+Textual Clue 
+
+Ground-Truth 
+
+…
+
+Desk 
+
+Top-5 Noun 
+
+Chair 
+
+Pen 
+
+Top-5 Noun 
+
+Bag/ Pouch 
+
+Book/Notebook 
+
+…
+
+Chair 
+
+Book/Notebook Bag/ Pouch 
+
+Table 
+
+Chair 
+
+Pen Book/Notebook 
+
+> Exo2Ego Ego2Exo
+> Exo2Ego Ego2Exo
+
+Figure A2. Visualization of the Top-5 candidates for noun anticipation with or without the proposed DCCM under the Exo2Ego and Ego2Exo setting. The left panel shows the results on the EgoExoLearn benchmark, while the right panel shows the results on EgoMe-anti .Exocentric (Target-view) Observation Future Exocentric Actions 
+
+without DCCM 
+
+Time (s) 
+
+Top-5 Verb 
+
+Pour 
+
+Scoop 
+
+with DCCM 
+
+Visual Clue    
+
+> Hold the bowl and use
+> the chopsticks to mix
+> the flour and water in
+> the bowl evenly.
+
+Textual Clue 
+
+Ground-Truth 
+
+…
+
+Mix 
+
+Put/Place 
+
+Top-5 Verb 
+
+Use/Operate 
+
+Put/Place 
+
+Top-5 Verb 
+
+Hold 
+
+Put/Place 
+
+Mix 
+
+…
+
+Use/Operate 
+
+Mix 
+
+Egocentric (Target-view) Observation Future Egocentric Actions 
+
+without DCCM 
+
+Time (s) 
+
+Top-5 Verb 
+
+Take/Get 
+
+with DCCM 
+
+Visual Clue      
+
+> Put the vegetable
+> pieces on the cutting
+> board and use knife to
+> cut it
+
+Textual Clue 
+
+Ground-Truth 
+
+…
+
+Top-5 Verb 
+
+Use/Operate 
+
+Put/Place 
+
+Top-5 Verb 
+
+…
+
+Put/Place 
+
+Cut 
+
+Take/Get 
+
+Exocentric (Target-view) Observation Future Exocentric Actions 
+
+without DCCM 
+
+Time (s) 
+
+Top-5 Verb 
+
+Reach 
+
+with DCCM 
+
+Visual Clue     
+
+> Place the ping pong ball
+> on the ping pong paddle
+> with left hand and use
+> hand to rotate the ping
+> pong ball.
+
+Textual Clue 
+
+Ground-Truth 
+
+…
+
+Sit 
+
+Top-5 Verb 
+
+Put/Place 
+
+Use/Operate 
+
+Top-5 Verb 
+
+Turn/Rotate 
+
+Use/Operate 
+
+…
+
+Put/Place 
+
+Use/Operate 
+
+Egocentric (Target-view) Observation Future Egocentric Actions 
+
+without DCCM 
+
+Time (s) 
+
+Top-5 Verb 
+
+with DCCM 
+
+Visual Clue    
+
+> Operate the blue
+> screen to write words.
+
+Textual Clue 
+
+Ground-Truth 
+
+…
+
+Press 
+
+Top-5 Verb Top-5 Verb 
+
+Use/Operate 
+
+Write 
+
+…
+
+Wipe 
+
+Arrange 
+
+Wipe 
+
+> Exo2Ego Ego2Exo
+> Exo2Ego Ego2Exo
+
+Turn/Rotate Take/Get 
+
+Hold 
+
+Cut 
+
+Put/Place 
+
+Hold 
+
+Use/Operate 
+
+Pour 
+
+Use/Operate 
+
+Hold 
+
+Hold 
+
+Extend 
+
+Stand Take/Get 
+
+Extend 
+
+Turn/Rotate 
+
+Cut 
+
+Wipe 
+
+Arrange 
+
+Write 
+
+Write 
+
+Cut 
+
+Use/Operate 
+
+Figure A3. Visualization of the Top-5 candidates for verb anticipation with or without the proposed DCCM under the Exo2Ego and Ego2Exo setting. The left panel shows the results on the EgoExoLearn benchmark, while the right panel shows the results on EgoMe-anti .
+
+the example under the Exo2Ego setting on EgoExoLearn ,the model without DCCM fails to anticipate the verb “cut”, whereas the textual clues in the DCCM clearly describe the process of cutting the vegetable, which leads to accurate anticipation of this verb class. In the Ego2Exo example on EgoExoLearn , the textual clue includes the verbs “hold” and “use”, which facilitate more accurate anticipated verb candidates compared to the model without DCCM. The right panel presents examples of the EgoMe-anti bench-mark. Specifically, the upper Exo2Ego example shows the subject operating the screen to write and wipe words, and the textual clue contains words such as “operate” and “write”, which are consistent with classes of the upcoming actions. Finally, the lower Ego2Exo example shows that a girl will place the ball in her hand and then use the paddle to turn the ball. The results demonstrate that our model with DCCM yields more accurate verb anticipation candidates than those output by the model without DCCM. The above cases further demonstrate the effectiveness of DCCM in al-leviating the temporal gap between distinct views, leading to more accurate anticipation for verb classes of the upcom-ing fine-level actions.
