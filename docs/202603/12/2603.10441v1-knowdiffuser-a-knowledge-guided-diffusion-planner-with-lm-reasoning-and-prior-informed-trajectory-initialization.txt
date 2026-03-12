@@ -1,0 +1,319 @@
+Title: KnowDiffuser: A Knowledge-Guided Diffusion Planner with LM Reasoning and Prior-Informed Trajectory Initialization
+
+URL Source: https://arxiv.org/pdf/2603.10441v1
+
+Published Time: Thu, 12 Mar 2026 00:33:14 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# KnowDiffuser: A Knowledge-Guided Diffusion Planner with LM Reasoning and Prior-Informed Trajectory Initialization 
+
+Fan Ding 1, Xuewen Luo 2, Fengze Yang 2, Bo Yu 2, HwaHui Tew 1, Ganesh Krishnasamy 1, Junn Yong Loo 1
+
+Abstract — Recent advancements in Language Models (LMs) have demonstrated strong semantic reasoning capabilities, enabling their application in high-level decision-making for autonomous driving (AD). However, LMs operate over discrete token spaces and lack the ability to generate continuous, physically feasible trajectories required for motion planning. Meanwhile, diffusion models have proven effective at gen-erating reliable and dynamically consistent trajectories, but often lack semantic interpretability and alignment with scene-level understanding. To address these limitations, we propose KnowDiffuser, a knowledge-guided motion planning framework that tightly integrates the semantic understanding of language models with the generative power of diffusion models. The framework employs a language model to infer context-aware meta-actions from structured scene representations, which are then mapped to prior trajectories that anchor the subsequent denoising process. A two-stage truncated denoising mechanism refines these trajectories efficiently, preserving both semantic alignment and physical feasibility. Experiments on the nuPlan benchmark demonstrate that KnowDiffuser significantly out-performs existing planners in both open-loop and closed-loop evaluations, establishing a robust and interpretable framework that effectively bridges the semantic-to-physical gap in AD systems. 
+
+I. I NTRODUCTION 
+
+The applications of Language Models (LMs) in the field of Autonomous Driving (AD) have attracted widespread attention due to their outstanding performance and emergent reasoning abilities [1]. Numerous recent studies have shown that LMs perform impressively across a variety of driving tasks [2], such as DriveVLM [3], DriveGPT4 [4], DiLu [5], and VLM-MPC [6]. By leveraging their powerful situational awareness, LMs enable more interpretable and flexible AD systems that can incorporate human-like reasoning, adapt to complex scenarios, and integrate commonsense knowledge into driving. Their emergence has opened up a promising new knowledge-driven paradigm for AD, pushing beyond the limitations of traditional rule-based and data-driven ar-chitectures [7]. As a rising star in the AD domain, LMs have demon-strated remarkable capabilities. However, they struggle with directly generating precise low-level outputs such as tra-jectory points [8], which require fine-grained, physically feasible control. This limitation highlights the urgent need for a coordinated approach where knowledge-driven high-level decisions are effectively aligned with physically executable low-level trajectories, thereby enhancing the application of LMs in AD systems [9], [10]. To bridge this gap, it is 
+
+> *Corresponding author.
+> 1Monash University Malaysia.
+> 2University of Utah, USA.
+
+essential to introduce models that are well-suited for gener-ating continuous, mathematically accurate, and dynamically feasible trajectories. While traditional optimization-based or autoregressive approaches have been explored for trajectory generation, they often struggle to balance diversity, realism, and controllability in complex driving scenarios. In contrast, diffusion models generate trajectories through a probabilistic denoising process that enables direct sampling of multi-modal and physically plausible outcomes from a Gaussian distribution [11], [12], [13]. This formulation nat-urally captures environmental uncertainty and the diversity of driving behaviors [14]. Their iterative refinement ensures physical continuity and feasibility. Moreover, since the gener-ative process is inherently guidable, external constraints such as LM commands can be seamlessly incorporated to steer generation toward task-aligned solutions [15], [16]. These properties make diffusion models particularly well-suited as controllable low-level generators in AD systems, comple-menting LM-based decision-making by bridging high-level semantic intent with executable motion plans. However, the iterative nature of the denoising process introduces relatively high inference latency, posing challenges for real-time de-ployment in time-critical AD settings [17], [18]. Therefore, we propose KnowDiffuser , a knowledge-guided diffusion planning framework that systematically bridges high-level semantic reasoning with low-level trajec-tory generation. The high-level module leverages an LM to interpret traffic contexts and produce knowledge-informed driving meta-actions that incorporate traffic rules, social norms, and human intent. To align these semantic decisions with physically grounded trajectories, we introduce a bridge mechanism that maps meta-actions to prior trajectories de-rived from historical driving data. Building on this, we design an efficient diffusion trajectory generator that integrates a truncated inference process with a two-step denoising strat-egy: instead of sampling from pure noise, the model ini-tializes from semantically aligned priors with minimal noise injection, enabling fast and physically plausible trajectory generation that meets real-time planning demands. Our contributions are summarized as follows:  
+
+> •
+
+We propose KnowDiffuser, a novel motion planning framework that seamlessly integrates an LM with a diffusion-based trajectory generator. This hybrid design introduces a bridge mechanism that aligns high-level semantic decisions with low-level control trajectories, enabling interpretable and context-aware planning in complex driving scenarios.  
+
+> •
+
+We develop an efficient training and inference strat-
+
+> arXiv:2603.10441v1 [cs.RO] 11 Mar 2026
+
+egy for real-time diffusion-based trajectory generation. Specifically, we combine a truncated denoising process with a two-step refinement scheme, significantly reduc-ing inference latency while preserving trajectory quality and feasibility.  
+
+> •
+
+We conduct extensive experiments on the nuPlan bench-mark under open-loop and closed-loop settings. Results show that KnowDiffuser consistently outperforms state-of-the-art baselines in motion planning, demonstrating its effectiveness, efficiency, and potential for real-world deployment. II. R ELATED WORK 
+
+A. Diffusion Models for Trajectory Generation 
+
+Diffusion models have emerged as a leading paradigm for trajectory generation in autonomous driving due to their ability to model complex, multimodal, and stochastic behaviors. By iteratively denoising Gaussian noise, these models produce physically feasible and diverse trajectories that capture the uncertainty inherent in dynamic traffic envi-ronments [19], [20], [21]. Early efforts in motion prediction, such as MID [22], Leapfrog [17], and MotionDiffuser [23], demonstrate their strength in capturing multi-agent inter-actions and temporal variability. More recently, diffusion models have been extended to planning tasks [13], [12], employing techniques like truncated denoising and classi-fier guidance to generate closed-loop feasible plans with controllable behaviors. Their ability to incorporate external priors [15] and scene-level context [24] further enhances their adaptability in generative planning pipelines. Despite these strengths, diffusion models typically oper-ate with implicit scene representations and lack semantic interpretability or high-level decision awareness [14], [16]. Their reliance on low-level signals limits their ability to reason about abstract goals, safety constraints, or social norms, which is essential for human-aligned planning in urban scenarios. Moreover, their iterative sampling nature introduces significant inference latency, often requiring man-ually crafted guidance mechanisms to meet task-specific requirements [16]. In practice, dozens of denoising steps are often needed to generate high-quality trajectories, posing a substantial computational burden [17], [18]. Our proposed KnowDiffuser addresses these challenges by explicitly initializing the diffusion process with semantically meaningful prior-trajectories derived from high-level reason-ing. This structured initialization, coupled with a two-stage denoising refinement, enables interpretable and semantically aligned trajectory generation while preserving the generative flexibility of diffusion models. 
+
+B. Language Models in Autonomous Driving 
+
+Language Models (LMs) have shown significant potential in enhancing the reasoning and contextual understanding of AD systems. These models offer human-like seman-tic comprehension, commonsense reasoning, and situational adaptability for high-level decision-making [4], [3], [5], [25]. Recent work has explored incorporating LMs into autonomous driving through hierarchical planning [26], [6], [9], interpretable behavior generation [27], and world model-ing [28], [29], leading to more robust and explainable control strategies. Surveys have highlighted the potential of LMs to replace fragile rule-based systems with more adaptable, knowledge-driven reasoning engines [1], [10]. However, LMs operate over discrete token spaces and struggle to produce the continuous, physically constrained control signals required for real-world trajectory execu-tion [8]. While they perform well in high-level semantic tasks, they are fundamentally unsuited for generating low-level motion plans. Existing integration approaches, such as LM-guided reward shaping or text-conditioned plan-ning [30], remain indirect and often lack explicit semantic grounding in the resulting trajectories. To bridge this gap, KnowDiffuser establishes a tight inte-gration between knowledge-driven high-level reasoning and diffusion-based low-level planning. Specifically, it uses LMs to output meta-actions rather than trajectories, which are then used to generate executable and high-quality motion plans through a diffusion model. This principled coupling bridges the semantic-physical divide, enabling a new class of interpretable and knowledge-informed planners for AD. III. M ETHODOLOGY 
+
+A. Overview 
+
+We propose KnowDiffuser, a knowledge-guided motion planning framework that tightly integrates a high-level deci-sion module powered by an LM with a low-level diffusion-based trajectory generation module, as illustrated in Fig. 1. The core idea is to bridge the semantic reasoning capabilities of LMs and the physical feasibility and diversity of diffusion models through a structured, multi-stage pipeline consisting of four key components: First, we construct a meta-action to prior-trajectory match-ing library by analyzing large-scale driving logs. Each meta-action (e.g., “go straight”, “turn left/right”, “stop”) is as-sociated with a representative prior trajectory derived from clustered historical driving segments. This library serves as a semantic grounding space that enables mapping dis-crete high-level intentions to continuous motion templates. Second, the high-level decision module utilizes an LM to reason over structured scene representations, including ego-vehicle state, surrounding agents, road topology, and traffic signals. The LM outputs a discrete meta-action that captures the intended behavior in context. Third, a meta-action to prior-trajectory matching bridge maps the selected meta-action to its corresponding prior-trajectory from the prebuilt library. This acts as a semantic-to-physical bridge, provid-ing a behaviorally aligned initialization for the downstream generation process. Last, the low-level diffusion trajectory generator initializes from the retrieved prior-trajectory and refines it through a truncated two-stage denoising process. Instead of starting from pure Gaussian noise, the model injects mild noise into the prior trajectory, enabling faster inference while preserving semantic intent and physical feasibility. This design significantly enhances both planning efficiency and trajectory realism. Together, these components form an intelligent, inter-pretable, and physically grounded planning pipeline that enables real-time, intention-aware motion generation in com-plex driving environments. 
+
+B. Meta-Action and Prior-Trajectory Matching Library Con-struction 
+
+As the first stage of our planning framework, we construct a structured library that maps discrete meta-actions to their corresponding representative prior-trajectories . This library provides a compact, interpretable, and physically grounded set of motion templates extracted from real-world driving data, forming the basis for downstream trajectory generation. We begin by segmenting nuPlan [31] driving logs into 8-second temporal windows, each capturing a coherent and self-contained driving maneuver. This duration is empirically validated to balance completeness and segmentation gran-ularity [13]. For each segment, we extract the ego-centric trajectory and encode it as a sequence of 2D waypoints over a fixed horizon H:
+
+τ = {(x1, y 1), (x2, y 2), . . . , (xH , y H )}, τ ∈ RH×2 (1) To characterize the dynamics of each trajectory, we com-pute two summary features: 
+
+¯v = 1
+
+H − 1
+
+> H−1
+
+X
+
+> i=1
+
+d (xi, y i), (xi+1 , y i+1 )
+
+∆t , (2) 
+
+∆θ =
+
+> H−1
+
+X
+
+> i=2
+
+|θi − θi−1| (3) where ¯v is the average speed and ∆θ is the total heading variation computed via atan2-based orientation. In addition, we compute the average longitudinal acceleration ¯a over the trajectory to capture speed variation. We define the trajectory feature vector as: 
+
+ϕ(τ ) = [¯ v, ¯a, ∆θ] (4) We adopt a rule-based classification scheme to ensure semantic interpretability. Each 8-second trajectory is clas-sified using predefined geometric and kinematic thresholds that capture both lateral displacement, heading change, and acceleration characteristics. Specifically, trajectories are cat-egorized into canonical maneuver types including lane keep-ing ( ∆y < 0.5 m), lane change ( 2.0 m < ∆y < 4.0 m), and turning ( ∆ψ > 15 ◦). In addition, motion dynamics are characterized by acceleration or deceleration ( ¯a > 0.5 m/s 2
+
+or ¯a < −0.5 m/s 2) and speed keeping ( |¯a| < 0.3 m/s 2). The Cartesian combination of maneuver geometry and speed profiles defines the meta-action set Ameta .Each trajectory is deterministically assigned a meta-action label: 
+
+aj = Mrule (ϕ(τj )) , aj ∈ A meta (5) Trajectories with the same meta-action label are grouped, and the corresponding prior-trajectory ˆτj is computed by time-wise averaging over the spatial coordinates: 
+
+ˆτj = mean ({τi | ai = aj })
+
+Each pair (aj , ˆτj ) defines an entry in the library, ensuring that the mapping aj ↔ ˆτj is bijective and indexable. This results in a compact and interpretable trajectory library that captures canonical motion patterns grounded in real-world data, serving as the foundation for structured and behaviorally aligned planning. 
+
+C. High-level Decision-making Module 
+
+The high-level decision-making module is responsible for interpreting complex driving scenarios and generating a discrete meta-action that captures the intended driving behavior. At its core is an LM, which performs context-aware reasoning over a structured understanding of traffic scenes from multi-source observations. Scene observations encode four key components of the traffic understanding: (1) the ego vehicle’s state, including position, velocity, and heading; (2) the dynamic attributes of surrounding agents, such as type, trajectory, and proximity; (3) the road topology, including lane connectivity, intersections, and routing constraints; and (4) traffic control elements, such as traffic lights and stop signs. Formally, let the high-level observation at time t be denoted as: 
+
+Ot = {xego t , At, Mt, Tt} (6) where xego t is the ego vehicle’s state, At is the set of surrounding agents, Mt encodes the map topology, and Tt
+
+represents traffic signals. The observation is then encoded into a structured prompt: 
+
+Pt = Eprompt (Ot) (7) This prompt Pt is fed into an LM L, which outputs a discrete high-level decision in the form of a meta-action: 
+
+at = L(Pt), at ∈ A meta (8) The meta-action set Ameta is defined by composing in-terpretable driving intents along two behavioral axes: ve-locity and direction. The velocity axis includes accelerate ,
+
+cruise , decelerate , and brake ; the directional axis includes 
+
+go straight , left turn , right turn , U-turn . These combinations define a compact and semantically meaningful set of driving behaviors. By leveraging scene observations and commonsense rea-soning, the LM interprets complex urban scenarios and out-puts an intention-aware meta-action. This high-level decision serves as the behavioral directive for subsequent trajectory planning stages. Fig. 1. Comparative Overview of Planning Frameworks. (a) LM-based Planner: Predicts future ego trajectories via semantic reasoning, offering interpretability but lacking in low-level control precision. (b) Diffusion Trajectory Generator: Generates physically plausible trajectories through iterative denoising but lack of semantic understanding. (c) KnowDiffuser: Combines LM-driven high-level meta-action planning with prior-trajectory diffusion two-step denoising, enabling semantically grounded yet physically feasible motion generation. 
+
+D. Meta-Action to Prior-Trajectory Matching Bridge Mech-anism 
+
+To effectively align high-level semantic intent with low-level continuous trajectory generation, we introduce a bridge module that maps discrete meta-actions to their correspond-ing representative prior-trajectories . This bridging mecha-nism ensures that the abstract decisions made by the LM are grounded in physically plausible motion patterns extracted from real-world data. Given a meta-action at ∈ A meta predicted by the high-level decision module at time t, the bridge module performs a deterministic retrieval from a preconstructed library of in-dexed trajectory templates. Formally, we define this retrieval process as: 
+
+ˆτt = Elookup (at), ˆτt ∈ RH×2 (9) where Elookup : Ameta → RH×2 is a bijective mapping from each semantic meta-action to a trajectory prototype of fixed horizon H.The trajectory library used in this mapping is constructed offline from large-scale driving logs, as described in the meta-action to prior-trajectory library section. Each entry 
+
+(aj , ˆτj ) in the library corresponds to a statistically averaged trajectory that reflects a canonical behavior. This bridging process serves two critical roles. First, it translates high-level intent into a physically grounded initialization for trajectory generation. Second, it imposes a structured prior that constrains the sampling space of the diffusion model, thereby enhancing semantic alignment and improving generation efficiency. The resulting prior-trajectory ˆτt serves as the anchor for the subsequent diffusion-based refinement process. By indexing from a discrete semantic space into a continuous motion manifold, this bridge establishes a coherent interface between semantic reasoning and physical planning. 
+
+E. Low-Level Trajectory Generation Module 
+
+The low-level planner is responsible for generating high-resolution, physically feasible motion trajectories condi-tioned on the high-level semantic intent. Rather than initial-izing from pure Gaussian noise, our diffusion-based planner starts from a structured prior-trajectory ˜x0 ∈ RT ×2 retrieved via meta-action matching. This prior encodes a coarse but se-mantically aligned motion pattern, serving as an informative initialization that guides the trajectory refinement process. To generate a diverse yet behaviorally consistent trajectory, we introduce a truncated two-step denoising mechanism .Specifically, the prior trajectory is first perturbed with small amounts of Gaussian noise at two successive diffusion timesteps to simulate uncertainty while avoiding full noising. This results in a softly corrupted anchor trajectory that retains structural intent yet allows flexibility in the final output. The resulting noisy input is then fed into a transformer-based DiT decoder, which performs a learned denoising process conditioned on route context and current vehicle state. This design achieves several objectives: (1) it preserves high-level behavioral consistency by anchoring generation to the prior; (2) it improves sampling efficiency by bypassing early diffusion steps; and (3) it produces diverse, physically grounded trajectories aligned with both semantic reason-ing and vehicle dynamics. The entire generation process is trained end-to-end using a standard diffusion loss that reconstructs the ground-truth trajectory from noise-corrupted inputs. 
+
+a) Training Phase.: During training, as shown in Al-gorithm 1, the diffusion model is trained to reconstruct the ground-truth future trajectory x0 ∈ RT ×4, where each frame includes the agent’s spatial position and heading vector. Instead of directly generating the trajectory, the model learns to reverse a stochastic corruption process based on a Variance Preserving Stochastic Differential Equation (VPSDE), which gradually perturbs the clean trajectory into noise. 
+
+Algorithm 1 Training of Diffusion Predictor  
+
+> 1:
+
+Input: Ground-truth trajectory x0 ∈ RT ×4, current state 
+
+s ∈ R1×4, timestep sampler t ∼ U (ε, 1)  
+
+> 2:
+
+Output: Training loss Ldiff  
+
+> 3:
+
+Sample t ∼ U (ε, 1)  
+
+> 4:
+
+Sample ϵ ∼ N (0 , I) 
+
+> 5:
+
+xt ← √¯αt · x0 + √1 − ¯αt · ϵ 
+
+> 6:
+
+xinput ← concat (s, x t) 
+
+> 7:
+
+ˆx0 ← DiT (xinput , t, context ) 
+
+> 8:
+
+Ldiff ← ∥ ˆx0 − x0∥2 
+
+> 9:
+
+Return: Ldiff 
+
+Concretely, given a randomly sampled timestep t ∼U(ε, 1) , where ε is a small positive constant, the clean trajectory is transformed into a noisy version using the closed-form marginal of the forward SDE: 
+
+xt = μ(t) + σ(t) · ϵ, ϵ ∼ N (0 , I) (10) where μ(t) and σ(t) denote the time-dependent mean and standard deviation functions derived from the VPSDE. This formulation allows efficient sampling at arbitrary timesteps without requiring the full sequential simulation of diffusion steps. The noisy trajectory xt ∈ RT ×4 is then concatenated with the agent’s current state xcur ∈ R1×4, resulting in the model input xinput ∈ R(T +1) ×4. This input is passed to a DiT (Diffusion Transformer) decoder conditioned on the timestep embedding and scene context to produce a denoised prediction ˆx0 ∈ RT ×4.The training objective follows the standard x0-prediction loss, also known as the x start formulation, which directly minimizes the mean squared error between the predicted and true future trajectories: 
+
+Ldiff = Ex0,t,ϵ 
+
+h
+
+∥ˆx0 − x0∥2i
+
+(11) This loss encourages the model to generate physically consistent and temporally smooth trajectories even under stochastic perturbations. By sampling over a range of noise levels during training, the model learns to handle varying degrees of uncertainty, enabling it to generalize robustly during inference and reconstruct high-fidelity, multimodal motion plans from noisy inputs. 
+
+b) Inference Phase.: At inference time, as shown in Algorithm 2, the model avoids the computational burden of simulating the full forward diffusion process from pure Gaussian noise. Instead, it leverages a behaviorally aligned prior trajectory ˜x0 ∈ RT ×2, which is deterministically retrieved based on the high-level meta-action predicted by the language model. This prior serves as a structured anchor that embeds semantic intent and physical plausibility into the generation process. 
+
+Algorithm 2 Inference of Diffusion Predictor  
+
+> 1:
+
+Input: Prior trajectory ˜x0, current state s, noise levels 
+
+σ(t1), σ (t2) 
+
+> 2:
+
+Output: Predicted trajectory ˆτ 
+
+> 3:
+
+˜xfull ← concat (˜ x0, [1 , 0])  
+
+> 4:
+
+˜xego ← ˜xfull .unsqueeze (1)  
+
+> 5:
+
+ϵ1, ϵ 2 ∼ N (0 , I ) 
+
+> 6:
+
+xt1 ← ˜xego + σ(t1) · ϵ1 
+
+> 7:
+
+xt2 ← xt1 + σ(t2) · ϵ2 
+
+> 8:
+
+xT ← concat (s, x t2 ) 
+
+> 9:
+
+ˆx0 ← DiT (xT , t 2, context ) 
+
+> 10:
+
+Return: ˆτ ← ˆx0[: , :, 1 :] 
+
+To simulate intermediate noise levels while maintaining structural consistency, we adopt a truncated two-step noise injection scheme. First, the 2D prior trajectory ˜x0 is extended to 4D by appending a canonical heading vector [1 , 0] , re-sulting in ˜xfull ∈ RT ×4. The trajectory is then reshaped into batch format ˜xego ∈ R1×T ×4 to match model input specifications. Two independent Gaussian noise vectors ϵ1, ϵ 2 ∼ N (0 , I)
+
+are sampled, and noise is injected in two steps to simulate approximate marginal distributions at time t1 and t2:
+
+xt1 = ˜ xego + σ(t1) · ϵ1 (12) 
+
+xt2 = xt1 + σ(t2) · ϵ2 (13) where σ(t) denotes the marginal standard deviation com-puted from the VPSDE at timestep t. This approximation introduces structured stochasticity without corrupting the trajectory entirely, enabling more efficient and semantically consistent sampling. The noisy trajectory xt2 is then concatenated with the agent’s current state s ∈ R1×4, forming the full model input: 
+
+xT = concat (s, x t2 ) ∈ R1×(T +1) ×4 (14) This input is flattened and passed to the DiT decoder, which performs denoising conditioned on the timestep embedding 
+
+t2, route-level context, and surrounding scene features. The model outputs a denoised trajectory prediction ˆx0 ∈ RT ×4,representing the final motion plan: 
+
+ˆx0 = DiT (xT , t 2, context ) (15) Finally, the predicted trajectory is extracted (excluding the current state) and returned: 
+
+ˆτ = ˆ x0[: , :, 1 :] (16) This truncated inference strategy ensures low-latency and high-fidelity trajectory generation by combining semantic priors with partial diffusion, effectively balancing inter-pretability, efficiency, and physical realism. In summary, our diffusion-based planner leverages high-level semantic priors, efficient truncated perturbation, and transformer-based denoising to produce high-quality, behaviorally aligned tra-jectories suitable for real-time autonomous driving. IV. E XPERIMENT 
+
+A. Experiment Setup 
+
+We conduct comprehensive evaluations of KnowDiffuser on the large-scale real-world autonomous planning bench-mark nuPlan [31] using GPT-4o (2024) as the reasoning LMM. To construct the training and evaluation corpus, we segment the raw nuPlan logs into 10-second driving sequences, resulting in a dataset of approximately 50,000 samples. Each sample is formatted as a trajectory prediction task, where the model receives the first 2 seconds of input and is tasked with predicting the ego vehicle’s future trajectory over the next 8 seconds, discretized at 0.5-second intervals into 16 trajectory points. The input to the model includes a rich set of information: (1) ego vehicle state history (position, velocity, heading), (2) surrounding agent states, (3) map-based road information, including lane geometry, road types, and the ego vehicle’s spatial context within the road network, and (4) nearby traffic signs and signals. All input features are temporally aligned and normalized for efficient model training. We evaluate our method under both open-loop (non-interactive, offline) settings and closed-loop settings. In the open-loop setup, we follow standard trajectory prediction evaluation using Average Displacement Error (ADE) and Final Displacement Error (FDE) to assess prediction perfor-mance. In the closed-loop setup, we evaluate our planner on the Val-14 scenarios using the official simulator and follow its built-in metric standards to assess closed-loop performance. 
+
+B. Evaluation 
+
+Baselines. We compare our method against a diverse set of existing planners, covering rule-based and learning-based paradigms without refine. Each baseline represents a distinct design philosophy within the open-loop planning task. Implementation details and references are as follows:  
+
+> •
+
+IDM [32]: A classical rule-based planner implemented by nuPlan. It serves as a simple yet widely used baseline for evaluating trajectory planning performance.  
+
+> •
+
+UrbanDriver [33]: A reinforcement learning-based method using policy gradient optimization, imple-mented by nuPlan to simulate intelligent behavior under interactive conditions.  
+
+> •
+
+PlanCNN [34]: A learning-based planner utilizing con-volutional neural networks to process rasterized scene representations. It represents early neural approaches to open-loop prediction.  
+
+> •
+
+GameFormer [35]: A transformer-based planner mod-eling multi-agent interactions as a dynamic game, outperforming traditional learning methods in reactive closed-loop evaluations.  
+
+> •
+
+GC-PGP [36]: A behavior cloning planner based on imitation of expert demonstrations, but shows reduced generalization under complex driving scenarios.  
+
+> •
+
+PDM-Open [37]: A learning-based variant of the PDM family that follows the reference centerline without applying closed-loop feedback or hybrid control.  
+
+> •
+
+CKS-124m/CKS-1.5b [38]: Two transformer-based generative planners of different model sizes (124M and 1.5B parameters), capable of producing multimodal trajectory distributions with high realism and diversity.  
+
+> •
+
+PlanTF [39]: A pure imitation learning planner that directly regresses future motion from state and map inputs, removing reliance on rule-based modules while maintaining high planning fidelity.  
+
+> •
+
+GUMP-m [40]: A guided diffusion-based motion plan-ner with multi-objective scoring. It integrates safety, comfort, and social-awareness criteria for trajectory selection, achieving strong performance in open-loop planning.                                                
+
+> TABLE I OPEN -LOOP PLANNING RESULTS ON THE NU PLAN TEST SET . L OWER IS BETTER .
+> Type Methods 8sADE ↓3sFDE ↓5sFDE ↓8sFDE ↓MR ↓
+> Rule-based IDM 9.600 6.256 10.076 16.993 0.552 Learning-based PlanCNN 2.468 0.955 2.486 5.936 0.064 UrbanDriver 2.667 1.497 2.815 5.453 0.064 PDM-Open 2.375 0.715 2.060 5.296 0.042 CKS-124m 1.777 0.951 2.105 4.515 0.053 CKS-1.5b 1.783 0.971 2.140 4.460 0.047 GUMP-m 1.820 0.743 1.833 4.453 0.046
+> KnowDiffuser (Ours) 0.298 0.245 0.337 0.568 0.021
+
+Open-loop Main Results. Evaluation results on the nuPlan benchmark are presented in Table I, showing a quantitative comparison of open-loop planning performance on the nu-Plan test set. Across all five evaluation metrics, our pro-posed KnowDiffuser significantly outperforms all baselines, including strong diffusion-based planners such as GUMP-m and transformer-based models like CKS-1.5b. Notably, KnowDiffuser achieves an exceptionally low 8sADE of 0.298 
+
+and 8sFDE of 0.568 , indicating that the generated trajectories maintain high accuracy even over long horizons. This marks a substantial improvement over GUMP-m (1.820 / 4.453) and CKS-124m (1.777 / 4.515), demonstrating KnowDiffuser’s ability to model temporal consistency and trajectory fidelity. In addition, our method reports the lowest Miss Rate (MR) of 0.021 , reflecting strong safety guarantees by minimizing planning failures where predicted trajectories deviate ex-cessively from the ground truth. These improvements can be attributed to the integration of LM-guided high-level semantic priors and our structured two-step guided diffusion process, which jointly enhance both global intent alignment and low-level trajectory feasibility. The results validate that KnowDiffuser not only improves predictive precision but also offers robust and reliable planning suitable for deploy-ment in real-world driving systems. 
+
+Closed-loop Main Results. To rigorously assess the effi-cacy of our proposed method, KnowDiffuser, we conduct comprehensive evaluations on the nuPlan dataset under the closed-loop planning setting. Table II presents a quantita-tive comparison with a suite of state-of-the-art baselines, including both classical rule-based planners (IDM) and mod-ern learning-based methods such as UrbanDriver, GC-PGP, PlanCNN, GameFormer, and PlanTF. The metrics include success rates on both non-reactive (NR) and reactive (R) settings across validation (Val) and test splits. Higher scores indicate better performance.                                    
+
+> TABLE II PERFORMANCE COMPARISON OF CLOSED -LOOP PLANNING ON VAL -14
+> OF THE NU PLAN DATASET . H IGHER IS BETTER .
+> Type Model Val NR Val R Test NR Test R
+> Rule-based IDM 77.02 76.50 --Learning-based UrbanDriver 63.27 61.02 51.54 49.07 GC-PGP 55.99 51.39 43.22 39.63 PlanCNN 72.89 71.75 --GameFormer 80.80 79.31 66.59 68.83 PlanTF 84.83 76.78 72.68 61.70
+> KnowDiffuser (Ours) 87.50 81.25 86.94 81.10
+
+Our method achieves significant performance improve-ments across all settings. On the validation set, KnowDiffuser attains a Val NR score of 87.50 and a Val R score of 81.25 ,outperforming the strongest baseline, PlanTF, by +2.67 and +4.47 percentage points respectively. Similarly, in the test set where the generalization capability is more critically evaluated, KnowDiffuser achieves a Test NR of 86.94 and a Test R of 81.10 , substantially exceeding GameFormer by +20.35 and +12.27 points and PlanTF by +14.26 and +19.40 points in the corresponding categories. These results decisively validate the core design philoso-phy of KnowDiffuser: integrating high-level semantic reason-ing via language models with low-level, physically grounded trajectory generation through diffusion models. The no-table improvements over both diffusion-based (PlanTF) and transformer-based (GameFormer) planners indicate that our two-stage truncated denoising process, coupled with meta-action-informed prior initialization, yields robust and inter-pretable trajectory plans. Moreover, the superior performance on the reactive (R) metrics underscores the method’s adapt-ability to dynamic agent interactions and unexpected scene changes. In conclusion, KnowDiffuser not only surpasses existing benchmarks on closed-loop planning, but also sets a new state-of-the-art in balancing semantic alignment, physical feasibility, and real-world generalization, demonstrating its strong potential for real-time autonomous driving applica-tions. 
+
+C. Ablation Study on LLM Scale 
+
+To address concerns regarding the influence of language model scale on planning performance, we conduct an abla-tion study by replacing the reasoning LMM in our frame-work with smaller open-source models while keeping the diffusion-based trajectory planner unchanged. Specifically, we evaluate LLaMA-3B (small) and Qwen3-32B (medium) under the same experimental setup on the nuPlan benchmark. Table III summarizes the results. Both smaller models achieve noticeably lower performance compared to the large-scale LLM adopted in our framework (GPT-4o). In particular, LLaMA-3B obtains a score of 60.21, while Qwen3-32B achieves 65.32, both significantly below the performance achieved by GPT-4o.   
+
+> TABLE III ABLATION STUDY ON THE EFFECT OF LLM SCALE . H IGHER IS BETTER .
+
+LLM Backbone Score ↑
+
+LLaMA-3B (Small) 60.21 Qwen3-32B (Medium) 65.32 GPT-4o (Large, Ours) 81.10 
+
+Further analysis of the decision logs reveals that smaller models frequently collapse to repetitive meta-actions (e.g., “stop”) in complex driving scenes. This behavior suggests that insufficient model capacity limits contextual understand-ing and reduces the reliability of high-level decision making. In contrast, the stronger reasoning capability of GPT-4o enables more consistent interpretation of scene semantics and more reliable meta-action selection, which ultimately leads to superior planning performance. V. C ONCLUSION 
+
+In this work, we proposed KnowDiffuser, a novel knowledge-guided motion planning framework that effec-tively bridges high-level semantic reasoning and low-level motion planning for AD. By integrating an LM for scene understanding and intent inference with a diffusion-based tra-jectory generator, KnowDiffuser achieves a unique synergy: interpretable high-level decisions are mapped to physically grounded motion plans through a structured prior initializa-tion and an efficient two-stage denoising process. Our extensive experiments on the nuPlan benchmark demonstrate that KnowDiffuser consistently outperforms state-of-the-art baselines across both open-loop and closed-loop settings. It achieves superior accuracy, robustness, and semantic alignment while significantly reducing inference latency, which is key to real-time deployment. These results validate the efficacy of combining language-driven decision-making with generative diffusion modeling, highlighting the importance of bridging the semantic-physical gap in AD. In future work, we aim to enhance the LM component with Vision-Language Models to enable multimodal scene understanding and reasoning, allowing richer perception of complex driving environments. Additionally, we plan to integrate trajectory refinement models to further improve motion quality and safety, advancing toward more reliable and intelligent autonomous planning systems. REFERENCES [1] C. Cui et al. , “A survey on multimodal large language models for autonomous driving,” in Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision , 2024, pp. 958–979. [2] X. Luo, F. Ding, Y. Song, X. Zhang, and J. Loo, “Pkrd-cot: A unified chain-of-thought prompting for multi-modal large language models in autonomous driving,” arXiv preprint arXiv:2412.02025 , 2024. [3] X. Tian, J. Gu, B. Li, Y. Liu, C. Hu, Y. Wang, K. Zhan, P. Jia, X. Lang, and H. Zhao, “Drivevlm: The convergence of autonomous driving and large vision-language models,” in CoRL , 2024. [4] Z. Xu, Y. Zhang, E. Xie, Z. Zhao, Y. Guo, K.-Y. K. Wong, Z. Li, and H. Zhao, “Drivegpt4: Interpretable end-to-end autonomous driving via large language model,” RA-L , 2024. [5] L. Wen et al. , “Dilu: A knowledge-driven approach to autonomous driving with large language models,” arXiv preprint arXiv:2309.16292 ,2023. [6] K. Long, H. Shi, J. Liu, and X. Li, “Vlm-mpc: Vision language foundation model (vlm)-guided model predictive controller (mpc) for autonomous driving,” arXiv preprint arXiv:2408.04821 , 2024. [7] H. Lin, X. Huang, T. Phan, D. Hayden, H. Zhang, D. Zhao, S. Srini-vasa, E. Wolff, and H. Chen, “Causal composition diffusion model for closed-loop traffic generation,” in Proceedings of the Computer Vision and Pattern Recognition Conference , 2025, pp. 27 542–27 552. [8] S. Xing, C. Qian, Y. Wang, H. Hua, K. Tian, Y. Zhou, and Z. Tu, “Openemma: Open-source multimodal model for end-to-end autonomous driving,” in Proceedings of the Winter Conference on Applications of Computer Vision , 2025, pp. 1001–1009. [9] B. Jiang, S. Chen, B. Liao, X. Zhang, W. Yin, Q. Zhang, C. Huang, W. Liu, and X. Wang, “Senna: Bridging large vision-language models and end-to-end autonomous driving,” arXiv preprint arXiv:2410.22313 , 2024. [10] Z. Yang et al. , “Llm4drive: A survey of large language models for autonomous driving,” arXiv e-prints arXiv:2311 , 2023. [11] S. Sharan, R. Zhao, Z. Wang, S. P. Chinchali et al. , “Plan diffuser: Grounding llm planners with diffusion models for robotic manipu-lation,” in Bridging the Gap between Cognitive Science and Robot Learning in the Real World: Progresses and New Directions , 2024. [12] B. Liao, S. Chen, H. Yin, B. Jiang, C. Wang, S. Yan, X. Zhang, X. Li, Y. Zhang, Q. Zhang et al. , “Diffusiondrive: Truncated diffusion model for end-to-end autonomous driving,” arXiv preprint arXiv:2411.15139 ,2024. [13] Y. Zheng, R. Liang, K. Zheng, J. Zheng, L. Mao, J. Li, W. Gu, R. Ai, S. E. Li, X. Zhan et al. , “Diffusion-based planning for autonomous driving with flexible guidance,” arXiv preprint arXiv:2501.15564 ,2025. [14] M. Chen, S. Mei, J. Fan, and M. Wang, “An overview of diffusion models: Applications, guided generation, statistical rates and optimiza-tion,” arXiv preprint arXiv:2404.07771 , 2024. [15] L. Lian, B. Li, A. Yala, and T. Darrell, “Llm-grounded diffusion: Enhancing prompt understanding of text-to-image diffusion models with large language models,” arXiv preprint arXiv:2305.13655 , 2023. [16] B. Yang, H. Su, N. Gkanatsios, T.-W. Ke, A. Jain, J. Schneider, and K. Fragkiadaki, “Diffusion-es: Gradient-free planning with diffusion for autonomous driving and zero-shot instruction following,” arXiv preprint arXiv:2402.06559 , 2024. [17] W. Mao, C. Xu, Q. Zhu, S. Chen, and Y. Wang, “Leapfrog diffusion model for stochastic trajectory prediction,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,2023, pp. 5517–5526. [18] A. Li, S. Bae, D. Isele, R. Beeson, and F. M. Tariq, “Predictive planner for autonomous driving with consistency models,” arXiv preprint arXiv:2502.08033 , 2025. [19] J. Ho, A. Jain, and P. Abbeel, “Denoising diffusion probabilistic models,” Advances in neural information processing systems , vol. 33, pp. 6840–6851, 2020. [20] J. Sohl-Dickstein, E. Weiss, N. Maheswaranathan, and S. Ganguli, “Deep unsupervised learning using nonequilibrium thermodynamics,” in International conference on machine learning . pmlr, 2015, pp. 2256–2265. [21] Y. Song, J. Sohl-Dickstein, D. P. Kingma, A. Kumar, S. Ermon, and B. Poole, “Score-based generative modeling through stochastic differential equations,” 2021. [22] T. Gu, G. Chen, J. Li, C. Lin, Y. Rao, J. Zhou, and J. Lu, “Stochastic trajectory prediction via motion indeterminacy diffusion,” in Proceed-ings of the IEEE/CVF conference on computer vision and pattern recognition , 2022, pp. 17 113–17 122. [23] C. Jiang, A. Cornman, C. Park, B. Sapp, Y. Zhou, D. Anguelov 
+
+et al. , “Motiondiffuser: Controllable multi-agent motion prediction using diffusion,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 9644–9653. [24] Z. Zhong, D. Rempe, D. Xu, Y. Chen, S. Veer, T. Che, B. Ray, and M. Pavone, “Guided conditional diffusion for controllable traffic simulation,” in 2023 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2023, pp. 3560–3566. [25] Y. Cui, Z. Cao, Z. Wang, Z. Li, W. Liu, Z. Li, Y. Duan, J. Wu, and B. Zhou, “LLM4AD: A systematic benchmark for evaluating the instruction-following abilities of large language models in autonomous driving,” 2024. [26] W. Wang et al. , “Drivemlm: Aligning multi-modal large language models with behavioral planning states for autonomous driving,” arXiv preprint arXiv:2312.09245 , 2023. [27] Y. Zhang, Z. Zhao, Y. Du, S. Xie, and B. Zhou, “DiMA: Distilling multi-modal large language models for efficient visual planning,” in 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. [28] G. Zhao, X. Wang, Z. Zhu, X. Chen, G. Huang, X. Bao, and X. Wang, “Drivedreamer-2: Llm-enhanced world models for diverse driving video generation,” arXiv preprint arXiv:2403.06845 , 2024. [29] S. Gao, J. Yang, L. Chen, K. Chitta, Y. Qiu, A. Geiger, J. Zhang, and H. Li, “Vista: A generalizable driving world model with high fidelity and versatile controllability,” arXiv preprint arXiv:2405.17398 , 2024. [30] Z. Zhong, D. Rempe, Y. Chen, B. Ivanovic, Y. Cao, D. Xu, M. Pavone, and B. Ray, “Language-guided traffic simulation via scene-level diffu-sion,” in Proceedings of The 7th Conference on Robot Learning , ser. Proceedings of Machine Learning Research, J. Tan, M. Toussaint, and K. Darvish, Eds., vol. 229. PMLR, 2023, pp. 144–177. [31] H. Caesar, J. Kabzan, K. S. Tan, W. K. Fong, E. Wolff, A. Lang, L. Fletcher, O. Beijbom, and S. Omari, “nuplan: A closed-loop ml-based planning benchmark for autonomous vehicles,” arXiv preprint arXiv:2106.11810 , 2021. [32] M. Treiber, A. Hennecke, and D. Helbing, “Congested traffic states in empirical observations and microscopic simulations,” Physical review E, vol. 62, no. 2, p. 1805, 2000. [33] O. Scheel, L. Bergamini, M. Wołczyk, B. Osi´ nski, and P. Ondruska, “Urban driver: Learning to drive from real-world demonstrations using policy gradients,” 2021. [34] K. Renz, K. Chitta, O.-B. Mercea, A. Koepke, Z. Akata, and A. Geiger, “Plant: Explainable planning transformers via object-level representa-tions,” arXiv preprint arXiv:2210.14222 , 2022. [35] Z. Huang, H. Liu, and C. Lv, “Gameformer: Game-theoretic modeling and learning of transformer-based interactive prediction and planning for autonomous driving,” in Proceedings of the IEEE/CVF Interna-tional Conference on Computer Vision , 2023, pp. 3903–3913. [36] M. Hallgarten, M. Stoll, and A. Zell, “From prediction to planning with goal conditioned lane graph traversals,” in 2023 IEEE 26th In-ternational Conference on Intelligent Transportation Systems (ITSC) .IEEE, 2023, pp. 951–958. [37] D. Dauner, M. Hallgarten, A. Geiger, and K. Chitta, “Parting with misconceptions about learning-based vehicle motion planning,” in 
+
+Conference on Robot Learning . PMLR, 2023, pp. 1268–1281. [38] Q. Sun, S. Zhang, D. Ma, J. Shi, D. Li, S. Luo, Y. Wang, N. Xu, G. Cao, and H. Zhao, “Large trajectory models are scalable motion predictors and planners,” arXiv preprint arXiv:2310.19620 , 2023. [39] J. Cheng, Y. Chen, X. Mei, B. Yang, B. Li, and M. Liu, “Rethinking imitation-based planners for autonomous driving,” in 2024 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2024, pp. 14 123–14 130. [40] Y. Hu, S. Chai, Z. Yang, J. Qian, K. Li, W. Shao, H. Zhang, W. Xu, and Q. Liu, “Solving motion planning tasks with a scalable generative model,” in European Conference on Computer Vision . Springer, 2024, pp. 386–404.

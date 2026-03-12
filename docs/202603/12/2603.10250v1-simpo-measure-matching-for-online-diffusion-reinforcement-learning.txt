@@ -1,0 +1,1894 @@
+Title: SiMPO: Measure Matching for Online Diffusion Reinforcement Learning
+
+URL Source: https://arxiv.org/pdf/2603.10250v1
+
+Published Time: Thu, 12 Mar 2026 00:16:27 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+Haitong Ma * 1 Chenxiao Gao * 2 Tianyi Chen 2 Na Li 1 Bo Dai 2
+
+## Abstract 
+
+A commonly used family of RL algorithms for diffusion policies conducts softmax reweighting over the behavior policy, which usually induces an over-greedy policy and fails to leverage feed-back from negative samples. In this work, we introduce Signed Measure Policy Optimization (SiMPO) , a simple and unified framework that generalizes reweighting scheme in diffusion RL with general monotonic functions. SiMPO revisits diffusion RL via a two-stage measure matching lens. First, we construct a virtual target policy by f -divergence regularized policy optimization, where we can relax the non-negativity constraint to allow for a signed target measure. Second, we use this signed measure to guide diffusion or flow models through reweighted matching. This formu-lation offers two key advantages: a) it generalizes to arbitrary monotonically increasing weighting functions; and b) it provides a principled justifica-tion and practical guidance for negative reweight-ing. Furthermore, we provide geometric inter-pretations to illustrate how negative reweighting actively repels the policy from suboptimal actions. Extensive empirical evaluations demonstrate that SiMPO achieves superior performance by leverag-ing these flexible weighting schemes, and we pro-vide practical guidelines for selecting reweighting methods tailored to the reward landscape. 
+
+## 1. Introduction 
+
+Diffusion models (Ho et al., 2020; Song & Ermon, 2019) and flow models (Liu et al., 2022; Lipman et al., 2022) have emerged as a dominant class of generative models for syn-thesizing high-fidelity data across various modalities, from photorealistic imagery to complex structural biology. Be-yond traditional density estimation, there is an increasing demand to align these models with specific downstream ob-jectives—such as human preferences (Rafailov et al., 2023), biological evaluations (Avsec et al., 2021), and real-world physical feedback (Lei et al., 2025). Consequently, Rein-  
+
+> *Equal contribution 1Harvard University. 2Georgia Institute of Technology.
+
+forcement Learning (RL) for diffusion models has become a critical research direction for the downstream alignment. The existing RL algorithms for diffusion models generally fall into two categories. One prominent direction treats the denoising reverse process as a Markov Decision Process (MDP) and optimizes the model using Policy Gradient al-gorithms (Black et al., 2023; Fan et al., 2023; Ren et al., 2024; Liu et al., 2025; Zhang et al., 2025b). These methods are often computationally intensive, requiring backpropa-gation through multiple sampling timesteps. Furthermore, they frequently mandate the use of Stochastic Differential Equation (SDE) samplers during training, which requires a very different training infrastructure. Moreover, the method relies on an underlying reverse Kullback-Leibler (KL) regu-larization with “mode-seeking” behavior, which encourages the model to stay close to its pre-trained initialization and limits the exploration. An alternative and more efficient approach directly reweights the current behavior policies (Ma et al., 2025a; Tang et al., 2025), also known as Advantage Weighted Re-gression (AWR, Peng et al., 2019), which reweights the Evidence Lower Bound (ELBO) objective by advantage A
+
+(e.g., softmax reweighting by softmax( A/λ )). This frame-work, rooted in forward-KL regularization, is highly scal-able and allows the RL algorithms to leverage the existing training infrastructure of diffusion models. However, this efficiency comes at a cost: the exponential weights usually assign high weights to a few good samples with high advan-tages but very small weights to all other samples, resulting in a greedy policy update (Mei et al., 2020) and ignoring negative samples (Frans et al., 2025). To address the inherent limitations of softmax reweighting, we introduce Signed Measure Policy Optimization (SiMPO) ,a unified framework that significantly broadens the scope of online diffusion RL. We propose a general two-stage frame-work: (a) a construction stage that derives a virtual target measure by solving an f -divergence regularized objective, where we relax the standard non-negativity constraint to allow for signed measures; and (b) a projection stage that projects this signed target back to the space of valid proba-bility measures via reweighted flow matching. We show that SiMPO unifies existing reweighting (Ding et al., 2024; Ma et al., 2025a; Tang et al., 2025) while offering two distinct 1
+
+> arXiv:2603.10250v1 [cs.LG] 10 Mar 2026 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning
+
+advantages: a) It generalizes reweighting to arbitrary mono-tonically increasing functions , decoupling the method from rigid exponential scaling and allowing it to be tailored to specific problem landscapes; and b) It provides a principled justification for negative reweighting through the theory of signed measures. We further provide geometric interpreta-tions illustrating how this mechanism actively ‘repels’ the policy from undesirable regions when training with negative reweighted flow matching. Finally, we provide comprehen-sive experimental results on bandit, MuJoCo locomotion tasks, and fine-tuning DNA sequence generation models to validate our approach. We demonstrate that SiMPO achieves superior performance by leveraging flexible and negative reweighting schemes, and we offer practical guidelines for selecting the optimal reweighting function based on the reward landscape. Due to space limit, more related works is presented in Ap-pendix A. 
+
+## 2. Preliminaries 
+
+2.1. Reinforcement Learning Markov Decision Processes (MDPs). We consider Markov decision process (Puterman, 2014) specified by a tuple M =(S, A, r, P, μ 0, γ ), where S is the state space, A is the action space, r : S × A → R is a reward function, P : S × A → 
+
+∆( S) is the transition operator with ∆( S) as the family of distributions over S, μ 0 ∈ ∆( S) is the initial distribution and γ ∈ (0 , 1) is the discount factor. 
+
+KL-regularizated policy optimization (Tomar et al., 2021; Lan, 2023; Peters et al., 2010) is closely related to practi-cal proximity-based algorithms such as TRPO (Schulman, 2015) and PPO (Schulman et al., 2017), but with a different approach to enforce the proximity constraints. The policy update is formulated as 
+
+π = argmax 
+
+> π:S→ ∆( A)
+
+Ea∼π [Qπold (s, a)] − λD KL (π∥πold ; s)
+
+(1) where Qπold (s, a) = Eπold [P∞  
+
+> τ=0
+
+γτ r(st, at)|s0 =
+
+s, a0 = a] is the state-action value function and πold is the current policy, λ ∈ R+ is the regularization strength. The additional KL divergence objective constrains the updated policy to be approximately within the trust region. The closed-form solution of policy mirror descent (1) is a 
+
+softmax reweighted version of the current policy: 
+
+π∗ (a|s) = πold (a|s) exp ( Qπold (s, a) /λ )
+
+Z(s) , (2) and Z(s) = R πold (a|s) exp ( Qπold (s, a) /λ ) d a is the par-tition function. It is often referred to as weighted behavior cloning or advantage-weighted regression in recent litera-ture (Peng et al., 2019; Frans et al., 2025; Wang et al., 2018; Physical Intelligence et al., 2025; Siegel et al., 2020; Nair et al., 2020). 
+
+2.2. Diffusion and Flow Models 
+
+Diffusion models (Ho et al., 2020; Song & Ermon, 2019) or flow models (Lipman et al., 2022; Liu et al., 2022) learn continuous data distributions by gradually perturbing clean data x0 ∼ pdata with Gaussian noise according to a forward process: xt = αtx0 + σtϵ, ϵ ∼ N (0, I),
+
+and then learn to reverse this process to sample from the target distribution pdata . In this paper, we employ the v-prediction formulation, where the velocity v is defined as the time-derivative of x, i.e. , v = ˙ αtx0 + ˙ σtϵ. Diffusion models or flow models fit a parameterized network Dθ (xt, t )
+
+to match the marginal velocity field vt(xt):
+
+vt(xt) = Ex0∼p0|t
+
+vt|0(xt|x0) , (3) where p0|t is the posterior distribution given xt, vt|0(xt|x0)
+
+is the conditional velocity field 
+
+vt|0(xt|x0) = (σt ˙αt − ˙σtαt)
+
+σt
+
+x0 + ˙σt
+
+σt
+
+xt.
+
+However, the marginal velocity field is not tractable due to the posterior distribution, therefore in practice, we employ the conditional velocity field matching, which is equivalent up to some constant: 
+
+L(θ) = Ex0,ϵ
+
+∥Dθ (xt, t ) − vt|0∥2 .
+
+After training is complete, sampling is done by solving a stochastic or ordinary differential equation (SDE/ODE), for example dxt/dt = Dθ (xt, t ).Different specifications of the noise schedule {(αt, σ t)}
+
+leads to different methods. For example, the variance-exploding (VE) diffusion model (Song & Ermon, 2019) has the schedule αt = 1 and σt = √t. Flow models (Lipman et al., 2022; Liu et al., 2022) employ linear interpolation with αt = 1 − t, σ t = t, which simplifies the conditional velocity target to vt|0 = ϵ − x0. Note that diffusion models may also employ x0- or ϵ-prediction, which are equivalent to v-prediction used in this paper due to the reparameteriza-tion among the three (Li & He, 2025). 
+
+2.3. f -divergence and Extention to Signed Measure 
+
+Divergence describes the difference between two probability distributions. A general family of divergences is the f -divergences (Csisz ´ar & Shields, 2004; Liese & Vajda, 2006), also known as the Ali-Silvey distances (Ali & Silvey, 1966). For a convex function f : R+ → R with f (1) = 0 , the corresponding f -divergence for two distributions p, q is defined as: 
+
+Df (p∥q) = Eq(x)
+
+
+
+f
+
+ p(x)
+
+q(x)
+
+ 
+
+,
+
+where f is called the generator function. Notice that the generator function is not unique; by definition, ˜f (x) = 
+
+f (x) + C(x − 1) yields the same divergence as f (x) when 2SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+C is a constant. Different choices of f -divergence can cover a wide class of popular divergences, which we summarize in Table 1.                      
+
+> Table 1. A few examples of f-divergence, their generator functions and the resulting reweighting factor.
+> Divergence DfGenerator f(x)Weighting Scheme w(A)
+> Forward KL Divergence xlog xexp( ˜A)
+> χ2-Divergence x2−1ReLU( ˜A)
+> α-Divergence ( α > 1)xα−xα(α−1) ReLU( ˜A)1/(α−1) ∗
+
+Extension to p being a signed measure (Csisz ´ar et al., 2002; Broniatowski & Keziou, 2006). The definition of 
+
+f -divergence ususally consider p, q both as probability mea-sures, which are non-negative. Extending the definition of 
+
+f -divergences to cases where p is a finite signed measure while q is still a probability measure also holds under mild conditions, such as f being a measurable function on R 1.Following Broniatowski & Keziou (2006), we call this the 
+
+f -divergence on signed measures, to distinguish it from the standard definition. 
+
+## 3. A Unified Framework for Reweighting with Measure Matching 
+
+In this section, we generalize reweighting in diffusion RL be-yond enforcing a valid probability distribution such as Equa-tion (2). We show that we can first construct a signed, un-normalized target measure , and then project the measure back onto the probability simplex via reweighted flow match-ing (see Figure 1). This framework unifies existing diffusion policy optimization methods and inspire novel reweighting schemes, such as new reweighting functions and negative reweighting. We also provide geometric interpretation of negative reweighted flow matching. 
+
+3.1. A Two-Stage Framework for Diffusion Policy Optimization 
+
+Consider the policy optimization problem with f -divergence regularization 
+
+max  
+
+> π∈Π
+
+Eπ [Q(s, a)] − λD f (π∥πold ). (4) Here, we assume f : R+ → R is strictly convex and dif-ferentiable and f (1) = 0 . The policy π : S → ∆( A)
+
+maps each state s to a probability distribution over the action space, and thus satisfies the normalization con-straint R π(a|s), da = 1 and the non-negativity constraint 
+
+π(a|s) ⩾ 0 for all s ∈ S .To solve this problem for diffusion-based policies, we adopt a two-stage decomposition. 
+
+Stage I: Defining the optimal target policy π∗ via reweighting. By converting the constrained optimization 
+
+> 1Details can be found in Appendix B.
+
+problem in (4) into an unconstrained one via a Lagrangian formulation, we can show that the optimal target policy admits the form 
+
+π∗(a|s) = πold (a|s)¯ gf
+
+ Q(s, a) − ν(s)
+
+λ
+
+
+
+, (5) where ν : S → R are multipliers whose actual values depend on λ and Q, and ¯gf is the clipped inverse derivative 
+
+function satisfying 
+
+¯gf (x) = 
+
+(f ′)−1(x) if x > f ′(0) 0 if x ⩽ f ′(0) . (6) The detailed derivation is deferred to Appendix C.1. 
+
+Stage II: Projection via reweighted flow matching . Al-though (5) provides an analytic expression for the target policy π∗, we still need to project it back to the hypothesis space defined by our parameterization. To achieve this, we employ the simple and commonly used reweighted flow matching (Ding et al., 2024; Ma et al., 2025a): 
+
+L(θ) = Es,a0,ϵ 
+
+w(s, a)∥Dθ (s, at, t ) − vt|0∥2 (7) where w(s, a) = ¯ gf
+
+ Q(s,a)−ν(s)
+
+> λ
+
+
+
+is the reweighting fac-tor in (5) . In Appendix D, we show that the closed-form solution of the reweighted conditional flow matching objec-tive is given by a weighted average of conditional velocities under the posterior distribution p0|t induced by the old pol-icy πold :
+
+D∗ 
+
+> θ
+
+(s, at, t ) = Ea0∼p0|t [w(s, a0)vt|0(at|a0)] 
+
+Ea0∼p0|t [w(s, a0)] . (8) Compared to the unweighted formulation (3) , this solution reweights the conditional velocity according to its value, thereby emphasizing actions with higher advantage. Most importantly, such two-stage perspective elucidates the design space underlying a broad class of existing algo-rithms. In what follows, we show that several previously proposed methods can be recovered as special cases of our framework. Moreover, this formulation naturally extends to signed measures, offering a principled way to incorporate negative samples into training. 
+
+3.2. Unifying Existing Reweighting Schemes via 
+
+f -Divergences 
+
+By choosing the f -divergence to be the forward KL di-vergence, we recover the KL-regularized objective used in AWR (Peng et al., 2019) and DPMD (Ma et al., 2025a). 
+
+Example 3.1 (DPMD (Ma et al., 2025a) as forward KL-reg-ularization) . Let Df = DKL , therefore f (x) = x log x −
+
+x + 1 , gf (x) = exp( x), and f ′(0) = −∞ . Recogniz-ing ν(s) as the normalization factor Z(s), we can recover DPMD by 
+
+LDPMD (θ) = 
+
+Es,a0,ϵ 
+
+ exp( Q(s, a)) 
+
+Z(s) Dθ (s, at, t ) − vt|0
+
+> 2
+
+
+
+.
+
+3SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 𝑔 ⋅ = exp (⋅)            
+
+> 𝑔 ⋅=max (⋅,−𝜖 )
+> 𝜋 !"# 𝑄 (𝑠 ,𝑎 )𝑔 ((𝑄 −𝜈 )/𝜆 )𝜋 ∗𝜋 %&'
+> Stage I: Define the target measure Stage II: Projection
+
+Figure 1. A demonstrative comparison between the existing advantage-weighted regression ( up ) and the proposed SiMPO framework (down ). We employ a two-stage viewpoint, via first creating a target measure that can be signed or unnormalized and projecting it back to probability distributions by reweighted conditional flow matching. Especially, the negative weights have a “repelling” effect, pushing the generated action away from negative samples, enhancing algorithm performance. 
+
+Moreover, we can see QVPO (Ding et al., 2024), originally derived from a lower bound of policy gradient objective, as a special case with χ2 divergence. 
+
+Example 3.2 (QVPO (Ding et al., 2024) as χ2 regulariza-tion.) . Let Df be the χ2-divergence by setting f (x) = 
+
+x2 − 1, gf (x) = 12 x, and f ′(0) = 0 . The QVPO objective 
+
+LQVPO (θ) = 
+
+Es,a0,ϵ 
+
+[Q(s, a) − V (s)] +∥Dθ (s, at, t ) − vt|0∥2
+
+can be recovered by fixing λ = 12 , where [·]+ = max( ·, 0) .Noticing that both the KL-divergence and χ2-divergence are special cases of α-divergence, we can employ a more general regularization family and weighting scheme. 
+
+Example 3.3 (Power function reweighting as α-divergence regularization) . For general α-divergences with α > 1,we have f (x) = xα−1(α−1) α , which induces f ′(0) = 0 and 
+
+gf (x) = ( α − 1) x 1 
+
+> α−1
+
+. Therefore, we can get optimal policies reweighted by arbitrary power functions, 
+
+π(a|s) ∝ πold (a|s)
+
+ Q(s, a) − ν(s)
+
+λ
+
+ 1
+
+> α−1
+> +
+
+,
+
+where certain constant factors are absorbed into λ. This suggests the following objective: 
+
+Lα(θ) = 
+
+Es,a0,ϵ 
+
+" Q(s, a) − ν(s)
+
+λ
+
+ 1
+
+> α−1
+> +
+
+Dθ (s, at, t ) − vt|0
+
+> 2
+
+#
+
+.
+
+By tuning α, we can shape the curvature of the weighting function to better match the characteristics of the underly-ing value landscape. With an appropriate choice of α, our approach can avoid both the overly flat weighting used in QVPO (Example 3.2) and the statistical instabilities induced by the exponential weighting in DPMD (Example 3.1). 
+
+3.3. Negative Reweighting by Extending f -divergence Definition to Signed Measures 
+
+One common drawback of the above methods is that their weighting functions effectively rule out the negative sam-ples (as measured by the advantage function), due to the extremely small or zero weights assigned to them. There-fore, these methods cannot exploit the negative samples during training, and may therefore be more prone to getting trapped in local optima. This issue stems from the non-negativity constraint of the target optimal policy π∗(a|s) ⩾ 0, which in turn forces the weight gf (·) or w(·, ·) to be non-negative. However, since our framework decouples the algorithm into two stages, and the diffusion/flow policy implicitly performs sampling from a distribution, we can actually specify a target mea-sure without the non-negativity constraint during Stage I ,and then recover a valid probability distribution by fitting diffusion/flow policy via reweighted matching in Stage II ,as shown in our illustrative comparison in Figure 1. This inspires us to shift our attention to optimization over normal-ized signed measures eΠ = {π : R π(a|s) = 1 , ∀s ∈ S} .Moreover, because the key design choice is the weighting function gf = ( f ′)−1, it is more principled to approach the problem directly through designing the weighting function. Therefore, we consider relaxing the target measure to signed measures: 
+
+π∗(a|s) ∝ πold (a|s)g
+
+ Q(s, a) − ν(s)
+
+λ
+
+
+
+, (9) where the only requirement for g(·) is that it is monotonic increasing. Defining the weighting function w(s, a) = 
+
+g
+
+ Q(s,a)−ν(s)
+
+> λ
+
+
+
+, we continue to optimize the policy via reweighted flow matching, as in (7) . This substantially broadens the scope of our framework in two respects. 
+
+First, it allows us to adopt any monotonic increasing func-tion as the weighting rule. Second, it enables the inclusion 4SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+of negative samples by permitting negative weights during training. We show that existing negative-aware reweighting scheme exactly fits into our framework, 
+
+Example 3.4 (wd1 (Tang et al., 2025) as an example of nega-tive reweighting) . wd1 (Tang et al., 2025) also incorporates negative reweighting to enhance the reasoning capability of diffusion language models. Their weighting function is defined as 
+
+g( ˆA(s, ai)) = softmax( ˆA(s, ai)) − softmax( − ˆA(s, ai)) 
+
+where softmax( s, ai) = exp( ˆA(s,ai))   
+
+> P
+> iexp( ˆA(s,ai))
+
+and ˆA(s, ai) =  
+
+> R(s,ai)−mean( R(s,a1: G)) std( R(s,a1: G))
+
+is the group-relative advantage across a total number of G responses to the same query 
+
+s. Note that, g(x) here is exactly monotonic increasing. Finally, we show that, even without non-negativity con-straints enforced, the target policy still improves over the cur-rent policy πold as long as it is normalized R π(a|s)da = 1 .
+
+Theorem 3.5 (Guaranteed policy improvement, proof in Appendix C.3) . Assume g is strictly increasing, we have guaranteed policy improvement on π over πold , i.e. ,
+
+Eπ [Q(s, a)] ⩾ Eπ [Q(s, a) for ∀s ∈ S .
+
+3.4. Geometric Interpretation of Negative Reweighted Flow Matching 
+
+Allowing w(s, a) be negative will also affect the optimal solution of conditional flow matching in Equation (8). We provide an geometric interpretation in this section. Com-pared to original optimal solution with non-negative weights in Equation (8), there are two cases if we consider weights being possibly negative, depending on the sign of denomi-nator Ea0∼p0|t [w(s, a0)] :
+
+Case I: For all at with Ea0∼p0|t [w(s, a0)] > 0, the optimal weighted average solution in Equation (8) still holds. How-ever, the negative weights will change the sign of vt|0 in the weighted average, pushing the weighted average velocity away from those vt|0 with negative weights. 
+
+Remark 3.6 (Another interpretation from generation of reweighted distributions via signed measures) . Even when the weights w(s, a0) take negative values (as in Case I ), the closed-form velocity field solution from Equation (8) gener-ates a valid probability path ρt, provided the total measure remains positive. The generated path is given by: 
+
+ρt(a|s) = 1
+
+Z(s)
+
+Z
+
+w(s, a0)πold (a0|s)pt|0(a|a0) da0,
+
+(10) where Z(s) = R w(s, a0)πold (a0|s)da0 is the normaliza-tion constant. Mathematically, the negative weights intro-duce negative components to the integral. To satisfy the normalization constraint R ρt(a|s)da = 1 , the contribution from regions with positive weights must be amplified to offset the negative mass. Consequently, this mechanism ef-fectively concentrates significantly higher probability mass on positive samples than standard reweighting. 
+
+Case II: For all at with Ea0∼p0|t [w(s, a0)] ⩽ 0, the loss is unbounded and have a “repelling” effect, consistently pushing Dθ away from the solution in (8) , which means pushing generated path at away from the negative weights region. The derivations are deferred to Appendix D. In summary, in both cases the negative weights will push the generated probability paths away from actions with negative weights .
+
+Repelling effect helps policy improvement. There are two possible outcomes from the repelling effect: a) pushing the actions towards higher advantages; b) pushing actions to regions not included in the support of old policy πold , en-couraging exploration. Both cases provide useful feedback from negative samples. 
+
+Algorithm 1 Si gned Measure Policy Optimization (SiMPO) 
+
+Require: Q-function, current policy πold , regularization strength λ, number of samples N 
+
+> 1:
+
+# Stage I: Create target measure  
+
+> 2:
+
+sample N actions ai ∼ π(·| s), i = 1 , . . . N for each s 
+
+> 3:
+
+Evaluate Qi
+
+.
+
+= Q(s, ai), i = 1 , 2, . . . N  
+
+> 4:
+
+Compute normalization factor ν(s) 
+
+> 5:
+
+Compute reweighting weights w(s, ai) 
+
+> 6:
+
+# Stage II: Reweighted Flow Matching  
+
+> 7:
+
+Train policies by reweighted flow matching (7). 
+
+## 4. SiMPO: A Practical Algorithm 
+
+The pseudo-code of the SiMPO framework is presented in Algorithm 1. By instantiating the two-stage framework described in Section 3.1 with different weighting func-tions, we study several variants of SiMPO in this paper. Specifically, we consider: 1) SiMPO-Exp , which uses exponential weighting as DPMD; 2) SiMPO-Linear and 
+
+SiMPO-Square , which uses power functions w(s, a) = 
+
+h Q(s,a)−ν(s)
+
+> λ
+
+i 
+
+> +
+
+and w(s, a) = 
+
+h Q(s,a)−ν(s)
+
+> λ
+
+i2+, respec-tively. For variants that allow negative weighting, as dis-cussed in Section 3.4, negative weights must be carefully controlled to avoid destabilizing learning. To this end, we apply a simple truncation: 
+
+w(s, a) = max 
+
+ Q(s, a) − ν(s)
+
+λ , ℓ 
+
+
+
+, (11) where ℓ < 0 determines the magnitude of negative weight-ing. We refer to this variant as SiMPO-Lin. Neg. .
+
+Normalization constraints It is not clear how to compute the normalization term ν(s) for general reweighting func-tions. We propose a population-based solution by estimating 5SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+the normalizer with a group of samples. For exponential weighting g(·) = exp( ·), this translates to computing the softmax as the final weight; while for power function weight-ing, we can compute the normalizers by first determining the number of active samples ( i.e. , samples that are not clipped), and then compute the exact value such that the weights are normalized. Details about this process, and also its generalization to accommodate negative values, can be found in Appendix E. 
+
+## 5. Experiments 
+
+In the experiments, we mainly answer the following ques-tions: 
+
+Q1 How do other regularization terms affect the overall performance? 
+
+Q2 Does the negative weights help improve performance? 
+
+Q3 How do we adapt reweighting functions according to the reward landscape? 
+
+5.1. Exploration-Exploitation Trade-off in Bandit 
+
+We first study Q2 and Q3 using a toy example, a one-dimensional bandit problem, with a given reward function 
+
+R(·). The objective is defined as max π Ea∼π [R(a)] −
+
+λD f (π∥πold ). We evaluate performance using the sim-ple expected regret metric, given by max a∈A R(a) −
+
+Ea∼π [R(a)] .
+
+The effect of negative weights on exploration. First, to answer Q2 , we select a reward function with two optima, shown in Figure 2 (Left), and initialize the policy to be aligned with the sub-optimum, so the policy is very likely to get stuck at the sub-optimum. We compare four types of reweighting methods: Linear Square , Exp w(a) = softmax( ˆR(a)) , and linear with negative ℓ = −0.05 labeled as Lin. Neg. The regret curves are shown in Figure 2 (right), which show that, all reweighting methods cannot achieve the global optimum for every trial without negative reweighting; in particular, linear reweighting frequently becomes trapped in a local optimum. After adding negative reweighting, as shown in Figure 2 (right), Lin. Neg. can escape the sub-optimum, showing that negative reweighting can effectively help exploration. 
+
+Reweighting and reward landscape. Moreover, to answer 
+
+Q3 , we introduce another reward function, both illustrated in the left column of Figure 3: one characterized by two broad optima (top row) and the other by two sharp optima (bottom row). The policies are initialized as Gaussian distributions in the middle of two optima, so exploration is not neces-sary. We show three non-negative reweighting functions: 
+
+Linear , Square , and Exp . The resulting expected simple regret curves are presented in the right column of Figure 3. For the broad optimum (top row), Square reweighting (in-duced by α-divergence with α = 1 .5) achieves the lowest 0 100 200 
+
+> epoch
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> regret
+> Simple Regret
+> Reweighting Method
+> Exp
+> Linear
+> Square
+> Lin. Neg.
+
+Figure 2. Bandit problem to answer Q2 . Left: Reward func-tions and initial policy. Right: Regret curves comparing different reweighting with and without negative reweighting functions over 200 epochs. 0 50 100        
+
+> epoch
+> 10 3
+> 10 2
+> 10 1
+> regret
+> Reweighting
+> Linear
+> Square
+> Exp 050 100
+> epoch
+> 10 2
+> 10 1
+> regret
+> Reweighting
+> Linear
+> Square
+> Exp
+
+Figure 3. Demonstration of the first bandit problem exploring 
+
+Q2 . Left column: Reward functions (blue) showing broad (top) vs. sharp (bottom) optima, with initial policy distributions (his-tograms). Right column: Regret curves comparing different reweighting schemes over 100 epochs. 
+
+regret and more stable convergence. However, in the sharp optimum setting (bottom row), Linear reweighting demon-strates superior performance, maintaining consistently lower and more stable regret. In both cases, Exp reweighting is not optimal. Therefore, we observe that the choice of regularization term is critical to the algorithm’s performance in online RL, as it governs the exploration-exploitation trade-off relative to the curvature of the reward function. 
+
+5.2. Locomotion Tasks 
+
+To answer all questions on standard RL benchmarks, we implemented our algorithm with the JAX package and eval-uated the performance on 6 OpenAI Gym MuJoCo v4 tasks. All environments are trained with a total of 1 million envi-ronment interactions. 
+
+Baselines. The baselines include two families of model-free RL algorithms. The first family is diffusion policy RL, which includes a collection of recent diffusion-policy online RLs, including QSM (Psenka et al., 2023), QVPO (Ding 6SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+Table 2. Performance of 1M steps on Gym-MuJoCo environments. We report the average returns of the last checkpoint ± standard deviation over 5 random seeds. Orange denotes our algorithms with different reweighting, while blue highlights our linear weighting with negative weights. Bold numbers indicates best mean returns and underlined numbers indicates mean returns within standard deviation of the best runs. All variants of the proposed SiMPO achieve consistently good performance on most tasks. Adding negative weights further improve performance on two tasks while not hurting performance on other tasks much. 
+
+Method HALF CHEETAH HUMANOID ANT WALKER 2D HOPPER SWIMMER 
+
+Classic Model-Free RL 
+
+TD3 9820 ± 1543 5263 ± 47 4400 ± 1196 3732 ± 388 3387 ± 302 88 ± 25 
+
+SAC 10 257 ± 1057 5298 ± 69 2858 ± 2637 4625 ± 557 2126 ± 1205 85 ± 29 
+
+Diffusion RL Baselines 
+
+QSM 12 573 ± 1197 2308 ± 468 711 ± 42 3933 ± 185 1594 ± 256 108 ± 37 
+
+DIPO 10 136 ± 2525 5184 ± 132 977 ± 20 3809 ± 1112 1191 ± 770 46 ± 3
+
+DACER 13 298 ± 790 3142 ± 2557 4887 ± 646 1871 ± 3131 1813 ± 1781 116 ± 12 
+
+QVPO 8081 ± 701 1375 ± 886 2122 ± 2011 2866 ± 490 960 ± 414 83 ± 36 
+
+Ours SiMPO-Exp 13 627 ± 704 5100 ± 238 5071 ± 533 4616 ± 145 3002 ± 296 69 ± 16 
+
+SiMPO-Square 13 276 ± 1095 5068 ± 435 5925 ± 345 4478 ± 1520 2809 ± 954 52 ± 1
+
+SiMPO-Linear 13 636 ± 521 5376 ± 154 5984 ± 179 4909 ± 186 2637 ± 370 68 ± 14 
+
+SiMPO-Lin. Neg. 13907 ± 1902 5466 ± 377 5700 ± 230 4906 ± 438 2609 ± 733 66 ± 13 
+
+et al., 2024), DACER (Wang et al., 2024b), DIPO (Yang et al., 2023) and DPPO (Ren et al., 2024). The second family is classic model-free online RL baselines including PPO (Schulman et al., 2017), TD3 (Fujimoto et al., 2018) and SAC (Haarnoja et al., 2018). A more detailed explana-tion to the baselines can be found in Appendix F.1. 
+
+Q1 The results are summarized in Table 2. All three reweighting methods, Linear , Square , and Exp , exhibit consistently strong performance and outperform other diffusion-based RL baselines across most environments, with the exception of Swimmer. Q2 Allowing negative weighting further enhances performance with ℓ = −0.05 
+
+(SiMPO-Lin. Neg. in the table) achieves additional gains on HalfCheetah and Humanoid, while having minimal im-pact on the remaining tasks. 
+
+Q3 To see the effect of reward functions under different landscapes in locomotion tasks, we handcrafted different reward functions to change the landscape in two DeepMind Control Suite tasks (Tassa et al., 2018), Cheetah-Run and Walker-Run, shown in Figure 4. The task is to run as fast as possible, where rewards are monotonically increasing functions of robot speed. Four different rewards are ordered from flat to greedy as sqrt , linear , square , exp . The detailed definition of these reward functions are deferred to Appendix F.2. 0 5 10 
+
+> speed
+> 0
+> 2
+> 4
+> 6
+> reward
+> reshaping
+> sqrt
+> linear
+> square
+> exp
+
+Figure 4. Reward functions. 
+
+The results are shown Fig-ure 5, which shows that 
+
+Square reweighting excels at flat reward functions such as 
+
+sqrt and linear , while 
+
+Linear reweighting has bet-ter performance on steep re-ward functions, such as exp .The finding is consistent with our observations in the bandit problem. Therefore, we can choose Linear reweighting for steep reward landscapes and 
+
+Square reweighting for relatively flat reward landscapes. Note that this is only qualitative intuitions rather than saying one reweighting function must be better than another. linear square exp               
+
+> 200
+> 250
+> 300
+> 350
+> 400
+> 450
+> 500
+> mean
+> Reward: sqrt
+> linear square exp
+> Reward: linear
+> linear square exp
+> Reward: square
+> linear square exp
+> Reward: exp linear square exp
+> 200
+> 250
+> 300
+> 350
+> 400
+> 450
+> 500
+> mean
+> Reward: sqrt
+> linear square exp
+> Reward: linear
+> linear square exp
+> Reward: square
+> linear square exp
+> Reward: exp
+
+Figure 5. Performance with different reweighting functions with different reward functions on the Cheetah Run task. Square reweighting achieves the best performance with flat rewards, while linear reweighting achieves the best performance with steep re-wards, both outperforming exponential reweighting. 
+
+7SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+5.3. DNA Sequence Generation 
+
+Finally, we evaluate our method on a real-world problem, learning to generate DNA sequences with a discrete dif-fusion model 2. The task is to fine-tune a DNA genera-tion model, learned from a large public enhancer dataset containing roughly 700,000 DNA sequences (Gosai et al., 2023), to optimize the gene expression activity (Avsec et al., 2021). We leverage pretrained generation and reward mod-els from (Wang et al., 2024a). We tested multiple variants of our algorithm, including Linear , Square , and their negative reweighting variants. 
+
+Baselines. We compare against controlled generation ap-proaches including conditional guidance (CG, Nisonoff et al., 2024), SMC and TDS (Wu et al., 2023), and classifier-free guidance (CFG, Ho & Salimans, 2022), as well as a strong RL-based baseline, DRAKES (Wang et al., 2024a), which leveraged reparameterized policy gradient using Gumbel-softmax, and RL-D 2 (Ma et al., 2025b), which use weighted regression with KL divergence regularization (the same as SiMPO-Exp ). 
+
+Table 3. Main Results on Pred-Activity. Comparison of SiMPO variants against baselines. Standard SiMPO variants are high-lighted in orange , while variants with negative sample awareness are highlighted in blue . The inclusion of negative samples con-sistently provides the highest gains ( +15 .2% to +16 .9% ). 
+
+Method Pred-Activity ↑ Improv. 
+
+Pretrained 0.17 ± 0.04 –CG 3.30 ± 0.01 –SMC 4.15 ± 0.33 –TDS 4.64 ± 0.21 –CFG 5.04 ± 0.06 –DRAKES 6.44 ± 0.04 -1.2% DRAKES-KL 5.61 ± 0.07 -13.9% WD1 3.78 ± 0.12 -42.0% RL-D 2 (best baseline) 6.52 ± 0.03 –
+
+SiMPO-Linear 6.54 ± 0.01 +0.3% SiMPO-Square 6.77 ± 0.03 +3.8% SiMPO-Lin. Neg. 7.51 ± 0.08 +15.2% SiMPO-Sqr. Neg. 7.62 ± 0.08 +16.9% 
+
+Results. Our experimental results, summarized in Table 3, demonstrate that SiMPO significantly outperforms all con-sidered baselines in terms of the gene expressive levels. While the best-performing baseline, RL-D 2, achieves a me-dian score of 6.52 , our standard linear and square SiMPO variants already provide competitive or superior perfor-mance. However, the most substantial gains are observed when incorporating negative sample awareness. Specifically, 
+
+> 2
+
+Despite different definitions, discrete diffusion models share most of the properties with continuous diffusion, such as the opti-mal solution in Equation (3). Please refer to Lou et al. (2023); Shi et al. (2024) for details. 
+
+the SiMPO (Ours, Sqr. w/ neg) variant achieves the highest overall performance of 7.62 ± 0.08 , representing a +16 .9% 
+
+improvement over the best baseline. This consistent boost across both linear and square formulations (ranging from 
+
++15 .2% to +16 .9% ) suggests that explicitly accounting for negative samples allows the model to better refine diffusion policies, leading to more robust decision-making in complex environments. 
+
+5.4. Ablation Studies and Sensitivity Analysis Ablation on the kl divergence constraint. We test differ-ent KL constraint to auto-tune λ (details can be found in Appendix G) with different KL divergence 1.0, 1.5 and 2.0 (upper bound is around 3.47). The results in Figure 6 shows that SiMPO is rather robust to KL divergence constraints, and we use 1.5 for all the experiments. 1.0   
+
+> 1.5
+> 2.0
+> KL Divergence
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> 1.4
+> Average Return
+> 1e4 HalfCheetah
+> 1.0
+> 1.5
+> 2.0
+> KL Divergence
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> Average Return
+> 1e3 Ant
+
+Figure 6. Ablation studies on temperature autotuning with different KL divergence. 
+
+## 6. Conclusions 
+
+In this work, we introduced Signed Measure Policy Op-timization (SiMPO), a unified framework that general-izes reweighting in diffusion RL through the lens of f -divergence on signed measures. By decomposing the op-timization into target measure construction and projection, we revealed that relaxing the non-negativity constraint al-lows algorithms to actively leverage feedback from negative samples. We provide theoretical justification that negative weights induce a repulsive effect in the velocity field, effec-tively steering the policy away from suboptimal regions. Our extensive empirical evaluation, covering bandit prob-lems, MuJoCo locomotion, and DNA sequence generation, demonstrates that SiMPO not only subsumes existing meth-ods like AWR and QVPO but also significantly outperforms them by leveraging flexible, negative-aware reweighting schemes. We hope this paper will inspire more efficient and effective post-training algorithms for diffusion models and flow models. 8SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+## Impact Statements 
+
+This paper presents work whose goal is to advance the field of machine learning. There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. 
+
+## References 
+
+Abdolmaleki, A., Springenberg, J. T., Tassa, Y., Munos, R., Heess, N., and Riedmiller, M. Maximum a posteriori policy optimisation. arXiv preprint arXiv:1806.06920 ,2018. Akhound-Sadegh, T., Rector-Brooks, J., Bose, A. J., Mittal, S., Lemos, P., Liu, C.-H., Sendera, M., Ravanbakhsh, S., Gidel, G., Bengio, Y., et al. Iterated denoising energy matching for sampling from boltzmann densities. arXiv preprint arXiv:2402.06121 , 2024. Ali, S. M. and Silvey, S. D. A general class of coefficients of divergence of one distribution from another. Journal of the Royal Statistical Society: Series B (Methodological) ,28(1):131–142, 1966. Avsec, ˇZ., Agarwal, V., Visentin, D., Ledsam, J. R., Grabska-Barwinska, A., Taylor, K. R., Assael, Y., Jumper, J., Kohli, P., and Kelley, D. R. Effective gene expression predic-tion from sequence by integrating long-range interactions. 
+
+Nature methods , 18(10):1196–1203, 2021. Black, K., Janner, M., Du, Y., Kostrikov, I., and Levine, S. Training diffusion models with reinforcement learning. 
+
+arXiv preprint arXiv:2305.13301 , 2023. Broniatowski, M. and Keziou, A. Minimization of φ-divergences on sets of signed measures. Studia Sci-entiarum Mathematicarum Hungarica , 43(4):403–442, 2006. Celik, O., Li, Z., Blessing, D., Li, G., Palanicek, D., Peters, J., Chalvatzaki, G., and Neumann, G. Dime: Diffusion-based maximum entropy reinforcement learning. arXiv preprint arXiv:2502.02316 , 2025. Clark, K., Vicol, P., Swersky, K., and Fleet, D. J. Directly fine-tuning diffusion models on differentiable rewards. 
+
+arXiv preprint arXiv:2309.17400 , 2023. Csisz ´ar, I. and Shields, P. C. Information theory and statis-tics: A tutorial. 2004. Csisz ´ar, I., Gamgoa, F., and Gassiat, E. Mem pixel corre-lated solutions for generalized moment and interpolation problems. IEEE Transactions on Information Theory , 45 (7):2253–2270, 2002. Ding, S., Hu, K., Zhang, Z., Ren, K., Zhang, W., Yu, J., Wang, J., and Shi, Y. Diffusion-based reinforcement learning via q-weighted variational policy optimization. 
+
+arXiv preprint arXiv:2405.16173 , 2024. Ding, S., Hu, K., Zhong, S., Luo, H., Zhang, W., Wang, J., Wang, J., and Shi, Y. Genpo: Generative diffusion models meet on-policy reinforcement learning. arXiv preprint arXiv:2505.18763 , 2025. Dong, X., Cheng, J., and Zhang, X. S. Maximum entropy re-inforcement learning with diffusion policy. arXiv preprint arXiv:2502.11612 , 2025. Fan, Y., Watkins, O., Du, Y., Liu, H., Ryu, M., Boutilier, C., Abbeel, P., Ghavamzadeh, M., Lee, K., and Lee, K. Dpok: Reinforcement learning for fine-tuning text-to-image diffusion models. Advances in Neural Information Processing Systems , 36:79858–79885, 2023. Frans, K., Park, S., Abbeel, P., and Levine, S. Diffusion guidance is a controllable policy improvement operator. 
+
+arXiv preprint arXiv:2505.23458 , 2025. Fujimoto, S., Hoof, H., and Meger, D. Addressing function approximation error in actor-critic methods. In Interna-tional conference on machine learning , pp. 1587–1596. PMLR, 2018. Gao, C.-X., Wu, C., Cao, M., Xiao, C., Yu, Y., and Zhang, Z. Behavior-regularized diffusion policy optimization for offline reinforcement learning. In Forty-second Interna-tional Conference on Machine Learning , 2025. Gosai, S. J., Castro, R. I., Fuentes, N., Butts, J. C., Kales, S., Noche, R. R., Mouri, K., Sabeti, P. C., Reilly, S. K., and Tewhey, R. Machine-guided design of synthetic cell type-specific cis-regulatory elements. bioRxiv , 2023. Haarnoja, T., Zhou, A., Abbeel, P., and Levine, S. Soft actor-critic: Off-policy maximum entropy deep reinforce-ment learning with a stochastic actor. In International conference on machine learning , pp. 1861–1870. PMLR, 2018. Ho, J. and Salimans, T. Classifier-free diffusion guidance. 
+
+arXiv preprint arXiv:2207.12598 , 2022. Ho, J., Jain, A., and Abbeel, P. Denoising Diffusion Prob-abilistic Models. In Advances in Neural Information Processing Systems , volume 33, pp. 6840–6851. Curran Associates, Inc., 2020. Lan, G. Policy mirror descent for reinforcement learning: Linear convergence, new sampling complexity, and gen-eralized problem classes. Mathematical programming ,198(1):1059–1106, 2023. 9SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+Lei, K., Li, H., Yu, D., Wei, Z., Guo, L., Jiang, Z., Wang, Z., Liang, S., and Xu, H. Rl-100: Performant robotic ma-nipulation with real-world reinforcement learning. arXiv preprint arXiv:2510.14830 , 2025. Li, T. and He, K. Back to basics: Let denoising generative models denoise. arXiv preprint arXiv:2511.13720 , 2025. Liese, F. and Vajda, I. On divergences and informations in statistics and information theory. IEEE Transactions on Information Theory , 52(10):4394–4412, 2006. Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. Liu, J., Liu, G., Liang, J., Li, Y., Liu, J., Wang, X., Wan, P., Zhang, D., and Ouyang, W. Flow-grpo: Training flow matching models via online rl. arXiv preprint arXiv:2505.05470 , 2025. Liu, X., Gong, C., and Liu, Q. Flow straight and fast: Learning to generate and transfer data with rectified flow. 
+
+arXiv preprint arXiv:2209.03003 , 2022. Lou, A., Meng, C., and Ermon, S. Discrete diffusion model-ing by estimating the ratios of the data distribution. arXiv preprint arXiv:2310.16834 , 2023. Lu, C., Chen, H., Chen, J., Su, H., Li, C., and Zhu, J. Con-trastive energy prediction for exact energy-guided diffu-sion sampling in offline reinforcement learning. In Inter-national Conference on Machine Learning , pp. 22825– 22855. PMLR, 2023. Ma, H., Chen, T., Wang, K., Li, N., and Dai, B. Efficient online reinforcement learning for diffusion policy. arXiv preprint arXiv:2502.00361 , 2025a. Ma, H., Nabati, O., Rosenberg, A., Dai, B., Lang, O., Szpektor, I., Boutilier, C., Li, N., Mannor, S., Shani, L., et al. Reinforcement learning with discrete diffusion policies for combinatorial action spaces. arXiv preprint arXiv:2509.22963 , 2025b. Mei, J., Xiao, C., Dai, B., Li, L., Szepesv ´ari, C., and Schu-urmans, D. Escaping the gravitational pull of softmax. 
+
+Advances in Neural Information Processing Systems , 33: 21130–21140, 2020. Nair, A., Gupta, A., Dalal, M., and Levine, S. Awac: Accel-erating online reinforcement learning with offline datasets. 
+
+arXiv preprint arXiv:2006.09359 , 2020. Nisonoff, H., Xiong, J., Allenspach, S., and Listgarten, J. Unlocking guidance for discrete state-space diffusion and flow models. arXiv preprint arXiv:2406.01572 , 2024. Peng, X. B., Kumar, A., Zhang, G., and Levine, S. Advantage-weighted regression: Simple and scalable off-policy reinforcement learning. arXiv preprint arXiv:1910.00177 , 2019. Peters, J., Mulling, K., and Altun, Y. Relative entropy policy search. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 24, pp. 1607–1612, 2010. Physical Intelligence, Amin, A., Aniceto, R., Balakrishna, A., Black, K., Conley, K., Connors, G., Darpinian, J., Dhabalia, K., DiCarlo, J., et al. π∗
+
+> 0.6
+
+: a vla that learns from experience. arXiv preprint arXiv:2511.14759 , 2025. Prabhudesai, M., Mendonca, R., Qin, Z., Fragkiadaki, K., and Pathak, D. Video diffusion alignment via reward gradients. arXiv preprint arXiv:2407.08737 , 2024. Psenka, M., Escontrela, A., Abbeel, P., and Ma, Y. Learn-ing a diffusion model policy from rewards via q-score matching. arXiv preprint arXiv:2312.11752 , 2023. Puterman, M. L. Markov decision processes: discrete stochastic dynamic programming . John Wiley & Sons, 2014. Rafailov, R., Sharma, A., Mitchell, E., Manning, C. D., Ermon, S., and Finn, C. Direct preference optimiza-tion: Your language model is secretly a reward model. 
+
+Advances in neural information processing systems , 36: 53728–53741, 2023. Ren, A. Z., Lidard, J., Ankile, L. L., Simeonov, A., Agrawal, P., Majumdar, A., Burchfiel, B., Dai, H., and Simchowitz, M. Diffusion policy policy optimization. arXiv preprint arXiv:2409.00588 , 2024. Schulman, J. Trust region policy optimization. arXiv preprint arXiv:1502.05477 , 2015. Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. Proximal policy optimization algorithms. 
+
+arXiv preprint arXiv:1707.06347 , 2017. Shani, L., Efroni, Y., and Mannor, S. Adaptive trust region policy optimization: Global convergence and faster rates for regularized mdps. In Proceedings of the AAAI confer-ence on artificial intelligence , volume 34, pp. 5668–5675, 2020. Shi, J., Han, K., Wang, Z., Doucet, A., and Titsias, M. Simplified and generalized masked diffusion for discrete data. Advances in neural information processing systems ,37:103131–103167, 2024. Siegel, N. Y., Springenberg, J. T., Berkenkamp, F., Abdol-maleki, A., Neunert, M., Lampe, T., Hafner, R., Heess, N., and Riedmiller, M. Keep doing what worked: Behav-ioral modelling priors for offline reinforcement learning. 
+
+arXiv preprint arXiv:2002.08396 , 2020. 10 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+Song, Y. and Ermon, S. Generative modeling by estimating gradients of the data distribution. Advances in neural information processing systems , 32, 2019. Tang, X., Dolga, R., Yoon, S., and Bogunovic, I. wd1: Weighted policy optimization for reasoning in diffusion language models. arXiv preprint arXiv:2507.08838 ,2025. Tassa, Y., Doron, Y., Muldal, A., Erez, T., Li, Y., Casas, D. d. L., Budden, D., Abdolmaleki, A., Merel, J., Lefrancq, A., et al. Deepmind control suite. arXiv preprint arXiv:1801.00690 , 2018. Tomar, M., Shani, L., Efroni, Y., and Ghavamzadeh, M. Mirror descent policy optimization, 2021. URL 
+
+https://arxiv.org/abs/2005.09814 .Vieillard, N., Kozuno, T., Scherrer, B., Pietquin, O., Munos, R., and Geist, M. Leverage the average: an analysis of kl regularization in rl. arXiv preprint arXiv:2003.14089 ,2020. Wang, C., Uehara, M., He, Y., Wang, A., Biancalani, T., Lal, A., Jaakkola, T., Levine, S., Wang, H., and Regev, A. Fine-tuning discrete diffusion models via reward op-timization with applications to dna and protein design. 
+
+arXiv preprint arXiv:2410.13643 , 2024a. Wang, Q., Xiong, J., Han, L., Liu, H., Zhang, T., et al. Exponentially weighted imitation learning for batched historical data. Advances in Neural Information Process-ing Systems , 31, 2018. Wang, Y., Wang, L., Jiang, Y., Zou, W., Liu, T., Song, X., Wang, W., Xiao, L., Wu, J., Duan, J., and Li, S. E. Diffusion Actor-Critic with Entropy Regulator, December 2024b. Wang, Z., Hunt, J. J., and Zhou, M. Diffusion policies as an expressive policy class for offline reinforcement learning. 
+
+arXiv preprint arXiv:2208.06193 , 2022. Wu, L., Trippe, B., Naesseth, C., Blei, D., and Cunning-ham, J. P. Practical and asymptotically exact conditional sampling in diffusion models. Advances in Neural Infor-mation Processing Systems , 36:31372–31403, 2023. Xu, H., Jiang, L., Li, J., Yang, Z., Wang, Z., Chan, V. W. K., and Zhan, X. Offline rl with no ood actions: In-sample learning via implicit value regularization. arXiv preprint arXiv:2303.15810 , 2023. Xu, H., Mao, L., Jin, H., Zhang, W., Zhan, X., and Zhang, A. Uni-rl: Unifying online and offline rl via implicit value regularization. In The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. Yang, L., Huang, Z., Lei, F., Zhong, Y., Yang, Y., Fang, C., Wen, S., Zhou, B., and Lin, Z. Policy representation via diffusion probability model for reinforcement learning. 
+
+arXiv preprint arXiv:2305.13122 , 2023. Zhang, S., Zhang, W., and Gu, Q. Energy-weighted flow matching for offline reinforcement learning. arXiv preprint arXiv:2503.04975 , 2025a. Zhang, T., Yu, C., Su, S., and Wang, Y. Reinflow: Fine-tuning flow matching policy with online reinforcement learning. arXiv preprint arXiv:2505.22094 , 2025b. Zhang, Y., Yu, S., Zhang, T., Guang, M., Hui, H., Long, K., Wang, Y., Yu, C., and Ding, W. Sac flow: Sample-efficient reinforcement learning of flow-based policies via velocity-reparameterized sequential modeling. arXiv preprint arXiv:2509.25756 , 2025c. Zheng, K., Chen, H., Ye, H., Wang, H., Zhang, Q., Jiang, K., Su, H., Ermon, S., Zhu, J., and Liu, M.-Y. Diffusion-nft: Online diffusion reinforcement with forward process. 
+
+arXiv preprint arXiv:2509.16117 , 2025. 11 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+## A. Related works 
+
+RL for diffusion and flow models. RL for diffusion or flow models can be classified into two categories: a) Only working with the reverse process, either by computing policy gradient via accumulating the log probabilities over the diffusion timesteps (Black et al., 2023; Fan et al., 2023; Ren et al., 2024; Liu et al., 2025; Zhang et al., 2025b), or directly backpropagating gradients through the reverse process by reparameterization (Clark et al., 2023; Wang et al., 2024b; Prabhudesai et al., 2024; Celik et al., 2025; Ding et al., 2025; Zhang et al., 2025c; Gao et al., 2025). Such methods closely resemble standard RL algorithms, such as Proximal Policy Optimization (PPO) (Schulman et al., 2017) and Soft Actor Critic (SAC) (Haarnoja et al., 2018), respectively. However, their computational cost typically scales linearly with the number of reverse diffusion steps (Wang et al., 2022; Gao et al., 2025). Moreover, they require a training pipeline that is substantially different from standard score or flow matching, as we need to generate and differentiate through the denoising trajectory. b) 
+
+Another way is preserving the forward process, and steering the score or flow prediction through weighted behavior cloning 
+
+(Ding et al., 2024; Ma et al., 2025a; Zhang et al., 2025a; Tang et al., 2025; Dong et al., 2025) or moving towards calibrated targets (Lu et al., 2023; Psenka et al., 2023; Frans et al., 2025; Akhound-Sadegh et al., 2024). In this way, the optimization is well-formulated as distribution matching. In this paper, we dive into the weighted flow matching formula and explore more reweighting options. 
+
+Regularizations in policy extraction. KL divergence is widely adopted to regularize the policy regularization and improvement (Peng et al., 2019; Vieillard et al., 2020; Nair et al., 2020). However, it is also possible to adopt other types of divergence metrics. Several works also consider reverse KL regularization (Xu et al., 2025; Ma et al., 2025b), leading to update rules similar to policy gradient theorems. Xu et al. (2023; 2025) further study implicit value regularization, which derives closed-form target policies and update rules for general f -divergence regularized problems. In this paper, we deepen this understanding by extending it to signed measures, thus allowing more flexible and effective objective design. Finally, another branch of research about policy mirror descent is motivated by the Bregman divergence (Tomar et al., 2021; Shani et al., 2020). Notably, the KL divergence occupies a special position, as it is both a Bregman divergence and an f -divergence. 
+
+Leveraging negative samples in RL for diffusion models. Negative weights are typically underutilized in weighted behavior cloning and best-of-N distillation. To better exploit such samples in diffusion models, Frans et al. (2025); Physical Intelligence et al. (2025); Zheng et al. (2025) used reward or advantage functions to classify data into preference pairs, and reinforced the diffusion model with classifier-free guidance. Tang et al. (2025) leveraged a weighted behavior cloning with negative weights for diffusion language model reasoning. However, the negative reweighting function is an ad-hoc design, while we provide a generalized and unified viewpoint with theoretical justification. 
+
+## B. f -divergence on Signed measure. 
+
+Let Q be a finite nonnegative measure (e.g., a probability measure) and let P be a finite signed measure. Assume the total variation of P is absolutely continuous with respect to Q, i.e., |P | ≪ Q, so that the Radon–Nikodym derivative r := dP/dQ 
+
+exists Q-a.e. and may take negative values. If f is extended to a measurable function on R (or at least on the essential range of r) such that f (r) ∈ L1(Q), we define 
+
+Df (P ∥Q) := 
+
+Z
+
+f
+
+ dP dQ 
+
+
+
+dQ. 
+
+Moreover, if Q is a probability measure, P (Ω) = Q(Ω) = 1 , and the extension of f is convex on R with f (1) = 0 ,then Jensen’s inequality yields Df (P ∥Q) ⩾ 0 despite r potentially being negative; under strict convexity, the usual identity-of-indiscernibles conclusion Df (P ∥Q) = 0 ⇒ P = Q follows (up to standard regularity/equality conditions). 
+
+## C. Derivations 
+
+C.1. Derivation of the f -Divergence Regularized Policy Optimization 
+
+We omit the state s in the following derivation for brevity. Let f : R+ → R be strictly convex and differentiable and 
+
+f (1) = 0 . We want to find a policy π ∈ Π that maximizes the value Q(a) while controlling the f -divergence from the 12 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+behavior policy πold , which can be formulated as the following constrained optimization problem: 
+
+max 
+
+> π∈Π
+
+X
+
+> a∈A
+
+π(a)Q(a)
+
+s.t. 
+
+
+
+Df (π(·)∥πold (·)) ⩽ ϵ
+
+X
+
+> a∈A
+
+π(a) = 1 
+
+∀a ∈ A , π(a) ⩾ 0
+
+(12) We introduce Lagrange multipliers λ, ν, and η(a) ⩾ 0 for the constraints, respectively, leading to the following Lagrange function L,
+
+L(π, λ, ν, η ) = X
+
+> a∈A
+
+π(a)Q(a) − λ X
+
+> a∈A
+
+πold (a)f
+
+ π(a)
+
+πold (a)
+
+
+
+− ϵ
+
+!
+
+− ν(1 − X
+
+> a∈A
+
+π(a)) + X
+
+> a∈A
+
+η(a)π(a). (13) We take the functional derivative with respect to π(a) and set it to zero. Recall that the derivative of the term μf (π/μ ) with respect to π is f ′(π/μ ),
+
+0 = ∂L
+
+∂π (a) = Q(a) − λf ′( π(a)
+
+πold (a) ) − ν + η(a), (14) Rearranging to isolate the divergence term, 
+
+f ′
+
+ π(a)
+
+πold (a)
+
+
+
+= Q(a) − ν + η(a)
+
+λ . (15) We define gf = ( f ′)−1. Since the complimentary slackness requires η(a)π(a) = 0 , we consider the following cases: • π(a) > 0, in this case η(a) = 0 , therefore we have 
+
+f ′
+
+ π(a)
+
+πold (a)
+
+
+
+= Q(a) − νλ ⇒ π(a)
+
+πold (a) = gf
+
+ Q(a) − νλ
+
+
+
+Besides, since f is strongly convex, both f ′ and gf are increasing, therefore 
+
+Q(a) − νλ = f ′( π(a)
+
+πold (a) ) > f ′(0) .
+
+• π(a) = 0 , in this case η(a) > 0. From the stationary condition, we know that 
+
+Q(a) − ν + η(a) = λf ′(0) ⇒ Q(a) − νλ < f ′(0) .
+
+Therefore, for both cases, we can unify the optimal solution as 
+
+π(a) = πold (a)¯ gf
+
+ Q(a) − νλ
+
+
+
+, (16) where 
+
+¯gf (x) = 
+
+gf (x) if x > f ′(0) 0 if x ⩽ f ′(0) . (17) 
+
+C.2. Derivation of the f -Divergence Regularized Policy Optimization on Signed Measures 
+
+Let f (x) : R → R be strictly convex and differentiable and f (1) = 0 . Since f is strictly convex, f ′ is monotonically increasing, and therefore gf = ( f ′)−1 is well defined. Consider the solution space eΠ = {π : P 
+
+> a∼A
+
+π(a) = 1 }, the optimization problem regularized the generalized f -divergence is defined as 
+
+max 
+
+> π∈eΠ
+
+X
+
+> a∈A
+
+π(a)Q(a)
+
+s.t. 
+
+
+
+Df (π(·)∥πold (·)) ⩽ ϵ
+
+X
+
+> a∈A
+
+π(a) = 1 
+
+(18) 13 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+We introduce Lagrange multipliers λ and ν for the constraints, leading to the following Lagrange function L:
+
+L(π, λ, ν ) = X
+
+> a∈A
+
+π(a)Q(a) − λ X
+
+> a∈A
+
+πold (a)f
+
+ π(a)
+
+πold (a)
+
+
+
+− ϵ
+
+!
+
+− ν(1 − X
+
+> a∈A
+
+π(a)) . (19) Taking its derivative w.r.t. π(a) and setting it to zero: 
+
+0 = ∂L
+
+∂π (a) = Q(a) − λf ′
+
+ π(a)
+
+πold (a)
+
+
+
+− ν, (20) i.e., 
+
+π(a) = πold (a)( f ′)−1
+
+ Q(a) − νλ
+
+
+
+= πold (a)gf
+
+ Q(a) − νλ
+
+
+
+.
+
+Note that ν is the normalization term such that P 
+
+> a∈A
+
+μ(a)g (( Q(a) − ν)/λ ) = 1 .Generally speaking, for any strictly increasing (and typically continuous) function g defined on an interval I ⊆ R, its inverse 
+
+g−1 exists on g(I) and is strictly increasing. Define f ′ 
+
+> g
+
+(x) = g−1(x) for x ∈ g(I) and 
+
+fg (x) = 
+
+Z x
+
+> a0
+
+g−1(t)d t + C
+
+yields a differentiable strictly convex function on g(I). Normalizing fg (1) = 0 underpins C. While the analytic formulation of fg may not be available for an arbitrary g, this observation allows us to reason directly in terms of the weighting function 
+
+g rather than fg .
+
+C.3. Policy Improvement Property of the Target Measure Theorem C.1 (Theorem 3.5 restated) . Assume g : R → R is monotonic increasing and the target measure ˜π is defined as 
+
+˜π(a|s) = π(a|s)g
+
+ Q(s, a) − νλ
+
+
+
+∀s ∈ S ,
+
+where λ > 0 and ν is selected such that P 
+
+> a∈A
+
+˜π(a|s) = 1 holds. Then we have 
+
+X
+
+> a∈A
+
+˜π(a|s)Q(s, a) ⩾ X
+
+> a∈A
+
+π(a|s)Q(s, a) ∀s ∈ S .
+
+Proof. Denote A(s, a) = Q(s,a)−νλ , and thus we have P 
+
+> a∈A
+
+˜π(a|s) = Eπ [g (A(s, a)] = 1 . It suffices to show 
+
+X
+
+> a∈A
+
+˜π(a|s)A(s, a) ⩾ X
+
+> a∈A
+
+π(a|s)A(s, a).
+
+Consider the difference X
+
+> a∈A
+
+˜π(a|s)A(s, a) − X
+
+> a∈A
+
+π(a|s)A(s, a)= X
+
+> a∈A
+
+π(a|s)A(s, a)g (A(s, a)) − X
+
+> a∈A
+
+π(a|s)A(s, a)
+
+! X
+
+> a∈A
+
+π(a|s)g (A(s, a)) 
+
+!
+
+= Eπ [A(s, a)g (A(s, a))] − Eπ [A(s, a)] Eπ [g (A(s, a))] = Cov π [A(s, a), g (A(s, a))] .
+
+Since g is monotonic increasing, we know that Cov π [A(s, a), g (A(s, a))] ⩾ 0, and thus 
+
+X
+
+> a∈A
+
+˜π(a|s)A(s, a) ⩾ X
+
+> a∈A
+
+π(a|s)A(s, a).
+
+## D. Derivation of Closed-Form Solution of Reweighted Conditional Flow Matching. 
+
+Notation. We temporarily omit conditioning on the state s for clarity. 
+
+D.1. Closed-Form Solution of Conditional Flow Matching. 
+
+To warm up, we first show the optimal solution of flow matching when there is no reweighting factor w(a):
+
+Lemma D.1 (Conditional flow matching fits marginal velocity (Lipman et al., 2022).) . The Conditional Flow Matching loss 
+
+14 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+function is defined as: 
+
+LCFM (θ) = Et∼U [0 ,1] , a0∼πold (a0), at∼pt(·| a0)
+
+∥Dθ (at; t) − vt(at|a0)∥2
+
+Proof. To find the minimum, we look for the vector field v(x) that minimizes the objective at any specific point in space and time. 
+
+Step 1: Rewrite the Expectation. We expand the expectation integrals over the joint distribution of data a0 and intermediate samples x.
+
+L =
+
+Z 10
+
+Z Z
+
+πold (a0)pt|0(a|a0)∥Dθ (at; t) − vt(at|a0)∥2 da0 dat dt 
+
+Step 2: Apply Bayes’ Rule. We can decompose the joint distribution πold (a0)pt|0(a|a0) in the reverse direction using the marginal pt(at) and the posterior p0|t(a0|at):
+
+πold (a0)pt|0(at|a0) = pt(at)p0|t(a0|at)
+
+Substitute this into the loss integral: 
+
+L =
+
+Z 10
+
+Z
+
+pt(at)
+
+Z 
+
+p0|t(a0|at)∥Dθ (at; t) − vt(at|a0)∥2 da0
+
+
+
+dat dt 
+
+Step 3: Pointwise Minimization. Since pt(at) and dt are non-negative, minimizing the total integral is equivalent to minimizing the inner term (the term in square brackets) for every specific location at and time t. Define the local objective 
+
+J(v) for a fixed at and t:
+
+J(v) = 
+
+Z
+
+p0|t(a0|at)∥v − vt(at|a0)∥2 da0
+
+This is a standard Least Squares problem. We are looking for a constant vector v (constant with respect to a0) that minimizes the expected squared distance to the random variable vt(at|a0).
+
+Step 4: Solve for v. We take the gradient of J(v) with respect to v and set it to zero: 
+
+∇v J(v) = 
+
+Z
+
+p0|t(a0|at) · 2( v − vt(at|a0)) da0 = 0 
+
+Z
+
+p0|t(a0|at)v d a0 =
+
+Z
+
+p0|t(a0|at)vt(at|a0) da0
+
+Since v does not depend on a0, we pull it out of the integral. Note that R p0|t(a0|at)da0 = 1 :
+
+v · 1 = 
+
+Z
+
+vt(at|a0)p0|t(a0|at) da0
+
+v∗ = Ea0∼p0|t(a0|at)[vt(at|a0)] 
+
+Finally, by definition, we know that the marginal velocity field ut(xt) is defined exactly by 
+
+ut
+
+.
+
+= Ea0∼p0|t(a0|at)[vt(at|a0)] = v∗,
+
+which concludes the proof. 
+
+Corollary D.2 (Diffusion marginal velocity field is the noisy score functions.) . Specifically, for the VE diffusion models, the marginal velocity field is the score function of the perterubed data distribution, i.e. ,
+
+ut(at) = ∇at log Dθ (at; t)
+
+which is derived by 
+
+ut
+
+.
+
+= Ea0∼p0|t(a0|at)[vt(at|a0)] = 
+
+Z
+
+p0|t(a0|at)∇ log pt|0(at|a0)da0
+
+=
+
+Z pt|0(at|a0)πold (a0)
+
+pt(at) ∇ log pt|0(at|a0)da0 = 1
+
+pt(at)
+
+Z
+
+πold (a0)∇pt|0(at|a0)da0 = 1
+
+pt(at) ∇pt(at) = ∇ log pt(at)
+
+D.2. Closed-Form Solution of Reweighted Conditional Flow Matching. 
+
+Then we show our main results about the reweighted conditional flow matching 
+
+Theorem D.3 (Optimal solution of the reweighted conditional flow matching.) . When Ea0∼p0|t [w(a0)] > 0, the reweighted conditional flow matching loss 
+
+LW = Et∼U , a0∼πold (a0), x ∼pt|0(a|a0)
+
+w(a0)∥Dθ (at; t) − vt(at|a0)∥2
+
+15 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+induces optimal solution 
+
+v∗ 
+
+> t
+
+(at; t) = Ea0∼p0|t [w(a0)vt(at|a0)] 
+
+Ea0∼p0|t [w(a0)] 
+
+Step 1: Rewrite as an Integral. 
+
+Expand the expectations into their integral forms: 
+
+LW =
+
+Z 10
+
+Z Z
+
+πold (a0)pt|0(a|a0)w(a0)∥Dθ (at; t) − vt(at|a0)∥2 da0 dat dt 
+
+Step 2: Apply Bayes’ Rule. 
+
+Substitute the joint distribution πold (a0)pt|0(a|a0) with the marginal-posterior decomposition pt(at)p0|t(a0|at). Note that 
+
+w(a0) remains attached to the inner integral over a0.
+
+LW =
+
+Z 10
+
+Z
+
+pt(at)
+
+Z 
+
+p0|t(a0|at)w(a0)∥Dθ (at; t) − vt(at|a0)∥2 da0
+
+
+
+dat dt 
+
+Step 3: Pointwise Minimization. 
+
+To minimize the global loss, we minimize the inner term (in square brackets) for every fixed point x and time t. Let JW (v)
+
+be this local weighted objective: 
+
+JW (v) = 
+
+Z
+
+p0|t(a0|at)w(a0)∥v − vt(at|a0)∥2 da0
+
+Step 4: Solve for v .Rewrite the pointwise loss function, we have 
+
+JW (v) = 
+
+Z 
+
+p0|t(a0|at)w(a0) da0
+
+| {z } 
+
+> M(at)
+
+∥v∥2 − 2vT
+
+Z 
+
+p0|t(a0|at)w(a0)vt(at|a0) da0
+
+| {z } 
+
+> N(at)
+
++C (21) The closed-form optimal solution only exists when M (at) > 0.Calculate the gradient with respect to v and set it to zero: 
+
+∇v JW (v) = 
+
+Z
+
+p0|t(a0|at)w(a0) · 2( v − vt(at|a0)) da0 = 0 
+
+Distribute the terms. Note that v is constant with respect to the integral over a0:
+
+v
+
+Z
+
+p0|t(a0|at)w(a0) da0 =
+
+Z
+
+p0|t(a0|at)w(a0)vt(at|a0) da0
+
+Crucial Difference: In the unweighted case, the integral on the left side was R p0|t(a0|at)da0 = 1 . Here, the integral is over the weighted posterior, so it does not sum to 1. It acts as a normalizing constant for the weights.We solve for v:
+
+v =
+
+R p0|t(a0|at)w(a0)vt(at|a0) da0
+
+R p0|t(a0|at)w(a0) da0
+
+Rearrange it we get the optimal solution, 
+
+v∗ 
+
+> t
+
+(at) = Ea0∼p0|t [w(a0)vt(at|a0)] 
+
+Ea0∼p0|t [w(a0)] 
+
+D.3. Velocity field generates reweighted data distribution. 
+
+We aim to derive In Case I when at satisfies Ea0∼p0|t(·| at)[w(s, a0)] > 0, the closed-form velocity field solution Equation (8) generate probability path 
+
+ρt(a|s) = 1
+
+Z
+
+Z
+
+w(s, a0)πold (a0|s)pt|0(a|a0) da0
+
+16 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+where Z(s) is the global normalizing constant: Z = R w(s, a0)πold (a0|s) da0.
+
+Proof. To prove v∗ 
+
+> t
+
+(a; t) generates this distribution, we just need to verify that it satisfies the Continuity Equation (Conser-vation of Mass) for ρt(x).The continuity equation states: 
+
+∂ρ t
+
+∂t + ∇ · (ρtv∗ 
+
+> t
+
+) = 0 
+
+Step A: Expand the Divergence Term. 
+
+Let’s look at the flow term ρtv∗ 
+
+> t
+
+. Substituting your definition of the optimal solution: 
+
+v∗ 
+
+> t
+
+(at) = Ep0|t [wv]
+
+Ep0|t [w] =
+
+R w(a0)pt|0(at|a0)πold (a0)vt(at|a0)da0
+
+R w(a0)pt|0(at|a0)πold (a0)da0
+
+The denominator is exactly the unnormalized density, let’s call it ˜ρt(x) = Zρ t(x).So, ˜ρt(x)v∗ 
+
+> t
+
+(at) is just the numerator: 
+
+˜ρtv∗ 
+
+> t
+
+=
+
+Z
+
+w(a0)πold (a0) pt|0(at|a0)vt(at|a0) da0
+
+Step B: Apply Divergence 
+
+∇ · (˜ ρtv∗ 
+
+> t
+
+) = 
+
+Z
+
+w(a0)πold (a0) ∇ · (pt|0(at|a0)vt(at|a0)) 
+
+| {z }
+
+> Conditional Continuity
+
+da0
+
+We know that for the conditional path (e.g., Gaussian), the conditional velocity ut satisfies continuity: ∇ · (pu ) = 
+
+− ∂p ∂t .Substitute this back: 
+
+∇ · (˜ ρtv∗ 
+
+> t
+
+) = 
+
+Z
+
+w(a0)πold (a0)
+
+
+
+− ∂p t|0(at|a0)
+
+∂t 
+
+
+
+da0
+
+Step C: Linearity of the DerivativePull the derivative and negative sign out: 
+
+∇ · (˜ ρtv∗ 
+
+> t
+
+) = − ∂∂t 
+
+Z
+
+w(a0)πold (a0)pt|0(at|a0) da0 = − ∂ ˜ρt
+
+∂t 
+
+Result: 
+
+∂ ˜ρt
+
+∂t + ∇ · (˜ ρtv∗ 
+
+> t
+
+) = 0 
+
+This confirms that the vector field indeed evolves the initial distribution ρ0(x) to ρ1(x) according to the laws of probability flow. 
+
+D.4. Cases when Ea0∼p0|t [w(a0)] ⩽ 0.Corollary D.4. When Ea0∼p0|t [w(a0)] , the loss in (21) is unbounded and the gradient push v away from Proof. the Equation (21) can be rewritten by M (at)∥v∥2 − 2N (at)) 2
+
+## E. Derivation of Closed-Form Solutions for Linear and Square Weighting 
+
+In this section, we derive the closed-form solutions for the scalar v under two common constraints involving the Rectified Linear Unit (ReLU). We consider a batch of samples {xi}Ni=1 and a scaling parameter l.
+
+E.1. General Setup and Notation 
+
+We sort the samples in descending order such that x(1) ⩾ x(2) ⩾ . . . ⩾ x(N ). We define the active set S as the set of indices where the ReLU term is non-zero, i.e., S = {i | xi > v }. Let k = |S| denote the number of active samples. For i ∈ S,ReLU (xi − v) = xi − v; otherwise, it is 0. Because the objective functions in both cases are monotonic with respect to v, we can determine the optimal active set size 
+
+k efficiently by checking conditions on the sorted samples. 17 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+E.2. Case 1: Linear Constraint 
+
+We first consider the linear constraint: 
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+
+ReLU (xi − v)
+
+l = 1 . (22) Rearranging, we require the sum of active excesses to equal the target mass C1 = N · l:
+
+X
+
+> i∈S
+
+(xi − v) = C1. (23) Solving for v yields the solution: 
+
+v = 1
+
+k
+
+X
+
+> i∈S
+
+xi − C1
+
+!
+
+. (24) To determine k, we find the largest index k such that the “excess mass” at the boundary x(k) is strictly less than the target 
+
+C1:
+
+> k
+
+X
+
+> j=1
+
+(x(j) − x(k)) < N · l. (25) 
+
+E.3. Case 2: Squared Constraint 
+
+Next, we consider the squared constraint: 
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+
+ ReLU (xi − v)
+
+l
+
+2
+
+= 1 . (26) Let C2 = N · l2. Expanding the square over the active set S, we obtain a quadratic equation in v:
+
+X
+
+> i∈S
+
+(xi − v)2 = C2
+
+kv 2 − 2 X
+
+> i∈S
+
+xi
+
+!
+
+v + X
+
+> i∈S
+
+x2 
+
+> i
+
+− C2
+
+!
+
+= 0 . (27) Using the quadratic formula and selecting the negative root (since v acts as a lower cutoff and must satisfy v < 1
+
+> k
+
+P xi to generate variance), we obtain: 
+
+v = 1
+
+k
+
+X
+
+> i∈S
+
+xi −
+
+vuut X
+
+> i∈S
+
+xi
+
+!2
+
+− k X
+
+> i∈S
+
+x2 
+
+> i
+
+− C2
+
+! . (28) To determine k in this case, we compute the “energy at the boundary” Ek for the candidate cutoff x(k) and select the largest 
+
+k such that Ek < C 2:
+
+Ek =
+
+> k
+
+X
+
+> j=1
+
+(x(j) − x(k))2 < N · l2. (29) 
+
+E.4. Reference Implementation 
+
+We provide a vectorized JAX implementation for solving both the linear and squared constraints derived in Section E. This implementation supports batch processing and is differentiable. 
+
+Listing 1. JAX implementation for solving v.
+
+import jax.numpy as jnp def solve_v(x, l, mode=’linear’): """ Solves for v given batch input x and scale l. mode: ’linear’ for mean(ReLU(x-v)/l) = 1’squared’ for mean((ReLU(x-v)/l)ˆ2) = 1""" N = x.shape[-1] 
+
+18 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning                                                                                                                                          
+
+> #Sort descending: x_(1) >= x_(2) ... x_sorted =jnp.sort(x, axis=-1)[:, ::-1] cumsum_x =jnp.cumsum(x_sorted, axis=-1) k_indices =jnp.arange(1, N+ 1) if mode == ’linear’: target =N*l#Excess mass at boundary x_(k) excess =cumsum_x -k_indices * x_sorted #Find largest kwhere excess <target mask =excess <target k_star =jnp.sum(mask, axis=-1, keepdims=True) #Calculate vsum_active =jnp.take_along_axis(cumsum_x, k_star -1, axis=-1) return (sum_active -target) /k_star elif mode == ’squared’: C=N * (l ** 2) cumsum_x2 =jnp.cumsum(x_sorted ** 2, axis=-1) #Energy at boundary x_(k) energy =(cumsum_x2 -2*x_sorted *cumsum_x +k_indices * (x_sorted ** 2)) #Find largest kwhere energy <Cmask =energy <Ck_star =jnp.maximum(jnp.sum(mask, axis=-1, keepdims=True), 1) #Gather active stats S1 =jnp.take_along_axis(cumsum_x, k_star -1, axis=-1) S2 =jnp.take_along_axis(cumsum_x2, k_star -1, axis=-1) #Quadratic formula (negative root) delta =S1**2 -k_star * (S2 -C) return (S1 -jnp.sqrt(jnp.maximum(delta, 0.0))) /k_star
+
+## F. Experimental Details 
+
+F.1. Baselines 
+
+We evaluate our approach against two distinct families of reinforcement learning (RL) algorithms. The first group consists of five state-of-the-art online diffusion-policy methods , encompassing both off-policy and on-policy architectures: • QSM (Psenka et al., 2023): Implements Langevin dynamics using the gradient of a learned Q-function as the score function. • QVPO (Ding et al., 2024): Employs a Q-weighted variational objective for diffusion training, though it is notably constrained by its inability to process negative rewards effectively. • DACER (Wang et al., 2024b): Backpropagates gradients directly through the reverse diffusion process and utilizes a GMM entropy regulator to manage the exploration-exploitation trade-off. • DIPO (Yang et al., 2023): Uses a two-stage approach where state-action particles are updated via Q-gradients before being fitted to a diffusion model. • DPPO (Ren et al., 2024): Formulates a dual-layer MDP spanning diffusion and environment steps, optimized via Proximal Policy Optimization. We employ the training-from-scratch configuration to maintain a fair comparison with other methods. 19 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+The second group includes three classic model-free baselines : PPO (Schulman et al., 2017), TD3 (Fujimoto et al., 2018), and SAC (Haarnoja et al., 2018). For PPO, we utilize a buffer size of 4096 and perform 10 gradient updates per sample. Across all baselines, we collect samples from 5 parallel environments for a total of 1 million environment interactions and 200k iterations. Performance is reported as the average return over 20 episodes across 5 random seeds.  
+
+> Table 4. Hyperparameters
+
+Name Value 
+
+Critic learning rate 3e-4 Policy learning rate 3e-4, linear annealing to 3e-5 Diffusion steps 20 Diffusion noise schedules Cosine Policy network hidden layers 3Policy network hidden neurons 256 Policy network activation Mish Value network hidden layers 3Value network hidden neurons 256 Value network activation Mish replay buffer size (off-policy only) 1 million where the Cosine noise schedule means βt = 1 − ¯αt 
+
+> αt−1
+
+with ¯αt = f (t)  
+
+> f(0)
+
+, f (t) = cos 
+
+ t/T +s 
+
+> 1+ s
+
+∗ π
+
+> 2
+
+2
+
+.To provide a formal mathematical summary of the reward functions for your paper, you can use the following LaTeX code. It uses the amsmath package for aligned equations and a table for comparison. 
+
+F.2. Reward Functions 
+
+The Cheetah domain tasks are designed to track a target horizontal velocity v∗ = 10 .0 m/s (limited by the physical capability, the robot cannot actually achieve 10m/s. Therefore, the task is to run as fast as possible.). Let v denote the current horizontal velocity of the torso. We evaluate our method across several reward formulations, categorized into linear, quadratic, and absolute value variations. We design the following reward functions (with proper transformation to align the scale), ranked from “flat” landscape to “steep” landscape, • Sqrt reward Rabs sqrt (v) = p|v − v∗|
+
+• Linear reward Rlinear (v) = vv∗
+
+• Square reward Rabs sq (v) = |v − v∗|2
+
+• Exponental reward Rabs exp (v) = exp( −| v − v∗|)
+
+## G. Automatic temperature tuning 
+
+Abdolmaleki et al. (2018) shows that we can tun the temperature variable λ in Equation (4) by primal-dual optimization, where the dual loss to update λ is 
+
+λϵ + λ logsumexp( Q(s, a i)
+
+λ ) − λ log N (30) First we compute the gradient of the second term, Let f (λ) = λ · logsumexp( Q/λ ).
+
+Lemma G.1. The gradient of f (λ) with respect to λ is the Shannon entropy of the softmax distribution derived from Q, i.e., 
+
+∂f (λ)
+
+∂λ = X
+
+> i
+
+pi − log pi
+
+where pi = softmax( qi), qi = Q(s, a i).
+
+20 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+Proof. 1. Define the Function 
+
+Let the vector Q = [ q1, q 2, . . . , q N ]. The function is: 
+
+f (λ) = λ log 
+
+> N
+
+X
+
+> i=1
+
+exp 
+
+ qi
+
+λ
+
+!
+
+2. Differentiate with Respect to λ
+
+We use the product rule ddx [u · v] = u′v + uv ′. Let Z = PNi=1 exp ( qi/λ ). Then f (λ) = λ log( Z).
+
+∂f ∂λ = ddλ [λ] · log( Z) + λ · ddλ [log( Z)] 
+
+∂f ∂λ = 1 · log( Z) + λ · 1
+
+Z · ∂Z ∂λ 
+
+Next, we calculate ∂Z ∂λ :
+
+∂Z ∂λ =
+
+> N
+
+X
+
+> i=1
+
+∂∂λ exp  qiλ−1
+
+Using the chain rule: 
+
+∂Z ∂λ =
+
+> N
+
+X
+
+> i=1
+
+exp 
+
+ qi
+
+λ
+
+
+
+·
+
+
+
+− qi
+
+λ2
+
+
+
+3. Substitute and Simplify Substitute ∂Z ∂λ back into the main equation: 
+
+∂f ∂λ = log( Z) + λZ
+
+> N
+
+X
+
+> i=1
+
+exp 
+
+ qi
+
+λ
+
+  
+
+− qi
+
+λ2
+
+
+
+∂f ∂λ = log( Z) − 1
+
+λ
+
+> N
+
+X
+
+> i=1
+
+exp ( qi/λ )
+
+Z qi
+
+4. Interpretation as Entropy We can express this result using the softmax probabilities pi, where: 
+
+pi = exp ( qi/λ )
+
+Z = exp ( qi/λ )
+
+P 
+
+> j
+
+exp ( qj /λ )
+
+Substituting pi into the gradient: 
+
+∂f ∂λ = log( Z) − 1
+
+λ
+
+> N
+
+X
+
+> i=1
+
+piqi
+
+To see why this is entropy, recall that H(p) = − P pi log ( pi). Since log ( pi) = qi 
+
+> λ
+
+− log( Z), we have: 21 SiMPO: Measure Matching for Online Diffusion Reinforcement Learning 
+
+H(p) = −
+
+> N
+
+X
+
+> i=1
+
+pi
+
+ qi
+
+λ − log( Z)
+
+
+
+H(p) = − 1
+
+λ
+
+> N
+
+X
+
+> i=1
+
+piqi + log( Z)
+
+> N
+
+X
+
+> i=1
+
+pi
+
+Since P pi = 1 :
+
+H(p) = log( Z) − 1
+
+λ
+
+> N
+
+X
+
+> i=1
+
+piqi
+
+Conclusion: 
+
+The gradient is exactly the Shannon entropy of the probability distribution p :
+
+∂f ∂λ = H(p) = −
+
+> N
+
+X
+
+> i=1
+
+pi log ( pi)
+
+Interpretation of the whole gradient Therefore, we can interpret the gradient of (30) as 
+
+ϵ + H(p) − log N
+
+where • log N is the entropy of a uniform distribution, which is the maximum possible entropy of a discrete distribution on N
+
+variables. FOr our case, as we select N = 32 , we have log N ≈ 3.47 ;• H(p) is the entropy of current reweighting distribution, softmax( qi/λ )
+
+• ϵ controls the gap between the current entropy and a fully uniform distribution. 22
