@@ -1,0 +1,1834 @@
+Title: LaMoGen: Language to Motion Generation Through LLM-Guided Symbolic Inference
+
+URL Source: https://arxiv.org/pdf/2603.11605v1
+
+Published Time: Fri, 13 Mar 2026 00:38:07 GMT
+
+Number of Pages: 31
+
+Markdown Content:
+# LaMoGen: Language to Motion Generation Through LLM-Guided Symbolic Inference 
+
+Junkun Jiang, Ho Yin Au, Jingyu Xiang, Jie Chen *
+
+Department of Computer Science, Hong Kong Baptist University, HKSAR    
+
+> {csjkjiang, cshyau, csjyxiang, chenjie }@comp.hkbu.edu.hk
+
+Abstract 
+
+Human motion is highly expressive and naturally aligned with language, yet prevailing methods relying heavily on joint text-motion embeddings struggle to synthesize tempo-rally accurate, detailed motions and often lack explainabil-ity. To address these limitations, we introduce LabanLite, a motion representation developed by adapting and extend-ing the Labanotation system. Unlike black-box text–motion embeddings, LabanLite encodes each atomic body-part ac-tion (e.g., a single left-foot step) as a discrete Laban sym-bol paired with a textual template. This abstraction de-composes complex motions into interpretable symbol se-quences and body-part instructions, establishing a symbolic link between high-level language and low-level motion tra-jectories. Building on LabanLite, we present LaMoGen, a Text-to-La banLite-to-Mo tion Gen eration framework that enables large language models (LLMs) to compose mo-tion sequences through symbolic reasoning. The LLM in-terprets motion patterns, relates them to textual descrip-tions, and recombines symbols into executable plans, pro-ducing motions that are both interpretable and linguisti-cally grounded. To support rigorous evaluation, we intro-duce a Labanotation-based benchmark with structured de-scription–motion pairs and three metrics that jointly mea-sure text–motion alignment across symbolic, temporal, and harmony dimensions. Experiments demonstrate that LaMo-Gen establishes a new baseline for both interpretability and controllability, outperforming prior methods on our bench-mark and two public datasets. These results highlight the advantages of symbolic reasoning and agent-based design for language-driven motion synthesis. 
+
+1. Introduction 
+
+Human motions convey rich semantics that often corre-spond to intentions and instructions expressed in natural  
+
+> *Corresponding author. Project page: https://jjkislele.github.io/LaMoGen/
+
+language. Establishing a precise mapping between lan-guage and motion is therefore essential for computational understanding and modelling of human behaviour. Despite recent approaches [4, 5, 8, 12, 28, 35] have made promis-ing progress in generating motion from textual descriptions, these methods often struggle to capture fine-grained seman-tics, limiting the fidelity and precision with which gener-ated motions adhere to the intended instructions. Recent works [10, 12, 20] attempt to address this issue by decom-posing text into body-part-level tokens for more precise spa-tial pose specification. However, such representations do not easily generalize to the temporal domain. For exam-ple, as shown in Fig. 1, instructions like “Walk forward in 5 steps and then walk backward in 3 steps” are often in-terpreted as a generic sequence of “step forward” motions, failing to accurately reflect the specified number of steps and the temporal order of actions. On the other hand, the traditional symbolic annotation system, Labanotation [29], encodes detailed features of movement—such as specific body parts, direction, level, duration, and other qualitative attributes—into interpretable symbols. This allows for a compact, precise, and prescrip-tive representation of motion, facilitating clearer specifica-tion of actions described in input texts. For example, the instruction “Walk forward in 5 steps and then walk back-ward in 3 steps” can be efficiently decomposed into a se-quence of symbols representing each atomic movement, as shown in the score from Fig. 1. More importantly, by cou-pling each symbol with a fixed textual description, motions and texts can be converted back and forth unambiguously. 
+
+This enables humans to directly alter movements by editing the symbols, or large language models to modify actions by editing the corresponding text. Thus, this symbolic system acts as an effective interface between language and motion, clarifying both temporal and spatial action structures. However, by encapsulating body part involvement and duration as attribute fields, Labanotation introduces a level of abstraction that challenges machine learning models to directly correlate these symbolic representations with con-tinuous motion data. To address these challenges, we pro-1                                         
+
+> arXiv:2603.11605v1 [cs.CV] 12 Mar 2026 Our symbolic representation framework
+> LaMoGen can address the challenge
+> through LLM -Guided generation.
+> Joint embedding -based methods struggle
+> in scenarios where motion concepts must
+> be composed or arranged in time .
+> Walk forward in 5steps and
+> then walk backward in 3steps
+> Orientation
+> Detailed symbols
+> Bend Moving -effort
+> M/F
+> M/B
+> L/M R/M
+> R/F
+> R/B L/B
+> L/F
+> M/M
+> Direction Level
+> Conceptual symbols
+> Hi .
+> Mi.
+> Lo.
+> Hold
+> Hold in rest pose in 0.3 seconds
+> Right foot step forward in
+> middle level in 0.4 seconds
+> Left foot step forward in
+> middle level in 0.4 seconds
+> Right foot …in 0.4 seconds
+> Left foot …in 0.4 seconds
+> Left foot …in 0.3 seconds
+> Step in rest pose in 0.3 seconds
+> Left foot step backward in
+> middle level in 0.3 seconds
+> Right foot step backward in
+> middle level in 0.3 seconds
+
+✍
+
+✍
+
+Similar 
+
+Concept 
+
+Retrieval 
+
+& Motion 
+
+Concepts 
+
+Composition 
+
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+
+🔍︎     
+
+> Left foot … in 0.4 seconds
+> …
+> Left foot step backward in
+> middle level in 0.3 seconds
+> Right foot step backward in
+> middle level in 0.3 seconds
+
+🔍︎     
+
+> Step in rest pose in 0.3 seconds
+> Right foot step forward in
+> middle level in 0.4 seconds
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+> …
+
+Conceptual Description Database  Laban Symbols 
+
+Input Text Instruction 
+
+Composed Conceptual Description 
+
+(with corresponding Laban Score) 
+
+🤖 
+
+> LLM
+> Mi
+> M/ FM/ F M/ FM/ FM/F M/B M/F  M/F  M/B M/ FM/ FM/ FM/ FM/ FM/ FM/ F M/ F M/ F M/ F
+> Lo  Mi Mi Mi Mi Mi Mi Lo Lo Lo Lo Mi Mi Mi Mi Mi Lo Lo Lo
+> Lo  Mi Mi Mi Lo Lo Lo Mi Lo Lo Mi Mi Mi Mi Mi Mi Lo Lo
+> M/ F M/ F M/F M/B M/ F M/F  M/B M/ FM/ FM/ FM/ FM/ FM/ FM/ F M/ F M/ F M/ F M/ F M/ F
+> 1 011100011100000111
+> 1 110001011100000011
+
+LabanLite 
+
+Instances 
+
+Decoded from 
+
+LabanLite Figure 1. Given a structured text description, methods based on text-motion joint embeddings often fail to generate semantically consistent motion. In contrast, our approach leverages symbolic motion representations, allowing for accurate motion generation. As each symbol is associated with one conceptual description, this design enables LLMs to compose symbolic motion via retrieval augmentation prompting. 
+
+pose LabanLite : a frame- and body-part-wise motion repre-sentation that explicitly captures the temporal and structural attributes of Labanotation. This not only enhances compat-ibility with machine learning methods, but also serves as an effective intermediate representation for large language models in motion planning, enabling them to actively in-terpret and disambiguate complex textual instructions into a structured LabanLite script, thus achieving fine-grained semantic fidelity and precision in generated motions. Building on LabanLite, we propose LaMoGen —an end-to-end Text-to-La banotation-to-Mo tion Gen eration frame-work for synthesizing fine-grained motion sequences aligned with complex text instructions. As shown in Fig. 1, LaMoGen first maps complex instructions to LabanLite representations via LLM-based planning, and subsequently decodes them into motion sequences. This separation of high-level semantic planning from low-level motion syn-thesis enables LaMoGen to generate interpretable motions that faithfully represent instruction intent. Furthermore, by leveraging the interpretability of LabanLite, we propose a Labanotation-based benchmark featuring three metrics that explicitly evaluate motion–text alignment across symbolic, temporal, and harmony dimensions. This benchmark as-sesses the accuracy of orientation, duration, and coordina-tion for the four main body parts (right/left arms and legs), providing a comprehensive framework for transparent and interpretable evaluation of how well generated motions re-flect complex textual instructions. We evaluate LaMoGen on our Laban benchmark as well as two widely used text-to-motion datasets. Experimental results show that our framework achieves state-of-the-art performance in aligning generated motions with textual de-scriptions, highlighting the benefits of Labanotation-based representations for both interpretability and controllability in motion synthesis. To the best of our knowledge, LaMo-Gen is the first framework to enable LLMs to autonomously compose motion through interpretable symbolic represen-tations. The main contributions of this work can be sum-marised as follows: • We propose LabanLite, a frame- and body-part-wise mo-tion representation grounded in Labanotation that pro-vides explicit temporal and structural annotation for ma-chine learning and interpretable LLM-based planning. • We propose LaMoGen, a two-level framework that uni-fies high-level LLM-driven symbolic planning with low-level motion synthesis, enabling greater interpretability and controllability compared to prior approaches. • We present a Labanotation-based benchmark with novel metrics and a structured dataset to rigorously evaluate motion-text alignment across symbolic, temporal, and harmony dimensions. 
+
+2. Related Works 
+
+Text-based Human Motion Generation aims to generate diverse, human-like motion from natural language descrip-tions or action labels, typically by mapping paired text and motion data into a joint embedding space [8, 14, 17, 20, 28, 37]. Recent work has aimed to abstract motion signals for semantically consistent representations. Kinematic Phrase (KP) [22] heuristically abstracts motions via inter-body part distances and uses a variational autoencoder to generate motions. However, such methods are limited to low-level signal abstraction and have difficulty capturing high-level semantic meaning. On the other hand, Vector Quantised Variational Autoencoders [9, 12, 20, 34, 35] have been widely adopted to represent motion as discretised tokens, enabling coherent sequence generation with autoregressive transformers. CoMo [10] advances this line of work by dis-cretising motion into pose codes using Posescript [7]. How-ever, pose codes represent only the key pose state of indi-vidual frames, thus lacking the ability to capture transitional dynamics. To address this limitation, we draw inspiration 2from CoMo and propose the use of Laban symbols as the intermediate representation between text and motion. Un-like pose codes, each Laban symbol encapsulates not only the starting and ending poses but also the transformation process between them. This makes Laban symbols more abstract and semantically expressive. Consequently, our proposed LaMoGen framework enables LLMs to compose Laban symbols directly, as they are more closely aligned with textual representations and facilitate symbolic reason-ing about motion. 
+
+Controllable Motion Generation . Several methods in-troduce explicit signals to guide motion generation, such as using key joint trajectories [16, 31] or drawing key poses [5, 21, 32]. However, these approaches require man-ual input and specialised user interfaces, limiting their intu-itiveness and ease of use. In contrast, Labanotation offers a more convenient symbolic representation and thus holds greater potential for controllable motion generation. 
+
+Motion Generation with LLMs . To our knowledge, no ex-isting work explicitly enables LLMs to autonomously gen-erate motion without fine-tuning [12, 15, 38, 39]. The clos-est prior works [3, 10, 27] use LLMs to decompose text into body part descriptions, without allowing them to com-pose or generate motions. In contrast, we adopt a retrieval-augmented prompting strategy, providing LLMs with refer-ence Laban scores to help them understand how to produce the desired motions. 
+
+Labanotation . Recent studies primarily use Labanotation as a motion representation for reconstruction tasks. Jiang et al. [13] used Laban symbols to explicitly represent and reconstruct inbetweening motions. Li et al. [18] mapped hand images to Laban symbols and then to hand motions, to improve hand pose estimation accuracy. In this work, we apply Labanotation to motion generation, bridging textual descriptions and motions. To assess the accuracy of La-ban symbol detection, we utilize Laban-annotated motion data [13] and report the corresponding performance. 
+
+3. Methodology 
+
+In this section, we first present LabanLite, an interpretable motion representation derived from Labanotation that en-codes detailed body-part movements into symbolic form 1.Building on this, we introduce LaMoGen, a unified frame-work that leverages LabanLite to support LLM-driven mo-tion generation. As shown in Fig. 2, LaMoGen comprises two core components: a Laban-Motion Encoder–Decoder Module for bidirectional conversion between motions and Laban symbols, and a LLM-Guided Text-Laban-Motion Generation Module , where LLMs compose high-   
+
+> 1Here, symbolic refers to a discretized encoding system where each symbol from an annotation language carries specific semantic and domain-level information. This contrasts with continuous vector embeddings or with discrete representations, which are not inherently interpretable.
+
+level symbolic motion sequences via retrieval-augmented prompting. These symbolic plans are then enriched with fine-grained symbols and attributes, which are subsequently decoded to produce motion, thus completing the text-driven motion generation process. 
+
+3.1. Core Concepts 
+
+3.1.1. Labanotation and LabanLite 
+
+Labanotation is a symbolic system for recording human movement, where the staff is divided into eleven columns, each corresponding to a specific body part. Laban symbols are placed vertically on these columns to encode the move-ment type, affected body part, and motion duration [29]. Symbols for less significant movements may be omitted, leaving blank spaces in the score (see score examples in Fig. 1). Since each symbol defines the onset and offset of a movement, this is known as event-wise annotation. To enhance suitability for digital encoding and facilitate composition by LLMs in subsequent processes, we intro-duce LabanLite, which makes three enhancements over La-banotation while retaining its expressive capacity: 1. Symbols are classified as either conceptual (representing primary movement structure) or detail (specifying fine-grained attributes) 2;2. Event-wise annotation is replaced by frame-wise anno-tation, where each symbol is converted into a Laban in-stance at every frame, and staff columns are redefined as body-part groups with dedicated attribute fields 3;3. Each conceptual symbol is accompanied by a strictly formatted textual description (i.e., <body-part group> <moving semantic> in <time> seconds ) termed Conceptual Description . This standardized format enables unambiguous conversion from symbolic event-wise annotations to frame-wise instances through direct textual mapping. 
+
+Improved Temporal Expressiveness . Unlike pose-based representations (e.g., CoMo [10]), LabanLite encodes both movement intention and duration, enabling language mod-els to interpret and generate compositional instructions such as “ move hand forward in one second ”. These explicit and aligned symbolic attributes for direction and timing further allow LaMoGen to operate at the level of action units. 
+
+Enhanced Interpretability . LabanLite utilizes a fixed set of symbols established by movement experts within Laban-otation. For example, the Level symbols comprise only three options (high, middle, low). Although finer levels could be introduced, we restrict the system to the existing symbols to ensure it remains both professionally relevant and interpretable by Laban experts. 
+
+> 2E.g., the conceptual symbol for “wave right hand” specifies directional and level changes; the detailed symbol captures the arm’s bend transitions.
+> 3Because each body-part group has unique kinematic characteristics, their corresponding attribute fields are designed accordingly.
+
+3⋮  
+
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> Motion -Laban Decoder 𝒟
+> Motion -Laban Encoder ℰ
+
+(a) Laban -Motion Encoder -Decoder 
+
+> Take two steps forward.
+> MASK
+> MASK
+> MASK
+> MASK
+> MASK
+> MASK
+> LLM -Guided
+> Composition
+
+(b) LLM -Guided Text -Laban -Motion Generator            
+
+> Text description
+> Text description
+> Walk and side step.
+> Conceptual Description
+> Database
+> Top -K Matched
+> Reference Scores
+> Laban Codes
+> Top -K R etrieval
+> 6
+> 74
+> 155
+> ⋮
+> ⋮
+> 8
+> 75
+> 6
+> 74
+> 155
+> ⋮
+> ⋮
+> 8
+> 75
+> 5
+> 75
+> 155
+> ⋮
+> ⋮
+> 6
+> 76
+> 5
+> 75
+> 153
+> ⋮
+> ⋮
+> 6
+> 76
+> 5
+> 75
+> 153
+> ⋮
+> ⋮
+> 6
+> 76
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> EOS ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> text ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> ⋮
+> Kinematic Detail Augmentor
+> Laban Instances
+> CLIP
+> Input Text Instructions
+> Stage 1: LLM -Guided Composition Stage 2: Kinematic Detail Augmentation
+> Input (masked) Conceptual
+> Laban Codes
+> Complete Laban Codes
+> Learnable
+> Laban
+> Codebook
+> Laban Codes
+> M/F M/B M/B M/B M/B M/F M/F M/F
+> Mi Mi Mi Mi Mi Mi Mi Mi
+> Mi Mi Mi Mi Mi Mi Mi Mi
+> M/B M/ FM/ FM/ FM/ FM/ FM/B M/B
+> 11111100
+> 11000111
+> Laban Score
+> M/F M/B  M/B  M/B  M/B  M/F
+> Mi Mi Mi Mi Mi Mi
+> Mi Mi Mi Mi Mi Mi
+> 111100
+> 000111
+> Composed Score
+
+Figure 2. Overview of LaMoGen: (a) The Laban-motion Encoder-Decoder enables bidirectional conversion between motion and Laban instances. These instances are human-readable and LLM-editable, as each instance has a symbolic appearance and a conceptual descrip-tion, stored in the Conceptual Description Database. (b) LLMs perform high-level symbolic planning via retrieval-augmented prompting, generating sequences of conceptual symbols. The Kinematic Detail Augmentor then enriches these sequences with details through autore-gressive generation. Enriched symbol sequences are converted to instances, encoded as codes, and decoded into fine-grained motions. 
+
+3.1.2. Laban code & Laban codebook 
+
+After frame-wise annotation, each unique Laban instance for a specific body-part group is assigned a unique identi-fier, referred to as a Laban code . All N codes are aggre-gated into the Laban codebook (detail explained in Sup-plementary Sec. 1 ), denoted as C = {cn}Nn=1 , where each entry cn ∈ Rdc is a learnable embedding. The Laban codebook serves as a compact, trainable la-tent space capturing the fundamental semantics and kine-matics of diverse Laban characteristics and attributes. Each Laban code thus acts as a symbolic anchor that can be mapped to a rich vectorized embedding, optimized dur-ing training to maximize reconstruction and compositional quality. By combining these embeddings linearly, the sys-tem can approximate continuous variations, enabling the composition of complex motions from simpler symbolic building blocks. 
+
+3.2. Laban-Motion Encoder-Decoder 
+
+Given a T -frame input motion: X = {xt}Tt=1 , we propose an Automatic Symbol Detection Workflow F, which con-verts X into a Laban instance sequence S = F(X), and 
+
+S = {si,j t | t ∈ [1 , T ], i ∈ [1 , A j ] j ∈ [1 , G ]}. Here, G
+
+is the total body-part group number, and Aj is the attribute field dimension for Group j. The sequence S is then en-coded into a latent vector Z using the Laban codebook C.The process will be explained as follows. 
+
+3.2.1. Automatic Laban Code Detection Workflow 
+
+The workflow processes each body-part group indepen-dently in three steps ( see Supplementary Sec. 2 for better de-tails ). On step one, Dynamic Interval Segmentation , we di-vide motion into coherent time intervals by classifying each frame as either dynamic or stationary (hold). This step en-sures that symbolic units align with natural atomic actions. On step two, Frame-wise Symbol Extraction , we translate motion signals into symbolic attributes. Direction and Level 
+
+are measured by the 3D displacement of end-effectors from the pelvis, which are mapped to symbolic categories. Ori-entation is obtained by calculating the Euler angles of the hip and discretising them into eight bins. Bend is captured by discretising Euler angles between adjacent limbs into six bins, while Moving-effort is quantified by discretising pelvis velocities into five levels. Together, these attributes provide a comprehensive symbolic account of local body dynam-ics. On step three, in Interval-wise Symbol Aggregation , we assign a representative symbol combination to each seg-mented interval to ensure that the chosen symbol reflects the stable state of the motion. 
+
+Standard Labanotation Discretization . We implemented these rules directly according to conventionally accepted boundaries (e.g., orientation, bend angles, effort levels) in the Labanotation literature. 
+
+3.2.2. Coding, Decoding & Optimisation of Codebook 
+
+The Laban-Motion Encoder E transforms the symbol se-quence S = {si,j t }, derived from the input motion X =
+
+{xt} as described in the previous section, into a latent repre-sentation: zt = PNn=1 vnt cn, which is constructed by sum-ming the embeddings of all active codes from the codebook 
+
+C = {cn}Nn=1 at each frame. The binary indicator vector 
+
+vt ∈ RN ×1 specifies which codes are active: an entry vnt
+
+is set to 1 whenever the detection workflow F identifies the corresponding attribute. We further implement a Laban-Motion Decoder D that reconstructs motion trajectories from the latent representa-tions {zt}, using a standard transformer decoder architec-ture [30]. The Decoder parameters θ and the Laban code-4book C = {cn}Nn=1 are jointly optimized by minimizing the following reconstruction loss Lrec :
+
+{θ, C } = arg min 
+
+> θ, {cn}Nn=1
+
+Lrec (X, {D (
+
+> N
+
+X
+
+> n=1
+
+vnt cn; θ)}Tt=1 ), (1) where Lrec is calculated by summing the L1 distances be-tween poses ( X and ˆX) and velocities ( ˙X and ˙ˆX) of the in-put and reconstructed motions: Lrec (X, ˆX) = ∥X − ˆX∥1 +
+
+λ∥ ˙X − ˙ˆX∥1, with λ being a hyperparameter that controls the relative weight of the two terms. 
+
+3.3. LLM-Guided Text-Laban-Motion Generation 
+
+Human motion can be understood as the outcome of both conceptual intent and physical execution. In LabanLite, 
+
+conceptual symbols capture high-level motion concepts and intentions (e.g., direction or level), whose structured pat-terns can be effectively modeled by large language mod-els. Detail symbols , by contrast, specify execution attributes such as orientation, bend, and effort—factors essential for realistic synthesis—which are modeled by a transformer-based architecture [35] via coding over the learned Laban Codebook. This hierarchical design naturally leads to a two-stage generation pipeline. 
+
+3.3.1. LLM-Guided Motion Concept Composition 
+
+As introduced earlier, Laban symbols are both visually in-terpretable and structurally organized, making them well-suited for symbolic reasoning with language models. Lever-aging these properties, the first stage of our generation framework employs LLMs to compose motion plans at the conceptual level via retrieval-augmented prompting. Specifically, as depicted in Fig. 2(b), we maintain a Con-ceptual Description Database where each record consists of a motion caption (the primary key) and its corresponding conceptual description (the value). Motion captions may be descriptive or prescriptive, accommodating both vague and explicit user intents. During inference, a user-provided query is processed by computing its semantic similarity to the database captions using CLIP [26]. The top-K retrieved entries, which are expected to cover the relevant movement elements expressed by the user, are provided to the LLM as in-context examples along with the incoming query. The LLM then reasons over the alignment between textual in-structions and symbolic motion patterns, editing or com-posing a new conceptual description tailored to the user’s input. Owing to the standardized format of conceptual de-scriptions, these can be unambiguously mapped back to La-ban symbols, enabling effective symbolic motion synthesis from textual input. 
+
+3.3.2. Kinematic Detail Augmentation over Codebook 
+
+While LLMs are effective at high-level planning, they lack the temporal modelling precision required for detailed mo-tion synthesis. Thus, in the second stage, the Kinematic De-tail Augmentor autoregressively enriches conceptual sym-bol sequences with detail symbols, expanding them into 
+
+temporally coherent and complete LabanLite codes. This process adds around 60% more information to the sym-bol sequence, supporting temporally coherent and detailed kinematic motion. Specifically, we represent the conceptual symbol se-quence from the first stage as masked binary indicator vec-tors ˆv1: t−1, where only the predicted conceptual symbol fields are activated. Conditioned on the text input m and 
+
+ˆv1: t−1, the Augmentor predicts full binary indicator vectors 
+
+vt for each frame, activating embedding entries in the La-ban codebook, which encodes both conceptual and detail attributes. The prediction is made over estimated activation probabilities: pnt = P (vnt = 1 |m, ˆv1: t−1).During training, conceptual vectors are constructed by masking detailed attributes in the input, with random mask-ing applied to improve generalisation and prevent overfit-ting. To mark motion termination, an end-of-sequence to-ken <EOS> is appended, extending the codebook to N + 1 
+
+entries. Through this process, the Augmentor enriches the frame-wise conceptual symbol plans produced by the LLM with detailed attributes, converting them into fully specified Laban codes. The learning objective is defined using a bi-nary cross-entropy loss: 
+
+Lgen = − X
+
+> t,n
+
+[vnt log pnt + (1 − vnt ) log(1 − pnt )] . (2) Finally, the Laban-Motion Decoder D reconstructs the en-riched codes into instruction-aligned, detailed motion tra-jectories. 
+
+4. Laban Benchmark 
+
+To evaluate the effectiveness of the proposed LaMo-Gen framework—specifically its capacity to capture fine-grained, structured textual instructions and accurately re-flect them in generated motion—we introduce a new bench-mark. This benchmark comprises a motion–Laban–text paired dataset, along with three Labanotation-based met-rics designed to assess symbolic, temporal, and harmo-nious alignment. Further details regarding dataset con-struction and evaluation metrics are provided in Supple-mentary Sec. 3. 
+
+Motion–Laban–Text Paired Dataset. This dataset con-sists of triplets, each containing (1) a motion sequence, (2) its corresponding Laban symbol sequence, and (3) a tex-tual instructional description. The motion data is derived from HumanML3D [8], forming the HumanML3D-Laban 
+
+corpus. We selected motions amenable to instructional de-scription, resulting in a predominance of locomotion se-quences, which are further decomposed into atomic actions. 5Table 1. Quantitative comparisons on our Laban Benchmark, using the proposed Labanotation-based metrics, R-precision Top-3 (R@3) and FID. Bold and underlined values indicate the best and the second-best performance, respectively. 
+
+Method SMT ↑ TMP ↑ HMN ↑ R@3 ↑ FID ↓
+
+supL supR armL armR supL supR armL armR arm-arm arm-sup sup-sup Real data - - - - - - - - - - - 0.216 0.001 MDM [28] 0.380 0.380 0.335 0.257 0.316 0.316 0.329 0.231 0.119 0.226 0.258 0.180 22.81 ReMoDiff [36] 0.470 0.470 0.427 0.395 0.377 0.377 0.385 0.322 0.179 0.264 0.351 0.192 7.121 MoDiff [37] 0.491 0.491 0.470 0.411 0.362 0.362 0.412 0.328 0.180 0.281 0.361 0.196 5.701 CoMo [10] 0.358 0.358 0.474 0.382 0.211 0.211 0.284 0.250 0.203 0.298 0.252 0.176 21.94 MotionGPT [12] 0.488 0.488 0.466 0.400 0.353 0.353 0.343 0.340 0.244 0.300 0.378 0.195 2.072 LaMoGen Composer  None 0.523 0.523 0.430 0.392 0.337 0.337 0.361 0.385 0.215 0.356 0.393 0.199 5.562 Qwen3 0.571 0.571 0.478 0.495 0.401 0.401 0.456 0.448 0.369 0.334 0.450 0.212 1.903 DeepSeekV3 0.552 0.552 0.496 0.500 0.475 0.475 0.486 0.486 0.370 0.326 0.463 0.206 1.859 GPT4.1 0.583 0.583 0.493 0.476 0.507 0.507 0.501 0.492 0.303 0.367 0.508 0.208 1.861 Human 0.648 0.648 0.592 0.616 0.619 0.619 0.643 0.632 0.379 0.449 0.558 0.211 1.769 ReMoDiff, ICCV’23 CoMo, ECCV’24 LaMoGen (ours) 
+
+> a person reaches forward with the left hand and then lets their arm drop to their side.
+> a person, standing in the middle of the screen, raises their arms and waves twice before lowering their arms again.
+> Walk forward in 5 steps. Right foot move first. End with stand with feet together.
+> Wave arms Three times
+> Wave arms and T-pose Twice
+> Wave arms Twice
+> Move left hand forward Twice
+> Move both hands forward Once
+> Move left hand forward Once
+> Sidewalk 5 steps Stand with feet apart
+> Walk forward 5 steps Stand with feet together
+> Walk forward 4 steps Stand with feet together
+> walk forward while hold arms up.
+> Idle Hold arms up
+> Wave hands Walk forward
+> Hold arms up Walk forward
+> Jake
+
+Chronology (order) and Timing (repeat) Compositional Motion Concepts Exact Body Part and Execution Control Motion Attributes and Chronology 
+
+Figure 3. Qualitative comparisons on HumanML3D and HumanML3D-Laban test sets, with generated motions progressing from left to right. The LLM-composed conceptual symbols are shown below our results. Misalignments between texts and motions are highlighted. Note how our method preserves correct sequencing, repetition, and timing of actions, while precisely controlling body parts and motion attributes, and demonstrating compositional generation enabled by LLM-driven symbolic inference—where existing methods fail. 
+
+Annotation is semi-automated: motion details such as step count, left/right step order, and action labels are manually extracted and then expanded into natural language descrip-tions with the help of LLMs. 
+
+Laban-based Metrics. Given the professional rigor of La-banotation in annotating and analyzing motion, we pro-pose three Laban metrics, i.e., Semantic Alignment (SMT), Temporal Alignment (TMP), and Harmonious Alignment (HMN), to assess the accuracy of orientation, duration, and coordination in fine-grained text-driven motion genera-tion. Unlike KP benchmark [22], which is limited to one or two body parts, our metrics evaluate multi-body con-sistency across four key body parts. These metrics oper-ate by converting both ground-truth and generated motions into conceptual symbol sequences, followed by intra- and inter-body-part comparisons using Longest Common Sub-sequence (See mathematical definition in Supplementary Sec. 3) . Specifically, SMT measures sequence similarity within individual body parts while ignoring duration. TMP extends this by incorporating symbol duration to enforce temporal consistency. HMN further evaluates coordination across multiple body parts by treating co-occurring symbols as joint units. For example, if the ground truth shows the left foot stepping forward while the left arm swings backward, the generated motion is expected to exhibit a comparable synchronised pattern. 
+
+5. Experiments 
+
+5.1. Experimental Setup 
+
+We assess the automatic Laban detection workflow using a Laban-annotated motion dataset [13]. This dataset is manu-ally annotated by Laban experts and consists of 21 walking motions. As a baseline, we employ the hardcoded detec-tion algorithm from Ikeuchi et al. [11], extending its origi-nal upper-body focus to full-body motions by applying the 6Table 2. Quantitative comparisons with state-of-the-art methods on the HumanML3D test and KIT-ML test datasets, under standard protocols. Bold , underlined, and italicised values denote the best, second-best, and third-best performance, respectively. 
+
+Method R-precision ↑ FID ↓ MM-Dist ↓ Diversity → Multi-Mod. ↑
+
+Top-1 Top-2 Top-3 HumanML3D Real data 0.511 ±.003 0.703 ±.003 0.797 ±.002 0.002 ±.000 2.974 ±.008 9.503 ±.085 -Guo et al. [8] 0.457 ±.002 0.639 ±.003 0.740 ±.003 1.067 ±.002 3.340 ±.008 9.188 ±.002 2.090 ±.083 
+
+MDM [28] 0.320 ±.005 0.498 ±.004 0.611 ±.007 0.544 ±.044 5.566 ±.027 9.559 ±.086 2.799 ±.072 
+
+ReMoDiff [36] 0.510 ±.005 0.698 ±.006 0 .795 ±.004 0.103 ±.004 2.974 ±.016 9.018 ±.075 1.795 ±.043 
+
+MoDiff [37] 0.491 ±.001 0.681 ±.001 0.782 ±.001 0.630 ±.001 3.113 ±.001 9 .410 ±.049 1.533 ±.042 
+
+CoMo [10] 0 .502 ±.002 0.692 ±.007 0.790 ±.002 0.262 ±.004 3 .032 ±.015 9.936 ±.066 1.013 ±.046 
+
+KP [22] 0.496 ±.000 - - 0.275 ±.000 - 9.975 ±.000 2 .218 ±.000 
+
+MotionGPT [12] 0.492 ±.003 0.681 ±.003 0.778 ±.002 0.232 ±.008 3.096 ±.008 9.528 ±.071 2.008 ±.084 
+
+> LaMoGen Composer
+
+None 0.438 ±.005 0.591 ±.004 0.755 ±.003 1.091 ±.013 3.999 ±.020 8.555 ±.097 1.421 ±.089 
+
+GPT4.1mini 0.453 ±.003 0.679 ±.003 0.779 ±.004 0.561 ±.008 3.717 ±.011 8.434 ±.115 1.263 ±.034 
+
+GPT4.1 0.491 ±.002 0 .694 ±.002 0.796 ±.003 0 .252 ±.003 3.087 ±.003 9.124 ±.058 1.131 ±.027 
+
+Human 0.513 ±.003 0.704 ±.002 0.813 ±.006 0.206 ±.003 2.993 ±.009 9.635 ±.109 0.973 ±.024 
+
+> KIT-ML
+
+Real data 0.424 ±.005 0.649 ±.006 0.779 ±.006 0.031 ±.006 2.788 ±.012 11 .08 ±.097 -Guo et al. [8] 0.370 ±.005 0.569 ±.007 0.693 ±.007 2.770 ±.109 3.401 ±.008 10 .91 ±.119 1.482 ±.065 
+
+MDM [28] 0.164 ±.004 0.291 ±.004 0.396 ±.004 0.497 ±.021 9.191 ±.022 10 .85 ±.109 1.907 ±.214 
+
+ReMoDiff [36] 0.427 ±.014 0 .641 ±.004 0.765 ±.055 0.155 ±.006 2.814 ±.012 10 .80 ±.105 1.239 ±.028 
+
+MoDiff [37] 0.417 ±.004 0.621 ±.004 0.739 ±.004 1.954 ±.062 2.958 ±.005 11 .10 ±.143 0.730 ±.013 
+
+CoMo [10] 0 .422 ±.009 0.638 ±.007 0 .765 ±.011 0 .332 ±.045 2 .873 ±.021 10 .95 ±.196 1.249 ±.008 
+
+MotionGPT [12] 0.366 ±.005 0.558 ±.004 0.680 ±.005 0.510 ±.008 3.527 ±.021 10 .35 ±.084 2.328 ±.117 
+
+> LaMoGen Composer
+
+None 0.400 ±.004 0.621 ±.005 0.750 ±.003 0.685 ±.005 3.222 ±.011 11 .74 ±.140 1 .305 ±.122 
+
+GPT4.1mini 0.418 ±.005 0.630 ±.004 0.761 ±.006 0.550 ±.005 3.274 ±.011 11 .85 ±.175 1.103 ±.051 
+
+GPT4.1 0.421 ±.004 0.649 ±.004 0.775 ±.013 0.415 ±.011 3.165 ±.007 11 .30 ±.166 1.028 ±.101 
+
+Human 0.424 ±.006 0.657 ±.005 0.782 ±.009 0.254 ±.004 2.821 ±.094 11 .09 ±.184 0.979 ±.012 
+
+Table 3. Performance of Laban symbol detection on the Laban-annotated motion dataset, using average Laban metrics. Bold val-ues denote the best performance. 
+
+Method avg. SMT ↑ avg. TMP ↑ avg. HMN ↑
+
+Ikeuchi et al. [11] 0.751 0.632 0.611 Ours 0.871 0.852 0.786 
+
+same thresholds. Detection accuracy is evaluated using the three proposed Laban metrics. For motion generation, following standard protocols [8], we assess LaMoGen on HumanML3D [8] and KIT-ML [25] datasets. We compare our approach against state-of-the-art methods across different paradigms, including: (1) two baseline methods, Guo et al. [8] and MDM [28]; (2) a la-tent retrieval-augmented method, ReMoDiff [36]; (3) a fine-grained generation method, MoDiff [37]; (4) two explicit motion decomposition methods, KP [22] and CoMo [10]; and (5) an LLM-finetuned method, MotionGPT [12]. Eval-uation metrics include: Fr´ echet Inception Distance (FID) for distributional similarity (lower is better); R-Precision and Multimodal Distance (MM-Dist) for text-motion cor-respondence (higher is better); and Diversity and Multi-Modality (Multi-Mod.) for motion variability (Diversity closer to ground truth and higher Multi-Mod. are preferred). For the Laban Benchmark, we evaluate models trained on HumanML3D without fine-tuning, reporting Laban metrics, R-Precision, and FID for comprehensive assessment. All results are averaged over 20 independent runs. 
+
+5.2. Evaluation on Laban Detection 
+
+Table 3 reports the Laban symbol detection accuracy, demonstrating that our detection workflow achieves high accuracy. This enables robust and precise conversion of motion data into Laban symbol sequences, providing high-quality data for the Conceptual Description Database and the construction of the Laban Benchmark. 
+
+5.3. Evaluation on Motion Generation 
+
+Tables 1, 2 report quantitative comparisons between our method and state-of-the-art methods on the HumanML3D-Laban, HumanML3D, and KIT-ML datasets. We evalu-ate our model under six high-level composer conditions: (1) None , where motion generation is conditioned solely on text and serves as a baseline for text comprehension; (2) three LLM composers ( GPT4.1mini , GPT4.1 , Qwen3 ,
+
+DeepSeekV3 ), where generation is conditioned on both text and conceptual cues provided by LLMs; and (3) Human , in which conceptual cues are derived from ground-truth anno-tations to simulate human composition. 
+
+Results on Laban Benchmark. As shown in Table 1, LaMoGen achieves the best performance across both Laban metrics and two standard evaluation metrics, demonstrating superior text-motion alignment compared to other methods. The LLM-assisted configurations show that LLMs can ef-fectively interpret and compose conceptual Laban symbols as explicit guidance, resulting in higher Laban metric scores than other baselines. In contrast, methods such as MDM and CoMo, that rely on joint text–motion embeddings, of-7ten fail to align text and motion under lengthy or unseen inputs, as reflected by their higher FID scores. Furthermore, as evidenced in Table 1 and 2, MotionGPT, while less competitive on conventional benchmarks, ex-hibits a stronger ability to understand instructional descrip-tions on the Laban Benchmark—surpassing CoMo in this aspect. This finding supports the argument presented in KP [22], namely that conventional metrics fail to accurately distinguish the motion generation capabilities of existing methods. It further underscores the necessity of the pro-posed Laban metrics for a more comprehensive evaluation of generative motion quality. 
+
+Results on conventional benchmarks. As shown in Ta-ble 2, LaMoGen consistently ranks top-3 across five stan-dard metrics, highlighting its robust generalisation. We at-tribute these strong results to the proposed LabanLite repre-sentation, which discretises motion into interpretable sym-bolic sequences. This design enhances the consistency be-tween text and motion, and enables the model to reason about both inter- and intra-body part relationships. However, although LaMoGen excels on most metrics, its FID scores lag behind others. We believe the reason is that its high abstraction uses identical symbols for different low-level variations that share the same high-level semantics. For example, raising the hand from “Lo.” to “Hi.” is repre-sented by the same symbols, but different individuals may perform it with varying speeds. Such low-level movement variations are inherently beyond LabanLite’s expressive ca-pacity, resulting in higher FID scores. 
+
+Qualitative comparisons. We evaluate the motion in four aspects: Chronology , whether motions occur in the proper sequence, such as which body part moves first; Timing con-trol , whether motions follow specified durations; Explain-ability , whether it is clear why motions happen a certain way; and Compositionality , whether different body-part ac-tions can be combined. Four examples are shown in Fig. 3, 
+
+with more comparisons in Supplementary Sec. 5 .Our analysis reveals that ReMoDiff and CoMo can vi-olate chronological order and struggle with precise move-ment timing. CoMo ends in a T-pose in the first example, and ReMoDiff moves the hands three times in the second. Without explicit control signals, their motions are less ex-plainable—it is unclear why ReMoDiff moves both hands forward. In contrast, LoMoGen uses symbolic representa-tions to clarify movement logic, such as when to step for-ward and which body part acts. Regarding compositional-ity, in the final example, ReMoDiff raises the arms but does not walk, CoMo walks while waving the arms, whereas our method combines both actions correctly. Across all exam-ples, our method satisfies all four criteria, highlighting the advantage of LLM-driven symbolic inference. We further examine each method’s ability to model fine-grained temporal structure by modifying input text with ei-ther vague (e.g., speed change) or precise (e.g., time dura-tion) descriptions. Results highlight our method excels, as LLMs adapt conceptual descriptions while others lack this compositional capability. 
+
+User studies. We conduct a user study to evaluate the gen-erated motion quality of LaMoGen against ReMoDiff and CoMo. Results show that participants consistently preferred LaMoGen over other methods. 
+
+5.4. Ablation study 
+
+LLM’s capability . We evaluate two open-source LLMs and two versions of GPT-4.1 to assess how model capability influences performance. Table 1 and 2 reveal that stronger LLMs achieve better generation, more effectively compos-ing Laban symbols and understanding their relationships. 
+
+Number of top-matched references . To guide LLMs in composing conceptual codes, we provide top-matched ex-amples and investigate the impact of example quantity on HumanML3D test set performance using GPT-4.1. Results (in Supplementary Sec. 5 ) show that increasing examples from 1 to 3 consistently improves performance, indicating that LLMs benefit from having sufficient examples for ac-curate imitation. But adding more (5 or 7) offers no fur-ther improvement, likely due to exceeding the LLM’s con-text window and causing it to forget the most relevant cues. Thus, we use top-3 retrieval as the default setting. 
+
+Masking ratio on Laban codes . We further analyze how varying the masking ratio on Laban codes influences gener-ation, using GPT-4.1 and top-3 retrieval on HumanML3D. A higher masking ratio reduces the influence of concep-tual cues, making motion generation rely more on text and less on Laban symbols, reducing the influence of concep-tual guidance. Results indicate that a masking ratio of 0.3 offers the best balance and achieves optimal performance. 
+
+6. Conclusion 
+
+In this work, we have introduced LabanLite, a novel, human-interpretable motion representation rooted in La-banotation, and presented LaMoGen , a pioneering Text-to-
+
+La banotation-to-Mo tion Gen eration framework. By lever-aging LabanLite’s concise symbolic abstraction, our ap-proach enables large language models to autonomously plan and compose motion sequences through explicit, in-terpretable symbolic reasoning—moving beyond the limi-tations of traditional joint embedding methods. The newly proposed Labanotation-based benchmark, together with comprehensive metrics, provides a rigorous, multidimen-sional evaluation of text-motion alignment in symbolic, temporal, and harmony aspects. Experiments on both our benchmark and public datasets demonstrate that LaMo-Gen achieves state-of-the-art performance in terms of in-terpretability and controllability, effectively capturing fine-grained temporal structures and explicit action sequences from natural language instructions. 8Acknowledgments 
+
+This research was supported by the Theme-based Re-search Scheme, Research Grants Council of Hong Kong (T45-205/21-N), and the Guangdong and Hong Kong Uni-versities “1+1+1” Joint Research Collaboration Scheme (2025A0505000003). The authors would like to thank Ms. Wendy Chu Mang-Ching from the School of Dance, The Hong Kong Academy for Performing Arts for the training and discussions on Labanotation. 
+
+References 
+
+[1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ah-mad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 ,2023. 17, 18 [2] Nikos Athanasiou, Mathis Petrovich, Michael J Black, and G¨ ul Varol. Teach: Temporal action composition for 3d hu-mans. In 3DV , pages 414–423. IEEE, 2022. 17 [3] Nikos Athanasiou, Mathis Petrovich, Michael J Black, and G¨ ul Varol. Sinc: Spatial composition of 3d human motions for simultaneous action generation. In CVPR , pages 9984– 9995, 2023. 3 [4] Ho Yin Au, Jie Chen, Junkun Jiang, and Jingyu Xiang. Deep compositional phase diffusion for long motion sequence gen-eration. arXiv preprint arXiv:2510.14427 , 2025. 1 [5] Ho Yin Au, Junkun Jiang, and Jie Chen. Soscontrol: En-hancing human motion generation through saliency-aware symbolic orientation and timing control. arXiv preprint arXiv:2601.14258 , 2025. 1, 3, 25 [6] DeepSeek-AI. Deepseek-v3 technical report, 2024. 18 [7] Ginger Delmas, Philippe Weinzaepfel, Thomas Lucas, Francesc Moreno-Noguer, and Gr´ egory Rogez. Posescript: Linking 3d human poses and natural language. IEEE trans-actions on pattern analysis and machine intelligence , 2024. 2, 20 [8] Chuan Guo, Shihao Zou, Xinxin Zuo, Sen Wang, Wei Ji, Xingyu Li, and Li Cheng. Generating diverse and natural 3d human motions from text. In CVPR , pages 5152–5161, 2022. 1, 2, 5, 7, 16, 17, 18 [9] Chuan Guo, Yuxuan Mu, Muhammad Gohar Javed, Sen Wang, and Li Cheng. Momask: Generative masked model-ing of 3d human motions. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 1900–1910, 2024. 2 [10] Yiming Huang, Weilin Wan, Yue Yang, Chris Callison-Burch, Mark Yatskar, and Lingjie Liu. Como: Controllable motion generation through language guided pose code edit-ing. In ECCV , pages 180–196. Springer, 2024. 1, 2, 3, 6, 7, 17, 19, 20, 21, 22, 24 [11] Katsushi Ikeuchi, Zhaoyuan Ma, Zengqiang Yan, Shunsuke Kudoh, and Minako Nakamura. Describing upper-body mo-tions based on labanotation for learning-from-observation robots. International Journal of Computer Vision , 126:1415– 1429, 2018. 6, 7 [12] Biao Jiang, Xin Chen, Wen Liu, Jingyi Yu, Gang Yu, and Tao Chen. Motiongpt: Human motion as a foreign language. Ad-vances in Neural Information Processing Systems , 36, 2024. 1, 2, 3, 6, 7, 20 [13] Junkun Jiang, Ho Yin Au, Jie Chen, Jingyu Xiang, and Mingyuan Chen. Motion part-level interpolation and manip-ulation over automatic symbolic labanotation annotation. In 
+
+IJCNN , pages 1–8. IEEE, 2024. 3, 6 [14] Junkun Jiang, Jie Chen, Ho Yin Au, and Jingyu Xiang. Learning context-adaptive motion priors for masked motion diffusion models with efficient kinematic attention aggrega-tion. https://arxiv.org/abs/2603.07697 , 2026. 2 [15] Sai Shashank Kalakonda, Shubh Maheshwari, and Ravi Ki-ran Sarvadevabhatla. Action-gpt: Leveraging large-scale language models for improved and generalized action gen-eration. In ICME , pages 31–36. IEEE, 2023. 3 [16] Korrawe Karunratanakul, Konpat Preechakul, Supasorn Suwajanakorn, and Siyu Tang. Guided motion diffusion for controllable human motion synthesis. In ICCV , pages 2151– 2162, 2023. 3 [17] Taeryung Lee, Gyeongsik Moon, and Kyoung Mu Lee. Mul-tiact: Long-term 3d human motion generation from multiple action labels. In AAAI , pages 1231–1239, 2023. 2 [18] Ling Li, WenRui Yang, Xinchun Yu, Junliang Xing, and Xiao-Ping Zhang. Translating motion to notation: Hand la-banotation for intuitive and comprehensive hand movement documentation. In Proceedings of the 32nd ACM Interna-tional Conference on Multimedia , pages 4092–4100, 2024. 3, 25 [19] Min Li, Zhenjiang Miao, and Yuanyao Lu. Labanformer: Multi-scale graph attention network and transformer with gated recurrent positional encoding for labanotation gener-ation. Neurocomputing , 539:126203, 2023. 25 [20] Zhe Li, Weihao Yuan, Yisheng He, Lingteng Qiu, Shen-hao Zhu, Xiaodong Gu, Weichao Shen, Yuan Dong, Zi-long Dong, and Laurence T Yang. Lamp: Language-motion pretraining for motion generation, retrieval, and captioning. 
+
+arXiv preprint arXiv:2410.07093 , 2024. 1, 2 [21] Jinpeng Liu, Wenxun Dai, Chunyu Wang, Yiji Cheng, Yan-song Tang, and Xin Tong. Plan, posture and go: To-wards open-world text-to-motion generation. arXiv preprint arXiv:2312.14828 , 2023. 3, 25 [22] Xinpeng Liu, Yong-Lu Li, Ailing Zeng, Zizheng Zhou, Yang You, and Cewu Lu. Bridging the gap between human motion and action semantics via kinematic phrases. In ECCV , pages 223–240. Springer, 2024. 2, 6, 7, 8 [23] Andreas Mueller. wordcloud: A little word cloud generator in python. https://github.com/amueller/word_ cloud , 2015. Accessed: 2025-06-30. 16 [24] Georgios Pavlakos, Vasileios Choutas, Nima Ghorbani, Timo Bolkart, Ahmed A. A. Osman, Dimitrios Tzionas, and Michael J. Black. Expressive body capture: 3D hands, face, and body from a single image. In Proceedings of the IEEE/CVF conference on computer Vision and Pattern Recognition , pages 10975–10985, 2019. 14 [25] Matthias Plappert, Christian Mandery, and Tamim Asfour. The kit motion-language dataset. Big data , 4(4):236–252, 2016. 7 
+
+9[26] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural language supervi-sion. In International conference on machine learning , pages 8748–8763. PMLR, 2021. 5, 18 [27] Xu Shi, Chuanchen Luo, Junran Peng, Hongwen Zhang, and Yunlian Sun. Generating fine-grained human mo-tions using chatgpt-refined descriptions. arXiv preprint arXiv:2312.02772 , 1, 2023. 3 [28] Guy Tevet, Sigal Raab, Brian Gordon, Yoni Shafir, Daniel Cohen-or, and Amit Haim Bermano. Human motion diffu-sion model. In The Eleventh International Conference on Learning Representations , 2023. 1, 2, 6, 7, 21, 24 [29] Muriel Topaz, Odette Blum, and Jessica Segall. Elementary Labanotation: A study guide . Dance Notation Bureau, 1996. 1, 3, 11 [30] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-reit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems , 30, 2017. 4, 17 [31] Weilin Wan, Zhiyang Dou, Taku Komura, Wenping Wang, Dinesh Jayaraman, and Lingjie Liu. Tlcontrol: Trajectory and language control for human motion synthesis. In ECCV ,pages 37–54. Springer, 2024. 3, 25 [32] Tao Wang, Zhihua Wu, Qiaozhi He, Jiaming Chu, Ling Qian, Yu Cheng, Junliang Xing, Jian Zhao, and Lei Jin. Stickmo-tion: Generating 3d human motions by drawing a stickman. In CVPR , pages 12370–12379, 2025. 3, 25 [33] An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. 18 [34] Ling-An Zeng, Guohong Huang, Gaojie Wu, and Wei-Shi Zheng. Light-t2m: A lightweight and fast model for text-to-motion generation. In AAAI , pages 9797–9805, 2025. 2 [35] Jianrong Zhang, Yangsong Zhang, Xiaodong Cun, Yong Zhang, Hongwei Zhao, Hongtao Lu, Xi Shen, and Ying Shan. Generating human motion from textual descriptions with discrete representations. In CVPR , pages 14730–14740, 2023. 1, 2, 5, 17, 18 [36] Mingyuan Zhang, Xinying Guo, Liang Pan, Zhongang Cai, Fangzhou Hong, Huirong Li, Lei Yang, and Ziwei Liu. Re-modiffuse: Retrieval-augmented motion diffusion model. In 
+
+ICCV , pages 364–373, 2023. 6, 7, 19, 21 [37] Mingyuan Zhang, Zhongang Cai, Liang Pan, Fangzhou Hong, Xinying Guo, Lei Yang, and Ziwei Liu. Motiondif-fuse: Text-driven human motion generation with diffusion model. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2024. 2, 6, 7, 21 [38] Yaqi Zhang, Di Huang, Bin Liu, Shixiang Tang, Yan Lu, Lu Chen, Lei Bai, Qi Chu, Nenghai Yu, and Wanli Ouyang. Mo-tiongpt: Finetuned llms are general-purpose motion genera-tors. In AAAI , pages 7368–7376, 2024. 3 [39] Zixiang Zhou, Yu Wan, and Baoyuan Wang. Avatargpt: All-in-one framework for motion understanding planning gener-ation and beyond. In CVPR , pages 1357–1366, 2024. 3 
+
+10 Supplementary Material for LaMoGen: Language to Motion Generation Through LLM-Guided Symbolic Inference 
+
+Junkun Jiang, Ho Yin Au, Jingyu Xiang, Jie Chen 1
+
+Department of Computer Science, Hong Kong Baptist University, HKSAR 
+
+{csjkjiang, cshyau, csjyxiang, chenjie }@comp.hkbu.edu.hk 
+
+This supplementary material provides additional details that could not be included in the main paper due to page limitations. The contents are organized as follows: • Details of LabanLite (Sec. 1): Includes a comprehensive definition of LabanLite, semantic interpretations of Laban symbols, as well as the relationships among Laban sym-bols and Laban instances. Look-up tables for construct-ing the Conceptual Description database for LLM-based composition are also provided, accompanied by visual ex-amples for clearer understanding. • Automatic Laban Code Detection Workflow (Sec. 2): Describes the formulated detection process and the pre-defined thresholds used for discretization. • Laban Benchmark (Sec. 3): Provides the mathematical definition of the Laban metric, details on the construc-tion of the HumanML3D-Laban dataset, and illustrative examples. • Experiment Details (Sec. 4): Includes training setups, implementation specifics of the proposed models, and prompts used for LLM-based composition. • Experimental Results (Sec. 5): Extends beyond the main paper by presenting ablation studies, user stud-ies, and qualitative comparisons. Supplementary LLM-composed examples demonstrate that LLMs can interpret ambiguous text and compose Laban symbols. • Limitations and Future Directions (Sec. 7): Discusses the current limitations of the proposed framework and outlines possible future research directions. The complete code and related data will be released follow-ing approval of the publication status. 
+
+1. Details of LabanLite 
+
+We begin by introducing Labanotation to provide readers with a quick understanding of Laban theory (Sec. 1.1). We then describe LabanLite (Sec. 1.2), which constitutes our primary contribution. 
+
+1.1. Preliminary of Labanotation 
+
+Labanotation employs distinctive symbols arranged on a vertical staff to form a Laban score, documenting the spatial positions and temporal sequences of various body   
+
+> 1Corresponding author. Project page: https://jjkislele.github.io/LaMoGen/ M/F
+> M/B
+> L/M R/M
+> R/F
+> R/B L/B
+> L/F
+> M/M
+
+(a) Laban staff  
+
+> Left hand
+> Body (Whole, lower torso)
+> Left arm
+> Left support
+> Right leg gesture
+> Right support
+> Left leg gesture
+> Right arm
+> Head
+> Right hand
+> Body (Upper torso)
+> Read From Bottom Up
+
+(b) A Labanotation example: 
+
+Walz Study  
+
+> ൗ34
+> A moderately fast waltz
+> 1
+> 2
+
+Direction  Level  Orientation 
+
+(c)  Conceptual  symbols  (d) Detailed symbols 
+
+Bend  Moving -effort 
+
+> Hi .
+> Mi.
+> Lo.
+
+Hold 
+
+Figure 1. Preliminary of Labanotation . (a) Illustration of a La-ban staff. (b) A segment of a Laban score [29]. We further ex-tend Labanotation into LabanLite . LabanLite categorizes La-ban symbols into (c) Conceptual symbols, where “L”, “R”, “F”, “M”, and “B” denote left, right, forward, middle, and backward directions. “Hi.”, “Mi.”, and “Lo.” denote high, middle, and low levels. (d) Detailed symbols, where “Orientation”, “Bend” and “Moving-effort” describe the kinematic details. 
+
+parts [29]. As illustrated in Fig. 1(a), a standard Laban staff consists of 11 columns, each corresponding to a spe-cific body part. Symbols are placed in each column from bottom to top, where the position and sequence reflect the type of movement as well as its start and end times. The length of each symbol indicates the movement duration, rendering Labanotation an event-wise annotation scheme. Choreographers often omit symbols for movements deemed insignificant. Fig. 1(b) shows a sample score for a waltz study. Choreographers synchronize the staff with music us-ing bar lines and time signatures. Notably, important move-ments—such as the right foot’s step—are clearly marked with a symbol, while less relevant movements (e.g., the left foot’s status) are often omitted. As a result, some parts of the score contain blank spaces where symbols are absent. 
+
+1.1.1. Quick Tutorial of Labanotation 
+
+To facilitate understanding, we provide a brief tutorial on Labanotation that serves as a prerequisite for later sections. 11 M/F        
+
+> M/M
+> M/B
+> Direction Level
+> Mi.
+> (b) Apartial Laban scor e
+> (a) Used Laban symbols (c) Upper body annotation
+> (d) Lower body annotation
+> Right Support
+> Right Han d
+> Left Support
+> Left Han dFigure 2. Illustration of a partial Laban score. This figure provides a visual explanation of the annotation process for a forward walk movement.
+
+Here, we explain how to read a Laban score and introduce the annotation protocol, enabling readers to quickly grasp its essential principles. Labanotation applies specific constraints and simplifica-tions to the symbol sequence for improved human readabil-ity, resulting in a set of visualization rules: 1. Columns that are not of primary interest may be left blank, allowing dancers/performers interpretive freedom for unspecified movements. For example, if a choreogra-pher wishes to focus on a jump, the lower body columns (Left support and Right support) contain relevant sym-bols, while arm-related columns may be left empty, giv-ing the dancer creative liberty for the upper body. 2. For the Left Support and Right Support columns, a sym-bol present in one column at a particular time typically means the corresponding position in the other column is left empty. 3. Direction and Level symbols are combined for simplic-ity. 4. A new Laban symbol appears in a column only when it differs from the preceding symbol; otherwise, it is omit-ted for clarity and conciseness. For further clarity, Fig. 2 presents a partial Laban score representing a forward walk. In this example, the Laban staff consists of four columns, from left to right: Left hand, Left support, Right support, and Right hand. This score ab-stracts a complex motion sequence into a concise sequence using only four types of symbols: Level “Mi.”; and Direc-tion “M/F”, “M/M”, and “M/B”. Throughout the walking sequence, the initial state—both feet together and hands naturally lowered—is represented as Direction “M/M” with Level “Mi.” in all four columns. The left foot then steps forward accompanied by a backward swing of the right arm, which is recorded as a forward-medium symbol set (Direc-tion “M/F” and Level “Mi.”) in the support column, and a backward symbol set (Direction “M/B” and Level “Mi.”) in the hand column. In the final state, the left foot continues forward (Direction M/F and Level “Mi.”), while the right foot remains behind. 
+
+1.2. LabanLite: A Motion Representation En-hanced over Labanotation 
+
+As discussed in the main paper, to enhance suitability for digital encoding and facilitate composition by large lan-guage models (LLMs) in subsequent processes, we intro-duce LabanLite. LabanLite preserves the expressive power of Labanotation while providing three key enhancements: 1. Symbol classification : Symbols are classified as either 
+
+conceptual (representing the primary movement struc-ture) or detailed (specifying fine-grained attributes); 2. Frame-wise annotation : The event-wise annotation of Labanotation is replaced by frame-wise annotation. Each symbol is converted into a Laban instance at ev-ery frame, and staff columns are redefined as body-part groups with dedicated attribute fields ;3. Structured description : Each conceptual symbol is accompanied by a strictly formatted textual de-scription (i.e., <body-part group> <moving semantic> in <time> seconds ) termed Con-ceptual Description . This standardization enables unambiguous conversion from symbolic event-wise annotations to frame-wise instances via direct textual mapping. In the following, we first introduce the definitions of con-ceptual and detailed symbols (Sec. 1.2.1). Next, we de-scribe frame-wise annotation in LabanLite, including Laban instances and their attribute fields within body-part groups (Sec. 1.2.2). We then explain the conversion process from event-wise symbol sequences to frame-wise instance se-quences (Sec. 1.2.3). Finally, we introduce the Conceptual Description and detail the construction of the Conceptual Description database (Sec. 1.2.4). 
+
+1.2.1. Conceptual and Detailed Laban Symbols 
+
+In LabanLite, Laban symbols are categorized into two types: • Conceptual symbols (Direction, Level, Hold ): Describe general movement concepts and the structural aspects of motion; • Detailed symbols (Orientation, Bend, Moving-effort ): Capture subtle details of individual body part movements. Tables 9, 10, 11, 12, 13, and 14 show the names, graphi-cal appearances, and partial semantic meanings of Laban symbols: Direction, Level, Hold, Orientation, Bend, and Moving-effort, respectively. We refer to the semantic mean-ings as “partial” because the full meaning of a symbol de-12 M/ F 
+
+> Mi Lo Lo
+> M/F
+> Mi
+> M/B M/ F
+> Mi
+> M/ FM/F
+> Mi
+> M/F
+> Mi
+
+Time 
+
+> Lo
+> M/F
+> Mi
+> M/B
+
+Right support 
+
+Right leg Gesture       
+
+> Dir.
+> Level
+> Hold 101110001
+
+Attribute 
+
+field Body -Part 
+
+Group 
+
+⋯
+
+Staff 
+
+column 
+
+Laban instance 
+
+> t0t1t2t3t4t5t6t7t8
+
+Figure 3. Illustration of the relationships among Body-Part Groups, attribute fields, Laban staff columns, and Laban instances. 
+
+pends on additional factors such as the body-part group, its duration (length), and its specific position on the Laban staff. Additionally, for the “M/F” and “M/B” symbols in the Direction category, each typically has two graphical forms. The specific form is determined by the staff column (i.e., body part): for example, if the “M/F” symbol is placed in the “Left hand” column, the left-facing form is used; in the “Right hand” column, the right-facing form is used. 
+
+1.2.2. Body-Part Group and Movement Attributes 
+
+LabanLite extends the definition of staff columns from La-banotation by introducing body-part groups. Each column now represents a body-part group associated with a set of movement attributes, corresponding to specific sets of La-ban symbols. Importantly, a single body-part group may be repre-sented by multiple staff columns since a group can include multiple body parts, each with distinct attributes and cor-responding Laban symbols. This design reflects the con-straints of human kinematics—not every body part pos-sesses the same attribute fields. For example, the Level symbol is not applicable to the head column, as the head cannot independently move to arbitrary heights; thus, the Head does not have the Level attribute. This design enables simultaneous recording of both con-ceptual and detailed movement information. Detailed defi-nitions of body-part groups and their attributes are provided in Table 15. For greater clarity, consider the movement “wave left hand.” The relevant body-part group is “Upper-L,” which includes the “Left arm” and “Left hand” staff columns. The Direction, Level, and Hold symbols are assigned to the “Left hand” column to indicate the high-level movement concept (e.g., raising up the left arm), while the Bend sym-bol is placed on the “Left arm” column to capture lower-level movement details (e.g., flexing and stretching the left arm). Both symbols are assigned to the body-part group “Upper-L”. Time                                   
+
+> (a) Key frames of a “Walk and then jump” motion
+> (b) A human -interpretable Laban symbol sequence
+> Dir.
+> Level
+> Right support
+> Left support
+> Dir.
+> Level
+> M/F M/ FM/B M/ FM/B M/ FM/ FM/F M/B M/F M/F M/B M/B M/B M/B M/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/F M/F M/F
+> Lo Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Lo Lo Lo Lo Mi Mi Mi Mi Mi Lo Lo Lo
+> Lo Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Lo Lo Lo Mi Lo Lo Mi Mi Mi Mi Mi Mi Lo Lo
+> M/ FM/B M/ FM/ FM/ FM/ FM/ FM/ FM/F M/B M/ FM/F M/B M/ FM/B M/B M/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ F
+> 1111111000011100011100000111
+> 1110001111110001011100000011
+> Hold
+> Hold
+> Right support
+> Left support
+> (c) A computational -ready Laban instance sequence
+
+Figure 4. Visual comparison between a human-interpretable sym-bol sequence and a computational-ready instance sequence. The illustrated Laban staff columns correspond to Left support and Right support. 
+
+1.2.3. Symbol Instantiation: From Event-wise to Frame-wise 
+
+Traditional Labanotation is fundamentally an event-wise annotation and motion analysis system: a placed Laban symbol indicates the corresponding body part’s movement, along with its onset and duration. However, modeling temporal coordination across multiple body parts becomes challenging with event-wise symbol sequences. This is be-cause symbols with differing onset times and durations cre-ate asynchronous event streams that are difficult to align and analyze together, limiting their suitability for computation-driven tasks such as automatic decoding or generation. To make the symbol sequence computationally tractable, we define a Laban instance as a unique pairing of a symbol and a Body-Part Group at a specific frame. This enables a frame-wise annotation, where explicit values are assigned to every attribute for each body-part group in every frame. The relationships among Laban symbols, staff columns, Laban instances, and Body-Part Groups are illustrated in Fig. 3. Specifically, as described in the main paper, the instanti-ation process is formulated as follows. Given an input mo-tion sequence of T frames, X = {xt}Tt=1 , we propose an Automatic Symbol Detection Workflow F, which converts 
+
+X into a sequence of instances S = F(X), where: 
+
+S = {si,j t | t ∈ [1 , T ], i ∈ [1 , A j ] j ∈ [1 , G ]}. (3) Here, G denotes the total number of Body-Part Groups, and Aj represents the attribute field dimension for Group 
+
+j. Note that different Body-Part Groups may be associated with distinct sets of motion attribute fields, due to variations in their movement ranges and functional roles. 13 Discussion: Human-Interpretable vs. Computational-Ready. As previously discussed, Labanotation applies specific rules and simplifications to improve human read-ability, often leaving columns or time intervals blank to keep the score clear and concise. In contrast, computa-tional applications such as decoding motion from Laban codes (described in Sec. 3.1.2 of the main paper) or gen-erating new codes require instantiating every symbol at ev-ery frame—ensuring each attribute field for every Body-Part Group has an explicit, unambiguous value, without omissions .To address these needs, we introduce the concept of 
+
+Laban instances , which makes the Laban symbol se-quence fully dense and computationally ready. Fig. 4 compares human-interpretable event-wise sequences and computational-ready frame-wise Laban instance sequences for lower body movement, highlighting the differences be-tween a traditional Laban score and our proposed approach. 
+
+1.2.4. Conceptual Description and Conceptual Descrip-tion Database 
+
+As defined in the main paper (Sec. 3.1.1), a concep-tual symbol can be mapped to a Conceptual Descrip-tion with the format “ <body-part group> <moving semantic> in <time> seconds ”. We maintain a Conceptual Description database to enable LLMs to com-pose motion plans at the conceptual level via retrieval-augmented prompting (Sec. 3.3.1). Table 16 and Table 17 provide definitions for Concep-tual Descriptions. Taking the support body-part group as an example, “Support-L” represents the left support and “Support-R” represents the right support; here, we focus on the right support. The moving semantics for this group are defined in Table 16, such as “steps to right.” Through the Automatic Laban Code Detection Workflow, we can ob-tain the duration of this movement (e.g., 2 seconds). Thus, the corresponding Conceptual Description is “ Support Right steps to right in 2 seconds ”. This description can be unambiguously mapped back to its conceptual symbol, providing LLMs with an explicit in-terface to interpret and synthesize motion. By modifying the conceptual description, LLMs can alter the correspond-ing Laban symbols and thereby revise the motion plan. Ow-ing to the standardized format of conceptual descriptions, these mappings are precise and facilitate effective symbolic motion synthesis from textual input. In this supplementary material, Sec. 5.3.1 presents examples of LLM-edited con-ceptual results, illustrating two key capabilities: (1) LLMs can edit existing conceptual symbols while preserving the temporal structure, and (2) even when provided with am-biguous descriptions, LLMs are able to compose symbols that closely align with the user’s intended meaning. Time                                 
+
+> (a) Key frames of a “Walk and then jump” motion
+> (c) Stage 2: Frame -wise Symbol Extraction
+> Dir.
+> Level
+> Right foot
+> Left foot
+> Dir.
+> Level
+> Time
+> M/F M/ FM/B M/ FM/B M/ FM/ FM/F M/B M/F M/F M/B M/B M/B M/B M/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/F M/F M/F
+> Lo Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Lo Lo Lo Lo Mi Mi Mi Mi Mi Lo Lo Lo
+> Lo Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Mi Lo Lo Lo Mi Lo Lo Mi Mi Mi Mi Mi Mi Lo Lo
+> M/ FM/B M/ FM/ FM/ FM/ FM/ FM/ FM/F M/B M/ FM/F M/B M/ FM/B M/B M/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ FM/ F
+> : Hold frame
+> : Dynamic frame
+> (b) Stage 1: Dynamic Interval Detection
+> Right foot
+> Time
+> Left foot
+> (d) Stage 3: Interval -wise Symbol Aggregation
+> Dir.
+> Level
+> Right foot
+> Left foot
+> Dir.
+> Level
+> Time M/ F
+> Mi Lo
+> M/ F
+> Lo
+> Lo
+> M/F
+> M/ FM/B
+> Mi
+> M/B
+> Mi
+> M/B
+> Mi
+> M/ F
+> Lo
+> Mi
+> M/ F
+> M/F
+> M/F
+> Mi
+> Mi
+> M/F
+> Mi
+> M/F
+> Mi
+> M/F
+> Lo
+> : Hold event
+> : Dynamic event
+> Lo
+> M/F
+> Mi
+> M/B
+
+Figure 5. Illustration of extracting lower-body conceptual sym-bols: (a) Given a motion sequence; (b) we segment the sequence into dynamic and hold intervals by computing foot velocity; (c) in parallel, frame-wise Laban symbols are identified; (d) for each interval, aggregated frame-wise symbols yield the most represen-tative symbol for the interval. 
+
+2. Automatic Laban Code Detection Workflow 
+
+As described in the main paper, the proposed workflow con-sists of three steps: (1) Dynamic Interval Segmentation, which identifies dynamic and hold intervals; (2) Frame-wise Symbol Extraction, which converts the pose of each frame into corresponding Laban symbols; and (3) Interval-wise Symbol Aggregation, which selects the most representative Laban symbol for each interval. As illustrated in Fig. 5, we demonstrate an example of the lower body symbol detec-tion process. Here, we provide a detailed formulation of the Frame-wise Symbol Extraction step, including the associ-ated predefined thresholds. Specifically, all motion sequences are parameterised us-ing the SMPL model [24] without facial and finger key joints. Key joints such as the left/right hand, elbow, shoul-der, hip, knee, foot, pelvis, and spine2 are extracted to com-pute the corresponding Laban symbol sequences. 
+
+2.1. Details of Frame-wise Symbol Extraction 
+
+Direction and Level symbols. To ensure consistency, all body motions are transformed into a canonical space. This is achieved by fixing the root (pelvis) of each pose at the origin, aligning the triangular plane formed by the pelvis, right leg, and left leg key joints with the xz-plane, and ori-enting the body to face the negative y-axis. For each key joint (left/right hand, elbow, foot, knee), the L2-norm dis-tance to the pelvis is projected onto the x, y, and z planes, denoted as a, b, and c, respectively. These projected dis-14 tances are compared against predefined thresholds to assign Direction and Level symbols for different body part groups (Support-L, Support-R, Upper-R, Upper-L). For the lower body, the thresholds are as follows: • Direction (x-axis): a < −0.1 is assigned “R”; a > 0.3 is “L”; otherwise, “M”. • Direction (y-axis): b < −0.15 is “F”; b > −0.05 is “B”; otherwise, “M”. • Level (z-axis): 0 > c > −0.8 is “Lo.”; c > 0 is “Hi.”; otherwise, “Mi.”. For the upper body: • Direction (x-axis): a < −0.1 is “R”; a > 0.3 is “L”; otherwise, “M”. • Direction (y-axis): b < −0.2 is “F”; b > 0.1 is “B”; otherwise, “M”. • Level (z-axis): c < −0.2 is “Lo.”; c > 0.1 is “Hi.”; oth-erwise, “Mi.”. Figure 6 illustrates the distance calculation for the left hand as an example. 
+
+Hold symbol. The velocity magnitude of each hand and foot is analysed. Local maxima in the x, y, and z velocity components are identified to determine the turning points of the wrist’s three-dimensional trajectory. Frames in which the velocity falls below a predefined threshold are labelled as “hold”. The threshold is set to 0.015 for the feet and 0.0005 for the hands. 
+
+Bend symbol. Euler angles between adjacent body seg-ments are computed and discretised into six intervals, each spanning 30 ◦.
+
+Orientation symbol. The facing orientation is deter-mined by calculating the angle between the line connecting the hip key joints and the negative y-axis. The resulting an-gle is quantised into eight discrete directions, each spanning 
+
+45 ◦.
+
+Moving-effort symbol. The global absolute velocity of the pelvis is computed and discretised using predefined in-tervals. The velocity components on the xy - and yz -planes are assigned to one of five speed categories: 0 (very slow), 1 (slow), 2 (normal), 3 (fast), and 4 (very fast), according to the following rules: For both horizontal and vertical veloc-ity components: • 0.1 < v ≤ 0.5: label 1; • 0.5 < v ≤ 1.0: label 2; • 1.0 < v ≤ 2.0: label 3; • v > 2.0: label 4; • v ≤ 0.1: label 0. Z+ 
+
+> Y-
+> X+
+> Y-
+> b
+> a
+> b
+> c
+> Figure 6. Illustration of extracting Direction and Level symbols for the right hand, in a canonical space.
+
+3. Details of Laban Benchmark 
+
+3.1. Laban Metrics 
+
+Given the ground-truth Laban instance sequence S and the generated Laban instance sequence ˆS, the proposed three metrics, including Semantic Alignment (SMT), Temporal Alignment (TMP) and Harmonious Alignment (HMN), cal-culate the similarity between S and ˆS using the Longest Common Subsequence (LCS) length. Specifically, for SMT and TMP, we measure the Left/Right hand and foot body parts, while for HMN, we measure the body part pairs of [Left hand, Right hand], [Left foot, Right foot], [Left hand, Left foot], [Left hand, Right foot], [Right hand, Left foot], and [Right hand, Right foot]. In the main paper, we report the average HMN scores of [Left hand, Left foot], [Left hand, Right foot], [Right hand, Left foot], and [Right hand, Right foot] pairs due to the table scale limit. Based on Eq. 3, a Laban instance sequence is defined by 
+
+S = {si,j t } where t, i, j denote the frame index, attribute index, and Body-Part Group index, respectively. We com-bine the same attribute from each Body-Part Group across frames to form a duration-ignored Laban instance sequence 
+
+˜S:
+
+˜S = {˜si,j n | n ∈ [1 , N i,j ], i ∈ [1 , A j ] j ∈ [1 , G ]}, (4) where n denote the duration-ignored Laban instance index and Ni,j represents the total instance number of i-th at-tribute and j-th Body-Part Group. To calculate the selected body part’s Laban metric, we fix the attribute index and Body-Part Group index, considering the subset Si⋆,j ⋆ = {si⋆,j ⋆ 
+
+> t
+
+| t ∈ [1 , T ]} and the duration-ignored subset ˜Si⋆,j ⋆ = {˜si⋆,j ⋆ 
+
+> n
+
+| n ∈ [1 , N i,j ]}.
+
+Semantic Alignment (SMT) evaluates the similarity of inter-body part Laban instances while disregarding their du-rations. Given an attribute index-fixed, Body-Part Group-fixed duration-ignored subset ˜Si⋆,j ⋆ and its generation 
+
+ˆ˜Si⋆,j ⋆ , we formulate the LCS, computing under dynamic 15 programming as follows: 
+
+f (u, v ) = 
+
+
+
+0 if u = 0 or v = 0 ,f (u − 1, v − 1) + 1 if ˜si⋆,j ⋆ 
+
+> u
+
+= ˆ ˜si⋆,j ⋆ 
+
+> v
+
+,
+
+max( f (u − 1, v ), f (u, v − 1)) otherwise ,
+
+(5) Where u and v denote the index of the duration-ignored La-ban instance sequence, i.e., u, v ∈ Ni⋆,j ⋆ . Such that, the SMT between ˜Si⋆,j ⋆ and ˆ˜Si⋆,j ⋆ is calculated by the nor-malised length of the LCS: 
+
+Sim SMT ( ˜Si⋆,j ⋆ , ˆ˜Si⋆,j ⋆ ) = f (Ni⋆,j ⋆ , ˆNi⋆,j ⋆ )max( Ni⋆,j ⋆ , ˆNi⋆,j ⋆ ) . (6) 
+
+Temporal Alignment (TMP) evaluates the similarity of each inter-body-part Laban instance while considering each symbol’s duration, to ensure that not only the types but also the temporal extents of the motions are consistent between the ground truth and the generated sequence. To account for the duration of each symbol, the inputs are changed to Laban instance sequences Si⋆,j ⋆ and ˆSi⋆,j ⋆ , and we modify Eq. 5 as: 
+
+g(u, v ) = 
+
+
+
+0 if u = 0 or v = 0 ,g(u − 1, v − 1) + 1 if si⋆,j ⋆ 
+
+> u
+
+= ˆ si⋆,j ⋆ 
+
+> v
+
+,
+
+max( g(u − 1, v ), g (u, v − 1)) otherwise ,
+
+(7) where u and v denote the frame index, i.e., u, v ∈ T . The Temporal Alignment score is then: 
+
+Sim TMP (Si⋆,j ⋆ , ˆSi⋆,j ⋆ ) = g(T, ˆT )max( T, ˆT ) . (8) 
+
+Harmonious Alignment (HMN) evaluates the syn-chronous occurrence of Laban symbols across pairs of body parts. Given a body part pair specified by [( i1, j 1), (i2, j 2)] ,and their corresponding duration-ignored Laban instance sequences ˜Si1,j 1 , ˜Si2,j 2 for the ground truth, and ˆ˜Si1,j 1 and 
+
+ˆ˜Si2,j 2 for the generated motion, we proceed as follows. For each instance ˜si1,j 1 
+
+> u
+
+∈ ˜Si1,j 1 , where 1 ≤ u ≤ Ni1,j 1 , we identify the instance ˜si2,j 2 
+
+> v
+
+∈ ˜Si2,j 2 , where 1 ≤ v ≤ Ni2,j 2 ,whose temporal span overlaps with ˜si1,j 1 
+
+> u
+
+. If the intersec-tion over union of their durations exceeds 50%, we con-sider ˜si1,j 1 
+
+> u
+
+and ˜si2,j 2 
+
+> v
+
+to occur synchronously. These syn-chronously occurring symbol pairs are collected into a se-quence of combined symbol tuples, denoted by Sj1,j 2 =
+
+{(˜ si1,j 1 
+
+> u
+
+, ˜si2,j 2 
+
+> v
+
+)}, and similarly for the generated sequence 
+
+ˆSj1,j 2 . Finally, the HMN similarity is computed as: 
+
+Sim HMN (Sj1,j 2 , ˆSj1,j 2 ) = Sim SMT (Sj1,j 2 , ˆSj1,j 2 ). (9) walk , 2276              
+
+> run ,224
+> jump ,248
+> walk ,1956
+> step ,320
+> run ,130
+> sprint ,8
+> jog ,86 jump ,194 hop ,46
+> skip ,4
+> leap ,4
+
+## (a) LLM -planned motions 
+
+Figure 7. Distribution of action classes in the HumanML3D-Laban dataset. 
+
+Figure 8. Distribution of the number of frames per motion se-quence in the HumanML3D-Laban dataset. 
+
+Figure 9. WordCloud of the most frequent words in the HumanML3D-Laban descriptions, generated using the Python package wordcloud [23]. 
+
+3.2. HumanML3D-Laban: Motion-Laban-Text Paired Dataset 
+
+This section presents the construction and characteristics of our HumanML3D-Laban dataset, including statistics on motion lengths, instructional text descriptions, and exam-ples of text-motion pairs. Motion sequences were selected from the HumanML3D [8] dataset, covering mostly loco-16 motions such as walking, running, stepping, and jumping. Following the annotation approach of BABEL-TEACH [2], these actions were further decomposed into atomic actions and annotated accordingly. 
+
+Semi-automatic Annotation. The annotation process was conducted in a semi-automatic manner. Initially, we manually inspected rendered HumanML3D motion se-quences to extract detailed motion information, such as the number of steps, their body part sequence, and the action label (e.g., Walk forward: a three-step walk with the order: right, left, right). These details were stored in a JSON for-mat with keys including “step number,” “step order,” and “action label.” Subsequently, we utilised GPT-4.1 [1] to generate natural language descriptions by integrating the motion details. The prompt used for this step is shown in the second entry of Table 8. Finally, we paired the rephrased instructional text descriptions with their corre-sponding motions, forming the motion-laban-text pairs of the HumanML3D-Laban dataset. In accordance with the HumanML3D [8] evaluation protocol, we restricted the mo-tion sequence lengths to between 40 and 200 frames. 
+
+Examples of motion details and motion-laban-text pairs. 
+
+In the supplementary materials, we provide the complete set of instructional text descriptions that have been rephrased by an LLM. Specifically, within the “annotations” folder, each text file corresponds to a single motion instance and contains its associated instructional text description. For each motion instance, we used GPT-4.1 to generate five dis-tinct rephrasings of the description, resulting in five differ-ent annotations per text file. 
+
+Statistics. Following the procedure in Guo et al. [8], all HumanML3D motion sequences were downsampled from 120 FPS to 20 FPS. We further filtered out motion se-quences with fewer than 40 or more than 200 frames. As a result, the final dataset comprises 2,748 text-motion pairs, corresponding to approximately 18 hours of human motion data. Fig 7 illustrates the distribution of action labels, while Fig. 8 shows the distribution of frame lengths. Fig. 9 pro-vides an overview of the most frequent words in the instruc-tional text descriptions, drawn from a vocabulary of 1,220 unique words. 
+
+4. Experiment Details 
+
+4.1. Implementation Details 
+
+Network Architecture. For the Laban-Motion Encoder-Decoder, the Encoder operates as a rule-based, non-learning process, while the Decoder is implemented as a conven-tional Transformer-based decoder. The Decoder incorpo-rates standard Attention modules [30], including Multi- 
+
+> Table 1. The detailed structure of the Decoder in the Laban-Motion Encoder-Decoder module.
+
+Encoder Num. In Dim. 512 Feat. Dim. 512 Depth 8Head 8Head Dim. 64 FFN Dim. 1024 Out Dim. 512 headed Self-Attention blocks (MSAs), and Feed-Forward Network blocks (FFNs), with Layernorm (LN) applied be-fore each module. The detailed architecture of the De-coder is summarised in Table 1, where “Head” and “Head Dim.” refer to the number of attention heads and the dimen-sionality of the features in the MSA blocks, respectively. For the Motion Generator, we adopt the configuration from Huang et al. [10], Zhang et al. [35] for the Motion Gen-erator. Specifically, a linear layer first projects the Laban code sequences, after which positional encoding is applied. The resulting sequence is then processed by a decoder-only Transformer comprising causal self-attention blocks. 
+
+Training settings. The Decoder and Generator are trained with AdamW optimiser (learning rate 1 × 10 −4, batch size 512). The Decoder is trained for 200k iterations, and the Generator is trained for 100k iterations. All experiments are conducted on a workstation equipped with 1 Intel Xeon Gold 6438Y+ CPU and 1 NVIDIA L40 GPU. We select the checkpoint with the lowest FID on validation for final evaluation. 
+
+Testing-time settings. Recall that, during all testing-time inference procedures, the first stage of our generation framework utilizes an LLM to compose motion plans at the conceptual level via retrieval-augmented prompting (see Sec. 3.3.1 in the main paper). Specifically, the retrieval pool exclusively consists of motion-Laban annotations from the training set; no Laban information from the evaluation set is disclosed to the LLMs. Consequently, at evaluation, the sequences of conceptual symbols are generated entirely by the LLM, relying solely on the motion information and tex-tual descriptions provided in the training set, as well as user input textual descriptions. The LLM then reasons over the alignment between textual concepts and symbolic motion patterns to generate a novel sequence of conceptual sym-bols based on the input text. 17 Hyperparameters. We adopt the motion feature extrac-tor [8] to convert HumanML3D-Laban, HumanML3D, and KIT-ML motions into features of dimensions 263, 263, and 261. HumanML3D-Laban and HumanML3D share the same evaluator to get text and motion embeddings. Fol-lowing [35], we set λ = 0 .5. Laban codebook contains 37 Laban categories and 158 distinct codes, with a size of 158 × 512 . We employ two commercial LLM mod-els named GPT-4 mini ( gpt-4.1-mini-2025-04-14 )and GPT-4 ( gpt-4.1-2025-04-14 ) from Achiam et al. [1], two open-source LLM models named Qwen3 ( qwen3-32b ) from Yang et al. [33] and DeepSeekV3 ( deepseek-v3 )from DeepSeek-AI [6] for composition. We use CLIP [26] (ViT-B/32 ) for text encoding. 
+
+4.2. Related to Large Language Models 
+
+In the main paper, LLMs are utilised to: (1) autonomously plan and compose Laban code sequences through explicit and interpretable symbolic reasoning (Sec. 4.2.1); and (2) semi-automatically generate instructional text descrip-tions for the HumanML3D-Laban dataset during annotation (Sec. 4.2.2). Here, we provide a detailed explanation of the procedures for using LLMs in Laban code sequences com-position. 
+
+4.2.1. High-level Symbolic Motion Planning 
+
+Recall that we utilize LLMs to compose conceptual Laban symbol sequences through retrieval-augmented prompting for high-level symbolic motion planning. Specifically, the retrieved references (from the Conceptual Description database) describe motions using sequential Conceptual Descriptions (CDs) (Sec. 3.1.1 in the main paper). By se-mantically understanding these CDs and imitating their ex-pression forms, LLMs are able to compose new CDs tai-lored to the target textual descriptions. According to the characteristics of LabanLite, the composed CDs can be un-ambiguously converted to Laban instances, which are then mapped to Laban codes (Sec. 3.1.2 in the main paper), and ultimately generate the corresponding motions via our LLM-Guided Text-Laban-Motion Generator (Sec. 3.3 in the main paper). Below, we detail the prompt design used for LLM-based symbolic motion composition. Examples of LLM outputs are provided in Sec. 5.3.1 of this supplemen-tary material. The prompt consists of the following components (as formulated in Table 8): (1) the structure definition of the retrieved CD references, (2) the definition of the CD struc-ture, (3) several retrieved CD references, (4) the target tex-tual description from user input. 
+
+Structure Definition of Retrieved CD References. We first define the format of the retrieved CD references. Each reference comprises [number] , [Caption] ,
+
+[Support] , [Left hand] , and [Right hand] .Here, [number] indicates the reference index, [Caption] 
+
+provides a high-level semantic description of the motion, and [Support] , [Left hand] , and [Right hand] 
+
+respectively detail the motions of specific body parts, each in CD format. 
+
+Definition of CDs. We then specify the format for CDs as “ <body-part group> <moving semantic> in 
+
+<time> seconds”, along with the complete set of possi-ble CDs. This ensures that the LLM selects from a pre-defined set rather than inventing new CDs, which could hinder the downstream generation process. To optimize LLM token usage, we simplify the representation by in-troducing two lookup tables (see Table 16 and Table 17) for lower and upper human bodies, and use integer in-dices to denote CDs. With this approach, the LLM out-puts the integer indices rather than full text, adhering strictly to the simplified CD definitions. Consequently, the output CDs are presented in the form “ (right, 2, 0.25) ”, indicating <body-part group> , <moving semantic> , and <time> , respectively. 
+
+Retrieved CD References. Following the above CD def-inition, the simplified retrieved CD references are provided to the LLM. 
+
+Target Textual Description. Finally, the user’s target tex-tual description for the desired motion is also added to the prompt. The LLM composes the new motion by leverag-ing the high-level caption and the motion details from the retrieved CD references, along with the user’s textual input. 
+
+4.2.2. Generate Texts for Laban Benchmark 
+
+In our Laban benchmark (Sec. 4 of the main paper), we con-struct a paired dataset comprising motion, Laban symbols, and textual instructional descriptions. Each data entry con-sists of: (1) a motion sequence, (2) its corresponding se-quence of Laban symbols, and (3) a textual instructional de-scription. The instructional texts are generated via a semi-automated annotation process. To create these instructional descriptions, we first manu-ally review the rendered SMPL motion videos and annotate critical motion details, including step count, step sequence, and action labels for each motion. These annotated mo-tion details are then provided as input to an LLM (GPT4.1), which generates natural language instructional descriptions for each motion instance. As illustrated in Table 8 (Prompt #2), the LLM translates the annotated details into instruc-tional text. For reproducibility and robustness evaluation, the LLM generates five instructional descriptions for each motion. All instructional texts produced by the LLM for 18 Figure 10. Illustration of the user study form. LaMoGen   
+
+> 48%
+> CoMo
+> 31%
+> ReMoDiff
+> 21%
+> LaMoGen CoMo ReMoDiff
+
+Figure 11. Illustration of the user study result. 
+
+the HumanML3D-Laban dataset are included in the supple-mentary material. 
+
+5. Experimental Results 
+
+5.1. User Study 
+
+We conducted a user study to evaluate the motion gen-eration quality of LaMoGen (configured with GPT-4.1) in comparison with two state-of-the-art models for fine-grained text-to-motion generation: ReMoDiff [36] and CoMo [10]. Fifteen examples were randomly selected from the HumanML3D test set and rendered into video se-quences. For each example, the results from LaMoGen, CoMo, and ReMoDiff were arranged side by side in a ran-domly determined order, forming a video triplet. A total of 35 graduate students participated in the eval-uation. Each participant was presented with all 15 video triplets and was asked to rank the three generated motions in each triplet as best, second-best, and worst, based on how well they matched the provided instructions, as shown in 
+
+Table 2. Quantitative comparison for LLM usage cost. The ap-proximate token count per motion sequence for generation and modification is reported. Method LLM-related Procedure Objective ∼Token Count (k) CoMo [10] Decompose Texts Generate 6.5 Identify frames Edit 51 Identify body parts and edit Edit 53 Total 110.5 LaMoGen Compose CDs Generate 5Modify CDs Edit 5Total 10 
+
+Fig. 10. Each ranking position was assigned to exactly one method, ensuring mutual exclusivity. 
+
+Statistical Analysis. For quantitative analysis, we as-signed scores of 3, 2, and 1 to the best, second-best, and worst rankings, respectively. The average scores for each method across all motion sequences are presented in Fig. 11. Higher scores indicate stronger user preference. As shown in Fig.11, LaMoGen achieves the highest av-erage user preference, followed by CoMo and ReMoDiff. Nearly half of the participants favoured motions generated by LaMoGen, indicating that our method provides superior text-motion alignment. To determine whether the observed differences in user preferences among the three methods are statistically sig-nificant, we performed a Friedman test. The results indicate a significant difference in user preference ( χ2 = 387 .380 ,
+
+p < 0.05 ). Further analysis of the mean ranks demonstrates that LaMoGen achieves the highest mean rank (mean rank = 2.80), followed by CoMo (mean rank = 1.733) and Re-MoDiff (mean rank = 1.457). These results suggest that participants consistently preferred LaMoGen over the other methods, with CoMo ranked second and ReMoDiff ranked last. 
+
+5.2. Quantitative Comparisons 
+
+5.2.1. LLM Usage Cost 
+
+We report the approximate token count utilized in LLM-based symbolic motion planning per motion sequence. We also compare our approach against CoMo [10], a related work that utilizes LLMs for motion generation, in terms of average token count. We reimplement the prompts de-scribed in the original paper of CoMo. We estimate the count using OpenAI’s token Calculator with GPT4.1. As shown in Table 2, our approach requires fewer tokens, in-dicating lower LLM demand and computational cost. This demonstrates more efficient LLM utilization. 19 Discussion. CoMo quantizes motion at only the pose level, resulting in a 392-code codebook. Each pose is en-coded as a combination of body-part codes via the Pos-eScript [7] technique. In CoMo, there are two situations that require LLMs: (1) CoMo generates detailed textual descriptions of target motions; (2) CoMo enables users to edit motions using LLMs. During motion editing, CoMo requires LLM selection and modification from 392 pose codes, which consumes a large number of tokens, making LLM-based editing less efficient and cost-effective. In contrast, our framework quantizes motions in both pose and temporal domains. Specifically, LabanLite de-fines 158 Laban codes based on Labanotation and further quantizes each sub-action in the temporal dimension, re-sulting in a more compact representation. Moreover, our proposed LaMoGen framework utilizes a two-level design that unifies high-level LLM-driven symbolic planning with low-level motion synthesis: LLMs are employed solely at the high-level composition stage, while a trained generator is used for low-level motion completion. This design sub-stantially reduces LLM token consumption and operational cost. Furthermore, during editing, unlike CoMo, which re-quires two separate LLM requests—one to identify frames that need modification and another to select and manipu-late the corresponding body parts—LaMoGen enables di-rect modification in a single step. This is made possible by LabanLite’s dual quantization in both the pose and tem-poral domains, allowing LLMs to directly edit sub-actions for each main body part rather than performing frame-wise and part-wise modifications as in CoMo. Therefore, our framework enables scalable, efficient motion planning while maintaining expressiveness and editability. To summarize, this unique framework not only improves LLM token efficiency but also facilitates faster planning, reduces monetary cost, and makes large-scale deployment more feasible. 
+
+5.2.2. Inference Time 
+
+We follow the previous work [10] to assess the infer-ence time using the Average Inference Time per Sentence (AITS). AITS measures the time (in seconds) to generate one motion sequence (not including model loading, dataset preparation, or LLM composition time). We compare our framework against CoMo, where CoMo has a similar archi-tecture, on the HumanML3D test set. As shown in Table 5, our approach achieves a lower time cost, demonstrating the compactness of our Laban codebook and the effectiveness of our LaMoGen framework. 
+
+5.2.3. Generation Performance on HumanML3D 
+
+Table 3 reports the performance results using Laban metrics as well as conventional metrics (R-precision at Top-3, R@3, and FID) on the HumanML3D test set. Consistent with the main paper, we evaluate our model under four high-level composer conditions: (1) None , where motion generation is conditioned only on the input text, serving as a baseline for text comprehension; (2) two LLM composers ( GPT4.1mini 
+
+and GPT4.1 ), where generation is conditioned on both the text and conceptual cues provided by the LLMs; and (3) 
+
+Human , in which conceptual cues are derived from ground-truth annotations to simulate human composition. We also report the decoded results from ground truth, denoted as 
+
+LaMoGen (Dec) , where both conceptual and detailed La-ban codes are provided to the decoder to indicate the upper bound of decoding performance. Please note: the composer composes conceptual symbols, and the generator generates details symbols. The decoder decodes the combination of conceptual and detail codes. 
+
+Although the HumanML3D text descriptions are not strictly instructional—in other words, they are typically de-scriptive and do not precisely specify target motions in terms of step count or timing, the performance in the None 
+
+condition is therefore lower than the baselines. Nevertheless, the use of retrieval-augmented prompting effectively addresses this limitation. For instance, when a user provides a descriptive input such as “a person walks in a circle”, even though this prompt lacks detailed instruc-tions like the number of steps or timing, the Conceptual De-scription database is able to retrieve related motions such as “walk forward” and “turn”. The LLM can then compose these motions to generate a “walk in a circle” sequence. Furthermore, if an exact example like “walks in a circle” exists in the Conceptual Description database, the corre-sponding conceptual description can be retrieved directly, enabling precise motion synthesis. As a result, LaMoGen achieves comparable or superior performance on Laban metrics relative to other methods. 
+
+5.3. Qualitative Results 
+
+5.3.1. Fine-Grained Temporal Structure Modification 
+
+We further evaluate each method’s ability to model fine-grained temporal structure by modifying the input text with both moving context and vague/precise temporal control. Specifically, we compare our approach with CoMo [10] and MotionGPT [12] using the following settings: (1) “Walk forward” as the baseline, (2) “Walk forward slowly” as the vague speed change, and (3) “Walk forward in 5 seconds” as the precise time control. For each case, we also report the conceptual description composed by the LLM that cor-responds to our results (we omit the retrieved conceptual reference, other prompts, and left/right-hand conceptual de-scriptions due to page limitations). Fig. 12 presents the generated motions of our framework alongside those from other compared methods. For our ap-proach, we report the corresponding LLM-composed tex-tual descriptions. We measured the total duration of all gen-20 Table 3. Quantitative comparisons on the HumanML3D test set, using the proposed Labanotation-based metrics: Semantic Alignment (SMT), Temporal Alignment (TMP), and Harmonious Alignment (HMN), along with Text-to-Motion metrics: R-precision Top-3 (R@3) and FID. Bold and underlined values indicate the best and the second-best performance, respectively. 
+
+Method SMT ↑ TMP ↑ HMN ↑ R@3 ↑ FID ↓
+
+supL supR armL armR supL supR armL armR arm-arm arm-sup sup-sup Real data - - - - - - - - - - - 0.797 0.002 LaMoGen (Dec) 0.843 0.843 0.745 0.731 0.848 0.848 0.779 0.765 0.537 0.631 0.842 0.793 0.095 MDM [28] 0.413 0.413 0.276 0.315 0.372 0.372 0.369 0.308 0.177 0.284 0.502 0.611 0.544 ReMoDiff [36] 0.455 0.455 0.348 0.405 0.335 0.405 0.367 0.320 0.179 0.275 0.501 0.795 0.103 
+
+MoDiff [37] 0.482 0.482 0.386 0.360 0.401 0.401 0.388 0.334 0.190 0.299 0.513 0.782 0.630 CoMo [10] 0.463 0.463 0.369 0.401 0.372 0.372 0.393 0.346 0.222 0.321 0.535 0.790 0.262 LaMoGen Composer  None 0.467 0.467 0.353 0.381 0.374 0.374 0.338 0.363 0.218 0.313 0.529 0.755 1.091 GPT4.1mini 0.437 0.437 0.331 0.354 0.517 0.517 0.463 0.445 0.270 0.371 0.561 0.779 0.561 GPT4.1 0.563 0.563 0.433 0.456 0.615 0.615 0.527 0.544 0.302 0.411 0.588 0.796 0.252 Human 0.690 0.690 0.554 0.534 0.712 0.712 0.623 0.608 0.332 0.451 0.617 0.813 0.206 User input:  walk forward           
+
+> [Support]
+> (left, steps forward, 0.5 ),
+> (right, steps forward, 0.5 ),
+> (left, steps forward, 0.65 ),
+> (right, steps forward, 0.5 )
+> +Speed change: slow +Time change: in 5 seconds
+> [Support]
+> (right, steps forward, 0.85 ),
+> (left, steps forward, 0.85 ),
+> (right, steps forward, 0.85 )
+> [Support]
+> (right, steps forward, 0.5),
+> (left, steps forward, 0.5),
+> (right, steps forward, 0.5),
+> (left, steps forward, 0.5),
+> (right, steps forward, 0.5),
+> (left, steps forward, 0.5),
+> (right, steps forward, 0.5),
+> (left, steps forward, 0.5),
+> (right, steps forward, 0.5),
+> (left, steps forward, 0.5),
+
+(a)  LaMoGen , with LLM -composed description 
+
+(b)  MotionGPT 
+
+(c)  CoMo                 
+
+> Last 2.3 s
+> Last 1.0 s Last 3.4 s Last 3.1 s
+> Last 5.2 s Last 2.9 s
+> Last 2.5 s Last 2.6 s Last 2.3 s
+> •Total step number: 2
+> •Estimated average
+> duration of step: 0.5s
+> •Total step number: 5
+> •Estimated average
+> duration of step: 0.6s
+> •Total step number: 7
+> •Estimated average
+> duration of step: 0.5s
+> •Total step number: 6
+> •Estimated average
+> duration of step: 0.4s
+> •Total step number: 6
+> •Estimated average
+> duration of step: 0.4s
+> •Total step number: 3
+> •Estimated average
+> duration of step: 0.8s
+> Similar to normal
+> Faster than normal
+> Shorter than 5s
+> Shorter than 5s
+
+Figure 12. Qualitative comparison on fine-grained temporal structure modification. Left: the baseline motion, condition on “walk forward”. Middle: the motion conditioned on “walk forward slow”. Right: the motion conditioned on “walk forward in 5 seconds”. We highlight the step number and the corresponding duration. We calculate the average step duration to assess the degree of the speed change. 
+
+erated motions and manually selected the keyframes at foot contact to visually indicate the number of steps. This al-lows us to estimate the average duration of each step and thus assess the degree of motion speed change. It can be observed that CoMo and MotionGPT struggle to accurately modify the temporal structure: CoMo does not effectively adjust the motion speed, and both CoMo and MotionGPT are unable to strictly execute motions according to the user-specified duration. In contrast, our framework leverages the compositional capabilities of LLMs to explicitly determine the type and order of sub-actions, as well as to set the duration for each sub-action. For example, in the “Walk forward in 5 sec-onds” scenario, our method generates ten steps, allocat-ing 0.5 seconds to each step to support long-term motion. The LLM will adaptively increase the number of steps as needed in order to fulfill the specified duration require-ment. These results demonstrate that, thanks to the inte-gration of LabanLite and the compositional reasoning capa-bilities of LLMs, our framework offers superior modeling 21 Table 4. Ablation study of different numbers of top-matched ref-erences and masking ratios on the HumanML3D test set. 
+
+Top ref. R@3 ↑ FID ↓ MM-Dist ↓ Multi-Mod. ↑
+
+1 0.755 0.595 3.840 0.954 3 0.796 0.252 3.087 1.131 5 0.782 0.371 3.191 1.030 7 0.774 0.324 3.225 0.971 
+
+Mask rat. R@3 ↑ FID ↓ MM-Dist ↓ Multi-Mod. ↑
+
+0.1 0.789 0.258 3.008 1.092 0.3 0.796 0.252 3.087 1.131 0.5 0.787 0.299 3.211 1.011 0.7 0.772 0.345 3.290 0.992 0.9 0.705 0.457 3.302 0.985 Table 5. Ablation study of different code dimensions on the Hu-manML3D test set. AITS measures the average inference time cost. 
+
+Code Dim R@3 ↑ FID ↓ AITS ↓
+
+CoMo [10] 0.790 0.262 0.58 256 0.759 0.310 0.28 384 0.783 0.295 0.32 512 0.796 0.252 0.45 768 0.802 0.241 0.57 1024 0.804 0.227 0.65 
+
+of fine-grained temporal structure compared to existing ap-proaches. 
+
+5.3.2. Visual Examples of Motion Editing 
+
+We demonstrate the potential of our framework in terms of motion editing capability. Fig. 13 presents examples of edited motions alongside the corresponding conceptual de-scriptions refined by the LLM. The refined part is also high-lighted. As shown, the powerful ability of LLMs to interpret ambiguous instructions and understand dialogue context en-ables our framework to support interactive motion modifi-cation through natural language conversation. This capa-bility, which allows users to intuitively edit motions during dialogue, represents a significant advancement over existing works. 
+
+5.3.3. Additional Comparison Examples 
+
+Additional comparison examples are shown in Fig. 14. From this figure, we can observe that ReMoDiff and CoMo occasionally violate chronological order and struggle to specify movement timings, while our method generates text-aligned motions. Comprehensive video results, includ-ing both successful examples and failure cases, are provided in the supplementary materials. These video results were also utilised in the user study. 
+
+Table 6. Evaluation on Laban Benchmark. †: main paper setting. Method avg. SMT ↑ avg. TMP ↑ avg. HMN ↑ R@3 ↑ FID ↓                          
+
+> Real data ---0.216 0.001 MDM 0.338 0.298 0.201 0.180 22.81 MDM lbn 0.475 0.438 0.271 0.204 1.932 GPT4.1 †0.533 0.501 0.392 0.208 1.861 GPT4.1 ip 0.496 0.467 0.328 0.200 3.408
+
+Table 7. Evaluation on HumanML3D. We examine the impact of varying the number of evenly spaced intervals for the Direction and Level symbols. †: main paper setting. Method R@3 ↑ FID ↓ MM-Dist ↓ Div. → Multi-Mod. ↑ Token Cost (k) ↓                                                 
+
+> Real data 0.797 0.002 2.974 9.503 --MDM 0.611 0.544 5.566 9.559 2.799 -CoMo 0.790 0.262 3.032 9.936 1.013 6.5 Interval  3†0.796 0.252 3.087 9.124 1.131 5.0 50.796 0.198 3.026 9.859 1.360 7.7 70.800 0.184 2.992 9.840 1.413 10.3 BERT 0.801 0.199 3.001 3.409 0.943 5.0 Qwen3-8b 0.770 0.537 3.849 10.432 1.205 5.0
+
+5.4. Ablation Studies 
+
+Due to page limitations, the numerical results of our ab-lation studies are included in the supplementary material, while analyses and conclusions are presented in the main paper. Below, we reiterate the ablation settings together with the corresponding quantitative findings. Additionally, we report the impact of the dimension of codebook entries. 
+
+Number of top-matched references. For LLM-guided conceptual composition, we provide top-matched concep-tual examples to guide the composition of new conceptual codes via LLMs’ retrieval augmentation prompting. We in-vestigate how the number of retrieved examples affects per-formance on the HumanML3D test set using GPT-4.1. As shown in Table 4, increasing the number of examples from 1 to 3 consistently improves performance, indicating that LLMs benefit from sufficient references for accurate imi-tation. However, when increasing the number of examples further (e.g., from 3 to 5 or 7), we do not observe further improvement. This phenomenon is mainly caused by the limitation of the model’s context window — the maximum number of tokens (words, symbols, etc.) that the LLM can process at once. When too many examples are provided, the beginning of the context may be truncated or, even within the window limit, earlier examples may be forgotten due to the model’s recency bias. As a result, LLMs tend to focus more on the most recently presented cues and ignore in-formation from previous examples, thereby diminishing the potential benefit of providing more reference cases. 22 User input:  a person walks forwards  User input:  I want this avatar then sit then  jum p
+
+[Support]  (right,  steps forward , 0.7), ( left , steps 
+
+forward , 0.7), ( right , steps forward , 0.7), ( left , steps 
+
+forward , 0.7) , (right , lowers down, 0.4), ( left , lowers 
+
+down, 0.4), ( right , holds low position, 0.5), ( left , holds 
+
+low position, 0.5), ( right , rises up, 0.3), ( left , rises up, 
+
+0.3), ( right , holds up position, 0.3), ( left , holds up 
+
+position, 0.3) 
+
+[Left hand]  (moves forward , 0.4), ( moves backward ,
+
+0.3), ( moves forward , 0.5), ( moves backward , 0.3), 
+
+(moves forward , 0.4), (4, 0.3),  (lowers down, 0.5), 
+
+(holds low position, 0.5), (rises up, 0.3), (holds up 
+
+position, 0.3) 
+
+[Right hand]  (moves backward , 0.4), ( moves forward ,
+
+0.3), ( moves backward , 0.5), (4, 0.3), ( moves 
+
+backward , 0.4), ( moves forward , 0.3),  (lowers down, 
+
+0.5), (holds low position, 0.5), (rises up, 0.3), (holds 
+
+up position, 0.3) 
+
+[Support]  (right, steps forward, 0.7), (left right, steps 
+
+forward, 0.7), (right, steps forward, 0.7), (left, steps 
+
+forward, 0.7) 
+
+[Left hand]  (moves forward, 0.4), (moves backward, 
+
+0.3), (moves forward, 0.5), (moves backward, 0.3), 
+
+(moves forward, 0.4), (moves backward, 0.3) 
+
+[Right hand]  (moves backward, 0.4), (moves forward, 
+
+0.3), (moves backward, 0.5), (4, 0.3), (moves 
+
+backward, 0.4), (moves forward, 0.3) 
+
+Edited by LLMs 
+
+User input:  a person slowly walked forward and returned  back  User input:  I want this avatar to raise  left  hands before he returns 
+
+[Support]  (left,  steps forward , 0.7), (right,  steps 
+
+forward , 0.7), (left,  steps forward , 0.5), (right,  steps 
+
+forward , 0.5),  (left,  holds in rest position,  0.2) while 
+
+(right,  holds in rest position,  0.2),  (right,  steps 
+
+backward , 0.4), (left,  steps backward , 0.6 
+
+[Left hand]  (holds low position , 1.4),  (rises up,  0.5), 
+
+(holds up position,  0.9 )
+
+[Right hand]  (holds low position, 2.8) 
+
+[Support]  (left,  steps forward,  0.7), (right,  steps 
+
+forward,  0.7), (left,  steps forward,  0.7),  (right,  steps 
+
+backward,  0.7), (left,  steps backward,  0.7 )
+
+[Left hand]  (holds low position, 2.8) 
+
+[Right hand]  (holds low position, 2.8 )
+
+Edited by LLMs Figure 13. Visual examples for motion editing, with LLM-composed description. Left: the initial generated motion conditioned by the user input. Right: an ambiguous edit instruction is given to modify the motion. The corresponding LLM-composed description follows the LabanLite-defined format “ <body-part group>, <moving semantic>, <time> ”. We highlight the refined part with red to show LLMs’ dialogue context understanding capability. ReMoDiff , ICCV’23 CoMo , ECCV’24 LaMoGen  (ours) 
+
+a person steps forward and reaches down to grab 
+
+or place something with their left hand. 
+
+the person takes a step and waves his right 
+
+hand  forth  and  back 
+
+Wave right hand forth and back 
+
+Take  one  ste p
+
+Wave right hand forth and back 
+
+Idle 
+
+Wave right hand forth and back 
+
+Take two steps 
+
+Reach with right hand 
+
+Reach down 
+
+Steps forward 
+
+Reach with left hand 
+
+Reach in middle level 
+
+Idle 
+
+Reach with left hand 
+
+Reach  down 
+
+Steps  forwar d
+
+Figure 14. Qualitative comparisons on HumanML3D test sets, with motions progressing from left to right. Misalignments between text and generated motions are highlighted. 
+
+Masking ratio on Laban codes. We also examine how the masking ratio on Laban codes affects performance dur-ing code generation. A higher masking ratio reduces the in-fluence of conceptual cues, making motion generation rely more on text and less on Laban symbols, reducing the influ-ence of conceptual guidance. We conduct this study on the 23 HumanML3D test set, with GPT4.1 and top-3 retrieval set-tings. Comparing results in Table 4, a masking ratio of 0.3 offers the best balance and achieves optimal performance. 
+
+Impact of Code Dimension. We further investigate the impact of varying dimensions of the Laban code on the Hu-manML3D test set. Following the ablation findings above, the number of retrieved references is set to 3, and the mask-ing ratio to 0.3, with GPT-4.1 as the LLM. We assess the generation quality (R@3, FID) and Average Inference Time per Sentence (AITS) across different code dimensions, and compare our approach to CoMo [10]. As shown in Table 5, increasing the code dimension improves generation perfor-mance but also increases inference time. Considering both factors, a code dimension of 512 is selected as the optimal setting. 
+
+Impact of Symbolic Guidance. To investigate the effect of symbolic guidance, we integrate LLM-composed sym-bolic codes into the baseline MDM model [28] by sum-ming the activated code with the initial noise through the diffusion process. As reported in Table. 6 (“MDM lbn ”), this symbolic conditioning results in a substantial improve-ment: FID is reduced by a factor of 20 compared to the vanilla MDM. This dramatic gain demonstrates that lever-aging high-level symbolic structure from language models can provide strong guidance for motion generation, signif-icantly enhancing both overall fidelity and alignment be-tween text and generated motion. 
+
+Impact on Instruction Prompting. Our LLM com-position process relies on two components: Retrieval-Augmented Generation (RAG), which supplies templates for sub-action representations and temporal durations, and Instruction Prompting (IP), which defines the rules and defi-nition on Conceptual Symbols. To evaluate the specific con-tribution of RAG, we conduct an ablation in which RAG is removed and the LLM is tasked with composing con-cepts solely based on IP instructions. Table. 6 “GPT4.1 ip ”shows that this configuration results in a slight drop across most evaluation metrics. Importantly, we observe a much larger FID gap; without the concrete sub-action durations provided by RAG, the generated duration distributions di-verge significantly from ground truth. 
+
+Impact of Discrete Intervals. To further examine the effect of discretization granularity in LabanLite, we con-ducted an ablation study varying the number of discrete in-tervals in our encoding scheme. As shown in Table. 7, the “Interval-7” configuration improves FID by 26% , but also doubles the LLM cost. It shows that, increasing the num-ber of intervals can improve the reconstruction fidelity, but poses challenges for computational cost. Moreover, exces-sive granularity necessitates the introduction of nonstandard symbols, which diminishes the interpretability for human readers trying to understand the notation. Overall, our re-sults suggest that a moderate number of intervals yields a fa-vorable balance between fidelity, interpretability, and com-putational efficiency. 
+
+Choice of GPT-style vs. BERT-style Generation. In our framework, the availability of global information allows for both GPT-style (autoregressive) and BERT-style (infilling) generation strategies. As observed in Table. 7, adopting BERT-style generation (“BERT”) improves the FID met-ric by 21%, reflecting enhanced accuracy in reconstruction. However, this comes at the expense of diversity, which de-creases significantly by 62.6%. In contrast, GPT-style gen-eration (“3 †”) offers superior diversity, which is crucial for the downstream requirements of our task. Balancing these factors, we prioritize generation diversity and thus adopt GPT’s autoregressive approach as our default method. 
+
+Performance on Weaker Language Models. To evalu-ate the robustness of our method with less powerful lan-guage models, we assess performance using the Qwen3-8b model, as reported in Table. 7. As expected, reduc-ing LLM size to 8B leads to slightly lower overall gen-eration metrics. Nevertheless, by incorporating RAG and IP constraints, our method successfully maintains valid Laban symbols, ensuring strong alignment between tex-tual inputs and motion outputs. Notably, the Qwen3-8b configuration achieves a 26% improvement in R@3 compared to the MDM baseline. These results indicate our approach remains effective—even when deployed with weaker LLMs—highlighting its versatility for resource-constrained scenarios. 
+
+6. Discussion 
+
+To address the challenge posed by ultra-long text inputs (e.g., “walk slowly for 10 steps, then jump twice while waving both hands”), we can employ the LLM itself to segment complex user instructions into manageable sub-actions (e.g., “walk slowly for 10 steps” and “jump twice while waving both hands”). This decomposition is well within the capabilities of modern LLMs, and crucially, the semantic integrity of the original motion intent is preserved during splitting. Once the ultra-long instruction is divided into discrete sub-actions, each segment can be processed independently, enabling LaMoGen to handle extended or sequential behaviors in a scalable manner. The concatena-tion of generated sub-actions naturally forms an ultra-long motion sequence, overcoming the constraints imposed by limited LLM context windows. 24 7. Limitations and Future Work 
+
+7.1. Need for a User Interface 
+
+Due to constraints in research funding and computational resources, the development of a user interface for edit-ing Laban symbol sequences was beyond the scope of the present work. Nevertheless, we recognise that such an inter-face would be highly beneficial for promoting the broader adoption of the proposed LaMoGen framework and the La-banLite motion representation. As part of our future work, we plan to design and implement a user-friendly LaMoGen interface, which could be integrated as an add-on for 3D creation tools such as Blender. 
+
+7.2. Learning Cost of Labanotation 
+
+Learning Labanotation does entail a certain learning cost. While incorporating a larger number of Laban symbols al-lows for the expression of more complex motions, it also inevitably introduces more intricate notation rules. In the main paper, we address this challenge by proposing a two-stage LLM-Guided Text-Laban-Motion Generation Mod-ule: in the first stage, either human users or LLMs compose conceptual Laban instances to represent high-level motion; in the second stage, a Kinematic Detail Augmentor further refines these conceptual instances into detailed low-level motion. This two-stage approach simplifies the notation by requiring only conceptual symbols—approximately one-fifth of the full symbol set—and thus helps to reduce the learning effort. Although a certain amount of learning is still necessary, we believe that our approach is more accessi-ble and convenient for human editing compared to existing methods based on key frames [5, 21, 32] or key points [31]. 
+
+7.3. Potential for Disentangling Motion and Style 
+
+It is important to note that Labanotation applies quantiza-tion simultaneously at both the spatial and temporal lev-els. As a result, distinct performances—specifically, dif-ferent individuals’ personalized interpretations of the same contextual prompt—may be encoded using identical Laban symbols. This inherent abstraction implies that LabanLite, which is built upon Labanotation, does not explicitly repre-sent fine-grained individual differences. For instance, consider the context of “raising the hand.” Younger individuals may execute this action energetically, characterized by a rapid initial lift followed by a deceler-ation as the hand approaches and stabilizes at the target height. In contrast, older individuals may perform the same movement with a composed steadiness, gradually lifting the hand at a constant speed from a lower to a higher position. These two performances exhibit distinctly different profiles in terms of acceleration and deceleration, with the former manifesting a vigorous style and the latter reflecting a calm, controlled demeanor. Notably, despite these pronounced differences in movement dynamics—each indicative of a unique personal style—the resulting motion sequences are encoded identically within the Laban symbol sequence. Rather than viewing this as a limitation, we recognize it as an opportunity: by abstracting away such personalized nuances, LabanLite naturally separates the essential motion content from individual stylistic expression. Therefore, La-banLite holds significant potential for disentangling motion and style. In future work, we aim to further investigate this property by treating LabanLite-based motion descriptions as representations of neutral, canonical movements and sub-sequently modeling style-specific residuals to enable flexi-ble motion restyling. 
+
+7.4. Potential for Flexible Extension Across Body Parts and Domains 
+
+The proposed LabanLite representation and LaMoGen framework possess significant flexibility in modeling hu-man movement. While our current implementation focuses on the major body parts, LabanLite’s codebook and de-sign can be readily extended to model additional compo-nents, such as finger and toe gestures, simply by incorporat-ing the corresponding Laban symbols. This adaptability is supported by recent studies, which have demonstrated the feasibility of Laban-based fine-grained motion reconstruc-tion in sub-domains such as finger gesture estimation [18] and dance movement reconstruction [19]. Therefore, al-though our present work primarily targets daily motion, the methodology can be straightforwardly generalized to facil-itate applications in a wide range of domains, including de-tailed human–object interactions and expressive dance anal-ysis. We anticipate that future work will broaden the scope of LabanLite, establishing a unified motion representation applicable to diverse areas of human movement science and interactive systems. 25 Table 8. Prompts used in our LaMoGen to process natural language via Large Language Models. 
+
+Prompt #1: Conceptual cues composer There are five digit collections describing movements, where each line consists of: [number] [Cap-tion] - a general description of the motion sequence. [Support] - detailed descriptions of the move-ments of the supporting body parts, specifically the left and right feet, using a series of triplets. [Left hand] - detailed descriptions of the movements of the left hand, using a series of tuples. [Right hand] - detailed descriptions of the movements of the right hand, using a series of tuples. In the detailed descriptions, we specify the movement details for each body part and their duration in seconds. For the support movements, the details must be selected from these 54 categories: [1: steps to rest po-sition, ..., 54: holds in knee-flexed backward diagonally to left position]. For the hand movements, the details must be selected from these 81 categories: [1: moves close to shoulder, ..., 81: moves relatively low backward diagonally to left]. For example, for the [Support] line, the triplet list would be like: (left, 1, 0.25), (right, 2, 0.25), (left, 1, 0.25) while (right, 2, 0.25). This means that the first movement is “left foot steps to rest position in 0.25 seconds”. The second movement is “right foot steps forward in 0.25 seconds”. The third movement is “left foot steps to rest position in 0.25 seconds while right foot steps forward in 0.25 seconds”. For the [Left hand] line, the tuple list would be like: (1, 0.5), (2, 0.2). This means that the first movement is “left hand moves close to shoulder in 0.5 seconds” and the second movement is “left hand moves forward in 0.2 seconds”. For the [Right hand] line, the structure and definition are similar to [Left hand] lines. Below is the main body of the digit collection describing the movements. You should strictly imitate the following content and create only one digit collection of YOUR INPUT . Reply without explanation. Prompt #2: Rephraser for generating motion descriptions Rephrase the sentence creatively YOUR INPUT . the step number is YOUR INPUT , with the step order: YOUR INPUT .
+
+> Table 9. Illustration of the Direction symbols and their corresponding partial semantics.
+
+Name Appearance Semantics Direction L/F M/F   
+
+> M/B
+> L/M R/M
+> R/F
+> R/B L/B
+> L/F
+> M/M
+> Hi .
+> Mi.
+> Lo.
+
+Move body part left forward Direction M/F M/F   
+
+> M/B
+> L/M R/M
+> R/F
+> R/B L/B
+> L/F
+> M/M
+> Hi .
+> Mi.
+> Lo.
+
+Move body part to front Direction R/F M/F   
+
+> M/B
+> L/M R/M
+> R/F
+> R/B L/B
+> L/F
+> M/M
+> Hi .
+> Mi.
+> Lo.
+
+Move body part right forward Direction L/M M/F   
+
+> M/B
+> L/M R/M
+> R/F
+> R/B L/B
+> L/F
+> M/M
+> Hi .
+> Mi.
+> Lo.
+
+Move body part to left Direction M/M M/F   
+
+> M/B
+> L/M R/M
+> R/F
+> R/B L/B
+> L/F
+> M/M
+> Hi .
+> Mi.
+> Lo.
+
+Move body part to middle Direction R/M M/F   
+
+> M/B
+> L/M R/M
+> R/F
+> R/B L/B
+> L/F
+> M/M
+> Hi .
+> Mi.
+> Lo.
+
+Move body part to right Direction L/B M/F   
+
+> M/B
+> L/M R/M
+> R/F
+> R/B L/B
+> L/F
+> M/M
+> Hi .
+> Mi.
+> Lo.
+
+Move body part left backward Direction M/B M/F   
+
+> M/B
+> L/M R/M
+> R/F
+> R/B L/B
+> L/F
+> M/M
+> Hi .
+> Mi.
+> Lo.
+
+Move body part to back Direction R/B M/F   
+
+> M/B
+> L/M R/M
+> R/F
+> R/B L/B
+> L/F
+> M/M
+> Hi .
+> Mi.
+> Lo.
+
+Move body part right backward 26 Table 10. Illustration of the Level symbols and their corresponding partial semantics. 
+
+Name Appearance Semantics Level Hi. M/F 
+
+M/B 
+
+L/M  R/M 
+
+R/F 
+
+R/B L/B 
+
+L/F 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Move body part to high level Level Mi. M/F 
+
+M/B 
+
+L/M  R/M 
+
+R/F 
+
+R/B L/B 
+
+L/F 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Move body part to mid-level Level Lo. M/F 
+
+M/B 
+
+L/M  R/M 
+
+R/F 
+
+R/B L/B 
+
+L/F 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Move body part to low level 
+
+Table 11. Illustration of the Hold symbols and their corresponding partial semantics. Note that if the attribute field for a symbol is left empty, it indicates that this body part is dynamic. 
+
+Name Appearance Semantics Hold  Body part is stationary 
+
+Table 12. Illustration of the Orientation symbols and their corresponding partial semantics. Note that according to Labanotation, each symbol does not have a specific name. In LabanLite, we simply assign them sequential names for convenience. 
+
+Name Appearance Semantics Orient 0 M/F 
+
+M/B 
+
+L/M  R/M 
+
+R/F 
+
+R/B L/B 
+
+L/F 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part orients at around 0◦
+
+Orient 1 M/F 
+
+M/B 
+
+L/M  R/M 
+
+R/F 
+
+R/B L/B 
+
+L/F 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part orients at around 45 ◦
+
+Orient 2 M/F 
+
+M/B 
+
+L/M  R/M 
+
+R/F 
+
+R/B L/B 
+
+L/F 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part orients at around 90 ◦
+
+Orient 3 M/F 
+
+M/B 
+
+L/M  R/M 
+
+R/F 
+
+R/B L/B 
+
+L/F 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part orients at around 135 ◦
+
+Orient 4 M/F 
+
+M/B 
+
+L/M  R/M 
+
+R/F 
+
+R/B L/B 
+
+L/F 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part orients at around 180 ◦
+
+Orient 5 M/F 
+
+M/B 
+
+L/M  R/M 
+
+R/F 
+
+R/B L/B 
+
+L/F 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part orients at around 225 ◦
+
+Orient 6 M/F 
+
+M/B 
+
+L/M  R/M 
+
+R/F 
+
+R/B L/B 
+
+L/F 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part orients at around 270 ◦
+
+Orient 7 M/F 
+
+M/B 
+
+L/M  R/M 
+
+R/F 
+
+R/B L/B 
+
+L/F 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part orients at around 315 ◦
+
+27 Table 13. Illustration of the Bend symbols and their corresponding partial semantics. Note that according to Labanotation, each symbol does not have a specific name. In LabanLite, we simply assign them sequential names for convenience. 
+
+Name Appearance Semantics Bend 0 M/F 
+
+M/B 
+
+L/M  R/M 
+
+R/F 
+
+R/B L/B 
+
+L/F 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part bends at around 0◦
+
+Bend 1 M/F 
+
+M/B 
+
+M R/M 
+
+R/F 
+
+R/B B
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part bends at around 30 ◦
+
+Bend 2 B
+
+R/M 
+
+R/F 
+
+R/B 
+
+M
+
+Hi .
+
+Mi. 
+
+Lo.  Body part bends at around 60 ◦
+
+Bend 3 Hi .
+
+Mi. 
+
+Lo.  Body part bends at around 90 ◦
+
+Bend 4 Hi .
+
+Mi. 
+
+o.  Body part bends at around 120 ◦
+
+Bend 5  Body part bends at around 150 ◦
+
+Table 14. Illustration of the Moving-effort symbols and their corresponding partial semantics. Note that according to Labanotation, each symbol does not have a specific name. In LabanLite, we simply assign them sequential names for convenience. If the attribute field for a symbol is left empty, it indicates “Moving-effort 1”. 
+
+Name Appearance Semantics Moving-effort 0 M/F 
+
+M/B 
+
+M R/M 
+
+R/F 
+
+R/B L/B 
+
+F
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part moves very slow Moving-effort 1 None Body part moves in normal speed Moving-effort 2 M/F 
+
+M/B 
+
+R/M 
+
+R/F 
+
+R/B 
+
+M/M 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part moves fast Moving-effort 3 R/M 
+
+R/F 
+
+R/B 
+
+Hi .
+
+Mi. 
+
+Lo.  Body part moves very fast 28 Table 15. Definition of the Laban codebook. Each codebook entry is described by its index (Code Idx.), associated Body-Part Group, corresponding SMPL key joint name (SMPL Joint), relevant attribute (Attribute), a marker indicating whether the attribute is conceptual (is Concpt.), and the Laban staff column name (Staff Col.). Code Idx. Body-Part Group SMPL Joint Attribute is Con-cpt. Staff Col. 
+
+1 ∼ 3
+
+Support-L Left foot Direction (L/M/R) ✓ Left support 
+
+4 ∼ 6 Left foot Direction (B/M/F) ✓ Left support 
+
+7 ∼ 9 Left foot Level (Lo./Mi./Hi.) ✓ Left support 
+
+10 ∼ 15 Left knee Bend ✗ Left leg gesture 
+
+16 ∼ 21 Left hip Bend ✗ Left leg gesture 
+
+22 ∼ 23 Left foot & knee & hip Hold ✓ Left support 
+
+23 ∼ 26 
+
+Support-R Right foot Direction (L/M/R) ✓ Right support 
+
+27 ∼ 29 Right foot Direction (B/M/F) ✓ Right support 
+
+30 ∼ 32 Right foot Level (Lo./Mi./Hi.) ✓ Right support 
+
+33 ∼ 38 Right knee Bend ✗ Right leg gesture 
+
+39 ∼ 44 Right hip Bend ✗ Right leg gesture 
+
+45 ∼ 46 Right foot & knee & hip Hold ✓ Right support 
+
+47 ∼ 54 
+
+Support-Both Pelvis Orient. Horiz. ✗ Body (Whole) 
+
+55 ∼ 62 Pelvis Orient. Vert. ✗ Body (Whole) 
+
+63 ∼ 67 Pelvis Moving effort Horiz. ✗ Body (Whole) 
+
+68 ∼ 72 Pelvis Moving effort Vert. ✗ Body (Whole) 
+
+73 ∼ 75 
+
+Upper-L Left hand Direction (L/M/R) ✓ Left hand 
+
+76 ∼ 78 Left hand Direction (B/M/F) ✓ Left hand 
+
+79 ∼ 81 Left hand Level (Lo./Mi./Hi.) ✓ Left hand 
+
+82 ∼ 87 Left elbow Elbow Bend ✗ Left arm 
+
+88 ∼ 93 Left shoulder Shoulder Bend ✗ Left arm 
+
+94 ∼ 95 Left hand & elbow & shoulder Hold ✓ Left hand 
+
+96 ∼ 98 
+
+Upper-R Right hand Direction (L/M/R) ✓ Right hand 
+
+99 ∼ 101 Right hand Direction (B/M/F) ✓ Right hand 
+
+102 ∼ 104 Right hand Level (Lo./Mi./Hi.) ✓ Right hand 
+
+105 ∼ 110 Right elbow Elbow Bend ✗ Right arm 
+
+111 ∼ 116 Right shoulder Shoulder Bend ✗ Right arm 
+
+117 ∼ 118 Right hand & elbow & shoulder Hold ✓ Right hand 
+
+119 ∼ 126 
+
+Torso Head Orient. Horiz. ✗ Head 
+
+127 ∼ 134 Head Orient. Vert. ✗ Head 
+
+135 ∼ 140 Spine2 Bend ✗ Body (Whole) 
+
+141 ∼ 143 
+
+Upper-L Left elbow Direction (L/M/R) ✗ Left arm 
+
+144 ∼ 146 Left elbow Direction (B/M/F) ✗ Left arm 
+
+147 ∼ 149 Left elbow Level (Lo./Mi./Hi.) ✗ Left arm 
+
+150 ∼ 152 
+
+Upper-R Right elbow Direction (L/M/R) ✗ Right arm 
+
+153 ∼ 155 Right elbow Direction (B/M/F) ✗ Right arm 
+
+156 ∼ 158 Right elbow Level (Lo./Mi./Hi.) ✗ Right arm 
+
+29 Table 16. Support body-part’s moving semantic lookup table. Index Semantics Index Semantics 1 steps to rest position 28 holds in rest position 2 steps forward 29 holds in forward position 3 steps backward 30 holds in backward position 4 steps to right 31 holds in right position 5 steps to left 32 holds in left position 6 steps forward diagonally to right 33 holds in forward diagonally to right position 7 steps forward diagonally to left 34 holds in forward diagonally to left position 8 steps backward diagonally to right 35 holds in backward diagonally to right position 9 steps backward diagonally to left 36 holds in backward diagonally to left position 10 rises 37 holds in the raised position 11 rises to forward 38 holds in the raised forward position 12 rises to backward 39 holds in the raised backward position 13 rises to right 40 holds in the raised right position 14 rises to left 41 holds in the raised left position 15 rises forward diagonally to right 42 holds in the raised forward diagonally to right position 16 rises forward diagonally to left 43 holds in the raised forward diagonally to left position 17 rises backward diagonally to right 44 holds in the raised backward diagonally to right position 18 rises backward diagonally to left 45 holds in the raised backward diagonally to left position 19 knee flex 46 holds in knee-flexed position 20 knee flex forward 47 holds in knee-flexed forward position 21 knee flex backward 48 holds in knee-flexed backward position 22 knee flex right 49 holds in knee-flexed right position 23 knee flex left 50 holds in knee-flexed left position 24 knee flex forward diagonally to right 51 holds in knee-flexed forward diagonally to right position 25 knee flex forward diagonally to left 52 holds in knee-flexed forward diagonally to left position 26 knee flex backward diagonally to right 53 holds in knee-flexed backward diagonally to right position 27 knee flex backward diagonally to left 54 holds in knee-flexed backward diagonally to left position 
+
+30 Table 17. Arm body-part’s moving semantic lookup table. Index Semantics Index Semantics Index Semantics 1 moves close to shoulder 28 holds close to shoulder position 55 moves relatively to previous posi-tion 2 moves forward 29 holds forward position 56 moves relatively forward 3 moves backward 30 holds backward position 57 moves relatively backward 4 moves to right 31 holds right position 58 moves to relatively right 5 moves to left 32 holds left position 59 moves to relatively left 6 moves forward diagonally to right 33 holds forward diagonally to right position 60 moves relatively forward diago-nally to right 7 moves forward diagonally to left 34 holds forward diagonally to left position 61 moves relatively forward diago-nally to left 8 moves backward diagonally to right 35 holds backward diagonally to right position 62 moves relatively backward diago-nally to right 9 moves backward diagonally to left 36 holds backward diagonally to left position 63 moves relatively backward diago-nally to left 10 rises up 37 holds up position 64 moves relatively up 11 rises to up forward 38 holds up forward position 65 moves relatively up forward 12 rises to up backward 39 holds up backward position 66 moves relatively up backward 13 rises to up right 40 holds up right position 67 moves relatively up right 14 rises to up left 41 holds up left position 68 moves relatively up left 15 rises up forward diagonally to right 42 holds up forward diagonally to right position 69 moves relatively up forward diag-onally to right 16 rises up forward diagonally to left 43 holds up forward diagonally to left position 70 moves relatively up forward diag-onally to left 17 rises up backward diagonally to right 44 holds up backward diagonally to right position 71 moves relatively up backward di-agonally to right 18 rises up backward diagonally to left 45 holds up backward diagonally to left position 72 moves relatively up backward di-agonally to left 19 lowers down 46 holds low position 73 moves relatively low 20 lowers to down forward 47 holds low forward position 74 moves relatively low forward 21 lowers to down backward 48 holds low backward position 75 moves relatively low backward 22 lowers to down right 49 holds low right position 76 moves relatively low right 23 lowers to down left 50 holds low left position 77 moves relatively low left 24 lowers down forward diagonally to right 51 holds low forward diagonally to right position 78 moves relatively low forward di-agonally to right 25 lowers down forward diagonally to left 52 holds low forward diagonally to left position 79 moves relatively low forward di-agonally to left 26 lowers down backward diago-nally to right 53 holds low backward diagonally to right position 80 moves relatively low backward diagonally to right 27 lowers down backward diago-nally to left 54 holds low backward diagonally to left position 81 moves relatively low backward diagonally to left 
+
+31

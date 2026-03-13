@@ -1,0 +1,774 @@
+Title: Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance
+
+URL Source: https://arxiv.org/pdf/2603.11509v1
+
+Published Time: Fri, 13 Mar 2026 00:31:17 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+Zexi Jia 1 Pengcheng Luo 1 Zhengyao Fang 1 Jinchao Zhang* 1 Jie Zhou 1
+
+# Abstract 
+
+Classifier-Free Guidance (CFG) serves as the de facto control mechanism for conditional diffu-sion, yet high guidance scales notoriously in-duce oversaturation, texture artifacts, and struc-tural collapse. We attribute this failure to a ge-ometric mismatch: standard CFG performs Eu-clidean extrapolation in ambient space, inadver-tently driving sampling trajectories off the high-density data manifold. To resolve this, we present Manifold-Optimal Guidance (MOG), a frame-work that reformulates guidance as a local opti-mal control problem. MOG yields a closed-form, geometry-aware Riemannian update that corrects off-manifold drift without requiring retraining. Leveraging this perspective, we further introduce Auto-MOG, a dynamic energy-balancing sched-ule that adaptively calibrates guidance strength, effectively eliminating the need for manual hy-perparameter tuning. Extensive validation demon-strates that MOG yields superior fidelity and align-ment compared to baselines, with virtually no added computational overhead. 
+
+# 1. Introduction 
+
+Diffusion probabilistic models (Sohl-Dickstein et al., 2015; Ho et al., 2020; Song et al., 2021) have become a central paradigm for generative modeling, enabling high-fidelity synthesis of images, videos, and audio from semantic con-ditions. In practice, classifier-free guidance (CFG) (Ho & Salimans, 2022) is the standard mechanism for steering generation: it amplifies conditional information by linearly extrapolating between unconditional and conditional score estimates. Controlled by a single guidance scale w, CFG provides a convenient knob that trades diversity for align-ment and is widely used in modern systems (Rombach et al., 2022; Ramesh et al., 2022; Peebles & Xie, 2023). 
+
+> *
+
+Equal contribution 1WeChat AI, Tencent Inc., China. Corre-spondence to: Jinchao Zhang <dayerzhang@tencent.com >.
+
+Preprint. March 13, 2026. 
+
+Figure 1. Toy spiral manifold illustration of guidance geometry. 
+
+Left: trajectories on a high-density spiral tube. Standard CFG (red) takes a Euclidean shortcut that leaves the manifold. A pro-jected update (orange) stays closer to the manifold but progresses more slowly. MOG (blue) follows a geometry-aware direction that remains near the manifold while moving efficiently toward the condition. Top right: distance to the manifold over steps, highlighting off-manifold deviation under CFG. Bottom right: 
+
+conditional energy over steps, showing that MOG reduces energy rapidly without leaving the high-density region. 
+
+Despite its simplicity, CFG implicitly relies on a strong geo-metric approximation. It treats the latent space as Euclidean and isotropic, and assumes the conditional increment is a universally valid direction in the ambient space. This ap-proximation works well at moderate guidance, but becomes brittle at high scales. Recent analyses indicate that aggres-sive extrapolation can push trajectories into low-density regions where the model is forced to extrapolate, leading to oversaturation, unnatural textures, and even structural col-lapse (Lin et al., 2024; ?). We refer to this failure mode as 
+
+off-manifold drift : stronger guidance can improve alignment by moving faster in the ambient space, yet it may do so by departing from the high-density set defined by the data distribution. Existing remedies largely address symptoms rather than the underlying geometry. Dynamic thresholding clips extreme values to stabilize sampling (Saharia et al., 2022). Other ap-proaches reshape the guidance signal through hand-designed decompositions or constraints, including projection-based filtering (Sadat et al., 2024) and manifold-motivated cor-rections (Chung et al., 2024). While effective in specific 1
+
+> arXiv:2603.11509v1 [cs.CV] 12 Mar 2026 Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance
+
+regimes, these methods are typically motivated as post hoc adjustments. They do not provide a single objective that (i) determines the guidance direction in a manner consistent with data geometry and (ii) prescribes an appropriate update strength during sampling. In this work, we derive guidance from a principled opti-mization view. Conditioning induces an energy landscape, and guided sampling can be interpreted as decreasing con-ditional energy while remaining close to the data manifold. When the geometry is nontrivial, the Euclidean gradient is generally not the steepest-descent direction relative to the manifold. Instead, the appropriate direction is the Rieman-nian steepest descent induced by a metric that penalizes motions that move off manifold. This perspective leads to 
+
+Manifold-Optimal Guidance (MOG): we formulate guid-ance as a local optimal control problem under a geometry-aware metric and obtain a closed-form update that naturally suppresses off-manifold components while preserving effi-cient descent. Figure 1 illustrates the key geometry. Standard CFG takes a Euclidean shortcut that quickly exits the high-density spiral tube, causing large off-manifold deviation. A purely pro-jected update adheres more closely to the manifold but dis-cards useful descent components and slows progress. MOG instead preconditions the conditional increment with a Rie-mannian metric, attenuating off-manifold directions while retaining effective progress along the manifold. This toy behavior mirrors practical failures under large CFG scales and motivates a geometry-consistent design. We instantiate MOG with two practical variants used throughout the paper. MOG-Score specifies a score-based anisotropic metric with efficient matrix-free inverse appli-cation. Auto-MOG derives an energy-balanced adaptive scaling rule that sets guidance strength over time, reducing manual tuning. Our contributions are: • We formulate guidance as a variational optimization problem under a Riemannian metric and derive MOG as a natural-gradient update that is optimal with respect to a geodesic cost. • We propose two practical instantiations, MOG-Score and Auto-MOG, that are training-free, efficient, and compatible with standard diffusion samplers. • We demonstrate consistent improvements across dif-fusion architectures and benchmarks via quantitative evaluation and a user preference study, achieving better fidelity and alignment with substantially fewer oversat-uration and texture artifacts under strong guidance. 
+
+# 2. Related Work 
+
+Classifier-Free Guidance (CFG) interpolates between un-conditional and conditional score estimates via a single guidance scale (Ho & Salimans, 2022), powering state-of-the-art text-to-image (Rombach et al., 2022; Ramesh et al., 2022; Saharia et al., 2022) and video generation (Ho et al., 2022). However, CFG assumes isotropic Euclidean geom-etry, and at high guidance scales, trajectories deviate from the data manifold, causing oversaturation and artifacts (Lin et al., 2024; Chung et al., 2024). 
+
+Stabilizing High-Scale Guidance. Numerous training-free strategies have been proposed to mitigate CFG instabili-ties. Dynamic Thresholding (Saharia et al., 2022) clips extreme pixel values to suppress saturation. Frequency-domain methods (Song & Lai, 2025) attribute artifacts to low-frequency accumulation and apply selective spectral filtering. Projection-based approaches such as APG (Sa-dat et al., 2024) decompose the guidance signal and re-move components aligned with unconditional predictions. DSG (Yang et al., 2024) introduces spherical Gaussian con-straints to bound guidance steps within intermediate man-ifolds. While effective in specific regimes, these methods rely on hand-crafted heuristics tailored to particular failure modes. They do not provide a unified objective that jointly determines optimal direction and adaptive strength. 
+
+Manifold-Aware Diffusion Guidance. A growing body of work attributes CFG failures to off-manifold drift. CFG++ (Chung et al., 2024) reformulates guidance up-dates to respect manifold constraints implied by the forward process, reducing extrapolation errors. Schedule-based in-terventions, including rectified guidance (Xia et al., 2025) and truncated CFG (Fu & Li, 2025), modify when and how strongly guidance is applied to prevent late-stage in-stabilities. S-CFG (Shen et al., 2024) addresses spatial inconsistency by introducing location-adaptive scales. ECM Guidance (Wang et al., 2024) explicitly models the clean data manifold as a proxy for controllable generation. These approaches share the motivation of keeping samples near high-density regions but typically address direction correc-tion or strength scheduling in isolation, rather than unifying both within a single principled framework. 
+
+Geometric and Control-Theoretic Perspectives. Rie-mannian score-based models (De Bortoli et al., 2022) ex-tend diffusion to curved manifolds, while variational for-mulations (Pandey et al., 2025) and Lyapunov-based con-trollers (Mukherjee et al., 2024) cast guidance as optimal control. Schr ¨odinger bridge methods (Liu et al., 2023) con-nect diffusion to entropy-regularized transport. These frame-works provide elegant foundations but often require special-ized training or modifications incompatible with pretrained models. 2Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+Our Manifold-Optimal Guidance (MOG) formulates guid-ance as local optimal transport with anisotropic Riemannian cost, yielding a closed-form solution requiring no retrain-ing. This further yields Auto-MOG, an energy-balancing rule that adaptively calibrates guidance strength, eliminating manual tuning while improving high-scale robustness. 
+
+# 3. Manifold-Optimal Guidance 
+
+3.1. Preliminaries and Problem Setup 
+
+We first introduce notation for diffusion sampling and con-ditional guidance. Consider diffusion models described by the probability flow ODE. Let xt ∈ Rd denote the latent state at time t ∈ [0 , T ], evolving as 
+
+dxt
+
+dt = f (xt, t ) − g2(t) sθ (xt, t ), (1) where f (·, t ) is the drift coefficient, g(t) is the diffusion coefficient, and sθ (xt, t ) ≈ ∇ x log pt(xt) is the learned score that approximates the gradient of the log density. For conditional generation with condition c, classifier free guidance provides two score estimates. We denote the un-conditional score by s0(xt, t ) ≜ sθ (xt, t, ∅) and the con-ditional score by sc(xt, t ) ≜ sθ (xt, t, c ). Their difference defines the conditional increment 
+
+∆s(xt, t ) ≜ sc(xt, t ) − s0(xt, t ). (2) Standard classifier free guidance (CFG) (Ho & Salimans, 2022) constructs the guided score by linear extrapolation, 
+
+sCFG = s0 + w · ∆s, where w ≥ 1 is the guidance scale. This Euclidean combination treats all directions in latent space as equally valid. In practice, it ignores the non-Euclidean geometry induced by the data manifold M, and large w often causes the sampling trajectory to drift away from M, producing oversaturation and structural artifacts (Fig. 1). This motivates a geometric formulation in which guidance is derived as an optimal update under the intrinsic structure of the data distribution. 
+
+3.2. Riemannian Optimal Control for Guidance 
+
+We derive MOG by casting guidance as a local optimal control problem on the data manifold. Given condition 
+
+c, the goal is to modify the score in a way that improves alignment while avoiding off manifold drift. We associate c with a potential energy E(xt, c ) ≜
+
+− log pt(c | xt), which measures how well xt aligns with c.By Bayes’ rule, up to an additive constant independent of 
+
+xt, the conditional score decomposes as 
+
+∇x log pt(xt | c) = ∇x log pt(xt) + ∇x log pt(c | xt),
+
+(3) which implies that the conditional increment approximates the negative energy gradient, 
+
+∆s(xt, t ) ≈ −∇ xE(xt, c ). (4) Guidance can therefore be viewed as energy minimization, descending the conditional landscape while staying close to the data manifold. We seek an update ut ∈ Rd that defines a guided score 
+
+sguid = s0 + ut. The update should reduce E(xt, c ) while respecting local geometry. We encode geometry through a Riemannian metric Mt(xt) ≻ 0 and define the local objective 
+
+Jt(ut) = 12 u⊤ 
+
+> t
+
+Mtut
+
+| {z }
+
+> Transport Cost
+
++ β(t)⟨∇ xE, u t⟩
+
+| {z }
+
+> Alignment Objective
+
+, (5) where β(t) ≥ 0 controls the guidance strength. The quadratic term penalizes movement that is costly under the metric, while the linear term encourages decreasing the conditional energy. Since Mt ≻ 0, the objective is strictly convex and has a unique minimizer. Setting ∇ut Jt = Mtut + β(t)∇xE = 0 
+
+yields 
+
+u⋆t = −β(t) M−1 
+
+> t
+
+∇xE(xt, c ). (6) Substituting Eq. (4) gives the Manifold Optimal Guidance update 
+
+sMOG = s0 + β(t) M−1 
+
+> t
+
+∆s. (7) Eq. (7) can be interpreted as Riemannian natural gradient de-scent. In Euclidean space, steepest descent follows −∇ xE.Under a nontrivial geometry, the steepest descent direction becomes the Riemannian gradient grad ME = M−1 
+
+> t
+
+∇xE.The inverse metric M−1 
+
+> t
+
+thus preconditions the update to re-spect manifold geometry, amplifying components consistent with the manifold and suppressing directions that induce drift. 
+
+3.3. Unified View and Optimality Analysis 
+
+We next present a unified variational view of guidance and characterize the optimality of MOG. Consider the general-ized optimization problem 
+
+u⋆(Q) = arg min 
+
+> u∈Rd
+
+12 u⊤Qu + β⟨∇ xE, u ⟩, (8) where Q ≻ 0 defines the quadratic cost. Different choices of Q correspond to different geometric assumptions about the latent space. CFG is recovered by setting Q = I, which treats all directions equally and yields u⋆ ∝ ∆s. Other guidance rules can be interpreted as adding quadratic penal-ties on specific directions. For example, CFG++ penalizes 3Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+radial motion through Q = I + λˆxˆx⊤ with ˆx = xt/∥xt∥,and APG penalizes updates aligned with the unconditional score through Q = I + λs 0s⊤ 
+
+> 0
+
+as λ → ∞ , which projects updates onto the subspace orthogonal to s0.The principled choice of Q is given by the intrinsic geome-try of the data distribution. Latent states concentrate near a lower dimensional manifold M, and the corresponding nat-ural cost is induced by the Riemannian metric Mt. Setting 
+
+Q = Mt yields MOG as the unique minimizer of Eq. (8). We further show that MOG achieves the maximum energy reduction per unit geodesic displacement. Consider 
+
+v⋆ = arg min  
+
+> ∥v∥Mt≤1
+
+⟨∇ xE, v ⟩, (9) where ∥v∥Mt = pv⊤Mtv measures geodesic length. By the generalized Cauchy Schwarz inequality |⟨ x, y ⟩| ≤ ∥x∥M−1
+
+> t
+
+∥y∥Mt ,
+
+⟨∇ xE, v ⟩ ≥ −∥∇ xE∥ M−1
+
+> t
+
+· ∥ v∥Mt . (10) Equality holds if and only if v ∝ − M−1 
+
+> t
+
+∇xE. Hence, MOG follows the unique steepest descent direction un-der the manifold metric. Defining the guidance efficiency 
+
+η(u) ≜ −⟨∇ xE, u ⟩/∥u∥Mt , MOG achieves the maximum 
+
+ηMOG = ∥∇ xE∥ M−1
+
+> t
+
+. In contrast, CFG (which uses 
+
+u ∝ −∇ xE) generally attains lower efficiency under an anisotropic metric Mt, which explains why it requires larger, more artifact prone updates to reach comparable alignment. 
+
+# 4. Practical Instantiation 
+
+4.1. MOG-Score: Score Based Anisotropic Metric 
+
+The framework in Section 3 requires a metric tensor Mt,but explicitly storing a d × d matrix is infeasible in high dimensions. Useful metrics often admit low rank or diagonal structure, enabling O(d) matrix vector products without explicit construction. We instantiate Mt using quantities already available during sampling. The unconditional score s0 = ∇x log pt(xt) points toward higher density regions and approximates a normal direction to the noisy data manifold. This motivates an anisotropic metric that distinguishes motion along this direction from motion within the tangent space. We define the unit normal nt = s0/∥s0∥ and construct a metric with eigenvalue λ⊥ for the normal direction and λ⊤
+
+for tangent directions. Choosing λ⊥ ≫ λ⊤ penalizes off manifold motion while allowing tangential movement. The resulting rank one metric Mt = λ⊤I + ( λ⊥ − λ⊤)ntn⊤
+
+> t
+
+admits a closed form inverse via Sherman Morrison: 
+
+M−1 
+
+> t
+
+v = 1
+
+λ⊤
+
+v − λ⊥ − λ⊤
+
+λ⊤λ⊥
+
+(n⊤ 
+
+> t
+
+v) nt. (11) This computation uses one inner product and a scaled addi-tion, yielding O(d) complexity. We set λ⊤ = 1 .0 and the anisotropy ratio ρ = λ⊥/λ ⊤ = 10 throughout. 
+
+4.2. Auto-MOG: Energy Balanced Adaptive Scaling 
+
+MOG uses a scalar weight β(t) in sMOG = s0 +
+
+β(t) M−1 
+
+> t
+
+∆s, where ∆s = sθ (xt, t, c ) − s0 is the stan-dard conditional residual in CFG. A fixed β(t) can be brittle across noise levels and prompts. Auto MOG derives β(t)
+
+from an energy balance principle under Mt.Auto-MOG only requires matrix-free application of M−1
+
+> t
+
+and quadratic forms under Mt. In our implementation, Auto-MOG utilizes a combined metric estimator that in-tegrates both the score-based anisotropic metric and a feature-diagonal approximation. For the latter, we ex-tract feature maps ht ∈ RC×H×W from the final layer of the denoiser and compute per-channel spatial variance 
+
+σ2 
+
+> c
+
+(t) = Var i,j [ht,c,i,j ] + ϵ. To align with the latent geome-try, this C-dimensional variance vector is spatially broadcast to match the latent dimension d, yielding a diagonal metric applied via efficient element-wise rescaling. In ablation studies, we also evaluate these estimators individually. Effective guidance should neither overwhelm the prior score nor be negligible. Let vnat = M−1 
+
+> t
+
+∆s denote the natural gradient direction. We require the guidance energy to remain proportional to the prior energy: 
+
+β(t) vnat Mt = γ ∥s0∥Mt , (12) where ∥v∥Mt = ( v⊤Mtv)1/2 and γ > 0 is a balance factor analogous to the CFG scale. Squaring both sides and using 
+
+v⊤
+
+> nat
+
+Mt vnat = ∆ s⊤M−1 
+
+> t
+
+∆s yields 
+
+βauto (t) = γ
+
+s
+
+s⊤ 
+
+> 0
+
+Mt s0
+
+∆s⊤M−1 
+
+> t
+
+∆s . (13) In practice, defining prior energy Eprior (t) = ∥s0∥Mt and guidance energy Eguid (t) = ∥vnat ∥Mt , this simplifies to 
+
+βauto (t) = γ · Eprior (t)
+
+Eguid (t) + ε , (14) where ε > 0 ensures stability. For the MOG Score metric, these energies reduce to projections involving nt, incurring negligible overhead. This schedule naturally decays during sampling as ∥s0∥
+
+decreases with improving signal to noise ratio. It also adapts to prompt difficulty: weak conditional signals yield larger 
+
+β to compensate, while strong signals receive smaller β to prevent oversaturation. 4Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+Algorithm 1 MOG-Score and Auto-MOG  
+
+> 1:
+
+Input: Initial noise xT , condition c, steps N , balance factor γ 
+
+> 2:
+
+Output: Generated sample x0 
+
+> 3:
+
+for n = N, N − 1, . . . , 1 do  
+
+> 4:
+
+s0 ← sθ (xt, t, ∅) 
+
+> 5:
+
+∆s ← sθ (xt, t, c ) − s0 
+
+> 6:
+
+// Metric inverse application (Eq. 11)  
+
+> 7:
+
+u ← M−1 
+
+> t
+
+[∆ s] 
+
+> 8:
+
+// Auto MOG scaling (Eq. 14)  
+
+> 9:
+
+βt ← γ · ∥ s0∥Mt /(∥u∥Mt + ε) 
+
+> 10:
+
+xt−1 ← SAMPLER (xt, s 0 + βt · u, t ) 
+
+> 11:
+
+end for  
+
+> 12:
+
+return x0
+
+4.3. Algorithm and Complexity 
+
+Algorithm 1 summarizes the MOG framework. At each denoising step, we first compute unconditional and con-ditional scores as in standard CFG. MOG then applies a matrix-free metric operator to obtain the natural guidance direction via inverse application (Line 7), followed by adap-tive scaling through the energy ratio (Line 9). The resulting guided score directly replaces the CFG combination in any standard sampler. The computational overhead is negligible. MOG-Score re-quires only a small number of inner products and vector additions per step, yielding O(d) complexity. Auto MOG additionally evaluates two quadratic forms, maintaining the same O(d) cost. Since network inference dominates over-all runtime, the extra computation introduced by MOG is marginal in practice. 
+
+# 5. Experiments 
+
+5.1. Experimental Setup Models and Datasets. We conduct experiments on six rep-resentative diffusion models spanning diverse architectures. For class-conditional generation, we employ DiT-XL/2 (Pee-bles & Xie, 2023) and EDM2-XXL (Karras et al., 2024) on ImageNet ( 256 ×256 ). For text-to-image synthesis, we evaluate Lumina (Liu et al., 2024), SD-2.1 (Rombach et al., 2022), SD-XL (Podell et al., 2023), SD-3.5 (Esser et al., 2024), and FLUX.1 (Labs et al., 2025) using prompts from the MS-COCO 2017 (Lin et al., 2014) validation set. This se-lection encompasses UNet architectures, Transformer-based models (DiT, MMDiT), and Rectified Flow formulations, providing comprehensive coverage of modern generative systems. 
+
+Baselines. We compare MOG against four representative guidance methods. Standard CFG (Ho & Salimans, 2022) serves as the primary baseline. CFG++ (Chung et al., 2024) applies manifold-motivated radial projection to reduce drift. APG (Sadat et al., 2024) projects guidance orthogonally to the unconditional prediction. LF-CFG (Song & Lai, 2025) filters low-frequency components to attenuate accumulated artifacts. For all baselines, we use official implementations with default hyperparameters. 
+
+Evaluation Metrics. We adopt a comprehensive evalua-tion protocol measuring four aspects. For distribution fi-delity, we report Fr ´echet Inception Distance (FID) (Heusel et al., 2017), Precision, and Recall (Kynk ¨a ¨anniemi et al., 2019). For artifact quantification, we measure Saturation (mean HSV saturation) and Contrast (pixel-wise standard deviation) following (Sadat et al., 2024). For text-image alignment, we compute CLIP Score (ViT-g/14) (Radford et al., 2021) and Human Preference Score v2 (HPSv2) (Wu et al., 2023). We additionally report Aesthetic Score (AES) (Schuhmann et al., 2022) in ablation studies. 
+
+Implementation Details. We use MOG-Score with anisotropy parameter ρ=10 for fixed-β variants. For Auto-MOG, we employ the combined MOG-Score and MOG-Feat metric by default, setting γ=1 across all main experi-ments. Images are generated at native resolution and resized to 512 ×512 for metric computation. Latency is measured on a single NVIDIA A100 GPU with batch size 1. 
+
+5.2. Qualitative Evaluation 
+
+Visual comparisons at high guidance scales are presented in Figure 2. Standard CFG produces severe artifacts that deviate from the natural image manifold, manifesting as oversaturation and structural distortion. Although existing baselines provide partial relief, CFG++ reduces saturation at the cost of dynamic range, and APG introduces a dis-tinct haze. In contrast, Auto-MOG consistently maintains structural integrity and visual realism. Specific examples illustrate these advantages. In portraiture, Auto-MOG recovers natural skin tones while avoiding the metallic specular highlights typical of CFG. For intricate textures such as the lion astronaut, it preserves fine fur de-tails where CFG collapses into smooth, plastic-like surfaces. In high-contrast scenarios such as the wedding scene, our method prevents highlight clipping. Across diverse subjects ranging from animals to coral reefs, Auto-MOG achieves vi-brant yet natural saturation without the detail loss observed in competing methods. 
+
+5.3. Quantitative Evaluation 
+
+Table 1 summarizes quantitative performance across all benchmarks. Auto-MOG consistently establishes state-of-the-art fidelity, achieving an FID of 8.78 on DiT-XL/2 (vs. 12.45 for CFG++) and 4.30 on EDM2-XXL (vs. 4.94 for APG). These improvements extend to the latest architec-5Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance  
+
+> Figure 2. Qualitative comparison across guidance methods. All images are generated with Stable Diffusion XL at guidance scale 15. Standard CFG manifests oversaturation and harsh textures. CFG++ yields washed-out results with low contrast. APG introduces a hazy appearance. In contrast, Auto-MOG achieves the most realistic results.
+
+tures: on FLUX.1, Auto-MOG attains an FID of 17.84 compared to 18.15 for APG, while simultaneously achiev-ing superior alignment scores (HPSv2: 30.88, CLIP: 36.37). Such consistent gains across diverse model families sug-gest that manifold-aware guidance effectively constrains sampling trajectories to high-density regions of the data distribution, independent of the underlying architecture. Beyond fidelity, MOG demonstrates superior artifact sup-pression. On SD-XL ( w=15 ), standard CFG yields exces-sive Saturation (0.28) and Contrast (0.24), while Auto-MOG significantly reduces these to 0.17 and 0.16, respectively, aligning closely with natural image statistics. Crucially, this correction does not compromise semantic alignment: Auto-MOG attains the lowest FID while simultaneously achieving the highest HPSv2 (29.00) and CLIP (34.20) scores on SD-XL. This ability to optimize the alignment-fidelity Pareto frontier holds consistently across UNet, DiT, MMDiT, and Rectified Flow models, confirming MOG as a unified solu-tion for high-scale guidance. 
+
+5.4. User Study 
+
+To corroborate these objective metrics with human per-ceptual judgments, we conducted a rigorous blind paired-comparison study ( N = 37 ). Participants evaluated 60–80 image pairs per condition across four architectures (Lumina, SD-2.1, SD-XL, SD-3.5), rating outputs on Overall Quality, Color Fidelity, Realism, and Texture. As shown in Figure 3, Auto-MOG demonstrates clear prefer-ence advantages over baseline methods, achieving win rates 6Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+Table 1. Quantitative comparison across diverse benchmarks. DiT-XL/2 and EDM2-XXL are evaluated on ImageNet 256 ×256 ; all text-to-image models are evaluated on COCO 512 ×512 .
+
+Model Guidance FID ↓ Pre. ↑ Rec. ↑ Satu. ↓ Contrast ↓ HPSv2 ↑ CLIP ↑
+
+DiT-XL/2 (ImageNet-256, w = 4 )CFG 19.14 0.92 0.35 0.37 0.25 28.10 31.00 CFG++ 12.45 0.90 0.45 0.34 0.23 28.05 31.02 APG 9.34 0.89 0.56 0.30 0.20 28.00 30.98 LF-CFG 10.12 0.91 0.52 0.32 0.21 28.08 31.01 MOG-Score 9.05 0.92 0.57 0.29 0.19 28.20 31.10 Auto-MOG 8.78 0.91 0.58 0.31 0.20 28.25 31.12 
+
+EDM2-XXL (ImageNet-256, w = 2 )CFG 8.65 0.84 0.57 0.37 0.23 28.50 31.10 CFG++ 6.12 0.83 0.62 0.34 0.22 28.55 31.12 APG 4.94 0.83 0.67 0.30 0.21 28.45 31.08 LF-CFG 5.50 0.84 0.64 0.33 0.20 28.52 31.11 MOG-Score 4.55 0.85 0.68 0.30 0.23 28.60 31.15 Auto-MOG 4.30 0.84 0.69 0.32 0.21 28.65 31.18 
+
+SD-2.1 (COCO-512, w = 10 )CFG 27.53 0.65 0.41 0.36 0.27 25.51 30.38 CFG++ 24.10 0.66 0.45 0.31 0.25 25.70 30.55 APG 22.21 0.67 0.49 0.27 0.22 25.96 31.12 
+
+LF-CFG 23.05 0.68 0.46 0.29 0.20 25.62 30.50 MOG-Score 21.70 0.66 0.51 0.25 0.21 25.88 30.78 Auto-MOG 21.55 0.67 0.52 0.24 0.20 25.92 30.91 SD-XL (COCO-512, w = 15 )CFG 22.29 0.62 0.49 0.28 0.24 28.42 33.62 CFG++ 22.80 0.63 0.51 0.25 0.22 28.55 33.70 APG 22.35 0.64 0.50 0.18 0.17 28.60 33.78 LF-CFG 22.60 0.63 0.50 0.22 0.20 28.53 33.72 MOG-Score 21.75 0.65 0.53 0.19 0.17 28.78 34.05 Auto-MOG 21.60 0.64 0.54 0.17 0.16 29.00 34.20 
+
+SD-3.5 (COCO-512, w = 4 .5)CFG 22.13 0.81 0.56 0.41 0.31 29.10 34.60 CFG++ 20.50 0.82 0.59 0.38 0.29 29.35 34.75 APG 18.90 0.82 0.61 0.30 0.23 29.55 34.90 LF-CFG 19.45 0.81 0.58 0.36 0.28 29.40 34.82 MOG-Score 18.35 0.83 0.64 0.32 0.25 29.75 35.05 Auto-MOG 18.10 0.84 0.63 0.31 0.24 30.05 35.20 
+
+FLUX.1 (COCO-512, w = 4 .0)CFG 20.80 0.85 0.60 0.35 0.28 30.15 35.80 CFG++ 19.42 0.86 0.62 0.33 0.26 30.22 35.85 APG 18.15 0.86 0.65 0.28 0.22 30.40 35.92 LF-CFG 18.90 0.85 0.63 0.31 0.24 30.30 35.88 MOG-Score 18.23 0.88 0.67 0.29 0.23 30.65 36.10 Auto-MOG 17.84 0.87 0.66 0.30 0.24 30.88 36.37 
+
+Figure 3. User preference study comparing Auto-MOG against standard CFG. Top row: model-based evaluation. Bottom row: domain-based evaluation. Auto-MOG achieves consistent preference advantages, particularly in Color and Realism. 
+
+7Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance                                                                                  
+
+> Table 2. Ablation of Riemannian metric estimators on SD-XL. Method FID ↓HPSv2 ↑CLIP ↑AES ↑Latency CFG ( M=I)26.29 28.42 33.62 6.65 1.00 ×
+> MOG-Score 25.75 28.88 34.35 6.70 1.01 ×
+> MOG-Feat 25.62 29.16 34.20 6.72 1.06 ×
+> MOG-Score+Feat 25.45 29.24 34.43 6.73 1.08 ×
+> Auto-MOG 25.10 29.36 34.67 6.75 1.08 ×
+> Table 3. Sensitivity to anisotropy ratio ρ(MOG-Score).
+> ρFID ↓CLIP ↑HPSv2 ↑Satu. ↓
+> 126.20 33.70 28.45 0.27 525.85 34.30 28.82 0.20
+> 10 (Def.) 25.75 34.35 28.88 0.19
+> 20 25.80 34.15 28.80 0.19
+> 50 26.50 32.10 27.95 0.18
+> Table 4. Auto-MOG vs. Tuned CFG on SD-XL. Method FID ↓HPSv2 ↑CLIP ↑
+> CFG ( w=3 )27.10 27.90 32.50 CFG ( w=7 .5)25.90 28.70 34.10 CFG ( w=15 )26.29 28.42 33.62
+> Auto-MOG 25.10 29.36 34.67
+
+between 52.5% and 70.6% with rejection rates consistently below 20%. Domain-specific analysis reveals particularly strong performance in Portraits (66.2%; 74.8% for Color) and Paintings (80.3%), effectively mitigating the specific artifacts that plague baselines in these categories, such as skin tone shift and texture frying. Notable gains are also observed in Landscapes (54.1%) and Objects (52.7%). The strong preference in Color and Realism metrics confirms that geometric corrections translate directly to improved perceptual quality. See supplementary for details. 
+
+5.5. Ablation Studies 
+
+We conduct ablation studies on SD-XL (3K images, COCO 2017) to validate design choices. 
+
+Guidance Scale and Steps. Figure 4 (bottom) shows that MOG-Score exhibits greater stability than CFG at high scales, maintaining higher CLIP and HPSv2 scores. Figure 4 (top) demonstrates that Auto-MOG outperforms fixed-scale methods across all sampling steps (25-50). 
+
+Balance Factor. Figure 5 shows that performance peaks near γ=1 , with mild degradation elsewhere, indicating that Auto-MOG is robust to hyperparameter tuning. 
+
+Metric Instantiation. Table 2 compares metric estimators. MOG-Score offers improvements with negligible latency (1.01 ×). While combining feature-based metrics (MOG-Score+Feat) yields marginal gains, Auto-MOG provides the optimal trade-off between fidelity, alignment, and efficiency.    
+
+> Figure 4. Ablation on guidance scale and sampling steps.
+> Figure 5. Ablation on the Auto-MOG balance factor γ.
+
+Sensitivity to Anisotropy Ratio ( ρ). We investigate the anisotropy ratio ρ, a critical hyperparameter governing the penalty on off-manifold updates. Table 3 analyzes its impact on SD-XL. Setting ρ=1 yields an isotropic metric ( M =I), effectively reverting to standard CFG behavior with higher saturation and lower fidelity. Increasing ρ to the range 
+
+[5 , 20] creates a stable operating region where off-manifold artifacts are effectively suppressed without hindering align-ment. However, excessively large values (e.g., ρ=50 ) over-constrain the sampling trajectory, causing a decline in CLIP score. Our default ρ=10 offers a robust balance. 
+
+Comparison against Best-tuned CFG. We further examine whether Auto-MOG’s benefits persist against an optimally tuned static baseline. Table 4 compares Auto-MOG against CFG at low ( w=3 ), optimal ( w=7 .5), and high ( w=15 )scales. While low scales avoid saturation, they suffer from poor text alignment. Conversely, high scales improve align-ment but degrade image quality. Auto-MOG surpasses the Pareto frontier of fixed-scale CFG, achieving superior FID and HPSv2 compared to even the best-tuned static baseline. 8Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+# 6. Conclusion 
+
+We present Manifold-Optimal Guidance (MOG) , a frame-work that unifies diffusion guidance through Riemannian optimal transport. By modeling the anisotropic geometry of the data manifold, MOG jointly derives optimal guidance direction and adaptive strength from a single variational ob-jective. The closed-form solution integrates seamlessly into existing samplers without retraining. Experiments demon-strate that MOG effectively suppresses off-manifold drift and high-scale artifacts, achieving state-of-the-art perfor-mance across benchmarks. 
+
+# 7. Impact Statements 
+
+This paper presents work whose goal is to advance the field of machine learning. There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. 
+
+# References 
+
+Chung, H., Kim, J., Park, G. Y., Nam, H., and Ye, J. C. Cfg++: Manifold-constrained classifier free guidance for diffusion models. arXiv preprint arXiv:2406.08070 ,2024. De Bortoli, V., Mathieu, E., Hutchinson, M., Thornton, J., Teh, Y. W., and Doucet, A. Riemannian score-based generative modelling. In Advances in Neural Informa-tion Processing Systems (NeurIPS) , volume 35, pp. 2406– 2422, 2022. Esser, P., Kulal, S., Blattmann, A., Entezari, R., M ¨uller, J., Sanni, H., Levi, Y., Lorenz, D., Sauer, A., Boesel, F., et al. Scaling rectified flow transformers for high-resolution image synthesis. In International Conference on Machine Learning , pp. 12673–12713. PMLR, 2024. Fu, X. and Li, J. TCFG: Truncated classifier-free guidance for efficient and scalable text-to-image acceleration. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 18552–18562, 2025. Heusel, M., Ramsauer, H., Unterthiner, T., Nessler, B., and Hochreiter, S. GANs trained by a two time-scale update rule converge to a local Nash equilibrium. In Advances in Neural Information Processing Systems (NeurIPS) ,volume 30, pp. 6626–6637, 2017. Ho, J. and Salimans, T. Classifier-free diffusion guidance. 
+
+arXiv preprint arXiv:2207.12598 , 2022. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. In Advances in Neural Information Pro-cessing Systems (NeurIPS) , volume 33, pp. 6840–6851, 2020. Ho, J., Salimans, T., Gritsenko, A., Chan, W., Norouzi, M., and Fleet, D. J. Video diffusion models. In Advances in Neural Information Processing Systems (NeurIPS) ,volume 35, pp. 5733–5747, 2022. Karras, T., Aittala, M., Kynk ¨a ¨anniemi, T., Lehtinen, J., Aila, T., and Laine, S. Guiding a diffusion model with a bad version of itself. In Advances in Neural Information Processing Systems (NeurIPS) , 2024. Kynk ¨a ¨anniemi, T., Karras, T., Laine, S., Lehtinen, J., and Aila, T. Improved precision and recall metric for assess-ing generative models. In Advances in Neural Information Processing Systems (NeurIPS) , volume 32, 2019. Labs, B. F., Batifol, S., Blattmann, A., Boesel, F., Consul, S., Diagne, C., Dockhorn, T., English, J., English, Z., Esser, P., Kulal, S., Lacey, K., Levi, Y., Li, C., Lorenz, D., M ¨uller, J., Podell, D., Rombach, R., Saini, H., Sauer, A., and Smith, L. Flux.1 kontext: Flow matching for in-context image generation and editing in latent space, 2025. URL https://arxiv.org/abs/2506.15742 .Lin, S., Liu, B., Li, J., and Yang, X. Common diffusion noise schedules and sample steps are flawed. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) , pp. 5404–5411, 2024. Lin, T.-Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ra-manan, D., Doll ´ar, P., and Zitnick, C. L. Microsoft coco: Common objects in context. In European conference on computer vision (ECCV) , pp. 740–755. Springer, 2014. Liu, D., Zhao, S., Zhuo, L., Lin, W., Xin, Y., Li, X., Qin, Q., Qiao, Y., Li, H., and Gao, P. Lumina-mgpt: Illu-minate flexible photorealistic text-to-image generation with multimodal generative pretraining. arXiv preprint arXiv:2408.02657 , 2024. Liu, G.-H., Vahdat, A., Huang, D.-A., Theodorou, E. A., Nie, W., and Anandkumar, A. I2SB: Image-to-image schr ¨odinger bridge. In International Conference on Ma-chine Learning (ICML) , pp. 21228–21248, 2023. Mukherjee, A. et al. Manifold-guided lyapunov control with diffusion models. arXiv preprint arXiv:2403.17692 ,2024. Pandey, K., Sofian, F. M., Draxler, F., Karaletsos, T., and Mandt, S. Variational control for guidance in diffusion models. In International Conference on Machine Learn-ing (ICML) , 2025. Peebles, W. and Xie, S. Scalable diffusion models with trans-formers. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 4195–4205, 2023. 9Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., M ¨uller, J., Penna, J., and Rombach, R. SDXL: Im-proving latent diffusion models for high-resolution image synthesis. arXiv preprint arXiv:2307.01952 , 2023. Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al. Learning transferable visual models from natural language supervision. In International Conference on Machine Learning (ICML) , pp. 8748–8763, 2021. Ramesh, A., Dhariwal, P., Nichol, A., Chu, C., and Chen, M. Hierarchical text-conditional image generation with CLIP latents. arXiv preprint arXiv:2204.06125 , 2022. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., and Ommer, B. High-resolution image synthesis with la-tent diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 10684–10695, 2022. Sadat, S., Hilliges, O., and Weber, R. M. Eliminating over-saturation and artifacts of high guidance scales in diffu-sion models. In The Thirteenth International Conference on Learning Representations (ICLR) , 2024. Saharia, C., Chan, W., Saxena, S., Li, L., Whang, J., Denton, E., Ghasemipour, S. K. S., Ayan, B. K., et al. Photoreal-istic text-to-image diffusion models with deep language understanding. In Advances in Neural Information Pro-cessing Systems (NeurIPS) , volume 35, pp. 36479–36494, 2022. Schuhmann, C., Beaumont, R., Vencu, R., Gordon, C., Wightman, R., Cherti, M., Coombes, T., Katta, A., et al. LAION-5B: An open large-scale dataset for training next generation image-text models. In Advances in Neural Information Processing Systems (NeurIPS) , volume 35, pp. 25278–25294, 2022. Shen, D., Xiong, R., Fan, X., Wang, Y., Chen, Q., and Zhang, J. Rethinking the spatial inconsistency in classifier-free diffusion guidance. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 6945–6954, 2024. Sohl-Dickstein, J., Weiss, E., Maheswaranathan, N., and Ganguli, S. Deep unsupervised learning using nonequi-librium thermodynamics. In International Conference on Machine Learning (ICML) , pp. 2256–2265, 2015. Song, K. and Lai, H. Rethinking oversaturation in classifier-free guidance via low frequency. arXiv preprint arXiv:2506.21452 , 2025. Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Er-mon, S., and Poole, B. Score-based generative modeling through stochastic differential equations. In International Conference on Learning Representations (ICLR) , 2021. Wang, Y., Tang, C., Sun, L., Rossi, S., Xie, Y., Peng, C., Hannagan, T., Sabatini, S., Poerio, N., Tomizuka, M., et al. Optimizing diffusion models for joint trajectory pre-diction and controllable generation. In European Confer-ence on Computer Vision (ECCV) , pp. 324–341. Springer, 2024. Wu, X., Sun, K., Zhu, F., Zhao, R., and Li, H. Human pref-erence score v2: A solid benchmark for evaluating human preferences of text-to-image synthesis. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pp. 10963–10972, 2023. Xia, M., Xue, N., Shen, Y., Yi, R., Gong, T., and Liu, Y.-J. Rectified diffusion guidance for conditional generation. In Proceedings of the Computer Vision and Pattern Recog-nition Conference (CVPR) , pp. 13371–13380, 2025. Yang, L., Ding, S., Cai, Y., Yu, J., Wang, J., and Shi, Y. Guidance with spherical gaussian constraint for condi-tional diffusion. In International Conference on Machine Learning (ICML) , pp. 55938–55959, 2024. 10 Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+Supplementary Material for Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+# A. Overview 
+
+This supplementary material provides rigorous mathematical proofs, detailed implementation considerations, and extended experimental analyses that support the main manuscript. The document is organized as follows: • Section B : Formal derivation of the Manifold Optimal Guidance (MOG) update rule, including a rigorous proof of optimality via Lagrange multipliers. • Section C : Implementation details and numerical safeguards, with particular emphasis on stability in high noise regimes. • Section D : Comprehensive experimental configurations and evaluation protocols, presented in tabular format for reproducibility. • Section E : Statistical analysis of the user preference study, including formal hypothesis testing procedures and participant demographics. • Section F : Extended ablation studies examining schedule strategies and parameter sensitivity. • Section G : Additional qualitative results demonstrating generalization across diverse generative architectures. • Section H : Discussion of current limitations and directions for future work. 
+
+# B. Theoretical Derivation and Analysis 
+
+B.1. Derivation of the Conditional Energy Gradient 
+
+In the main paper, we use the conditional increment ∆s as a proxy for the negative gradient of the conditional energy potential E. We provide the step-by-step derivation below and clarify where approximation enters in practice. Let the conditional energy be defined as: 
+
+E(xt, c ) ≜ − log pt(c|xt). (15) By Bayes’ theorem, pt(c|xt) = pt(xt|c)p(c) 
+
+> pt(xt)
+
+, we obtain: 
+
+E(xt, c ) = − log pt(c|xt) (16) 
+
+= − (log pt(xt|c) + log p(c) − log pt(xt)) (17) 
+
+= − log pt(xt|c) + log pt(xt) − const . (18) Taking the gradient with respect to xt yields: 
+
+∇xE(xt, c ) = −∇ x log pt(xt|c) + ∇x log pt(xt). (19) Now define the ideal (population) conditional and unconditional scores: 
+
+s∗(xt, t, c ) ≜ ∇x log pt(xt|c), s∗(xt, t, ∅) ≜ ∇x log pt(xt). (20) Then: 
+
+∇xE(xt, c ) = −s∗(xt, t, c ) + s∗(xt, t, ∅) (21) 
+
+= −
+
+
+
+s∗(xt, t, c ) − s∗(xt, t, ∅)
+
+
+
+(22) 
+
+= −∆s∗(xt, t ). (23) Therefore, under exact scores, the identity 
+
+−∇ xE(xt, c ) = ∆ s∗(xt, t ) (24) holds analytically. 11 Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+Practical approximation. In practice, neural estimators sθ (xt, t, c ) and sθ (xt, t, ∅) approximate s∗, and we use: 
+
+∆s(xt, t ) ≜ sθ (xt, t, c ) − sθ (xt, t, ∅) ≈ ∆s∗(xt, t ) = −∇ xE(xt, c ). (25) All theoretical statements in the main paper should be interpreted as exact with s∗, and approximate with sθ due to modeling error. 
+
+B.2. Proof of Riemannian Descent Optimality 
+
+We claimed that the MOG update is the optimal steepest-descent direction under the local geometry induced by the Riemannian metric Mt. We provide a formal proof using Lagrange multipliers. 
+
+Problem Statement. Let g ≜ ∇xE(xt, c ). We seek an update direction v that maximizes instantaneous energy decrease subject to a fixed geodesic step size measured by Mt ≻ 0:
+
+min  
+
+> v
+
+⟨g, v ⟩ subject to v⊤Mtv = δ2. (26) 
+
+Proof. Form the Lagrangian: 
+
+L(v, λ ) = ⟨g, v ⟩ + λ(v⊤Mtv − δ2). (27) Setting the gradient w.r.t. v to zero: 
+
+∇v L(v, λ ) = g + 2 λM tv = 0 ⇒ v = − 12λ M −1 
+
+> t
+
+g. (28) Impose the constraint v⊤Mtv = δ2:
+
+δ2 = v⊤Mtv = 14λ2 g⊤M −1 
+
+> t
+
+MtM −1 
+
+> t
+
+g = 14λ2 g⊤M −1 
+
+> t
+
+g. (29) Thus, 12|λ| = δ
+
+q
+
+g⊤M −1 
+
+> t
+
+g. (30) Choosing the sign that decreases E gives the unique optimal direction: 
+
+v∗ = −δ · M −1 
+
+> t
+
+g
+
+q
+
+g⊤M −1 
+
+> t
+
+g. (31) 
+
+Connection to the MOG update. The vector M −1 
+
+> t
+
+g is therefore the unique steepest-descent direction under the Mt-geodesic constraint. In our algorithm, the scalar step size is controlled by β(t); substituting g = ∇xE and −∇ xE ≈ ∆s
+
+yields: 
+
+u∗(t) = −β(t) M −1 
+
+> t
+
+∇xE(xt, c ) ≈ β(t) M −1 
+
+> t
+
+∆s(xt, t ), (32) which matches the guided score form in the main paper. 
+
+# C. Implementation Details 
+
+C.1. Numerical Safeguards for Metric Construction 
+
+The Riemannian metric Mt depends on the unit normal vector nt = s0/∥s0∥. In high-noise regimes ( t → T ), the unconditional score s0 can have small magnitude and higher variance, leading to potential instability. To ensure robustness, we implement ϵ-stabilized normalization: 
+
+nt = s0
+
+∥s0∥2 + ϵ , where ϵ = 10 −5. (33) We apply the inverse metric using the Sherman–Morrison formula: 
+
+M −1 
+
+> t
+
+v = 1
+
+λ⊤
+
+v − λ⊥ − λ⊤
+
+λ⊤λ⊥
+
+(n⊤ 
+
+> t
+
+v) nt, (34) which is O(d) and numerically stable. 12 Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+C.2. Auto-MOG Constraints 
+
+Auto-MOG uses an adaptive schedule β(t) derived from the ratio of prior energy and guidance energy. To prevent numerical overflow when the guidance energy approaches zero, we apply a soft clamp: 
+
+β(t) = clamp 
+
+
+
+γ ∥s0∥Mt
+
+∥M −1 
+
+> t
+
+∆s∥Mt + 10 −6 , 0, 50 
+
+
+
+. (35) Empirically, β(t) remains within a moderate range during the semantic formation stage; the upper bound serves as a conservative safety net. 
+
+# D. Detailed Experimental Setup 
+
+All experiments were conducted using PyTorch on NVIDIA A100 GPUs. For clarity and reproducibility, we summarize all experimental protocols in tables. 
+
+D.1. Dataset and Evaluation Protocols  
+
+> Table 5. Evaluation protocols and sample counts used in our experiments.
+
+Benchmark Resolution Sample Count Notes 
+
+ImageNet (Class-Conditional) 256 ×256 50,000 Val labels; ADM reference stats MS-COCO (FID & CLIP) 512 ×512 30,000 Random captions from COCO 2017 val HPSv2 512 ×512 3,200 Standard HPSv2 prompt set 
+
+D.2. Key Hyperparameters  
+
+> Table 6. Key hyperparameters (consistent with the main paper).
+
+Category Parameter Value 
+
+Metric (MOG-Score) λ⊤ 1.0
+
+Metric (MOG-Score) λ⊥ 10 .0
+
+Metric (MOG-Score) ρ = λ⊥/λ ⊤ 10 
+
+Auto-MOG Balance factor γ 1.0
+
+Stability ϵ in nt normalization 10 −5
+
+Stability ϵ in Auto-MOG denominator 10 −6
+
+Stability β(t) clamp range [0 , 50] 
+
+D.3. Guidance Scales Used in Main Comparisons  
+
+> Table 7. Guidance scales used in the main-paper comparisons for each model.
+
+Model Guidance Scale / Setting 
+
+DiT-XL/2 (ImageNet-256) w = 4 
+
+EDM2-XXL (ImageNet-256) w = 2 
+
+SD-2.1 (COCO-512) w = 10 
+
+SD-XL (COCO-512) w = 15 
+
+SD-3.5 (COCO-512) w = 4 .5
+
+FLUX.1 (COCO-512) w = 4 .0
+
+13 Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+# E. User Study Details and Statistical Analysis 
+
+To rigorously quantify the perceptual benefits of Auto-MOG, we conduct a large-scale, controlled user preference study. This section details the participant demographics, experimental protocol, and extended statistical results. Furthermore, we include a focused comparison against state-of-the-art stabilization methods and a failure mode analysis to support the findings in Section 5.4 of the main paper. 
+
+E.1. Participants and Demographics 
+
+We recruit N = 37 participants for this study to ensure a statistically robust sample size. The participant pool is stratified to capture both technical and aesthetic perspectives: • Expert Group ( N = 15 ): Researchers and graduate students in computer vision/generative AI, familiar with diffusion model artifacts (e.g., oversaturation, mode collapse). • General User Group ( N = 22 ): Participants from diverse backgrounds (design, photography, and non-technical fields) representing general end-users. All participants report normal or corrected-to-normal vision and color perception. 
+
+E.2. Experimental Protocol 
+
+We employ a blind, forced-choice paired comparison (2AFC) protocol. • Stimuli: The evaluation set comprises 80 distinct prompts covering the four domains shown in Figure 3: Portrait, Landscape, Painting, and Objects. Images are generated using four architectures: Lumina, Stable Diffusion 2.1 (SD-2.1), SD-XL, and Stable Diffusion 3.5 (SD-3.5). • Procedure: For each trial, participants view two images side-by-side (Auto-MOG vs. Baseline) generated with the same seed and prompt. The position (left/right) is randomized. • Criteria: Participants select the superior image based on Overall Quality, Color Fidelity, Realism, and Texture. • Consistency Check: To filter random clicking, we embed 5 ”sentinel” trials (pairs with obvious quality differences). Participants failing more than 2 sentinel trials are excluded. 
+
+E.3. Aggregated Results vs. Standard CFG 
+
+We aggregate a total of 2,960 trials ( 37 users × 80 pairs ) comparing Auto-MOG against Standard CFG. We test the null hypothesis H0 : p = 0 .5 (random chance) using a Two-Sided Binomial Test .Table 8 presents the aggregated statistics. The mean preference rate for Auto-MOG is 62.0% for Overall Quality, with a tight 95% confidence interval of [60 .2% , 63 .8%] . The p-values ( p ≪ 0.001 ) confirm that the preference for Auto-MOG is systematic and statistically significant.   
+
+> Table 8. Aggregated User Study Results (Auto-MOG vs. Standard CFG). Data pools all 2,960 trials across 4 models. Win rates represent the mean preference for Auto-MOG. High statistical significance is observed for all metrics.
+
+Metric Auto-MOG Wins Total Trials Win Rate 95% C.I. Fleiss’ κ p-value 
+
+Overall Quality 1,835 2,960 62.0% [60.2%, 63.8%] 0.42 < 0.001 
+
+Color Fidelity 1,823 2,960 61.6% [59.8%, 63.4%] 0.45 < 0.001 
+
+Realism 1,794 2,960 60.6% [58.8%, 62.4%] 0.48 < 0.001 
+
+Texture Detail 1,732 2,960 58.5% [56.7%, 60.3%] 0.38 < 0.001 
+
+E.4. Comparative Analysis against State-of-the-Art Baselines 
+
+To demonstrate the robustness of AutoMOG beyond the standard CFG baseline, we conduct a rigorous comparative user study against two leading stabilization methods: APG (Sadat et al., 2024) and CFG++ (Chung et al., 2024). 14 Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+Experimental Configuration We recruit a panel of 10 expert evaluators with deep domain expertise in generative modeling. The evaluation protocol is strictly stratified across three distinct architectures to verify generalization capabilities: 1. SD-XL (Latent Diffusion): High-resolution latent space with complex geometry. 2. SD-3.5 (Transformer-based): Rectified Flow formulation with straighter ODE trajectories. 3. DiT-XL/2 (Pixel-space): Class-conditional generation operating directly on pixels. For each model, we generate 100 image pairs per baseline (Total N = 600 comparisons), utilizing high guidance scales (w ∈ [7 .5, 15] ) to maximize the visibility of off-manifold artifacts. 
+
+Qualitative Analysis As detailed in Table 9, AutoMOG demonstrates a consistent preference advantage, though the margin varies by architecture: • vs. APG (Projection): APG effectively mitigates saturation but often introduces ”ghosting” artifacts or high-frequency detail loss in pixel space. AutoMOG shows its strongest advantage on SDXL (61.0% win rate) , where APG’s orthogonal projection in the latent space frequently discards valid textural information. The gap narrows on SD3.5, where the flow-matching prior is naturally more robust. • vs. CFG++ (Manifold Constraint): CFG++ preserves structure well but often suffers from ”luminance drift,” producing images with crushed blacks or unnatural contrast. AutoMOG dominates in Color Fidelity , particularly on DiT-XL/2 (61.0% win rate), by maintaining the natural dynamic range of the data distribution.   
+
+> Table 9. Detailed User Preference Rates by Architecture. We report the win rates of AutoMOG against SOTA baselines across three distinct diffusion architectures. Note the higher variance on SDXL, indicating that AutoMOG’s geometric correction is particularly effective for high-dimensional latent diffusion models.
+
+Comparison Model Architecture AutoMOG Win Tie / Similar Baseline Win vs. APG 
+
+SDXL (Latent) 61.0% 11.0% 28.0% SD3.5 (Transformer) 53.0% 18.0% 29.0% DiT-XL/2 (Pixel) 56.0% 14.0% 30.0% 
+
+Weighted Average 56.7% 14.3% 29.0% 
+
+vs. CFG++ 
+
+SDXL (Latent) 64.0% 9.0% 27.0% SD3.5 (Transformer) 56.0% 13.0% 31.0% DiT-XL/2 (Pixel) 61.0% 11.0% 28.0% 
+
+Weighted Average 60.3% 11.0% 28.7% 
+
+E.5. Error and Failure Mode Analysis 
+
+We conduct a forensic analysis on the minority of trials where AutoMOG is ranked lower than the baselines to identify systematic failure modes: • Texture Smoothing (vs. Standard CFG): In ∼ 15% of rejected cases, experts note that AutoMOG appears ”over-polished.” While Standard CFG produces artifacts, the high-frequency noise can sometimes be perceptually interpreted as ”sharp texture” in stochastic regions (e.g., fur, grass), which AutoMOG’s manifold constraint tends to denoise. • Stylistic Saturation Preference: Although AutoMOG aligns mathematically with natural image statistics, a subset of users ( ∼ 8% ) prefers the ”hyper-real” or oversaturated look of high-scale guidance for abstract and fantasy prompts, perceiving the corrected output as ”less vibrant.” • Semantic Layout Shift: In rare cases ( ∼ 5% ), the geometric correction causes a slight alteration in the semantic layout compared to the uncorrected trajectory. If the user prefers the specific composition of the artifact-heavy baseline, AutoMOG is marked as ”worse” despite having better image quality. 15 Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+# F. Extended Ablation Studies 
+
+F.1. Impact of Guidance Strength and Scheduling Strategy 
+
+To verify that Auto-MOG’s improvement stems from principled geometric correction rather than simple strength reduction, we perform a comprehensive comparison against both static and dynamic scheduling strategies on SD-XL (COCO-512). 
+
+Baselines. We compare against: • Standard CFG Sweep: We evaluate fixed guidance scales w ∈ { 1, 5, 10 , 15 } to capture the full spectrum from under-guided to over-guided regimes. • Linear Schedule ( 15 → 1): A robust heuristic baseline where guidance linearly decays from w = 15 to w = 1 , aiming to mitigate late-stage artifacts. 
+
+Analysis of Robustness. Table 10 reveals the inherent trade-offs in Standard CFG: • Low Scale ( w = 1 ): Fails to align with the text prompt (CLIP 30.80), resulting in poor semantic generation. • Moderate Scale ( w = 5 ): Offers a reasonable balance but lacks the semantic ”punch” of higher scales (CLIP 33.95). • High Scales ( w = 10 , 15 ): While initially improving alignment, excessive guidance quickly degrades image quality (FID rises to 26.29) and paradoxically hurts perceptual alignment scores (HPSv2 drops to 28.42) due to severe artifacts. Crucially, while the Linear Decay ( 15 → 1) strategy successfully recovers fidelity (FID 25.80) by relaxing guidance at the end, it cannot maintain peak alignment (HPSv2 28.65), essentially behaving like a moderate fixed scale. In contrast, AutoMOG demonstrates superior robustness. By dynamically calibrating the update magnitude based on the manifold energy, it achieves the lowest FID (25.10) while simultaneously reaching the highest alignment scores (CLIP 34.67, HPSv2 29.36). This confirms that AutoMOG is not merely ”damping” the signal, but actively correcting the guidance direction to remain robustly on-manifold throughout the generation process.        
+
+> Table 10. Ablation on Guidance Strength and Scheduling. Comparison performed on SD-XL. Standard CFG shows a clear trade-off: weak guidance ( w= 1 ) yields poor alignment, while strong guidance ( w= 15 ) destroys fidelity. Linear Decay improves upon static scales but still falls short of AutoMOG , which achieves the best Pareto frontier across all metrics.
+
+Method Setting / Parameter FID ↓ HPSv2 ↑ CLIP ↑
+
+Standard CFG Scale w = 1 29.10 26.50 30.80 Standard CFG Scale w = 5 26.05 28.55 33.95 Standard CFG Scale w = 10 26.15 28.50 33.85 Standard CFG Scale w = 15 26.29 28.42 33.62 CFG (Linear) Linear Decay ( 15 → 1) 25.80 28.65 33.90 
+
+AutoMOG (Ours) Adaptive Energy Balance 25.10 29.36 34.67 F.2. Sensitivity to Anisotropy Ratio ( ρ)
+
+We analyze the sensitivity of the model to the anisotropy ratio ρ = λ⊥/λ ⊤. Table 11 shows that performance is stable for 
+
+ρ ∈ [5 , 20] .• ρ = 1 (Isotropic): The metric becomes Euclidean, effectively reverting to Standard CFG behavior with high saturation (0.27) and worse FID. • ρ = 50 (Over-constrained): Excessively penalizing off-manifold directions overly restricts the sampling path, leading to a drop in CLIP score (32.10) as the model struggles to follow the text condition. • ρ = 10 (Default): Provides the optimal balance between fidelity (FID 25.75) and alignment (CLIP 34.35). 16 Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance         
+
+> Table 11. Sensitivity Analysis of Anisotropy Ratio ρ.Evaluated on SD-XL ( w= 15 ). ρ≈10 yields the best trade-off.
+
+Ratio ρ Interpretation FID ↓ HPSv2 ↑ CLIP ↑ Saturation ↓
+
+ρ = 1 Isotropic (Standard CFG) 26.20 28.45 33.70 0.27 
+
+ρ = 5 Mild Correction 25.85 28.82 34.30 0.20 
+
+ρ = 10 Default (Ours) 25.75 28.88 34.35 0.19 
+
+ρ = 20 Strong Correction 25.80 28.80 34.15 0.19 
+
+ρ = 50 Over-Constrained 26.50 27.95 32.10 0.18 
+
+# G. Additional Qualitative Results 
+
+This section provides extended visual evidence that substantiates the generalization capabilities of Manifold Optimal Guidance (MOG) across diverse architectural paradigms. We evaluate our method on two state of the art text to image diffusion frameworks: Stable Diffusion 3.5 (SD-3.5) and Flux.1 . These experiments visually corroborate the quantitative findings from our user study and enable critical analysis of the method’s operational characteristics under officially recommended inference configurations. Unless otherwise specified, all Auto MOG experiments in this section employ a fixed correction strength of β = 1 .A central design objective of MOG is architectural agnosticism. To validate this property, we evaluate the method across the distinct guidance regimes prescribed for SD 3.5 and Flux.1, two frameworks that represent fundamentally different diffusion paradigms with different optimal operating conditions. 
+
+Stable Diffusion 3.5. We adopt the officially recommended guidance scale of w = 4 .5 for this architecture. As illustrated in Figure 6, standard CFG at this scale frequently induces high frequency artifacts, including oversaturated skin tones, exaggerated specular highlights, and unnatural lighting contrasts. This degradation pattern, colloquially termed the “deep frying” effect, arises from accumulated off manifold deviations during iterative sampling. Auto MOG regularizes the generation trajectory by enforcing Riemannian geometric constraints at each denoising step. This correction mechanism suppresses the off manifold drift responsible for chromatic distortions, restoring natural skin textures, balanced tonal distributions, and realistic dynamic range while preserving the semantic alignment and compositional fidelity that higher guidance scales provide. 
+
+Flux.1. This architecture employs a Rectified Flow Transformer backbone optimized for lower guidance intensities. We therefore set the guidance scale to the recommended value of w = 3 .0. Despite this conservative guidance regime, Figure 7 shows that standard CFG still introduces perceptible artifacts: subtle geometric rigidity, texture oversmoothing, and diminished material differentiation. Auto MOG addresses these limitations by recovering fine grained details that standard guidance otherwise discards. Improvements include enhanced fur texture fidelity in animal portraits, more accurate environmental lighting gradients in architectural scenes, and better surface material rendering across diverse subjects. These results demonstrate that manifold constrained correction yields tangible perceptual gains even in flow matching architectures explicitly tuned for lower guidance scales. 
+
+# H. Limitations and Future Work 
+
+While Manifold-Optimal Guidance (MOG) establishes a rigorous geometric framework for conditional diffusion, we identify specific constraints inherent to the current formulation and outline promising avenues for future research. 
+
+H.1. Limitations Dependence on Base Estimator Quality. MOG relies on the unconditional score s0(xt) as a proxy for the local manifold normal. Consequently, the method’s performance is bounded by the quality of the base model’s density estimation. In regimes where s0 is poorly calibrated (e.g., sparse data regions or highly out-of-distribution samples), the derived metric Mt
+
+may enforce constraints towards an inaccurate geometry. MOG acts as a geometric multiplier; it cannot rectify fundamental pathologies in the underlying vector field. 
+
+Manifold Codimension Assumption. To maintain O(d) computational efficiency, our current instantiation models the metric Mt as a rank-1 modification of the identity. Geometrically, this implicitly assumes that the ”off-manifold” direction 17 Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+Figure 6. Correction of Saturation Artifacts on SD 3.5 ( w = 4 .5). At the officially recommended guidance scale, standard CFG (odd columns) frequently produces oversharpened edges, saturated color distributions, and unnatural contrast enhancement. Auto MOG (even columns, β = 1 ) effectively corrects these off manifold deviations, restoring natural skin tones, balanced highlight rolloff, and realistic lighting gradients throughout the scene. 
+
+is locally one-dimensional (i.e., codimension 1). While sufficient for natural images, complex modalities (such as video or 3D volumes) may possess higher-dimensional normal subspaces. In such cases, a rank-1 metric might fail to penalize all components of off-manifold drift. 
+
+Static Anisotropy Heuristic. Although the anisotropy ratio ρ = 10 proves robust empirically across all tested tasks, treating 18 Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance      
+
+> Figure 7. Detail Enhancement on Flux.1 ( w= 3 .0). Even at the lower guidance scales appropriate for Rectified Flow architectures, standard CFG (odd columns) can induce texture degradation and geometric oversimplification. Auto MOG (even columns, β= 1 )substantially improves material fidelity, surface detail preservation, and structural coherence, demonstrating consistent effectiveness across fundamentally different generative paradigms.
+
+it as a global constant is a simplification. Theoretically, the optimal penalty should be dynamic and spatially varying, proportional to the local curvature of the manifold: regions with sharp curvature require stronger penalties to prevent tangential drift than flat regions. 
+
+H.2. Future Work Curvature-Adaptive Anisotropy. A natural extension is to derive ρ(xt) dynamically based on second-order information. Future work could explore efficient Hessian-vector product estimators to approximate the local curvature of the log-density. This would allow the metric to apply stronger geometric corrections strictly where the manifold curves sharply, further optimizing the trade-off between diversity and fidelity. 
+
+Higher-Rank Metric Approximations. To address manifolds with high codimension, future iterations could construct rank-k metrics using the principal components of feature-space gradients. While this would increase computational cost 19 Manifold-Optimal Guidance: A Unified Riemannian Control View of Diffusion Guidance 
+
+from O(d) to O(kd ), it would provide fine-grained control for high-dimensional tasks, enabling the method to constrain updates to specific subspaces (e.g., preserving semantic semantics while penalizing style deviations). 
+
+Riemannian Video Diffusion. Extending MOG to video diffusion models is a promising direction. The ”manifold” in video generation implies not just spatial realism but temporal coherence. A Riemannian metric defined over the spatio-temporal latent volume could effectively suppress the ”flickering” artifacts common in CFG-guided video synthesis by explicitly penalizing directions that violate temporal continuity as off-manifold noise. 20

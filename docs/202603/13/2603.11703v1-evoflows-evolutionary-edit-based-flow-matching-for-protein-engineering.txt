@@ -1,0 +1,2822 @@
+Title: EvoFlows: Evolutionary Edit-Based Flow-Matching for Protein Engineering
+
+URL Source: https://arxiv.org/pdf/2603.11703v1
+
+Published Time: Fri, 13 Mar 2026 00:40:12 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+# EvoFlows: Evolutionary Edit-Based Flow-
+
+# Matching for Protein Engineering 
+
+Nicolas Deutschmann * , Constance Ferragu *, Jonathan D. Ziegler *, Shayan 
+
+Aziznejad & Eli Bixby 
+
+Cradle 
+
+Zürich, CH 
+
+{nicolas, constance, jonathan}@cradle.bio 
+
+Abstract 
+
+We introduce EvoFlows, a variable-length sequence-to-sequence protein 
+
+modeling approach uniquely suited to protein engineering. Unlike autore -
+
+gressive and masked language models, EvoFlows perform a limited, 
+
+controllable number of insertions, deletions, and substitutions on a template 
+
+protein sequence. In other words, EvoFlows predict not only  which  muta -
+
+tion to perform, but also  where  it should occur. Our approach leverages 
+
+edit flows to learn mutational trajectories between evolutionarily-related 
+
+protein sequences, simultaneously modeling distributions of related natural 
+
+proteins and the mutational paths connecting them. Through extensive  in 
+
+silico  evaluation on diverse protein communities from UNIREF and OAS, 
+
+we demonstrate that EvoFlows capture protein sequence distributions with 
+
+a quality comparable to leading masked language models commonly used in 
+
+protein engineering, while showing improved ability to generate non-trivial 
+
+yet natural-like mutants from a given template protein. 
+
+1 Introduction 
+
+Protein optimization aims to improve the properties of an existing protein through targeted 
+
+edits to its sequence. Unlike  de-novo  design, which seeks to generate entirely new sequences, 
+
+protein optimization operates in the local neighborhood of a known functional protein, 
+
+applying edits (mutations, insertions, or deletions) that preserve overall structure and 
+
+function while modifying targeted properties  (Listov et al., 2024 ).
+
+In recent years, protein language models (PLMs) have emerged as successful tools for protein 
+
+optimization  (Hie et al., 2024 ; Lin et al., 2023 ; Madani et al., 2023 ). While PLMs capture 
+
+rich functional and evolutionary information, the existing models do not natively support 
+
+edit-based modeling of protein evolution under which optimization operates. 
+
+Given the outsized impact of optimization in pre-clinical drug development pipelines  (Paul 
+
+et al., 2010 ), designing fit-for-purpose models is highly desirable. Such a model, before 
+
+being conditioned on a task  (Gruver et al., 2023 ; Widatalla et al., 2024 ) should generate 
+
+function-preserving variants of a lead protein for unguided exploration  (Hie et al., 2024 )
+
+and serve as a foundation for fine-tuning. Optimization would benefit from PLMs with 
+
+local-edit capabilities comparable to masked-language-models that also display desirable 
+
+features of autoregressive models such as the absence of  ad hoc  masking and variable-length 
+
+sequence generation, which is crucial to model certain protein families like antibodies  (Rock 
+
+et al., 1994 ).
+
+> *Equal contribution.
+
+1Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+Figure 1:  Overview of EvoFlows.  Edit process on two sequences from a set of homologs. 
+
+To this end, we introduce EvoFlows, a discrete flow-matching approach  (Gat et al., 2024 ;
+
+Havasi et al., 2025 ) to protein optimization that learns edit-based sequence-to-sequence 
+
+transition rules. EvoFlows generate protein variants by applying substitutions, insertions, 
+
+and deletions (indels) to an existing protein (see  Figure 1 ), rather than modeling token-
+
+level likelihoods or denoising corrupted inputs. We show that EvoFlows effectively capture 
+
+evolutionary patterns and yield high-quality generative models that natively supports 
+
+variable-length protein sequences while matching the performance of the current state-of-
+
+the-art PLMs. 
+
+We demonstrate the following results: 
+
+• Edit flows, trained in a sequence-to-sequence setup, learn the desired distributions; 
+
+as we show in a deterministic setting with a ground truth set of edits ( Section 4.1 ). 
+
+• EvoFlows, trained on natural protein communities, meaningfully capture the 
+
+sequence distribution and generate non-trivial mutations on a starting protein 
+
+(Section 4.2 ). 
+
+• We propose a new grid-free inference procedure better suited to vectorized opera -
+
+tions. 
+
+2 Related work 
+
+2.1  Protein Language Models (PLMs) 
+
+Protein language models (PLMs) learn representations of protein sequences by pre-training 
+
+on large corpora of unlabeled sequences. Common pre-training methods include masked 
+
+language modeling (MLM)  (Brandes et al., 2022 ; Elnaggar et al., 2022 ; Verkuil et al., 2022 ),
+
+autoregressive PLMs  (Chen et al., 2024 ; Ferruz et al., 2022 ; Jr and Bepler, 2025 ; Madani et 
+
+al., 2023 ), and discrete diffusion–based sequence models  (Alamdari et al., 2024 ; Hallee et al., 
+
+2025 ). These models have been shown to capture structural, functional, and evolutionary 
+
+information, and serve as foundations for downstream prediction and generation tasks. 
+
+Autoregressive PLMs  parameterize a distribution over protein sequences as 
+
+2Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+𝑝 𝜃 (𝑥 ) = ∏
+
+> 𝐿
+> 𝑖 =1
+
+𝑝 𝜃 (𝑥 𝑖  | 𝑥 <𝑖 ), (1) 
+
+where  𝑥  = (𝑥 1, …, 𝑥 𝐿 ) ∈𝒜︀  𝐿  is a protein sequence over the amino acid alphabet  𝒜︀  , and each 
+
+conditional probability  𝑝 𝜃 (𝑥 𝑖  | 𝑥 <𝑖 ) is a categorical distribution over amino acids. We denote 
+
+𝑥 <𝑖  as a sequence where positions  ≥ 𝑖  are masked. 
+
+Autoregressive models have been successful for  de novo -like tasks like enzyme generation 
+
+with weak conditioning  (Madani et al., 2023 ; Munsamy et al., 2024 ) but lack flexible controls 
+
+in an optimization setting. Methods generating local variants rely on conditioning on one 
+
+(Chen et al., 2024 ) or multiple context sequences  (Jr and Bepler, 2025 ) but require the 
+
+model to generate the entire sequence to obtain a few mutations, which is inefficient. Masked 
+
+language modeling is often perceived as a more parsimonious approach for protein variant 
+
+generation. 
+
+Masked PLMs  instead learn the conditional distributions of the form 
+
+𝑝 𝜃 (𝑥 𝑖 |𝑥 \𝑖 ), 𝑖  = 1, …, 𝐿 , (2) 
+
+where  𝑥 \𝑖  denotes the sequence with position  𝑖  masked. As in the autoregressive case, the 
+
+model outputs a categorical distribution over amino acids at each position. 
+
+Masked PLMs define residue-level conditional distributions rather than a distribution 
+
+over protein sequences. While they can be used for sequence generation through iterative 
+
+decoding, this requires specifying mask locations and assumes a fixed sequence length. 
+
+Discrete diffusion models  generalize masked and autoregressive language modeling by 
+
+introducing an explicit generation path through a sequence of intermediate states. They 
+
+define a stochastic forward corruption process over discrete sequences and learn to invert 
+
+this process through denoising  (Austin et al., 2021 ; Hoogeboom et al., 2022 ).
+
+Formally, a diffusion model defines a forward Markov process that progressively corrupts a 
+
+clean sequence  𝑥 (0) and learns the reverse process 
+
+𝑝 𝜃 (𝑥 (𝑡 −1)|𝑥 (𝑡 )), (3) 
+
+which iteratively denoises toward the data distribution. 
+
+In protein diffusion models, the corruption is often defined by iteratively introducing 
+
+“absorbing” states ([MASK] tokens) (Alamdari et al., 2024 ) to which valid tokens are 
+
+converted. This framework is a generalization that encompasses both autoregressive (left-
+
+to-right denoising paths) and MLM (single step in order-agnostic paths). 
+
+This generalization also appears in potential applications of diffusion models in protein 
+
+optimization: conditioning on a starting sequence requires applying some level of corruption, 
+
+which raises the same issue for picking  where  that corruption should be applied like for 
+
+masked PLMs. On the other hand, starting from a fully corrupted state requires the same 
+
+level of unnecessary computation and conditioning as autoregressive models. 
+
+2.2  Evotuning 
+
+Evotuning  (Alley et al., 2019 ) adapts pre-trained PLMs to a specific protein family by 
+
+further training on sequences drawn from a homologous sequence set, such as those retrieved 
+
+from a protein database by sequence-similarity search  (Steinegger and Söding, 2017 ), using 
+
+the same self-supervised learning objective. Evotuned models have been shown to better 
+
+capture family-specific constraints and improve performance on downstream prediction and 
+
+design tasks  (Alley et al., 2019 ). Given the opportunity for improvement on tasks limited to 
+
+3Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+a single protein family, foundational PLMs should be evotuned when compared to family-
+
+specific models like EvoFlows. 
+
+2.3  Discrete Flow Matching (DFM) and Edit Flows 
+
+Discrete Flow Matching  (Gat et al., 2024 ) defines a continuous-time Markov chain (CTMC) 
+
+𝑋 𝑡  over sequences of tokens in a discrete alphabet  𝒜︀  . DFM models approximate a joint 
+
+distribution over pairs of sequences  𝜋 (𝑥 , 𝑥 ′) by learning a local flow  𝑢 𝑡  such that 
+
+ℙ(𝑋 𝑡 +ℎ = 𝑥 𝑡 +ℎ|𝑋 𝑡  = 𝑥 𝑡 ) = 𝛿 [𝑥 𝑡 +ℎ − 𝑥 𝑡 ] + ℎ𝑢 𝑡 (𝑥 𝑡 +ℎ|𝑥 𝑡 ) + 𝑜 (ℎ),
+
+ℙ(𝑋 0 = 𝑥 , 𝑋 1 = 𝑥 ′) = 𝜋 (𝑥 , 𝑥 ′). (4) 
+
+This permits the transport of source samples  𝑥 0 ∼ 𝑝 0(𝑋 0) to target samples  𝑥 1 ∼ 𝑝 1(𝑋 1)
+
+such that pairs follow the joint distribution  𝜋 (𝑥 0, 𝑥 1).
+
+While the original formulation of DFM was limited to fixed-length sequences,  Havasi et 
+
+al. (2025)  introduce edit flows, a variant where transitions encoded by  𝑢 𝑡  are extended to 
+
+elementary edit operations (mutations, insertions, deletions). 
+
+This target rate is generated by defining an extended space  𝒵︀  =𝒜︀  ∪ {𝜀 } where  𝜀  represents 
+
+an empty character that enables token-wise alignment of sequence pairs  (𝑥 0, 𝑥 1) by lifting 
+
+them to  𝑧 0, 𝑧 1 ∈𝒵︀  ∗, two sequences of equal length. A conditional probability is then defined 
+
+from a continuous, bijective, increasing schedule  𝜅 𝑡  : [0, 1] → [0, 1]
+
+𝑝 𝑡 (𝑧 |𝑧 0, 𝑧 1) = ∏
+
+> 𝑖 ∈⟦1,…,|𝑧 |⟧
+
+((1 − 𝜅 𝑡 ) 𝛿 𝑧 (𝑖 )
+
+> 0
+
+(𝑧 (𝑖 )) + 𝜅 𝑡  𝛿 𝑧 (𝑖 )
+
+> 1
+
+(𝑧 (𝑖 ))). (5) 
+
+This leads to a conditional rate through differentiation and can be marginalized to obtain  𝑢 𝑡 .
+
+Importantly, because edits are always elementary,  𝑢 𝑡  can be expressed in terms of sequences 
+
+in  𝒜︀  ∗ exclusively. Given a distribution  𝜋 (𝑧 0, 𝑧 1) that generates aligned pairs, the model  𝑢 𝜃 
+
+> 𝑡
+
+is trained by optimizing a Bregman divergence for all times  𝑡 :ℒ︀ 
+
+= 𝔼  
+
+> 𝜋 (𝑧 0,𝑧 1)
+> 𝑡 ∼𝒰︀ (0,1)
+> 𝑝 𝑡 (𝑧 |𝑧 0,𝑧 1)
+
+(QQQQQQR
+
+∑
+
+> 𝑥 ′≠𝑥
+
+𝑢 𝜃  
+
+> 𝑡
+
+(𝑥 ′|𝑥 ) −̇ 𝜅 𝑡 
+
+1 − 𝜅 𝑡 
+
+∑
+
+> 𝑖 ∈⟦1,…,|𝑧 ‖]
+> 𝑧 (𝑖 )≠𝑧 (𝑖 )
+> 1
+
+log  𝑢 𝜃  
+
+> 𝑡
+
+(𝑥 (𝑧 , 𝑖 , 𝑧 (𝑖 ) 
+
+> 1
+
+)|𝑥 (𝑧 ))
+
+)]]]]]]^
+
+, (6) 
+
+where  𝑥 (𝑧 ) is the  𝒜︀  ∗-sequence obtained from  𝑧  by removing  𝜀  tokens and  𝑥 (𝑧 , 𝑖 , 𝑐 ) is the  𝒜︀  ∗
+
+-sequence obtained by inserting  𝑐  at position  𝑖  before removing  𝜀 . Note that the first sum is 
+
+tractable because  𝑢  is non-zero only for pairs of sequences that differ by an elementary edit. 
+
+We find that Edit Flows offer a combination of features that existing PLMs do not cover: 
+
+unlike MLMs, they support variable-length sequence generation and do not rely on  ad 
+
+hoc  mask insertions and, unlike autoregressive models they modify sequences locally. In 
+
+particular, the progressive addition of elementary edits mimics the way single-amino-acid 
+
+mutations connect sequences through evolution or protein engineering. We therefore propose 
+
+that PLMs based on Edit Flows can fill the functionality gap we observe in the protein 
+
+optimization space. 
+
+3 EvoFlows 
+
+We introduce EvoFlows, protein language models designed for protein optimization. In a 
+
+nutshell, EvoFlows are discrete edit-flow models  (Havasi et al., 2025 ) that connect evolu -
+
+tionarily-related sequences, homologs, to each other through a series of edit operations: 
+
+4Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+substitutions, deletions and insertions. As described in  Section 2.3 , we need to specify a 
+
+data distribution  𝜋  over  𝒵︀  ∗ ×𝒵︀  ∗, which we chose to do by first specifying a distribution 
+
+over  𝒜︀  ∗ ×𝒜︀  ∗ and an alignment procedure that inserts  𝜀  tokens in protein sequences. 
+
+3.1  Homologous protein pair distributions 
+
+An EvoFlow model should enable sampling variants of a template protein sequence  𝑥  that 
+
+are likely to preserve its function. In the language of  Section 2.3 , this means that we 
+
+should define  𝜋 (𝑥 , 𝑥 ′) to capture some notion of  ℙ(𝑥  has a similar function to  𝑥 ′). Protein 
+
+homology (meaning that two or more proteins share a common ancestor through evolu -
+
+tion) provides a useful approximation for biochemical function similarity: related species 
+
+produce similar proteins which perform analogous tasks in their respective organisms. These 
+
+evolutionary relationships are established through patterns of similarity between protein 
+
+sequences across species, where functional components of a protein tend to be more strongly 
+
+conserved and mutations are biased toward chemically similar amino-acids  (Henikoff and 
+
+Henikoff, 1992 ).
+
+We therefore propose the following procedure to generate the pairwise distribution  𝜋 (𝑥 , 𝑥 ′)
+
+over pairs of protein sequences: given a starting protein  𝑥 †, we use protein homolog search 
+
+tools such as mmseqs2  (Steinegger and Söding, 2017 ) to query large protein databases 
+
+such as UNIREF30  (Suzek et al., 2007 ) and OAS  (Olsen et al., 2022 ) for likely-related 
+
+natural sequences. This cluster of similar protein sequences  𝑅 (𝑥 †) is taken as an empirical 
+
+distribution over proteins that have an evolutionary relationship to  𝑥 †:
+
+𝑝 𝑥 † (𝑥 ) = 1
+
+|𝑅 (𝑥 †)| ∑
+
+> 𝑥 ′∈𝑅 (𝑥 †)
+
+𝛿 𝑥 ′ (𝑥 ). (7) 
+
+So that our models capture sequence-to-sequence relationships characteristic of protein 
+
+homology, we define the target  𝜋 (𝑥 , 𝑥 ′) ∝ 𝟙 (𝑥  homologous to  𝑥 ′), which we approximate as 
+
+𝜋 𝑥 † (𝑥 , 𝑥 ′) = 𝑝 𝑥 † (𝑥 )𝑝 𝑥 † (𝑥 ′). (8) 
+
+This leads to EvoFlows learning to sample homologs  𝑥 ′ of a starting sequence  𝑥 .
+
+3.2  Pairwise protein alignment 
+
+The target path distribution is defined as an expectation over a distribution of aligned 
+
+pairs  𝜋 (𝑧 0, 𝑧 1), where  𝑧 0 and  𝑧 1 represent source and target sequences augmented with an 
+
+empty token  𝜀  to ensure that they have equal length. There is a natural notion of pairwise 
+
+alignment for proteins, which is part of how sequence homology is estimated  (Needleman 
+
+and Wunsch, 1970 ; Smith and Waterman, 1981 ). This means that we can define sequence-
+
+to-sequence edit flow models in the protein space that rely on standard protein sequence 
+
+alignment tools, where elementary edits including insertions and deletions correspond to 
+
+actual biochemical events  (Henikoff and Henikoff, 1992 ). We use the Needleman-Wunsch 
+
+algorithm to compute alignments between pairs of protein sequences to produce augmented 
+
+sequences in  𝒵︀  .
+
+3.3  Inference sampling 
+
+At inference time, our generative model draws samples from  𝑝 1 by sampling a realization 
+
+of the corresponding CTMC  𝑥 𝑡  and returns  𝑥 1 ∼ 𝑝 1:
+
+• Initialize: Sample  𝑥 0 ∼ 𝑝 0 and set  𝑡 0 = 0.
+
+5Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+• Time-to-event: At time  𝑡 𝑛 , sample the duration  Δ𝑛  until the next event. Let  𝜏 
+
+denote the first-event time after  𝑡 𝑛 . The CDF for  𝜏  is 
+
+ℙ(𝜏  ≤ 𝑇  | 𝑥 𝑡 𝑛  ) = 1 − exp (∫
+
+> 𝑡 𝑛 +𝑇
+> 𝑡 𝑛
+
+𝑢 𝑠 (𝑥 𝑡 𝑛  |𝑥 𝑡 𝑛  ) d𝑠 ). (9) 
+
+We sample  Δ𝑛  via inverse CDF: draw  𝑈  ∼ Uniform (0, 1) and numerically integrate 
+
+until 
+
+log (𝑈  ) − ∫
+
+> 𝑡 𝑛 +Δ𝑛
+> 𝑡 𝑛
+
+(𝑢 𝑠 (𝑥 𝑡 𝑛  |𝑥 𝑡 𝑛  )) d𝑠  = 0. (10) 
+
+• Denote  𝑡 𝑛 +1 = 𝑡 𝑛  + Δ𝑛 . If  𝑡 𝑛 +1 < 1, sample 
+
+𝑥 𝑡 𝑛 +1 ∼ − 𝑢 𝑡 𝑛 +1 (⋅ |𝑥 𝑡 𝑛  )
+
+𝑢 𝑡 𝑛 +1 (𝑥 𝑡 𝑛  |𝑥 𝑡 𝑛  ), (11) 
+
+and continue. Otherwise, return  𝑥 𝑡 𝑛  as  𝑋 1.
+
+Note that this method is formally very close to the Euler integration proposed by  Havasi et 
+
+al. (2025)  but replaces repeated Bernoulli variable sampling with a single uniform sampling. 
+
+This approach has the practical benefit that it does not require adding potentially large 
+
+sub-leading terms to  (4), otherwise needed to avoid pathological distributions. 
+
+We additionally introduce a clock normalization hyperparameter that applies a length-
+
+normalized edit rate scaling, allowing control over the number of edits the model performs 
+
+independently of sequence length. 
+
+3.4  Architecture 
+
+EvoFlows parameterizes the rate function  𝑢 𝜃  
+
+> 𝑡
+
+(𝑥 ′ | 𝑥 ) using an architecture that operates 
+
+directly on sequences  𝑥  ∈𝒜︀  ∗ and continuous time  𝑡  ∈ [0, 1]. We use the encoder trunk of 
+
+a pre-trained ESM-2 model  (Lin et al., 2023 ) to compute a time-independent sequence 
+
+embedding which is then made time-dependent using Feature-wise Linear Modulation 
+
+(FiLM)  (Perez et al., 2018 ). We finally use shallow MLPs as prediction heads to map token 
+
+embeddings to rates for individual edits. More details on the parametrization can be found 
+
+in  Section A 
+
+Importantly for practical applications, the late application of the FiLM time embedding 
+
+means that the cost of updating the time  𝑡  for a fixed input is negligible. This makes inference 
+
+as described in  Section 3.3  efficient despite the numerical integral potentially requiring many 
+
+forward passes. 
+
+4 Results 
+
+Unlike  Havasi et al. (2025) , where source distributions correspond to noise, both marginals 
+
+in our flow describe natural protein sequences. We first validate edit flows on a synthetic task 
+
+with known expected mappings, then evaluate EvoFlows on six protein homolog datasets. 
+
+4.1  Deterministic setup 
+
+6Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+Table 1:  Edit classification on the deterministic benchmark.  Per-class precision, recall, and 
+
+F1-score for each edit type (no-op, insertion, substitution, deletion), along with prevalence of 
+
+each edit type in the ground truth. Values are reported with bootstrap confidence intervals. 
+
+Performance is highest for no-op edits, while insertion, substitution, and deletion remain 
+
+well separated, indicating reliable discrimination between edit types in the deterministic 
+
+setting. 
+
+Edit Type  Precision  Recall  F1-Score  Prevalence 
+
+No-op  0.982 ± 0.001 0.983 ± 0.000 0.982 ± 0.000 0.888 
+
+Insertion  0.820 ± 0.005 0.796 ± 0.006 0.808 ± 0.005 0.047 
+
+Substitution  0.804 ± 0.005 0.843 ± 0.007 0.823 ± 0.005 0.043 
+
+Deletion  0.910 ± 0.006 0.850 ± 0.007 0.879 ± 0.006 0.022                 
+
+> 50
+> 1000
+> 00.51
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 150
+> 1000
+> 00.51
+> 50
+> 1000
+> 00.51
+> 50
+> 1000
+> 00.51
+> 200
+> 400
+> 600
+> 800
+> 1000
+> Clocknormalization
+> RecallRecallRecallRecall
+> Precision
+> No-opInsertionSubs.Deletion
+
+Figure 2:  Precision-recall trade-offs under clock normalization.  Precision-recall curves for 
+
+each edit type (no-op, insertion, substitution, deletion) on the deterministic edit benchmark, 
+
+which shows how clock normalization controls the trade-off between recall and precision. 
+
+While no-op predictions remain stable, insertion, substitution, and deletion exhibit sys -
+
+tematic precision-recall shifts as the clock normalization varies, highlighting its role in 
+
+calibrating edit selection behavior. 
+
+We construct a synthetic dataset with deterministic edit patterns to evaluate the model in 
+
+a controlled setting. From a natural protein sequence  𝑧 0, we generate  𝑧 1 through position-
+
+dependent rules: 
+
+• If  𝑧 0[𝑖 ] = A, include  Sub (𝑖  + 5, H).
+
+• If  𝑧 0[𝑖 ] = C, include  Ins (𝑖  − 2, S).
+
+• If  𝑧 0[𝑖 ] = G and  𝑧 0[𝑗 ] = L and  𝑧 0[𝑘 ] = K for some  𝑗  < 𝑖  < 𝑘 , include  Del (𝑖 ).
+
+Edits are applied in order: insertions (increasing index), deletions, then substitutions. This 
+
+yields a unique  𝑧 1 for each  𝑧 0, enabling precise assessment of edit type, position, and amino 
+
+acid identity—unlike natural MSAs where alignments may admit multiple explanations. 
+
+Results across sequence lengths and clock normalization factors are shown in  Figure 2 ,
+
+Figure 4 , and  Table 1 .
+
+4.2  EvoFlows 
+
+We evaluate EvoFlows on 6 seed proteins: enzymes, growth factors, and antibody fragments 
+
+(VHH and ScFv). Each homolog set is split into train, inference, and holdout. From each 
+
+inference sequence  𝑥 0, we generate  𝑥 1 using five methods: Random pairing, EvoFlows, 
+
+Evotuning, Evotuning with forced mutations, and random mutations. We compare the 
+
+7Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+> Random pairing
+> EvoFlow (ours)
+> Evotune
+> Evotune (forced)
+> Random
+> 2
+> 5
+> 10
+> 2
+> 5
+> 100
+> 2
+> Random pairing
+> EvoFlow (ours)
+> Evotune
+> Evotune (forced)
+> Random
+> 50
+> 100
+> 150
+> 200
+> 250
+> Random pairing
+> EvoFlow (ours)
+> Evotune
+> Evotune (forced)
+> Random
+> 0.75
+> 0.8
+> 0.85
+> 0.9
+> 0.95
+> 1Random pairing
+> EvoFlow (ours)
+> Evotune
+> Evotune (forced)
+> Random
+> −2.5
+> −2
+> −1.5
+> −1
+> Random pairing
+> EvoFlow (ours)
+> Evotune
+> Evotune (forced)
+> Random
+> 0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> Random pairing
+> EvoFlow (ours)
+> Evotune
+> Evotune (forced)
+> Random
+> 0
+> 0.01
+> 0.02
+> 0.03
+> Random pairing
+> EvoFlow (ours)
+> Evotune
+> Evotune (forced)
+> Random
+> 0
+> 0.05
+> 0.1Random pairing
+> EvoFlow (ours)
+> Evotune
+> Evotune (forced)
+> Random
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1
+> Random pairing
+> EvoFlow (ours)
+> Evotune
+> Evotune (forced)
+> Random
+> 0
+> 1
+> 2
+> 3
+> 4
+> Random pairing
+> EvoFlow (ours)
+> Evotune
+> Evotune (forced)
+> Random
+> −1000
+> −800
+> −600
+> −400
+> −200
+> 0
+
+Avg
+
+Levenshtein to x0
+
+Avg pairwise
+
+Levenshtein Covariance ESM2 PLL Entropy delta
+
+JS divergence KL divergence MIP MMD
+
+Profi le log-
+
+likelihood
+
+Figure 3: Comparison of EvoFlows and baseline methods across evaluation metrics. Each 
+
+point represents a dataset coming from a profile search based on one of the seed proteins 
+
+detailed in  Section C  of the appendix. EvoFlows generates variants that remain close to 
+
+the holdout distribution. Random mutation baseline performs worst across all metrics. Evo-
+
+tuning without forced mutations achieves competitive scores but introduces significantly 
+
+fewer sequence edits (at times as low as 1.5 edits on average per sequence), while forcing 
+
+mutations degrades performance. See  Figure 5  for per-dataset breakdowns. 
+
+resulting  {𝑥 1} to the holdout split as a proxy target distribution, matching the expected 
+
+number of edits per sequence across methods (except random pairing). 
+
+EvoFlows inference 
+
+We sample  𝑥 1 ∼ 𝑝 𝜃 (· | 𝑥 0) from a trained EvoFlows model. 
+
+Data and pair construction.  Homologs are obtained via iterative profile search against 
+
+UniRef30 with profile expansion and realignment, filtering for query coverage  ≥ 0.8 and 
+
+E-value  ≤ 10−1. We additionally search ColabFold’s environmental database to increase 
+
+evolutionary depth. Training pairs are formed by enumerating all unordered sequence pairs; 
+
+each pair  (𝑥 0, 𝑥 1) is globally aligned via Needleman-Wunsch to yield  (𝑧 0, 𝑧 1) ∈𝒜︀  𝐿 
+
+𝜀  ×𝒜︀  𝐿 
+
+𝜀  .
+
+Dataset details are provided in  Table 2 .
+
+4.3  Baselines 
+
+Random Pairing.  A “ground truth” transport model selecting random pairs from  𝑥 0,
+
+representing the flows EvoFlows is trained to generalize. 
+
+Evotuned PLM.  We evotune ESM-2-650M on the same homologs used for EvoFlows 
+
+training. Edit positions are sampled from a positional distribution derived from per-column 
+
+entropy: 
+
+8Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+𝐻 (ℓ) = − ∑ 
+
+> {𝑎 ∈𝒜︀ }
+
+𝑝 ℓ(𝑎 ), log (𝑝 ℓ(𝑎 ) + 𝜀 ), (12) 
+
+where  𝑝 ℓ(𝑎 ) is the amino acid frequency in aligned column  ℓ (excluding gaps). Entropy 
+
+weights are normalized and mapped to ungapped coordinates. Masked positions are itera -
+
+tively infilled using the evotuned MLM with temperature scaling. 
+
+Evotuned PLM with forced mutations.  Forces mutations at masked positions by 
+
+blocking infilling of the original amino acid. 
+
+Random mutations.  Applies the same expected edit count, but samples positions and 
+
+replacement amino acids uniformly. 
+
+Benchmarking indels.  All benchmarks concern substitutions only; no widely used method 
+
+exists for obtaining indels from masked language models. 
+
+5 Conclusion 
+
+We introduced EvoFlows, an edit-based discrete flow matching framework that learns pro -
+
+tein transition rules via substitutions, insertions, and deletions. Unlike existing models that 
+
+require external specification of edit positions or generate entire sequences to obtain local 
+
+variants, EvoFlows jointly predicts both the edit type and position. We extend the original 
+
+work on edit flows in two key areas: (1) biological sequences are uniquely well-suited for 
+
+edits in an augmented alignment space. Unlike natural language or code, protein evolution 
+
+operates through discrete, well-defined mutations with clear alignment rules between similar 
+
+sequences datasets of similar proteins with well-defined alignments are readily available. 
+
+(2) our deterministic benchmark confirms that edit flows can reliably learn local transition 
+
+distributions in the seq2seq setting, a regime not fully explored in prior work. On six diverse 
+
+protein families, EvoFlows generates variants that are both non-trivial and natural-like, 
+
+while exploring significantly larger edit distances than PLM baselines. 
+
+Our evaluation is currently limited to  in silico  analysis. While the generated variants exhibit 
+
+natural-like properties, wet-lab validation remains essential to confirm functional fitness. 
+
+Looking forward, we see train-time and inference-time conditioning as promising directions 
+
+for practical protein engineering: property-based guidance, sequence constraints (motifs, 
+
+mutation budgets), and metadata conditioning (species, gene ontology). Such mechanisms 
+
+would enable EvoFlows to serve as a foundation for guided protein optimization. 
+
+References 
+
+Alamdari, S., Thakkar, N., Berg, R. van den, Tenenholtz, N., Strome, R., Moses, A. M., 
+
+Lu, A. X., Fusi, N., Amini, A. P., and Yang, K. K. Protein generation with evolutionary 
+
+diffusion: sequence is all you need.  Biorxiv , 2024. https://doi.org/ 10.1101/2023.09.11. 
+
+556673 
+
+Alley, E. C., Khimulya, G., Biswas, S., AlQuraishi, M., and Church, G. M. Unified rational 
+
+protein engineering with sequence-based deep representation learning.  Nature Methods ,
+
+16 (12), 1315–1322, 2019. 
+
+Altschul, S. F., Gertz, E. M., Agarwala, R., Schäffer, A. A., and Yu, Y.-K. PSI-BLAST 
+
+pseudocounts and the minimum description length principle.  Nucleic Acids Research ,
+
+37 (3), 815–824, 2009. https://doi.org/ 10.1093/nar/gkn981 
+
+9Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+Austin, J., Johnson, D. D., Ho, J., Tarlow, D., and Berg, R. van den. Structured 
+
+Denoising Diffusion Models in Discrete State-Spaces.  Advances in Neural Information 
+
+Processing Systems , 34 , 17981–17993, 2021.  https://proceedings.neurips.cc/paper_files/ 
+
+paper/2021/file/958c530554f78bcd8e97125b70e6973d-Paper.pdf 
+
+Brandes, N., Ofer, D., Peleg, Y., Rappoport, N., and Linial, M. ProteinBERT: a universal 
+
+deep-learning model of protein sequence and function.  Bioinformatics , 38 (8), 2102–2110, 
+
+2022. https://doi.org/ 10.1093/bioinformatics/btac020 
+
+BRENDA Enzyme Database.  Information on EC 2.6.1.51 - serine-pyruvate transaminase ,
+
+2025. 
+
+Chen, A., Stanton, S. D., Alberstein, R. G., Watkins, A. M., Bonneau, R., Gligorijevic, 
+
+V., Cho, K., and Frey, N. C. LLMs Are Highly-Constrained Biophysical Sequence 
+
+Optimizers.  NeurIPS 2024 Workshop on AI for New Drug Modalities , 2024, December. 
+
+Dunn, S., Wahl, L., and Gloor, G. Mutual information without the influence of phylogeny or 
+
+entropy dramatically improves residue contact prediction.  Bioinformatics , 24 (3), 333– 
+
+340, 2007. https://doi.org/ 10.1093/bioinformatics/btm604 
+
+Elnaggar, A., Heinzinger, M., Dallago, C., Rehawi, G., Wang, Y., Jones, L., Gibbs, T., 
+
+Feher, T., Angerer, C., Steinegger, M., Bhowmik, D., and Rost, B. ProtTrans: Toward 
+
+Understanding the Language of Life Through Self-Supervised Learning.  IEEE Transac -
+
+tions on Pattern Analysis and Machine Intelligence , 44 (10), 7112–7127, 2022. https:// 
+
+doi.org/ 10.1109/tpami.2021.3095381 
+
+Ferruz, N., Schmidt, S., and Höcker, B. ProtGPT2 is a deep unsupervised language model 
+
+for protein design.  Nature Communications , 13 (1), 4348, 2022. https://doi.org/ 10.1038/ 
+
+s41467-022-32007-7 
+
+Gat, I., Remez, T., Shaul, N., Kreuk, F., Chen, R. T., Synnaeve, G., Adi, Y., and Lipman, 
+
+Y. Discrete flow matching.  Advances in Neural Information Processing Systems , 37 ,
+
+133345–133385, 2024. 
+
+Gretton, A., Borgwardt, K. M., Rasch, M. J., Schölkopf, B., and Smola, A. A Kernel Two-
+
+Sample Test.  Journal of Machine Learning Research , 13 (25), 723–773, 2012.  http://jmlr. 
+
+org/papers/v13/gretton12a.html 
+
+Gruver, N., Stanton, S. D., Frey, N. C., Rudner, T. G. J., Hotzel, I., Lafrance-Vanasse, J., 
+
+Rajpal, A., Cho, K., and Wilson, A. G. Protein Design with Guided Discrete Diffusion. 
+
+Thirty-Seventh Conference on Neural Information Processing Systems , 2023.  https:// 
+
+openreview.net/forum?id=MfiK69Ga6p 
+
+Hallee, L., Rafailidis, N., Bichara, D. B., and Gleghorn, J. P.  Diffusion Sequence Models 
+
+for Enhanced Protein Representation and Generation , 2025.  https://arxiv.org/abs/2506. 
+
+08293 
+
+Hanke, L., Vidakovics Perez, L., Sheward, D. J., Das, H., Schulte, T., Moliner-Morro, A., 
+
+Cber, M., Vlasova, N., Schul, S., and others. An alpaca nanobody neutralizes SARS-
+
+CoV-2 by blocking receptor interaction.  Nature Communications , 11 (1), 4420, 2020. 
+
+https://doi.org/ 10.1038/s41467-020-18174-5 
+
+Havasi, M., Karrer, B., Gat, I., and Chen, R. T. Edit Flows: Variable Length Discrete Flow 
+
+Matching with Sequence-Level Edit Operations.  The Thirty-Ninth Annual Conference 
+
+on Neural Information Processing Systems , 2025. 
+
+Henikoff, S., and Henikoff, J. G. Amino acid substitution matrices from protein blocks. 
+
+Proceedings of the National Academy of Sciences , 89 (22), 10915–10919, 1992. https:// 
+
+doi.org/ 10.1073/pnas.89.22.10915 
+
+10 Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+Hie, B. L., Shanker, V. R., Xu, D., Bruun, T. U. J., Weidenbacher, P. A., Tang, S., Wu, 
+
+W., Pak, J. E., and Kim, P. S. Efficient Evolution of Human Antibodies from General 
+
+Protein Language Models.  Nature Biotechnology , 42 (2), 275–283, 2024. https://doi.org/ 
+
+10.1038/s41587-023-01763-2 
+
+Hoogeboom, E., Gritsenko, A. A., Bastings, J., Poole, B., Berg, R. van den, and Salimans, T. 
+
+Autoregressive Diffusion Models.  International Conference on Learning Representations ,
+
+2022.  https://openreview.net/forum?id=Lm8T39vLDTE 
+
+Jr, T. F. T., and Bepler, T. Understanding protein function with a multimodal retrieval-aug -
+
+mented foundation model.  The Thirty-Ninth Annual Conference on Neural Information 
+
+Processing Systems , 2025.  https://openreview.net/forum?id=fKerD2AQai 
+
+Koudelakova, T., Bidmanova, S., Dvorak, P., Pavelka, A., Chaloupkova, R., Prokop, Z., and 
+
+Damborsky, J. Haloalkane dehalogenases: biotechnological applications.  Biotechnology 
+
+Journal , 8(1), 32–45, 2013. https://doi.org/ 10.1002/biot.201100486 
+
+Koçer, İ., Cox, E. C., DeLisa, M. P., and Bhattacharya, R. Effects of variable domain 
+
+orientation on anti-HER2 single-chain variable fragment antibody expressed in the 
+
+Escherichia coli cytoplasm.  Biotechnology Progress , 37 (2), e3102, 2021. https://doi.org/ 
+
+10.1002/btpr.3102 
+
+Kucera, T., Togninalli, M., and Meng-Papaxanthos, L. Conditional generative modeling for 
+
+de novo protein design with hierarchical functions.  Bioinformatics , 38 (13), 3454–3461, 
+
+2022. https://doi.org/ 10.1093/bioinformatics/btac353 
+
+Leslie, C., Eskin, E., and Noble, W. S. The spectrum kernel: a string kernel for SVM protein 
+
+classification.  Pac Symp Biocomput , 564–575, 2002. 
+
+Lin, Z., Akin, H., Rao, R., Hie, B., Zhu, Z., Lu, W., Smetanin, N., Verkuil, R., Kabeli, O., 
+
+Shmueli, Y., and others. Evolutionary-scale prediction of atomic-level protein structure 
+
+with a language model.  Science , 379 (6637), 1123–1130, 2023. 
+
+Listov, D., Goverde, C. A., Correia, B. E., and Fleishman, S. J. Opportunities and challenges 
+
+in design and optimization of protein function.  Nature Reviews Molecular Cell Biology ,
+
+25 (8), 639–653, 2024. 
+
+Madani, A., Krause, B., Greene, E. R., Subramanian, S., Mohr, B. P., Holton, J. M., Olmos, 
+
+J. L., Xiong, C., Sun, Z. Z., Socher, R., Fraser, J. S., and Naik, N. Large language models 
+
+generate functional protein sequences across diverse families.  Nature Biotechnology ,
+
+41 (8), 1099–1106, 2023. https://doi.org/ 10.1038/s41587-022-01618-2 
+
+Munsamy, G., Illanes-Vicioso, R., Funcillo, S., Nakou, I. T., Lindner, S., Ayres, G., Sheehan, 
+
+L. S., Moss, S., Eckhard, U., Lorenz, P., and Ferruz, N.  Conditional Language Models 
+
+Enable the Efficient Design of Proficient Enzymes  (p. 2024.05.03.592223). bioRxiv, 2024. 
+
+https://doi.org/ 10.1101/2024.05.03.592223 
+
+Needleman, S. B., and Wunsch, C. D. A general method applicable to the search for 
+
+similarities in the amino acid sequence of two proteins.  Journal of Molecular Biology ,
+
+48 (3), 443–453, 1970. https://doi.org/ 10.1016/0022-2836(70)90057-4 
+
+Olsen, T. H., Boyles, F., and Deane, C. M. Observed Antibody Space: A diverse database 
+
+of cleaned, annotated, and translated unpaired and paired antibody sequences.  Protein 
+
+Science , 31 (1), 141–146, 2022. https://doi.org/ https://doi.org/10.1002/pro.4205 
+
+Paul, S. M., Mytelka, D. S., Dunwiddie, C. T., Persinger, C. C., Munos, B. H., Lindborg, 
+
+S. R., and Schacht, A. L. How to Improve R&D Productivity: The Pharmaceutical 
+
+Industry's Grand Challenge.  Nature Reviews Drug Discovery , 9(3), 203–214, 2010. 
+
+https://doi.org/ 10.1038/nrd3078 
+
+11 Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+Perez, E., Strub, F., De Vries, H., Dumoulin, V., and Courville, A. Film: Visual reasoning 
+
+with a general conditioning layer.  Proceedings of the AAAI Conference on Artificial 
+
+Intelligence , 32 (1), 2018. 
+
+Rock, E. P., Sibbald, P. R., Davis, M. M., and Chien, Y. H. CDR3 length in antigen-specific 
+
+immune receptors.  Journal of Experimental Medicine , 179 (1), 323–328, 1994. https:// 
+
+doi.org/ 10.1084/jem.179.1.323 
+
+Roovers, R. C., Vosjan, M. J., Laeremans, T., Khoulati, R. el, Bruin, R. C. de, Ferguson, 
+
+K. M., Lemmon, M. A., Dongen, G. A. van, and Henegouwen, P. M. van Bergen en. 
+
+Efficient inhibition of EGFR signaling and of tumour growth by antagonistic anti-EGFR 
+
+nanobodies.  Cancer Immunology, Immunotherapy , 60 (8), 1047–1058, 2011. https://doi. 
+
+org/ 10.1007/s00262-011-1027-2 
+
+Smith, T. F., and Waterman, M. S. Identification of common molecular subsequences. 
+
+Journal of Molecular Biology , 147 (1), 195–197, 1981. https://doi.org/ 10.1016/0022-2836 
+
+(81)90087-5 
+
+Steinegger, M., and Söding, J. MMseqs2 enables sensitive protein sequence searching for the 
+
+analysis of massive data sets.  Nature Biotechnology , 35 (11), 1026–1028, 2017. https:// 
+
+doi.org/ 10.1038/nbt.3988 
+
+Suzek, B. E., Huang, H., McGarvey, P., Mazumder, R., and Wu, C. H. UniRef: comprehen -
+
+sive and non-redundant UniProt reference clusters.  Bioinformatics , 23 (10), 1282–1288, 
+
+2007. https://doi.org/ 10.1093/bioinformatics/btm098 
+
+UniProt Consortium.  FGF2 - Fibroblast growth factor 2 - Gallus gallus (Chicken) , 2025. 
+
+Verkuil, R., Kabeli, O., Du, Y., Wicky, B. I. M., Milles, L. F., Dauparas, J., Baker, D., 
+
+Ovchinnikov, S., Sercu, T., and Rives, A. Language models generalize beyond natural 
+
+proteins.  Biorxiv , 2022. https://doi.org/ 10.1101/2022.12.21.521521 
+
+Widatalla, T., Rafailov, R., and Hie, B.  Aligning Protein Generative Models with Experi -
+
+mental Fitness via Direct Preference Optimization , 2024. https://doi.org/ 10.1101/2024. 
+
+05.20.595026 
+
+A Architecture Details 
+
+Sequence embedding:  Given a sequence  𝑥 𝑡  ∈𝒜︀  𝐿 , we compute token embeddings using 
+
+a pretrained ESM-2 model, 
+
+ℎ𝑡  = ESM2 (𝑥 𝑡 ) ∈ ℝ𝐿 ×𝐷 , (13) 
+
+where  𝐷  is the dimension of the embeddings. To maintain consistency with ESM-2, the 
+
+embedder includes explicit start and end tokens. 
+
+Time conditioning:  We embed the time  𝑡  using a sinusoidal embedding followed by an 
+
+MLP: 
+
+𝜏 𝑡  = MLP (Sinusoidal (𝑡 )) ∈ ℝ𝐷 . (14) 
+
+This time embedding is used to condition the token representations via Feature-wise Linear 
+
+Modulation (FiLM)  (Perez et al., 2018 ), which learns a feature-wise affine transformation 
+
+that maps  𝜏 𝑡  to scale and shift vectors  (𝛾 𝑡 , 𝛽 𝑡 ) ∈ ℝ𝐷 . The token embeddings are transformed 
+
+as ̃
+
+ℎ𝑡 [𝑖 ] = ℎ𝑡 [𝑖 ] ⊙ (1 + 𝛾 𝑡 ) + 𝛽 𝑡 , (15) 
+
+and are shared across all heads. 
+
+12 Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+Notably, the proposed time-conditioning mechanism enables efficient changing of time for 
+
+fixed inputs, which is particularly useful for training with multiple time samples per sequence 
+
+in a batch. 
+
+Rate prediction:  The rate  𝑢 𝜃  
+
+> 𝑡
+
+(𝑥 ′|𝑥 ) is obtained through a similar parametrization as what 
+
+is adopted by  Havasi et al. (2025) :
+
+𝑢 𝜃  
+
+> 𝑡
+
+(𝑥 ′|𝑥 ) =
+
+{®¯𝜆 sub  
+
+> 𝑡
+
+(̃ℎ𝑡 [𝑖 ])𝑄 sub  
+
+> 𝑡
+
+(̃ℎ𝑡 [𝑖 ], 𝑖 , 𝑎 ) if  𝑥 ′ = sub (𝑥 , 𝑖 , 𝑎 )
+
+𝜆 ins  
+
+> 𝑡
+
+(̃ℎ𝑡 [𝑖 ])𝑄 ins  
+
+> 𝑡
+
+(̃ ℎ𝑡 [𝑖 ], 𝑖 , 𝑎 ) if  𝑥 ′ = ins (𝑥 , 𝑖 , 𝑎 )
+
+𝜆 del  
+
+> 𝑡
+
+(̃ℎ𝑡 [𝑖 ])𝑄 del  
+
+> 𝑡
+
+if  𝑥 ′ = del (𝑥 , 𝑖 )
+
+0 otherwise 
+
+, (16) 
+
+where  sub (𝑥 , 𝑖 , 𝑎 ) denotes  𝑥  transformed by a substitution by the token  𝑎  at position  𝑖 ,
+
+sub (𝑥 , 𝑖 , 𝑎 ) denotes  𝑥  transformed by an insertion of the token  𝑎  after position  𝑖  and  del (𝑥 , 𝑖 )
+
+denotes  𝑥  transformed by a deletion at position  𝑖 .
+
+Both  𝜆 ∙ 
+
+> 𝑡
+
+and  𝑄 ∙ 
+
+> 𝑡
+
+are defined as shallow MLPs and denote respectively positional rates and 
+
+distributions over tokens. The positional rates  𝜆 ∙ 
+
+> 𝑡
+
+are normalized using either a softplus 
+
+transformation or a bounded sigmoid mapping to ensure the rates are positive and numer -
+
+ically stable. The token distributions  𝑄 ∙ 
+
+> 𝑡
+
+are parametrized as ESM2 language prediction 
+
+heads. 
+
+B Evaluation Metrics 
+
+In this section, we describe the selected metrics for sequence and dataset distribution 
+
+evaluation and comparison in detail. Generative model evaluation has been notoriously 
+
+difficult, and we aim to choose metrics and distances suitable for the proposed task of 
+
+protein sequence generation. 
+
+B.1  Dataset Heuristics 
+
+We hypothesize that a well performing, unconditioned generation should be distributionally 
+
+indistinguishable from a subsampled hold-out set of the multiple sequence alignment used 
+
+for training. The generative process should thus recreate this set of defined heuristics. At a 
+
+sequence level, we consider the distribution of sequence lengths, the overall distribution of 
+
+amino acid residues, and the per-position distribution of amino acids and gaps with respect 
+
+to a fixed sequence alignment. 
+
+B.2  Model-Based Pseudo Log Likelihood 
+
+It is possible to quantify the likelihood of a sequence under a probabilistic model. The most 
+
+commonly known method related to LLMs is perplexity (PPL, applicable to autoregressive 
+
+models), or pseudo log likelihood (PLL, applicable to masked language models). For both 
+
+models the cumulative likelihood of a generative path is calculated. While AR models can 
+
+be traversed in a single, well-defined path, this does not hold true for MLM. For the latter, 
+
+we choose a single random order over individually masked positions to calculate the pseudo 
+
+log likelihood. 
+
+B.3  Covariance and Mutual Information 
+
+A strong indicator for models correctly capturing signals connected to coevolution is the 
+
+proper covariance of individual positions in an alignment. Covariance can be an indicator 
+
+13 Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+of sequences that co-evolved with epistatic changes, for instance to maintain structural 
+
+contacts. 
+
+In natural protein evolution, amino acid substitutions do not occur independently. When 
+
+a mutation changes one position in a protein structure, compensatory mutations at other 
+
+positions often follow to maintain protein stability and function. These co-evolving positions 
+
+exhibit statistical dependencies that can be detected as covariance in multiple sequence 
+
+alignments. A generative model that accurately captures these evolutionary constraints 
+
+should reproduce the covariance patterns observed in natural protein families. 
+
+4D Covariance.  Given a set of one-hot-encoded sequences  𝒳︀  = {𝑥 1, …, 𝑥 𝑁  } ⊂ {0, 1}𝙻 ×𝟸 𝟷 
+
+from a joint alignment, we define the positional amino acid frequency  𝑓 𝑖 (𝑎 ), the joint 
+
+frequency  𝑓 𝑖 𝑗 (𝑎 , 𝑏 ), and the covariance  𝐶 𝑖 𝑗 (𝑎 , 𝑏 ) as: 
+
+𝑓 𝑖 (𝑎 ) = 1
+
+𝑁  ∑
+
+> 𝑁
+> 𝑛
+
+𝑥 𝑛 𝑖 𝑎  ∈ ℝ𝙻 ×𝟸 𝟷 ,
+
+𝑓 𝑖 𝑗 (𝑎 , 𝑏 ) = 1
+
+𝑁  ∑
+
+> 𝑁
+> 𝑛
+
+𝑥 𝑛 𝑖 𝑎 𝑥 𝑛 𝑗 𝑏  ∈ ℝ𝙻 ×𝙻 ×𝟸 𝟷 ×𝟸 𝟷 ,
+
+𝐶 𝑖 𝑗 (𝑎 , 𝑏 ) = 𝑓 𝑖 𝑗 (𝑎 , 𝑏 ) − 𝑓 𝑖 (𝑎 )𝑓 𝑗 (𝑏 ) ∈ ℝ𝙻 ×𝙻 ×𝟸 𝟷 ×𝟸 𝟷 .
+
+(17) 
+
+Positional Interaction Strength.  The 4-dimensional tensor  𝐶 𝑖 𝑗 (𝑎 , 𝑏 ) captures the per-
+
+position, per-amino-acid covariance over a dataset. We can contract this information by 
+
+using the Frobenius norm over the last two dimensions, which can be interpreted as 
+
+contracting the per-residue coupling into an overall interaction strength at a given pair of 
+
+positions  𝑖  and  𝑗 :
+
+‖𝐶 𝑖 𝑗 ‖𝐹  = √∑
+
+> 𝑎 ,𝑏
+
+𝐶 𝑖 𝑗 (𝑎 , 𝑏 )2. (18) 
+
+Mutual Information with Average Product Correction.  An interpretable 2D repre -
+
+sentation of coevolution can also be constructed from information theory, as described by 
+
+(Dunn et al., 2007 ). Using the definitions from equation  (17 ), we can describe the mutual 
+
+information  𝐼 𝑖 𝑗  as: 
+
+𝐼 𝑖 𝑗  = ∑
+
+> 𝑎 ,𝑏
+
+𝑓 𝑖 𝑗 (𝑎 , 𝑏 ) log  𝑓 𝑖 𝑗 (𝑎 , 𝑏 )
+
+𝑓 𝑖 (𝑎 )𝑓 𝑗 (𝑏 ). (19) 
+
+We denote column, row, and global means as 
+
+𝐼 𝑖  = 1
+
+𝐿  ∑
+
+> 𝐿
+> 𝑘 =1
+
+𝐼 𝑖 𝑘 , 𝐼 𝑗  = 1
+
+𝐿  ∑
+
+> 𝐿
+> 𝑘 =1
+
+𝐼 𝑘 𝑗 , 𝐼  = 1
+
+𝐿 2 ∑
+
+> 𝑖 ,𝑗
+
+𝐼 𝑖 𝑗 , (20) 
+
+and define the Average Product Correction  APC 𝑖 𝑗  as 
+
+APC 𝑖 𝑗  = 𝐼 𝑖 𝐼 𝑗 
+
+𝐼  . (21) 
+
+This lets us define MIp, the mutual information with average product correction, as 
+
+MIp 𝑖 𝑗  = 𝐼 𝑖 𝑗  − APC 𝑖 𝑗 . (22) 
+
+B.4  BLOSUM-Corrected KL Divergence 
+
+While the metrics described above characterize properties of individual datasets, this section 
+
+focuses on distance measures that quantify the similarity between two datasets. These 
+
+measures are essential for comparing synthetic sequences generated by our models against 
+
+14 Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+held-out natural sequences from the training MSA. The Kullback-Leibler (KL) divergence 
+
+provides a principled information-theoretic approach to measure how one probability distri -
+
+bution differs from another. 
+
+Given two discrete probability distributions  𝑝  and  𝑞  over amino acid frequencies, the KL 
+
+divergence is defined as: 
+
+𝐷 𝙺 𝙻 (𝑝  ‖ 𝑞 ) = ∑
+
+> 𝑎
+
+𝑝 (𝑎 ) log  𝑝 (𝑎 )
+
+𝑞 (𝑎 ) , (23) 
+
+where the sum is taken over all amino acid types. The KL divergence is always non-negative 
+
+and equals zero if and only if  𝑝  and  𝑞  are identical distributions. However,  𝐷 𝙺 𝙻  is asymmetric: 
+
+𝐷 𝙺 𝙻 (𝑝  ‖ 𝑞 ) ≠ 𝐷 𝙺 𝙻 (𝑞  ‖ 𝑝 ) in general. 
+
+The Zero-Frequency Problem and Biological Priors.  A critical challenge in comput -
+
+ing KL divergence for protein sequences arises from the zero-frequency problem. In small 
+
+datasets or at highly conserved positions, certain amino acids may not appear at all, leading 
+
+to zero probabilities. When  𝑞 (𝑎 ) = 0 and  𝑝 (𝑎 ) > 0, the KL divergence becomes infinite, 
+
+making comparisons impossible. 
+
+Additive smoothing (also known as Lidstone smoothing) addresses this by adding pseudo-
+
+counts to observed frequencies. Rather than using uninformative uniform pseudo-counts, 
+
+such as  1/vocabulary_size , we employ  BLOSUM62  background frequencies  (Altschul et al., 
+
+2009 ) as biologically informed priors. These frequencies reflect the natural abundance of 
+
+amino acids in protein databases and have been empirically validated across diverse protein 
+
+families. The smoothed probability for amino acid  𝑖  is calculated as: 
+
+𝑝 𝑎 ,𝛼  = 𝑥 𝑎  + 𝛼 𝜇 𝑎 
+
+𝑁  + 𝛼  ⋅ 𝑑  . (24) 
+
+where  𝑥 𝑎  is the observed count of amino acid  𝑎 , 𝑁  is the total number of observations, 
+
+𝑑  = 21 is the number of possible amino acids (20 standard amino acids plus gap),  𝜇 𝑎  is the 
+
+BLOSUM62  prior frequency for amino acid  𝑎 , and  𝛼  is the pseudo-count weight parameter. 
+
+We calibrated the gap frequency  𝜇 𝙶 𝙰 𝙿  empirically across all MSAs used in our evaluation, 
+
+finding a value of 0.7% to match most common cases using a coverage-based proxy for 
+
+pairwise alignment sparsity. 
+
+Biological Justification.  The use of  BLOSUM62  frequencies as priors is biologically moti -
+
+vated. These frequencies were derived from the BLOCKS database of conserved protein 
+
+regions and reflect amino acid propensities averaged over many protein families. By incor -
+
+porating this knowledge, our smoothing method: 
+
+1.  Ensures biologically plausible probability estimates even with limited data 
+
+2.  Weights pseudo-counts according to amino acid abundance in natural proteins 
+
+rather than treating all amino acids equally 
+
+3.  Provides a Bayesian interpretation with Dirichlet priors informed by empirical 
+
+protein evolution 
+
+4.  Reduces the variance of frequency estimates while introducing minimal bias, as the 
+
+smoothed probabilities converge to maximum likelihood estimates as dataset size 
+
+increases 
+
+This approach is particularly valuable when comparing generated sequences to natural 
+
+sequences, as it ensures that distance measurements remain finite and meaningful even 
+
+when datasets differ in size or sampling depth, while respecting the underlying biochemical 
+
+constraints of protein composition. 
+
+15 Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+B.5  Spectrum Kernel Maximum Mean Discrepancy 
+
+The Maximum Mean Discrepancy (MMD) provides a principled framework for comparing 
+
+probability distributions by embedding them into a Reproducing Kernel Hilbert Space 
+
+(RKHS). This approach presents a powerful, alignment-free metric for comparing generated 
+
+sequences against reference distributions when combined with the Spectrum kernel for 
+
+protein sequences. 
+
+Theoretical Foundation.  The Maximum Mean Discrepancy (MMD) measures how dif -
+
+ferent two probability distributions are by embedding them into a rich function space called 
+
+a Reproducing Kernel Hilbert Space (RKHS). Intuitively, MMD finds the function that best 
+
+distinguishes samples from the two distributions and measures how different the average 
+
+function values are  (Gretton et al., 2012 ).
+
+Given samples  𝑋  = {𝑥 1, …, 𝑥 𝑛 } from a reference distribution and  𝑌  = {𝑦 1, …, 𝑦 𝑚 } from a 
+
+generated distribution, the squared MMD decomposes into three intuitive terms: 
+
+𝙼𝙼𝙳 2 = 𝔼 [𝑘 (𝑥 , 𝑥 ′)]⏟ÕÖÕ× 
+
+> similarity within 𝑋
+
++ 𝔼 [𝑘 (𝑦 , 𝑦 ′)]⏟ÕÖÕ× 
+
+> similarity within 𝑌
+
+− 2 𝔼 [𝑘 (𝑥 , 𝑦 )]⏟ÕÖÕ×   
+
+> similarity between 𝑋 and 𝑌
+
+, (25) 
+
+where  𝑘 (⋅, ⋅) is a kernel function measuring sequence similarity. When sequences within each 
+
+set are similar to each other (high first two terms) but the two sets differ from each other 
+
+(low cross-term), the MMD is large, indicating distributional mismatch. Conversely, when 
+
+generated sequences are indistinguishable from reference sequences, MMD approaches zero. 
+
+A key theoretical guarantee is that when using a  characteristic  kernel, MMD equals zero if 
+
+and only if the two distributions are identical. This ensures that any systematic difference 
+
+between generated and reference sequences will be detected, making MMD a principled 
+
+choice for evaluating generative models. 
+
+In practice, the empirical MMD can be computed using either a biased (V-statistic) or 
+
+unbiased (U-statistic) estimator, differing in whether diagonal terms of the kernel matrices 
+
+are included. We use the biased estimator, which guarantees non-negative  𝙼𝙼𝙳 2 values— 
+
+important when taking the square root—and exhibits lower variance than the unbiased 
+
+alternative  (Gretton et al., 2012 ).
+
+The Spectrum kernel , introduced by  Leslie et al. (2002) , represents sequences as vectors 
+
+of  𝑘 -mer counts and computes similarity via their inner product. For protein sequences, this 
+
+provides an alignment-free measure of compositional similarity. 
+
+Given a sequence  𝑥 , we define the feature map  Φ𝑘  :𝒳︀  → ℝ|𝒜︀  |𝑘 
+
+where  𝒜︀  denotes the amino 
+
+acid alphabet (typically 20 standard residues). Each coordinate of  Φ𝑘 (𝑥 ) counts the occur -
+
+rences of the corresponding  𝑘 -mer: 
+
+Φ𝑘 (𝑥 )𝑎  = |{𝑖  : 𝑥 [𝑖  : 𝑖  + 𝑘 ] = 𝑎 }|. (26) 
+
+This counts how many times the  𝑘 -mer  𝑎  appears as a contiguous substring in sequence  𝑥 ,
+
+where  𝑥 [𝑖  : 𝑖  + 𝑘 ] denotes the substring starting at position  𝑖  with length  𝑘 .
+
+The Spectrum kernel is then the inner product of these feature vectors: 
+
+𝑘 (𝑥 , 𝑦 ) = ⟨Φ𝑘 (𝑥 ), Φ𝑘 (𝑦 )⟩ = ∑ 
+
+> 𝑎 ∈𝒜︀ 𝑘
+
+Φ𝑘 (𝑥 )𝑎  ⋅ Φ𝑘 (𝑦 )𝑎 . (27) 
+
+This kernel has several attractive properties for protein sequence analysis: 
+
+1.  It is efficient to compute using sparse representations, avoiding the need to explicitly 
+
+enumerate all  |𝒜︀  |𝑘  possible  𝑘 -mers. 
+
+2.  It makes no assumptions about the data distribution, unlike learned embeddings. 
+
+16 Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+3.  It captures local sequence composition. 
+
+4.  Its simplicity ensures robustness when evaluating artificial sequences  (Kucera et 
+
+al., 2022 ).
+
+C Protein Types and Datasets 
+
+We use the following seed proteins to construct homolog datasets via iterative profile search. 
+
+Anti-SARS-CoV-2 VHH (Ty1) 
+
+Ty1 is an alpaca-derived single-domain antibody (nanobody) that targets the receptor-
+
+binding domain (RBD) of the SARS-CoV-2 spike protein, directly preventing ACE2 
+
+engagement and neutralizing viral infection  (Hanke et al., 2020 ). The 12.8 kDa nanobody 
+
+binds an epitope accessible in both the “up” and “down” RBD conformations, sterically 
+
+hindering host receptor binding. Cryo-electron microscopy structures reveal that CDR1 and 
+
+CDR3 loops mediate the primary contacts with the spike protein. 
+
+Serine-Pyruvate Aminotransferase (SPAT) 
+
+Serine-pyruvate aminotransferase (EC 2.6.1.51) is a pyridoxal phosphate-dependent enzyme 
+
+that catalyzes the reversible transamination between L-serine and pyruvate to produce 
+
+3-hydroxypyruvate and L-alanine  (BRENDA Enzyme Database, 2025 ). In humans, the 
+
+enzyme localizes to peroxisomes where it participates in glyoxylate detoxification; functional 
+
+deficiency causes primary hyperoxaluria type 1, characterized by calcium oxalate accumu -
+
+lation. The enzyme plays a key role in gluconeogenesis from serine in the liver. 
+
+Haloalkane Dehalogenase DhaA 
+
+DhaA is a haloalkane dehalogenase from  Rhodococcus rhodochrous  that catalyzes the 
+
+hydrolytic cleavage of carbon-halogen bonds in halogenated compounds  (Koudelakova et al., 
+
+2013 ). The enzyme employs a catalytic pentad (Asp106, His272, Glu130, Asn41, Trp107) 
+
+to perform nucleophilic substitution, forming a covalent alkyl-enzyme intermediate that is 
+
+subsequently hydrolyzed. DhaA and its engineered variants are of biotechnological interest 
+
+for bioremediation of industrial pollutants such as 1,2,3-trichloropropane. 
+
+Anti-HER2 scFv 
+
+Single-chain variable fragments (scFvs) targeting HER2 consist of the variable heavy (VH) 
+
+and light (VL) chains of an anti-HER2 antibody connected by a flexible glycine-serine linker 
+
+(Koçer et al., 2021 ). HER2 (human epidermal growth factor receptor 2) is overexpressed 
+
+in 20–25% of breast cancers, making it a critical target for molecular diagnostics and 
+
+therapy. Anti-HER2 scFvs are used in antibody-drug conjugates and as targeting moieties 
+
+for nanoparticle delivery systems. 
+
+Chicken FGF2 
+
+Fibroblast growth factor 2 (FGF2) from  Gallus gallus  is a multifunctional growth factor 
+
+involved in cell proliferation, differentiation, angiogenesis, and tissue repair  (UniProt Con -
+
+sortium, 2025 ). The protein signals through FGF receptors 1–4 and is essential for normal 
+
+embryonic development. In chickens, three FGF2 isoforms (18.5, 20.0, and 21.5 kDa) are 
+
+produced by alternative translation initiation during embryogenesis. 
+
+Anti-EphA2 VHH 
+
+Anti-EphA2 nanobodies are single-domain antibodies targeting ephrin type-A receptor 2, 
+
+a receptor tyrosine kinase overexpressed in breast, prostate, lung, and bladder cancers 
+
+(Roovers et al., 2011 ). Their small size ( 15 kDa), high stability, and superior tissue 
+
+penetration make them well-suited for targeting solid tumors. These nanobodies have been 
+
+17 Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+Table 2: Summary statistics of homolog datasets used for training and evaluation. Query 
+
+and target coverage values represent the fraction of the query and target sequences aligned 
+
+in each homolog pair. 
+
+Dataset  Number of 
+
+Homologs 
+
+Sequence 
+
+Length 
+
+Query 
+
+Coverage 
+
+Target 
+
+Coverage 
+
+Anti-SARS-CoV-2 VHH  3335  109.2 ± 4.3  0.88 ± 0.01  1.00 ± 0.01 
+
+Anti-EphA2 VHH  24304  118.2 ± 3.7  1.00 ± 0.00  1.00 ± 0.00 
+
+Serine-Pyruvate Aminotrans -
+
+ferase  6565  363.0 ± 16.7  0.93 ± 0.03  0.91 ± 0.10 
+
+Chicken FGF2  1435  141.6 ± 11.4  0.88 ± 0.06  0.71 ± 0.19 
+
+Haloalkane Dehalogenase 
+
+DhaA  4697  282.2 ± 11.5  0.96 ± 0.03  0.91 ± 0.10 
+
+Anti-HER2 scFv  10979  246.4 ± 4.8  0.99 ± 0.01  1.00 ± 0.00        
+
+> 50–150150–300300–600600–1000
+> 0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1
+> No-opInsertionSubs.
+> Deletionmacroavg
+
+Sequence length range             
+
+> F1-score
+> No-op
+> Insertion
+> Subs.
+> Deletion
+> Deletion
+> Subs.
+> Insertion
+> No-op
+> 0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1
+> PredictedEdit
+> Ground Truth Edit 98.27%0.92%0.70%0.11%
+> 20.41%79.59%0.00%0.00%
+> 13.80%0.00%84.25%1.95%
+> 3.18%0.00%11.80%85.02%
+
+Figure 4:  Performance on the deterministic edit benchmark. : (Left)  F1-score for each 
+
+edit type as a function of sequence length. Performance remains stable across sequence 
+
+lengths, indicating that edit prediction accuracy does not degrade for longer sequences. 
+
+(Right)  Confusion matrix showing the distribution of predicted edit types versus ground-
+
+truth edits (no-op, insertion, substitution, deletion). The model correctly identifies most 
+
+edit operations, with remaining errors primarily corresponding to confusions with the no-
+
+op class. 
+
+developed for immunoliposomal drug delivery and as targeting agents for antibody-directed 
+
+nanotherapeutics. 
+
+Dataset Statistics  The number of homologs, sequence length distribution, and other 
+
+relevant statistics for each seed protein dataset are detailed in  Table 2 .
+
+C.1  Supplementary Figures 
+
+18 Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+−150
+
+−100
+
+−50
+
+0
+
+−800
+
+−600
+
+−400
+
+−200
+
+0
+
+−1000
+
+−500
+
+0
+
+−400
+
+−200
+
+0
+
+−300
+
+−200
+
+−100
+
+0
+
+−200
+
+−150
+
+−100
+
+−50
+
+0
+
+0
+
+0.5
+
+1
+
+1.5
+
+2
+
+0
+
+0.5
+
+1
+
+0
+
+0.5
+
+1
+
+1.5
+
+2
+
+0
+
+1
+
+2
+
+3
+
+0
+
+0.5
+
+1
+
+1.5
+
+0
+
+1
+
+2
+
+0
+
+0.5
+
+1
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+0
+
+0.5
+
+1
+
+0
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+0
+
+0.5
+
+1
+
+0
+
+0.02
+
+0.04
+
+0.06
+
+0.08
+
+0
+
+0.005
+
+0.01
+
+0.015
+
+0
+
+0.05
+
+0.1
+
+0
+
+0.02
+
+0.04
+
+0.06
+
+0.08
+
+0
+
+0.01
+
+0.02
+
+0.03
+
+0
+
+0.02
+
+0.04
+
+0.06
+
+0.08
+
+0
+
+0.005
+
+0.01
+
+0.015
+
+0.02
+
+0
+
+0.002
+
+0.004
+
+0
+
+0.01
+
+0.02
+
+0.03
+
+0
+
+0.01
+
+0.02
+
+0
+
+0.002
+
+0.004
+
+0.006
+
+0.008
+
+0
+
+0.01
+
+0.02
+
+0
+
+0.1
+
+0.2
+
+0.3
+
+0
+
+0.05
+
+0.1
+
+0
+
+0.1
+
+0.2
+
+0
+
+0.1
+
+0.2
+
+0.3
+
+0
+
+0.05
+
+0
+
+0.1
+
+0.2
+
+0.3
+
+−2
+
+−1.5
+
+−1
+
+−0.5
+
+0
+
+−2
+
+−1.5
+
+−1
+
+−0.5
+
+0
+
+−2
+
+−1
+
+0
+
+−2
+
+−1.5
+
+−1
+
+−0.5
+
+0
+
+−2
+
+−1
+
+0
+
+−2
+
+−1.5
+
+−1
+
+−0.5
+
+0
+
+0
+
+0.5
+
+1
+
+0
+
+0.5
+
+1
+
+0
+
+0.5
+
+1
+
+0
+
+0.5
+
+1
+
+0
+
+0.5
+
+1
+
+0
+
+0.5
+
+1
+
+0
+
+20
+
+40
+
+0
+
+100
+
+200
+
+0
+
+50
+
+100
+
+150
+
+200
+
+0
+
+50
+
+100
+
+0
+
+50
+
+100
+
+0
+
+20
+
+40
+
+60
+
+10
+
+30
+
+30
+
+100 100 30
+
+100
+
+10
+
+30
+
+100
+
+10
+
+30
+
+Model
+
+Random pairing
+
+EvoFlow (ours)
+
+Evotune
+
+Evotune (forced)
+
+Random
+
+> Profi le log-
+> likelihood
+> MMD MIP KL divergence JS divergence
+> Entropy delta ESM2 PLL Covariance Avg pairwise
+> Levenshtein
+> Avg
+> Levenshtein to
+> x0
+
+Anti-SARS-
+
+CoV-2 VHH
+
+Serine-
+
+Pyruvate
+
+Aminotransferase
+
+Haloalkane
+
+Dehalogenase
+
+DhaA
+
+Anti-HER2
+
+scFv Chicken FGF2
+
+Anti-EphA2
+
+VHH
+
+Figure 5:  Per-dataset comparison of EvoFlows and baseline methods.  Comparison across 
+
+multiple datasets (columns) and evaluation metrics (rows). The random transport model 
+
+produces the most different sequences from the starting sequences as a function of the data. 
+
+EvoFlows generates variants that remain close to the holdout distribution. Random baseline 
+
+performs worst across all metrics. Evo-tuning without forced mutations achieves competitive 
+
+scores but introduces almost no sequence edits, as reflected in Levenshtein distances to x0, 
+
+while forcing mutations significantly degrades performance across metrics. 
+
+19 Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+> Anti-SARS-CoV-2 VHH
+> Serine-Pyruvate Aminotransferase
+> Haloalkane Dehalogenase DhaA
+> Anti-HER2 scFv
+> Chicken FGF2
+> Anti-EphA2 VHH
+
+2
+
+5
+
+10
+
+2
+
+5
+
+100
+
+2
+
+> Anti-SARS-CoV-2 VHH
+> Serine-Pyruvate Aminotransferase
+> Haloalkane Dehalogenase DhaA
+> Anti-HER2 scFv
+> Chicken FGF2
+> Anti-EphA2 VHH
+
+50
+
+100
+
+150
+
+200
+
+250
+
+> Anti-SARS-CoV-2 VHH
+> Serine-Pyruvate Aminotransferase
+> Haloalkane Dehalogenase DhaA
+> Anti-HER2 scFv
+> Chicken FGF2
+> Anti-EphA2 VHH
+
+0.75
+
+0.8
+
+0.85
+
+0.9
+
+0.95
+
+1
+
+> Anti-SARS-CoV-2 VHH
+> Serine-Pyruvate Aminotransferase
+> Haloalkane Dehalogenase DhaA
+> Anti-HER2 scFv
+> Chicken FGF2
+> Anti-EphA2 VHH
+
+−2.5
+
+−2
+
+−1.5
+
+−1
+
+> Anti-SARS-CoV-2 VHH
+> Serine-Pyruvate Aminotransferase
+> Haloalkane Dehalogenase DhaA
+> Anti-HER2 scFv
+> Chicken FGF2
+> Anti-EphA2 VHH
+
+0
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+> Anti-SARS-CoV-2 VHH
+> Serine-Pyruvate Aminotransferase
+> Haloalkane Dehalogenase DhaA
+> Anti-HER2 scFv
+> Chicken FGF2
+> Anti-EphA2 VHH
+
+0
+
+0.01
+
+0.02
+
+0.03
+
+> Anti-SARS-CoV-2 VHH
+> Serine-Pyruvate Aminotransferase
+> Haloalkane Dehalogenase DhaA
+> Anti-HER2 scFv
+> Chicken FGF2
+> Anti-EphA2 VHH
+
+0
+
+0.02
+
+0.04
+
+0.06
+
+0.08
+
+0.1
+
+0.12
+
+> Anti-SARS-CoV-2 VHH
+> Serine-Pyruvate Aminotransferase
+> Haloalkane Dehalogenase DhaA
+> Anti-HER2 scFv
+> Chicken FGF2
+> Anti-EphA2 VHH
+
+0.2
+
+0.4
+
+0.6
+
+0.8
+
+1
+
+> Anti-SARS-CoV-2 VHH
+> Serine-Pyruvate Aminotransferase
+> Haloalkane Dehalogenase DhaA
+> Anti-HER2 scFv
+> Chicken FGF2
+> Anti-EphA2 VHH
+
+1
+
+2
+
+3
+
+> Anti-SARS-CoV-2 VHH
+> Serine-Pyruvate Aminotransferase
+> Haloalkane Dehalogenase DhaA
+> Anti-HER2 scFv
+> Chicken FGF2
+> Anti-EphA2 VHH
+
+−1000
+
+−800
+
+−600
+
+−400
+
+−200
+
+Model
+
+Random pairing
+
+EvoFlow (ours)
+
+Evotune
+
+Evotune (forced)
+
+Random
+
+Avg
+
+Levenshtein to x0
+
+Avg pairwise
+
+Levenshtein Covariance ESM2 PLL Entropy delta
+
+JS divergence KL divergence MIP MMD
+
+Profi le log-
+
+likelihood
+
+Figure 6:  Cross-dataset metric trends.  Each subplot shows one evaluation metric, with lines 
+
+connecting per-dataset values for each method: Random pairing, EvoFlows (ours), Evo-
+
+tuning, Evo-tuning with forced mutations, and random baseline. 
+
+20 Foundation Models for Science: Real-World Impact and Science-First Design, ICLR 2026 
+
+0 100 200 300
+
+> gap
+> A
+> C
+> D
+> E
+> F
+> G
+> H
+> I
+> K
+> L
+> M
+> N
+> P
+> Q
+> R
+> S
+> T
+> V
+> W
+> Y
+
+0 50 100
+
+> gap
+> A
+> C
+> D
+> E
+> F
+> G
+> H
+> I
+> K
+> L
+> M
+> N
+> P
+> Q
+> R
+> S
+> T
+> V
+> W
+> Y
+
+0 100 200 300 400 500
+
+> gap
+> A
+> C
+> D
+> E
+> F
+> G
+> H
+> I
+> K
+> L
+> M
+> N
+> P
+> Q
+> R
+> S
+> T
+> V
+> W
+> Y
+
+0 100 200 300 400
+
+> gap
+> A
+> C
+> D
+> E
+> F
+> G
+> H
+> I
+> K
+> L
+> M
+> N
+> P
+> Q
+> R
+> S
+> T
+> V
+> W
+> Y
+
+0 100 200 300 400
+
+> gap
+> A
+> C
+> D
+> E
+> F
+> G
+> H
+> I
+> K
+> L
+> M
+> N
+> P
+> Q
+> R
+> S
+> T
+> V
+> W
+> Y
+
+0 100 200 300
+
+> gap
+> A
+> C
+> D
+> E
+> F
+> G
+> H
+> I
+> K
+> L
+> M
+> N
+> P
+> Q
+> R
+> S
+> T
+> V
+> W
+> Y
+
+0 100 200 300
+
+> gap
+> A
+> C
+> D
+> E
+> F
+> G
+> H
+> I
+> K
+> L
+> M
+> N
+> P
+> Q
+> R
+> S
+> T
+> V
+> W
+> Y
+
+0 50 100 150
+
+> gap
+> A
+> C
+> D
+> E
+> F
+> G
+> H
+> I
+> K
+> L
+> M
+> N
+> P
+> Q
+> R
+> S
+> T
+> V
+> W
+> Y
+
+0 200 400 600 800 1000
+
+> gap
+> A
+> C
+> D
+> E
+> F
+> G
+> H
+> I
+> K
+> L
+> M
+> N
+> P
+> Q
+> R
+> S
+> T
+> V
+> W
+> Y
+
+0 200 400 600 800 1000
+
+> gap
+> A
+> C
+> D
+> E
+> F
+> G
+> H
+> I
+> K
+> L
+> M
+> N
+> P
+> Q
+> R
+> S
+> T
+> V
+> W
+> Y
+
+0 500 1000
+
+> gap
+> A
+> C
+> D
+> E
+> F
+> G
+> H
+> I
+> K
+> L
+> M
+> N
+> P
+> Q
+> R
+> S
+> T
+> V
+> W
+> Y
+
+0 200 400 600 800
+
+> gap
+> A
+> C
+> D
+> E
+> F
+> G
+> H
+> I
+> K
+> L
+> M
+> N
+> P
+> Q
+> R
+> S
+> T
+> V
+> W
+> Y
+
+Position Position
+
+Anti-SARS-CoV-2 VHH (EvoFlow) Anti-SARS-CoV-2 VHH (Holdout)
+
+Chicken FGF2 (EvoFlow) Chicken FGF2 (Holdout)
+
+Anti-HER2 scFv (EvoFlow) Anti-HER2 scFv (Holdout)
+
+Anti-EphA2 VHH (EvoFlow) Anti-EphA2 VHH (Holdout)
+
+Serine-Pyruvate Aminotransferase (EvoFlow) Serine-Pyruvate Aminotransferase (Holdout)
+
+Haloalkane Dehalogenase DhaA (EvoFlow) Haloalkane Dehalogenase DhaA (Holdout)
+
+Figure 7:  Per-position amino acid frequency heatmaps for all seed protein families.  Each row 
+
+shows one dataset, with EvoFlows-generated sequences (left) and holdout sequences (right). 
+
+Color intensity indicates per-position amino acid frequency after alignment. Conserved 
+
+positions appear as points of high intensity, while variable regions show more diffuse pat -
+
+terns. The similar frequency profiles between generated and holdout sequences indicate that 
+
+EvoFlows preserves the positional amino acid distribution characteristic of each homolog 
+
+family. 
+
+21
